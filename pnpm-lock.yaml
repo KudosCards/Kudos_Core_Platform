@@ -224,6 +224,9 @@ importers:
       '@kudos/config':
         specifier: workspace:*
         version: link:../config
+      eslint:
+        specifier: ^9.13.0
+        version: 9.39.5(jiti@2.7.0)
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
