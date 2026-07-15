@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Shared placeholder config so env validation passes in CI. Real secrets
+  # are never needed here — nothing in this workflow talks to a real
+  # Supabase/Stripe project.
+  NODE_ENV: test
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kudos_ci
+  DIRECT_URL: postgresql://postgres:postgres@localhost:5432/kudos_ci
+  SUPABASE_URL: https://ci-placeholder.supabase.co
+  SUPABASE_JWT_SECRET: ci-placeholder-secret
+  SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-key
+  STRIPE_SECRET_KEY: sk_test_ci-placeholder
+  STRIPE_WEBHOOK_SECRET: whsec_ci-placeholder
+  WEB_APP_URL: http://localhost:3000
+  NEXT_PUBLIC_API_URL: http://localhost:3001
+  NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+
+jobs:
+  ci:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kudos_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply database migrations
+        run: pnpm --filter @kudos/api exec prisma migrate deploy
+
+      - name: Lint
+        run: pnpm turbo run lint
+
+      - name: Typecheck
+        run: pnpm turbo run typecheck
+
+      - name: Test
+        run: pnpm turbo run test
+
+      - name: Test (API e2e)
+        run: pnpm --filter @kudos/api test:e2e
+
+      - name: Build
+        run: pnpm turbo run build
