@@ -215,4 +215,106 @@ describe("Recipients (e2e)", () => {
     const archie = list.items.find((r) => r.lastName === "Winn");
     expect(archie?.email).toBe("updated@example.com");
   });
+
+  it("does not merge two different recipients that share a name but have no postcode or DOB on file", async () => {
+    const { token } = await signUp();
+
+    const csv = [
+      "firstName,lastName,dateOfBirth,postcode,email",
+      "Jamie,Smith,,,jamie1@example.com",
+      "Jamie,Smith,,,jamie2@example.com",
+    ].join("\n");
+
+    const importResponse = await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(csv), "recipients.csv")
+      .expect(201);
+    const summary = importSummarySchema.parse(importResponse.body);
+
+    // Both rows are new recipients — with no postcode/DOB to distinguish them,
+    // they must never be treated as the same person and silently merged.
+    expect(summary.created).toBe(2);
+    expect(summary.updated).toBe(0);
+
+    const listResponse = await request(app.getHttpServer())
+      .get("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const list = paginatedRecipientsSchema.parse(listResponse.body);
+    const smiths = list.items.filter((r) => r.lastName === "Smith");
+    expect(smiths).toHaveLength(2);
+    expect(smiths.map((r) => r.email).sort()).toEqual(["jamie1@example.com", "jamie2@example.com"]);
+  });
+
+  it("rejects a structurally malformed CSV with a 400 instead of crashing the whole import", async () => {
+    const { token } = await signUp();
+
+    // Second data row has an extra field vs. the header — a mismatched column
+    // count, which csv-parse throws on synchronously if not caught.
+    const csv = ["firstName,lastName,postcode", "Good,Row,SW1A 1AA", "Bad,Row,SW1A 2AA,extra,columns"].join(
+      "\n",
+    );
+
+    await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(csv), "recipients.csv")
+      .expect(400);
+  });
+
+  it("rejects an import request with no file attached", async () => {
+    const { token } = await signUp();
+    await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(400);
+  });
+
+  it("rejects a malformed email via CSV import that the JSON API would also reject", async () => {
+    const { token } = await signUp();
+    const csv = ["firstName,lastName,email", "Bad,Email,a@b@example.com"].join("\n");
+
+    const importResponse = await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(csv), "recipients.csv")
+      .expect(201);
+    const summary = importSummarySchema.parse(importResponse.body);
+
+    expect(summary.created).toBe(0);
+    expect(summary.rejected).toHaveLength(1);
+    expect(summary.rejected[0]?.reason).toMatch(/not a valid email/);
+  });
+
+  it("rejects two concurrent creates that would both push the account over its cap", async () => {
+    const { token } = await signUp();
+    await prisma.planEntitlement.update({
+      where: { planId: "free" },
+      data: { recipientCap: 1 },
+    });
+
+    try {
+      const [first, second] = await Promise.all([
+        request(app.getHttpServer())
+          .post("/recipients")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ firstName: "Racer", lastName: "One" }),
+        request(app.getHttpServer())
+          .post("/recipients")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ firstName: "Racer", lastName: "Two" }),
+      ]);
+
+      const statuses = [first.status, second.status].sort();
+      // Exactly one should succeed and one should be rejected for being over
+      // cap — never both succeeding, which would silently exceed the plan.
+      expect(statuses).toEqual([201, 403]);
+    } finally {
+      await prisma.planEntitlement.update({
+        where: { planId: "free" },
+        data: { recipientCap: 50 },
+      });
+    }
+  });
 });

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -83,8 +84,11 @@ export class RecipientsController {
   importCsv(
     @CurrentMembership() membership: CurrentMembershipContext,
     @CurrentUser() user: AuthenticatedUser,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file?: Express.Multer.File,
   ): Promise<ImportSummary> {
+    if (!file) {
+      throw new BadRequestException("A CSV file is required");
+    }
     return this.recipientsService.importCsv(membership.accountId, user.id, file.buffer);
   }
 }
