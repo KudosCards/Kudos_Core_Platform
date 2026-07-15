@@ -44,10 +44,13 @@ pnpm dev                         # runs both apps via Turborepo
 The API serves Swagger docs at `/docs` outside production, and a health check at `/health`.
 
 Auth is Supabase-backed (`@supabase/ssr`) — you'll need a real Supabase project's URL/anon key in
-`apps/web/.env` and matching `SUPABASE_*` values in `apps/api/.env` for signup/login to work.
-Everything else (the API, its business logic, and its test suite) runs against a plain local
-Postgres instance with no Supabase project required — the auth guard verifies Supabase JWTs
-against the shared `SUPABASE_JWT_SECRET`, not by calling out to Supabase.
+`apps/web/.env` and matching `SUPABASE_*` values in `apps/api/.env` for signup/login to work. The
+API's auth guard verifies session tokens against the project's published JWKS
+(`SUPABASE_URL` + `/auth/v1/.well-known/jwks.json`) — no shared secret involved, and it re-fetches
+automatically if Supabase rotates the signing key. The test suite doesn't need a live Supabase
+project at all: e2e tests swap in a local JWKS built from a real generated keypair (see
+`apps/api/test/util/test-jwks.ts`), and everything else runs against a plain local Postgres
+instance.
 
 ## Common commands
 

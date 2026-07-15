@@ -11,8 +11,9 @@ export const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   DIRECT_URL: z.string().url(),
 
+  // Also used to derive the JWKS endpoint (SUPABASE_URL + /auth/v1/.well-known/jwks.json)
+  // that JwtAuthGuard verifies session tokens against — see auth/jwks.provider.ts.
   SUPABASE_URL: z.string().url(),
-  SUPABASE_JWT_SECRET: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 
   STRIPE_SECRET_KEY: z.string().min(1),

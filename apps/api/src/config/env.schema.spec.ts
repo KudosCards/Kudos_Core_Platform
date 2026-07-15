@@ -4,7 +4,6 @@ const validConfig = {
   DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
   DIRECT_URL: "postgresql://user:pass@localhost:5432/db",
   SUPABASE_URL: "https://project.supabase.co",
-  SUPABASE_JWT_SECRET: "secret",
   SUPABASE_SERVICE_ROLE_KEY: "key",
   STRIPE_SECRET_KEY: "sk_test_x",
   STRIPE_WEBHOOK_SECRET: "whsec_x",
