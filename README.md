@@ -36,11 +36,18 @@ cp apps/api/.env.example apps/api/.env   # fill in DATABASE_URL/DIRECT_URL and t
 cp apps/web/.env.example apps/web/.env
 
 pnpm --filter @kudos/api exec prisma migrate dev   # apply the schema to your local database
+pnpm --filter @kudos/api exec prisma db seed       # seed plan entitlements (free/pro/centre)
 
 pnpm dev                         # runs both apps via Turborepo
 ```
 
 The API serves Swagger docs at `/docs` outside production, and a health check at `/health`.
+
+Auth is Supabase-backed (`@supabase/ssr`) — you'll need a real Supabase project's URL/anon key in
+`apps/web/.env` and matching `SUPABASE_*` values in `apps/api/.env` for signup/login to work.
+Everything else (the API, its business logic, and its test suite) runs against a plain local
+Postgres instance with no Supabase project required — the auth guard verifies Supabase JWTs
+against the shared `SUPABASE_JWT_SECRET`, not by calling out to Supabase.
 
 ## Common commands
 
@@ -58,4 +65,5 @@ The API additionally has `pnpm --filter @kudos/api test:e2e` for its Supertest s
 ## CI
 
 `.github/workflows/ci.yml` runs lint, typecheck, unit tests, the API's e2e suite (against a real
-Postgres service container, with migrations applied first), and a full build on every PR.
+Postgres service container, with migrations and the seed applied first), and a full build on
+every PR.

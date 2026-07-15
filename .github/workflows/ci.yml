@@ -65,6 +65,9 @@ jobs:
       - name: Apply database migrations
         run: pnpm --filter @kudos/api exec prisma migrate deploy
 
+      - name: Seed database
+        run: pnpm --filter @kudos/api exec prisma db seed
+
       - name: Lint
         run: pnpm turbo run lint
 
