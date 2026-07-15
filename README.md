@@ -80,5 +80,9 @@ every PR.
   database. `prisma db seed` is intentionally *not* run on every deploy (seeding isn't something
   you want firing automatically); run it once by hand via the platform's console/shell after the
   first successful deploy: `pnpm --filter @kudos/api exec prisma db seed`.
-- **Web** (Netlify): auto-deploys on every push to `main`. Needs `NEXT_PUBLIC_API_URL` pointed at
-  the live API URL, and the API's `WEB_APP_URL` pointed back at the live web URL (for CORS).
+- **Web** (Netlify): auto-deploys on every push to `main`. Build config lives in
+  [`netlify.toml`](./netlify.toml) — `base = "apps/web"` (this is a pnpm monorepo, the Next.js app
+  isn't at the repo root) plus the `@netlify/plugin-nextjs` runtime plugin, so it doesn't depend on
+  the dashboard's Base/Build/Publish fields being set correctly by hand. Needs
+  `NEXT_PUBLIC_API_URL` pointed at the live API URL, and the API's `WEB_APP_URL` pointed back at
+  the live web URL (for CORS).
