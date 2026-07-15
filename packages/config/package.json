@@ -1,0 +1,20 @@
+{
+  "name": "@kudos/config",
+  "private": true,
+  "version": "0.1.0",
+  "main": "index.js",
+  "exports": {
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/nestjs.json": "./tsconfig/nestjs.json",
+    "./tsconfig/nextjs.json": "./tsconfig/nextjs.json",
+    "./eslint/base": "./eslint/base.js",
+    "./eslint/nestjs": "./eslint/nestjs.js",
+    "./eslint/nextjs": "./eslint/nextjs.js",
+    "./prettier": "./prettier.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "eslint-config-prettier": "^9.1.0",
+    "typescript-eslint": "^8.11.0"
+  }
+}

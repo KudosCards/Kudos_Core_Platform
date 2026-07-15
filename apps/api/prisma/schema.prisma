@@ -1,0 +1,428 @@
+// Kudos Cards platform — primary schema.
+//
+// Enum values here are the source of truth alongside packages/shared-types/src/enums.ts.
+// Prisma can't import from TS, so any enum change must be made in both places in the
+// same commit — see docs/adr/0001-stack-choice.md for why we accept that duplication.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+enum AccountType {
+  organisation
+  individual
+}
+
+enum MembershipRole {
+  owner
+  admin
+  staff
+}
+
+model Account {
+  id               String   @id @default(uuid())
+  type             AccountType
+  name             String
+  stripeCustomerId String?  @unique @map("stripe_customer_id")
+  planId           String?  @map("plan_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  memberships   Membership[]
+  recipients    Recipient[]
+  savedDesigns  SavedDesign[]
+  batchOrders   BatchOrder[]
+  walletEntries WalletLedgerEntry[]
+  subscriptions Subscription[]
+  auditLogs     AuditLogEntry[]
+
+  @@map("accounts")
+}
+
+/// userId references the Supabase Auth user (managed outside Prisma's schema),
+/// so it is intentionally not a Prisma foreign key — just an indexed UUID.
+model Membership {
+  id        String         @id @default(uuid())
+  accountId String         @map("account_id")
+  userId    String         @map("user_id")
+  role      MembershipRole
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, userId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+// ---------------------------------------------------------------------------
+// CRM
+// ---------------------------------------------------------------------------
+
+enum RecipientStatus {
+  active
+  lapsed
+  archived
+}
+
+model Recipient {
+  id            String          @id @default(uuid())
+  accountId     String          @map("account_id")
+  firstName     String          @map("first_name")
+  lastName      String          @map("last_name")
+  /// Nullable: not every occasion needs a DOB on file.
+  dateOfBirth   DateTime?       @map("date_of_birth") @db.Date
+  email         String?
+  addressLine1  String?         @map("address_line1")
+  addressLine2  String?         @map("address_line2")
+  addressCity   String?         @map("address_city")
+  addressPostcode String?       @map("address_postcode")
+  addressCountry String?        @default("GB") @map("address_country")
+  tags          String[]        @default([])
+  status        RecipientStatus @default(active)
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  account   Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  occasions Occasion[]
+  orderRecipients OrderRecipient[]
+
+  // Mirrors the legacy CSV-import dedupe rule: same name + postcode + DOB = same person.
+  @@unique([accountId, firstName, lastName, addressPostcode, dateOfBirth], name: "recipient_dedupe_key")
+  @@index([accountId, status])
+  @@map("recipients")
+}
+
+// ---------------------------------------------------------------------------
+// Occasions & scheduling
+// ---------------------------------------------------------------------------
+
+enum OccasionType {
+  birthday
+  achievement
+  leaver
+  staff_recognition
+  seasonal
+  bespoke_campaign
+}
+
+enum OccasionSource {
+  recurring_per_recipient
+  one_off_campaign
+}
+
+enum OccasionStatus {
+  scheduled
+  pending_approval
+  approved
+  queued
+  printed
+  posted
+  delivered
+  skipped
+}
+
+model Occasion {
+  id           String         @id @default(uuid())
+  accountId    String         @map("account_id")
+  /// Null for one_off_campaign occasions (e.g. an org-wide "Student of the Month" send).
+  recipientId  String?        @map("recipient_id")
+  type         OccasionType
+  source       OccasionSource
+  occasionDate DateTime       @map("occasion_date") @db.Date
+  dispatchDate DateTime?      @map("dispatch_date") @db.Date
+  status       OccasionStatus @default(scheduled)
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  recipient       Recipient?        @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  orderRecipients OrderRecipient[]
+
+  // Prevents the scheduler from double-creating the same occasion instance on retry.
+  @@unique([recipientId, type, occasionDate], name: "occasion_idempotency_key")
+  @@index([accountId, status])
+  @@index([dispatchDate])
+  @@map("occasions")
+}
+
+// ---------------------------------------------------------------------------
+// Card designer
+// ---------------------------------------------------------------------------
+
+model CardDesign {
+  id           String   @id @default(uuid())
+  category     String
+  name         String
+  thumbnailUrl String   @map("thumbnail_url")
+  /// DesignDocument JSON — see packages/shared-types/src/card.ts for the shape.
+  document     Json
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  savedDesigns SavedDesign[]
+
+  @@index([category, isActive])
+  @@map("card_designs")
+}
+
+/// A personalised instance of a CardDesign, saved to an account's "My Designs".
+model SavedDesign {
+  id           String   @id @default(uuid())
+  accountId    String   @map("account_id")
+  cardDesignId String   @map("card_design_id")
+  name         String
+  document     Json
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  cardDesign      CardDesign       @relation(fields: [cardDesignId], references: [id])
+  orderRecipients OrderRecipient[]
+
+  @@index([accountId])
+  @@map("saved_designs")
+}
+
+// ---------------------------------------------------------------------------
+// Batch ordering
+// ---------------------------------------------------------------------------
+
+enum BatchOrderStatus {
+  draft
+  pending_payment
+  paid
+  fulfilling
+  completed
+  cancelled
+}
+
+enum PaymentMethod {
+  card
+  wallet
+}
+
+/// One order representing a whole batch (e.g. "10 birthday cards this week").
+/// Deliberately one order with many recipient lines, not one cart line per
+/// recipient — see docs/adr/0002-batch-order-model.md.
+model BatchOrder {
+  id                     String           @id @default(uuid())
+  accountId              String           @map("account_id")
+  createdByUserId        String           @map("created_by_user_id")
+  status                 BatchOrderStatus @default(draft)
+  currency               String           @default("GBP")
+  subtotalMinor          Int              @default(0) @map("subtotal_minor")
+  postageMinor           Int              @default(0) @map("postage_minor")
+  totalMinor             Int              @default(0) @map("total_minor")
+  paymentMethod          PaymentMethod?   @map("payment_method")
+  stripePaymentIntentId  String?          @unique @map("stripe_payment_intent_id")
+  createdAt              DateTime         @default(now()) @map("created_at")
+  updatedAt              DateTime         @updatedAt @map("updated_at")
+
+  account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  orderRecipients OrderRecipient[]
+
+  @@index([accountId, status])
+  @@map("batch_orders")
+}
+
+enum DispatchOption {
+  asap
+  auto_send
+}
+
+enum PostageClass {
+  first_class
+  second_class
+}
+
+enum OrderRecipientStatus {
+  pending_approval
+  approved
+  queued
+  printed
+  posted
+  delivered
+  cancelled
+}
+
+/// One recipient's line within a BatchOrder. This is the fix for the legacy
+/// system's N-identical-cart-lines checkout friction.
+model OrderRecipient {
+  id              String                @id @default(uuid())
+  batchOrderId    String                @map("batch_order_id")
+  recipientId     String                @map("recipient_id")
+  occasionId      String?               @map("occasion_id")
+  savedDesignId   String                @map("saved_design_id")
+  shippingAddressLine1    String        @map("shipping_address_line1")
+  shippingAddressLine2    String?       @map("shipping_address_line2")
+  shippingAddressCity     String        @map("shipping_address_city")
+  shippingAddressPostcode String        @map("shipping_address_postcode")
+  shippingAddressCountry  String        @default("GB") @map("shipping_address_country")
+  dispatchOption  DispatchOption
+  postageClass    PostageClass
+  priceMinor      Int                   @map("price_minor")
+  status          OrderRecipientStatus  @default(pending_approval)
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+
+  batchOrder  BatchOrder      @relation(fields: [batchOrderId], references: [id], onDelete: Cascade)
+  recipient   Recipient       @relation(fields: [recipientId], references: [id])
+  occasion    Occasion?       @relation(fields: [occasionId], references: [id])
+  savedDesign SavedDesign     @relation(fields: [savedDesignId], references: [id])
+  messagePage MessagePage?
+  fulfillmentJob FulfillmentJob?
+
+  @@index([batchOrderId])
+  @@index([recipientId])
+  @@map("order_recipients")
+}
+
+/// A card's QR-linked digital message page.
+model MessagePage {
+  id               String   @id @default(uuid())
+  slug             String   @unique
+  orderRecipientId String   @unique @map("order_recipient_id")
+  message          String?
+  emoji            String?
+  videoUrl         String?  @map("video_url")
+  viewCount        Int      @default(0) @map("view_count")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  orderRecipient OrderRecipient @relation(fields: [orderRecipientId], references: [id], onDelete: Cascade)
+
+  @@map("message_pages")
+}
+
+// ---------------------------------------------------------------------------
+// Billing — kept deliberately separate from BatchOrder/wallet billing so a
+// plan is always a Stripe Subscription and a card batch is always a Stripe
+// PaymentIntent or a wallet debit, never one conflated cart/subscription
+// object (see docs/adr/0003-billing-separation.md).
+// ---------------------------------------------------------------------------
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  canceled
+  incomplete
+}
+
+model Subscription {
+  id                   String             @id @default(uuid())
+  accountId            String             @map("account_id")
+  planId               String             @map("plan_id")
+  stripeSubscriptionId String             @unique @map("stripe_subscription_id")
+  status               SubscriptionStatus
+  currentPeriodEnd     DateTime           @map("current_period_end")
+  createdAt            DateTime           @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("subscriptions")
+}
+
+enum WalletEntryType {
+  topup
+  charge
+  refund
+  adjustment
+}
+
+/// Append-only. Never UPDATE or DELETE a row — corrections are new entries
+/// (type=adjustment), so the ledger is always a reliable audit trail.
+model WalletLedgerEntry {
+  id               String          @id @default(uuid())
+  accountId        String          @map("account_id")
+  type             WalletEntryType
+  amountMinor      Int             @map("amount_minor")
+  balanceAfterMinor Int            @map("balance_after_minor")
+  reference        String?
+  createdAt        DateTime        @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@map("wallet_ledger_entries")
+}
+
+/// Per-plan limits and feature gates, enforced centrally in the API rather
+/// than scattered ad-hoc checks (e.g. the legacy "you can add 12 more
+/// contacts" banner and the Pro-only auto-send gate).
+model PlanEntitlement {
+  planId              String  @id @map("plan_id")
+  recipientCap        Int?    @map("recipient_cap") // null = unlimited
+  batchOrderMaxSize    Int     @default(20) @map("batch_order_max_size")
+  cardDiscountPercent  Decimal @default(0) @db.Decimal(5, 2) @map("card_discount_percent")
+  autoSendEnabled      Boolean @default(false) @map("auto_send_enabled")
+
+  @@map("plan_entitlements")
+}
+
+// ---------------------------------------------------------------------------
+// Fulfillment — v1 is an internal ops queue (manual print/post); this shape
+// is provider-agnostic so a real print-API vendor can be plugged in later.
+// ---------------------------------------------------------------------------
+
+enum FulfillmentJobStatus {
+  pending
+  in_progress
+  printed
+  posted
+  delivered
+  failed
+}
+
+model FulfillmentJob {
+  id                String               @id @default(uuid())
+  orderRecipientId  String               @unique @map("order_recipient_id")
+  status            FulfillmentJobStatus @default(pending)
+  assignedToUserId  String?              @map("assigned_to_user_id")
+  printedAt         DateTime?            @map("printed_at")
+  postedAt          DateTime?            @map("posted_at")
+  deliveredAt       DateTime?            @map("delivered_at")
+  trackingReference String?              @map("tracking_reference")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  orderRecipient OrderRecipient @relation(fields: [orderRecipientId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("fulfillment_jobs")
+}
+
+// ---------------------------------------------------------------------------
+// Compliance
+// ---------------------------------------------------------------------------
+
+/// Records who accessed/exported recipient (children's) personal data — a
+/// UK GDPR non-negotiable, not optional polish. Written by the API layer,
+/// never the client.
+model AuditLogEntry {
+  id          String   @id @default(uuid())
+  accountId   String   @map("account_id")
+  actorUserId String   @map("actor_user_id")
+  action      String
+  targetType  String   @map("target_type")
+  targetId    String   @map("target_id")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_log_entries")
+}
