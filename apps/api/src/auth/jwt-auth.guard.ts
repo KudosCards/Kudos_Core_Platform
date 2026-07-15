@@ -74,7 +74,7 @@ export class JwtAuthGuard implements CanActivate {
       if (!isSupabaseJwtPayload(payload)) {
         throw new UnauthorizedException("Malformed token payload");
       }
-      if (payload.aud !== undefined && payload.aud !== "authenticated") {
+      if (payload.aud !== "authenticated") {
         throw new UnauthorizedException("Unexpected token audience");
       }
       return payload;

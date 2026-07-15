@@ -5,7 +5,9 @@ import { useCallback, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 
-interface Paginated<T> {
+export const PER_PAGE = 100;
+
+export interface Paginated<T> {
   items: T[];
   total: number;
   page: number;
@@ -21,19 +23,25 @@ interface ImportSummary {
 export function RecipientsClient({
   initialRecipients,
   initialTotal,
+  initialPage,
 }: {
   initialRecipients: Recipient[];
   initialTotal: number;
+  initialPage: number;
 }) {
   const [recipients, setRecipients] = useState(initialRecipients);
   const [total, setTotal] = useState(initialTotal);
+  const [page, setPage] = useState(initialPage);
   const [error, setError] = useState<string | null>(null);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
 
-  const reload = useCallback(async () => {
-    const result = await clientApiFetch<Paginated<Recipient>>("/recipients?perPage=100");
+  const reload = useCallback(async (targetPage: number) => {
+    const result = await clientApiFetch<Paginated<Recipient>>(
+      `/recipients?page=${targetPage}&perPage=${PER_PAGE}`,
+    );
     setRecipients(result.items);
     setTotal(result.total);
+    setPage(targetPage);
   }, []);
 
   async function handleAddRecipient(event: FormEvent<HTMLFormElement>) {
@@ -56,7 +64,7 @@ export function RecipientsClient({
         }),
       });
       event.currentTarget.reset();
-      await reload();
+      await reload(1); // new recipients sort first (createdAt desc) — jump back to page 1 to see it
     } catch (submitError) {
       setError(submitError instanceof ApiError ? submitError.message : "Could not add recipient");
     }
@@ -83,7 +91,7 @@ export function RecipientsClient({
       });
       setImportSummary(summary);
       event.currentTarget.reset();
-      await reload();
+      await reload(1);
     } catch (importError) {
       setError(importError instanceof ApiError ? importError.message : "Import failed");
     }
@@ -194,6 +202,30 @@ export function RecipientsClient({
           )}
         </tbody>
       </table>
+
+      {total > PER_PAGE && (
+        <div className="flex items-center justify-between text-sm">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => void reload(page - 1)}
+            className="rounded-full border border-black/20 px-4 py-2 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+          >
+            Previous
+          </button>
+          <span className="text-foreground/60">
+            Page {page} of {Math.max(1, Math.ceil(total / PER_PAGE))}
+          </span>
+          <button
+            type="button"
+            disabled={page * PER_PAGE >= total}
+            onClick={() => void reload(page + 1)}
+            className="rounded-full border border-black/20 px-4 py-2 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }

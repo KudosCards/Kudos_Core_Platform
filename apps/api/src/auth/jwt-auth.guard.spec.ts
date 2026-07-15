@@ -101,6 +101,12 @@ describe("JwtAuthGuard", () => {
     await expect(buildGuard().canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
+  it("rejects a token with no audience claim at all", async () => {
+    const token = await sign({ sub: USER_ID });
+    const { context } = buildContext(`Bearer ${token}`);
+    await expect(buildGuard().canActivate(context)).rejects.toThrow(UnauthorizedException);
+  });
+
   it("rejects a token missing the sub claim", async () => {
     const token = await sign({ email: "andrew@example.com", aud: "authenticated" });
     const { context } = buildContext(`Bearer ${token}`);

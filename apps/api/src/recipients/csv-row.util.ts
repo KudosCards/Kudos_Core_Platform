@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 const UK_DATE_REGEX = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 const UK_POSTCODE_REGEX = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
 
@@ -40,8 +42,12 @@ export function parseRecipientRow(row: Record<string, string>): ParsedRecipientR
     throw new Error(`"${postcode}" is not a valid UK postcode`);
   }
 
+  // Same rule as the JSON API (class-validator's @IsEmail) and @kudos/shared-types'
+  // recipientSchema (zod's .email()) — previously a separate, more permissive regex
+  // let malformed addresses (e.g. "a@b@example.com") into the DB via CSV that the
+  // JSON create/update endpoint would reject.
   const email = row.email?.trim();
-  if (email && !/^\S+@\S+\.\S+$/.test(email)) {
+  if (email && !z.string().email().safeParse(email).success) {
     throw new Error(`"${email}" is not a valid email address`);
   }
 
