@@ -17,7 +17,6 @@ env:
   DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kudos_ci
   DIRECT_URL: postgresql://postgres:postgres@localhost:5432/kudos_ci
   SUPABASE_URL: https://ci-placeholder.supabase.co
-  SUPABASE_JWT_SECRET: ci-placeholder-secret
   SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-key
   STRIPE_SECRET_KEY: sk_test_ci-placeholder
   STRIPE_WEBHOOK_SECRET: whsec_ci-placeholder

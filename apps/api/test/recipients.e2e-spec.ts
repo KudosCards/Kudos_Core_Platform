@@ -6,7 +6,7 @@ import request from "supertest";
 import { z } from "zod";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { createTestApp } from "./util/create-test-app";
-import { mintToken } from "./util/mint-token";
+import { mintToken } from "./util/test-jwks";
 
 const paginatedRecipientsSchema = z.object({
   items: z.array(recipientSchema),
@@ -24,7 +24,6 @@ const importSummarySchema = z.object({
 describe("Recipients (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
-  const secret = process.env.SUPABASE_JWT_SECRET ?? "";
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -37,7 +36,7 @@ describe("Recipients (e2e)", () => {
 
   /** Signs up a fresh account and returns a bearer token authorised against it. */
   async function signUp(): Promise<{ token: string; accountId: string }> {
-    const token = mintToken(secret, randomUUID());
+    const token = await mintToken(randomUUID());
     const response = await request(app.getHttpServer())
       .post("/accounts")
       .set("Authorization", `Bearer ${token}`)

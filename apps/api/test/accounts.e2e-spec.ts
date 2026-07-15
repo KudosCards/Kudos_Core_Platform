@@ -4,11 +4,10 @@ import { accountSchema } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { createTestApp } from "./util/create-test-app";
-import { mintToken } from "./util/mint-token";
+import { mintToken } from "./util/test-jwks";
 
 describe("Accounts (e2e)", () => {
   let app: INestApplication<App>;
-  const secret = process.env.SUPABASE_JWT_SECRET ?? "";
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -23,7 +22,7 @@ describe("Accounts (e2e)", () => {
   });
 
   it("rejects /accounts/me before any account exists for the user", async () => {
-    const token = mintToken(secret, randomUUID());
+    const token = await mintToken(randomUUID());
     await request(app.getHttpServer())
       .get("/accounts/me")
       .set("Authorization", `Bearer ${token}`)
@@ -31,7 +30,7 @@ describe("Accounts (e2e)", () => {
   });
 
   it("signs up a new account and then fetches it via /accounts/me", async () => {
-    const token = mintToken(secret, randomUUID());
+    const token = await mintToken(randomUUID());
 
     const signupResponse = await request(app.getHttpServer())
       .post("/accounts")
@@ -59,7 +58,7 @@ describe("Accounts (e2e)", () => {
   });
 
   it("rejects a second signup for the same user", async () => {
-    const token = mintToken(secret, randomUUID());
+    const token = await mintToken(randomUUID());
     await request(app.getHttpServer())
       .post("/accounts")
       .set("Authorization", `Bearer ${token}`)
@@ -74,7 +73,7 @@ describe("Accounts (e2e)", () => {
   });
 
   it("rejects an invalid account type", async () => {
-    const token = mintToken(secret, randomUUID());
+    const token = await mintToken(randomUUID());
     await request(app.getHttpServer())
       .post("/accounts")
       .set("Authorization", `Bearer ${token}`)

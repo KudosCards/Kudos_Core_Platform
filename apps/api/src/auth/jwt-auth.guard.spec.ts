@@ -1,12 +1,17 @@
 import { UnauthorizedException, type ExecutionContext } from "@nestjs/common";
-import type { ConfigService } from "@nestjs/config";
 import { Reflector } from "@nestjs/core";
-import jwt from "jsonwebtoken";
+import {
+  SignJWT,
+  createLocalJWKSet,
+  exportJWK,
+  generateKeyPair,
+  type JWTVerifyGetKey,
+  type KeyLike,
+} from "jose";
 import { JwtAuthGuard } from "./jwt-auth.guard";
-import type { EnvConfig } from "../config/env.schema";
 
-const SECRET = "test-secret";
 const USER_ID = "11111111-1111-1111-1111-111111111111";
+const KEY_ID = "test-key-1";
 
 function buildContext(authorizationHeader?: string): {
   context: ExecutionContext;
@@ -23,74 +28,91 @@ function buildContext(authorizationHeader?: string): {
   return { context, getRequest: () => request };
 }
 
-function sign(payload: Record<string, unknown>, secret = SECRET): string {
-  return jwt.sign(payload, secret, { algorithm: "HS256", expiresIn: "1h" });
-}
-
 describe("JwtAuthGuard", () => {
-  let guard: JwtAuthGuard;
-  let reflector: Reflector;
+  let privateKey: KeyLike;
+  let jwks: JWTVerifyGetKey;
+  let wrongKeyJwks: JWTVerifyGetKey;
 
-  beforeEach(() => {
-    reflector = new Reflector();
-    const config = {
-      get: () => SECRET,
-    } as unknown as ConfigService<EnvConfig, true>;
-    guard = new JwtAuthGuard(reflector, config);
+  beforeAll(async () => {
+    // A real ES256 keypair, matching how Supabase actually signs tokens —
+    // verified against a local JWKS built from the public half, exactly
+    // like createRemoteJWKSet does for the real endpoint, just without the
+    // network call.
+    const { privateKey: priv, publicKey } = await generateKeyPair("ES256");
+    privateKey = priv;
+    const publicJwk = await exportJWK(publicKey);
+    jwks = createLocalJWKSet({ keys: [{ ...publicJwk, kid: KEY_ID, alg: "ES256" }] });
+
+    const { publicKey: otherPublicKey } = await generateKeyPair("ES256");
+    const otherJwk = await exportJWK(otherPublicKey);
+    wrongKeyJwks = createLocalJWKSet({ keys: [{ ...otherJwk, kid: KEY_ID, alg: "ES256" }] });
   });
 
-  it("accepts a validly signed token and attaches the user to the request", () => {
-    const token = sign({ sub: USER_ID, email: "andrew@example.com", aud: "authenticated" });
+  function sign(
+    payload: Record<string, unknown>,
+    options: { expiresIn?: string; key?: KeyLike } = {},
+  ): Promise<string> {
+    return new SignJWT(payload)
+      .setProtectedHeader({ alg: "ES256", kid: KEY_ID })
+      .setIssuedAt()
+      .setExpirationTime(options.expiresIn ?? "1h")
+      .sign(options.key ?? privateKey);
+  }
+
+  function buildGuard(resolver: JWTVerifyGetKey = jwks): JwtAuthGuard {
+    return new JwtAuthGuard(new Reflector(), resolver);
+  }
+
+  it("accepts a validly signed token and attaches the user to the request", async () => {
+    const token = await sign({ sub: USER_ID, email: "andrew@example.com", aud: "authenticated" });
     const { context, getRequest } = buildContext(`Bearer ${token}`);
 
-    expect(guard.canActivate(context)).toBe(true);
+    await expect(buildGuard().canActivate(context)).resolves.toBe(true);
     expect(getRequest().authUser).toEqual({ id: USER_ID, email: "andrew@example.com" });
   });
 
-  it("rejects a missing Authorization header", () => {
+  it("rejects a missing Authorization header", async () => {
     const { context } = buildContext();
-    expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
+    await expect(buildGuard().canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
-  it("rejects a header that isn't a Bearer token", () => {
+  it("rejects a header that isn't a Bearer token", async () => {
     const { context } = buildContext("Basic abc123");
-    expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
+    await expect(buildGuard().canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
-  it("rejects a token signed with the wrong secret", () => {
-    const token = sign({ sub: USER_ID, aud: "authenticated" }, "wrong-secret");
+  it("rejects a token signed with a key not in the JWKS", async () => {
+    const token = await sign({ sub: USER_ID, aud: "authenticated" });
     const { context } = buildContext(`Bearer ${token}`);
-    expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
+    await expect(buildGuard(wrongKeyJwks).canActivate(context)).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 
-  it("rejects an expired token", () => {
-    const token = jwt.sign({ sub: USER_ID, aud: "authenticated" }, SECRET, {
-      algorithm: "HS256",
-      expiresIn: -10,
-    });
+  it("rejects an expired token", async () => {
+    const token = await sign({ sub: USER_ID, aud: "authenticated" }, { expiresIn: "-10s" });
     const { context } = buildContext(`Bearer ${token}`);
-    expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
+    await expect(buildGuard().canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
-  it("rejects an unexpected audience claim", () => {
-    const token = sign({ sub: USER_ID, aud: "some-other-audience" });
+  it("rejects an unexpected audience claim", async () => {
+    const token = await sign({ sub: USER_ID, aud: "some-other-audience" });
     const { context } = buildContext(`Bearer ${token}`);
-    expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
+    await expect(buildGuard().canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
-  it("rejects a token missing the sub claim", () => {
-    const token = sign({ email: "andrew@example.com", aud: "authenticated" });
+  it("rejects a token missing the sub claim", async () => {
+    const token = await sign({ email: "andrew@example.com", aud: "authenticated" });
     const { context } = buildContext(`Bearer ${token}`);
-    expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
+    await expect(buildGuard().canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
-  it("allows a route marked @Public() through without a token", () => {
-    reflector = new Reflector();
+  it("allows a route marked @Public() through without a token", async () => {
+    const reflector = new Reflector();
     jest.spyOn(reflector, "getAllAndOverride").mockReturnValue(true);
-    const config = { get: () => SECRET } as unknown as ConfigService<EnvConfig, true>;
-    guard = new JwtAuthGuard(reflector, config);
+    const guard = new JwtAuthGuard(reflector, jwks);
 
     const { context } = buildContext();
-    expect(guard.canActivate(context)).toBe(true);
+    await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 });

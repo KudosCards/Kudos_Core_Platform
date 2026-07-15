@@ -1,40 +1,40 @@
 import {
   CanActivate,
   ExecutionContext,
+  Inject,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import jwt from "jsonwebtoken";
+import { jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose";
 import { IS_PUBLIC_KEY } from "./public.decorator";
-import type { EnvConfig } from "../config/env.schema";
+import { JWKS_RESOLVER } from "./jwks.provider";
 import type { AuthenticatedUser } from "./types";
 
-interface SupabaseJwtPayload {
+interface SupabaseJwtPayload extends JWTPayload {
   sub: string;
   email?: string;
-  aud?: string;
 }
 
-function isSupabaseJwtPayload(payload: string | jwt.JwtPayload): payload is SupabaseJwtPayload {
-  return typeof payload === "object" && typeof payload.sub === "string";
+function isSupabaseJwtPayload(payload: JWTPayload): payload is SupabaseJwtPayload {
+  return typeof payload.sub === "string";
 }
 
 /**
- * Verifies Supabase-issued JWTs against the project's shared JWT secret
- * (HS256) — no network call to Supabase required. Applied globally via
- * APP_GUARD; routes opt out with @Public().
+ * Verifies Supabase-issued JWTs against the project's published JWKS
+ * (asymmetric ECC P-256 verification keys, fetched and cached by `jose`,
+ * re-fetched automatically on key rotation) — no shared secret involved.
+ * Applied globally via APP_GUARD; routes opt out with @Public().
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly config: ConfigService<EnvConfig, true>,
+    @Inject(JWKS_RESOLVER) private readonly jwks: JWTVerifyGetKey,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -49,7 +49,7 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException("Missing bearer token");
     }
 
-    const payload = this.verify(token);
+    const payload = await this.verify(token);
     const authUser: AuthenticatedUser = {
       id: payload.sub,
       email: payload.email ?? null,
@@ -66,10 +66,10 @@ export class JwtAuthGuard implements CanActivate {
     return header.slice("Bearer ".length).trim() || null;
   }
 
-  private verify(token: string): SupabaseJwtPayload {
+  private async verify(token: string): Promise<SupabaseJwtPayload> {
     try {
-      const payload = jwt.verify(token, this.config.get("SUPABASE_JWT_SECRET", { infer: true }), {
-        algorithms: ["HS256"],
+      const { payload } = await jwtVerify(token, this.jwks, {
+        algorithms: ["ES256"],
       });
       if (!isSupabaseJwtPayload(payload)) {
         throw new UnauthorizedException("Malformed token payload");
