@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import Stripe from "stripe";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { MessagesService } from "../messages/messages.service";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import type { EnvConfig } from "../config/env.schema";
 import { mapStripeSubscriptionStatus } from "./subscription-status.util";
@@ -19,6 +20,7 @@ export class WebhooksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly messages: MessagesService,
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
   ) {}
@@ -110,6 +112,13 @@ export class WebhooksService {
         })),
         skipDuplicates: true,
       });
+      // Every paid card gets its QR-code message page here, alongside its
+      // fulfillment job — content empty until the account personalises it.
+      // See docs/adr/0009-phase-4-message-pages.md.
+      await this.messages.createForOrderRecipients(
+        tx,
+        orderRecipients.map((recipient) => recipient.id),
+      );
 
       const order = await tx.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
       await this.audit.record({

@@ -3,8 +3,14 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentMembership } from "../auth/current-membership.decorator";
 import type { CurrentMembershipContext } from "../auth/types";
-import { StorageService, type SignedUpload } from "./storage.service";
+import {
+  StorageService,
+  DESIGN_ASSETS_BUCKET,
+  MESSAGE_VIDEOS_BUCKET,
+  type SignedUpload,
+} from "./storage.service";
 import { CreateUploadDto } from "./dto/create-upload.dto";
+import { CreateVideoUploadDto } from "./dto/create-video-upload.dto";
 
 @ApiTags("uploads")
 @ApiBearerAuth()
@@ -18,6 +24,18 @@ export class StorageController {
     @CurrentMembership() membership: CurrentMembershipContext,
     @Body() dto: CreateUploadDto,
   ): Promise<SignedUpload> {
-    return this.storageService.createSignedUpload(membership.accountId, dto);
+    return this.storageService.createSignedUpload(DESIGN_ASSETS_BUCKET, membership.accountId, dto);
+  }
+
+  @Post("message-videos")
+  createMessageVideoUpload(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Body() dto: CreateVideoUploadDto,
+  ): Promise<SignedUpload> {
+    return this.storageService.createSignedUpload(
+      MESSAGE_VIDEOS_BUCKET,
+      membership.accountId,
+      dto,
+    );
   }
 }

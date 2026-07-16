@@ -169,6 +169,14 @@ describe("Webhooks (e2e)", () => {
     });
     expect(fulfillmentJobs).toHaveLength(1);
     expect(fulfillmentJobs[0]?.status).toBe("pending");
+
+    // Every paid card also gets an (empty) message page with a slug.
+    const messagePage = await prisma.messagePage.findUnique({
+      where: { orderRecipientId: orderRecipients[0]!.id },
+    });
+    expect(messagePage).not.toBeNull();
+    expect(messagePage!.slug.length).toBeGreaterThanOrEqual(6);
+    expect(messagePage!.message).toBeNull();
   });
 
   it("is idempotent under Stripe's at-least-once redelivery", async () => {

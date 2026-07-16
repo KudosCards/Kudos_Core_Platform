@@ -16,6 +16,7 @@ import { BillingModule } from "./billing/billing.module";
 import { BatchOrdersModule } from "./batch-orders/batch-orders.module";
 import { WebhooksModule } from "./webhooks/webhooks.module";
 import { SubscriptionsModule } from "./subscriptions/subscriptions.module";
+import { MessagesModule } from "./messages/messages.module";
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { SubscriptionsModule } from "./subscriptions/subscriptions.module";
     BatchOrdersModule,
     WebhooksModule,
     SubscriptionsModule,
+    MessagesModule,
   ],
 })
 export class AppModule {}
