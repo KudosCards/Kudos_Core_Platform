@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import {
+  BadGatewayException,
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CardDesign, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
@@ -57,7 +63,18 @@ export class CatalogSyncService {
       );
     }
 
-    const records = await this.source.fetchActiveCards();
+    // Surface the real Airtable failure (bad token, wrong base/table, rate
+    // limit) to the operator instead of a generic 500 — an ops tool has to say
+    // *why* a sync failed, or it can't be operated. See docs/adr/0011.
+    let records: CatalogCardRecord[];
+    try {
+      records = await this.source.fetchActiveCards();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Airtable fetch failed: ${message}`);
+      throw new BadGatewayException(`Could not read the catalog from Airtable: ${message}`);
+    }
+
     const summary: CatalogSyncSummary = {
       fetched: records.length,
       created: 0,

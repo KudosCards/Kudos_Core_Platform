@@ -94,6 +94,8 @@ describe("AirtableCatalogSource", () => {
       text: () => Promise.resolve("unauthorised"),
     } as unknown as Response);
 
-    await expect(new AirtableCatalogSource(config).fetchActiveCards()).rejects.toThrow(/401/);
+    await expect(new AirtableCatalogSource(config).fetchActiveCards()).rejects.toThrow(
+      /401.*token is invalid/,
+    );
   });
 });

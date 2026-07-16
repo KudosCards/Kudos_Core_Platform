@@ -162,7 +162,9 @@ export class AirtableCatalogSource implements CatalogSource {
       const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
       if (!response.ok) {
         const body = await response.text().catch(() => "");
-        throw new Error(`Airtable request failed (${response.status}): ${body.slice(0, 300)}`);
+        throw new Error(
+          `Airtable request failed (${response.status}) — ${hintFor(response.status, this.config.tableName)}. ${body.slice(0, 200)}`,
+        );
       }
 
       const data = (await response.json()) as AirtableListResponse;
@@ -174,6 +176,24 @@ export class AirtableCatalogSource implements CatalogSource {
     }
 
     throw new Error(`Airtable pagination exceeded ${MAX_PAGES} pages — aborting`);
+  }
+}
+
+/** Turns an Airtable HTTP status into an operator-actionable hint. */
+function hintFor(status: number, tableName: string): string {
+  switch (status) {
+    case 401:
+      return "the token is invalid or was regenerated — update AIRTABLE_API_KEY in Railway with the current token";
+    case 403:
+      return "the token doesn't have access to this base — check its scope and that the base is added to the token";
+    case 404:
+      return `base or table not found — check AIRTABLE_BASE_ID and that a table named "${tableName}" exists (AIRTABLE_CARDS_TABLE)`;
+    case 422:
+      return "Airtable rejected the request — check AIRTABLE_CARDS_TABLE matches the table name exactly";
+    case 429:
+      return "Airtable rate limit hit — wait a moment and try again";
+    default:
+      return "unexpected Airtable error";
   }
 }
 
