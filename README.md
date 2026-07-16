@@ -86,3 +86,6 @@ every PR.
   the dashboard's Base/Build/Publish fields being set correctly by hand. Needs
   `NEXT_PUBLIC_API_URL` pointed at the live API URL, and the API's `WEB_APP_URL` pointed back at
   the live web URL (for CORS).
+
+For a full launch checklist — Supabase buckets, Stripe Price ids and webhooks, ops-admin bootstrap,
+and the test-mode-first verification flow — see the [go-live runbook](./docs/go-live-runbook.md).

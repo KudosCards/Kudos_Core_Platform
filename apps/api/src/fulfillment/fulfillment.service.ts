@@ -6,9 +6,18 @@ import type { Paginated } from "../common/paginated";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import type { TransitionFulfillmentDto, TransitionableStatus } from "./dto/transition-fulfillment.dto";
 import type { BulkTransitionFulfillmentDto } from "./dto/bulk-transition-fulfillment.dto";
+import type { ExportAddressesDto } from "./dto/export-addresses.dto";
 
-/** Everything an operator needs to physically produce and dispatch one card. */
-const FULFILLMENT_JOB_SELECT = {
+/**
+ * The queue *overview* — deliberately withholds the street address
+ * (shippingAddressLine1/2). An operator can triage and plan a print run from
+ * name + occasion + design + postage + city/postcode + dispatch date without
+ * every child's full home address sitting on one cross-account screen. The
+ * full address is revealed only via the audited export endpoint (see
+ * exportAddresses) or a single card's detail view. Data minimisation — the
+ * GDPR principle, not just accountability.
+ */
+const QUEUE_SELECT = {
   id: true,
   status: true,
   assignedToUserId: true,
@@ -21,22 +30,48 @@ const FULFILLMENT_JOB_SELECT = {
     select: {
       id: true,
       batchOrderId: true,
-      shippingAddressLine1: true,
-      shippingAddressLine2: true,
       shippingAddressCity: true,
       shippingAddressPostcode: true,
-      shippingAddressCountry: true,
       dispatchOption: true,
       postageClass: true,
       recipient: { select: { firstName: true, lastName: true } },
-      savedDesign: { select: { id: true, name: true, document: true } },
+      savedDesign: { select: { id: true, name: true } },
       occasion: { select: { type: true, occasionDate: true, dispatchDate: true } },
       batchOrder: { select: { accountId: true } },
     },
   },
 } satisfies Prisma.FulfillmentJobSelect;
 
-export type FulfillmentJob = Prisma.FulfillmentJobGetPayload<{ select: typeof FULFILLMENT_JOB_SELECT }>;
+/** The full single-card detail, including the street address needed to
+ * actually produce and label a card. Every read of this is audited. */
+const DETAIL_SELECT = {
+  ...QUEUE_SELECT,
+  orderRecipient: {
+    select: {
+      ...QUEUE_SELECT.orderRecipient.select,
+      shippingAddressLine1: true,
+      shippingAddressLine2: true,
+      shippingAddressCountry: true,
+      savedDesign: { select: { id: true, name: true, document: true } },
+    },
+  },
+} satisfies Prisma.FulfillmentJobSelect;
+
+export type FulfillmentQueueJob = Prisma.FulfillmentJobGetPayload<{ select: typeof QUEUE_SELECT }>;
+export type FulfillmentJob = Prisma.FulfillmentJobGetPayload<{ select: typeof DETAIL_SELECT }>;
+
+/** One card's dispatch label, returned by the audited export. */
+export interface ExportedAddress {
+  jobId: string;
+  recipientFirstName: string;
+  recipientLastName: string;
+  shippingAddressLine1: string;
+  shippingAddressLine2: string | null;
+  shippingAddressCity: string;
+  shippingAddressPostcode: string;
+  shippingAddressCountry: string;
+  postageClass: string;
+}
 
 /** Which current statuses permit a transition *to* each target — the inverse
  * of the forward-only state machine (pending → printed → posted → delivered,
@@ -60,7 +95,7 @@ export class FulfillmentService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(query: ListFulfillmentQueryDto): Promise<Paginated<FulfillmentJob>> {
+  async list(query: ListFulfillmentQueryDto): Promise<Paginated<FulfillmentQueueJob>> {
     const where: Prisma.FulfillmentJobWhereInput = {
       status: query.status ?? FulfillmentJobStatus.pending,
     };
@@ -73,7 +108,7 @@ export class FulfillmentService {
         // Oldest first: the queue is worked front-to-back, and dispatchDate
         // is what actually determines send urgency.
         orderBy: [{ createdAt: "asc" }],
-        select: FULFILLMENT_JOB_SELECT,
+        select: QUEUE_SELECT,
       }),
       this.prisma.fulfillmentJob.count({ where }),
     ]);
@@ -84,7 +119,7 @@ export class FulfillmentService {
   async findOne(actorUserId: string, id: string): Promise<FulfillmentJob> {
     const job = await this.prisma.fulfillmentJob.findUnique({
       where: { id },
-      select: FULFILLMENT_JOB_SELECT,
+      select: DETAIL_SELECT,
     });
     if (!job) {
       throw new NotFoundException("Fulfillment job not found");
@@ -102,7 +137,7 @@ export class FulfillmentService {
   }
 
   /** Optional "I'm working on this" assignment: pending → in_progress. */
-  async claim(actorUserId: string, id: string): Promise<FulfillmentJob> {
+  async claim(actorUserId: string, id: string): Promise<FulfillmentQueueJob> {
     const { count } = await this.prisma.fulfillmentJob.updateMany({
       where: { id, status: "pending" },
       data: { status: "in_progress", assignedToUserId: actorUserId },
@@ -114,9 +149,11 @@ export class FulfillmentService {
       }
       throw new ConflictException(`Job is "${existing.status}", not claimable`);
     }
+    // Returns the queue view (no street address) — a status change shouldn't
+    // leak the full address back; that only comes via the audited paths.
     return this.prisma.fulfillmentJob.findUniqueOrThrow({
       where: { id },
-      select: FULFILLMENT_JOB_SELECT,
+      select: QUEUE_SELECT,
     });
   }
 
@@ -124,7 +161,7 @@ export class FulfillmentService {
     actorUserId: string,
     id: string,
     dto: TransitionFulfillmentDto,
-  ): Promise<FulfillmentJob> {
+  ): Promise<FulfillmentQueueJob> {
     await this.prisma.$transaction(async (tx) => {
       const applied = await this.applyTransition(tx, actorUserId, id, dto.toStatus, {
         trackingReference: dto.trackingReference,
@@ -142,7 +179,51 @@ export class FulfillmentService {
     });
     return this.prisma.fulfillmentJob.findUniqueOrThrow({
       where: { id },
-      select: FULFILLMENT_JOB_SELECT,
+      select: QUEUE_SELECT,
+    });
+  }
+
+  /**
+   * Returns full dispatch addresses for a set of jobs — the print-run export.
+   * This is the deliberate, audited moment full home addresses are revealed:
+   * one audit row per card, committed in the same transaction as the read, so
+   * the trail can't be dodged by reading without recording. Data comes back
+   * only if every audit row is written.
+   */
+  async exportAddresses(actorUserId: string, dto: ExportAddressesDto): Promise<ExportedAddress[]> {
+    return this.prisma.$transaction(async (tx) => {
+      const jobs = await tx.fulfillmentJob.findMany({
+        where: { id: { in: dto.jobIds } },
+        select: DETAIL_SELECT,
+      });
+
+      for (const job of jobs) {
+        await this.audit.record(
+          {
+            accountId: job.orderRecipient.batchOrder.accountId,
+            actorUserId,
+            action: "fulfillment_address_export",
+            targetType: "FulfillmentJob",
+            targetId: job.id,
+          },
+          tx,
+        );
+      }
+
+      return jobs.map((job) => {
+        const r = job.orderRecipient;
+        return {
+          jobId: job.id,
+          recipientFirstName: r.recipient.firstName,
+          recipientLastName: r.recipient.lastName,
+          shippingAddressLine1: r.shippingAddressLine1,
+          shippingAddressLine2: r.shippingAddressLine2,
+          shippingAddressCity: r.shippingAddressCity,
+          shippingAddressPostcode: r.shippingAddressPostcode,
+          shippingAddressCountry: r.shippingAddressCountry,
+          postageClass: r.postageClass,
+        };
+      });
     });
   }
 

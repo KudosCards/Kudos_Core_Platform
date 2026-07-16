@@ -9,22 +9,36 @@ import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
 export type FulfillmentStatus =
   "pending" | "in_progress" | "printed" | "posted" | "delivered" | "failed";
 
+/**
+ * The queue view deliberately has NO street address — only city + postcode,
+ * enough to triage a print run. Full addresses come from the audited export
+ * (see exportAddresses below), not this list. Mirrors the API's QUEUE_SELECT.
+ */
 export interface FulfillmentJob {
   id: string;
   status: FulfillmentStatus;
   trackingReference: string | null;
   orderRecipient: {
-    shippingAddressLine1: string;
-    shippingAddressLine2: string | null;
     shippingAddressCity: string;
     shippingAddressPostcode: string;
-    shippingAddressCountry: string;
     dispatchOption: string;
     postageClass: string;
     recipient: { firstName: string; lastName: string };
     savedDesign: { id: string; name: string };
     occasion: { type: string; occasionDate: string } | null;
   };
+}
+
+interface ExportedAddress {
+  jobId: string;
+  recipientFirstName: string;
+  recipientLastName: string;
+  shippingAddressLine1: string;
+  shippingAddressLine2: string | null;
+  shippingAddressCity: string;
+  shippingAddressPostcode: string;
+  shippingAddressCountry: string;
+  postageClass: string;
 }
 
 /** The single forward step offered for each status (bulk uses the same map). */
@@ -49,6 +63,35 @@ const POSTAGE_LABELS: Record<string, string> = {
   second_class: "2nd class",
 };
 
+function csvCell(value: string): string {
+  // Quote if the value contains a comma, quote, or newline; double embedded quotes.
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function downloadCsv(rows: ExportedAddress[]): void {
+  const header = ["Recipient", "Line 1", "Line 2", "City", "Postcode", "Country", "Postage"];
+  const lines = rows.map((r) =>
+    [
+      `${r.recipientFirstName} ${r.recipientLastName}`,
+      r.shippingAddressLine1,
+      r.shippingAddressLine2 ?? "",
+      r.shippingAddressCity,
+      r.shippingAddressPostcode,
+      r.shippingAddressCountry,
+      r.postageClass,
+    ]
+      .map(csvCell)
+      .join(","),
+  );
+  const csv = [header.join(","), ...lines].join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `dispatch-addresses-${new Date().toISOString().slice(0, 10)}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export function FulfillmentClient({
   initialJobs,
   status,
@@ -62,6 +105,7 @@ export function FulfillmentClient({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkPending, setBulkPending] = useState(false);
+  const [exportPending, setExportPending] = useState(false);
 
   function removeJob(id: string) {
     setJobs((current) => current.filter((j) => j.id !== id));
@@ -126,6 +170,27 @@ export function FulfillmentClient({
     }
   }
 
+  async function exportAddresses() {
+    if (selected.size === 0) return;
+    setError(null);
+    setExportPending(true);
+    try {
+      // The full home addresses are deliberately NOT in the queue payload —
+      // pulling them is an explicit, server-audited action (one audit row per
+      // card). We turn them straight into a CSV the operator can mail-merge
+      // into address labels for the print run.
+      const rows = await clientApiFetch<ExportedAddress[]>("/fulfillment/export", {
+        method: "POST",
+        body: JSON.stringify({ jobIds: [...selected] }),
+      });
+      downloadCsv(rows);
+    } catch (exportError) {
+      setError(exportError instanceof ApiError ? exportError.message : "Export failed");
+    } finally {
+      setExportPending(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -152,16 +217,26 @@ export function FulfillmentClient({
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {bulkStep && jobs.length > 0 && (
-        <div className="flex items-center gap-3 text-sm">
+      {jobs.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
           <button
             type="button"
-            disabled={bulkPending || selected.size === 0}
-            onClick={() => void bulkAdvance()}
-            className="rounded-full bg-foreground px-4 py-1.5 text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={exportPending || selected.size === 0}
+            onClick={() => void exportAddresses()}
+            className="rounded-full border border-black/20 px-4 py-1.5 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
           >
-            {bulkPending ? "Working…" : `${bulkStep.label} for ${selected.size} selected`}
+            {exportPending ? "Exporting…" : `Export addresses (${selected.size})`}
           </button>
+          {bulkStep && (
+            <button
+              type="button"
+              disabled={bulkPending || selected.size === 0}
+              onClick={() => void bulkAdvance()}
+              className="rounded-full bg-foreground px-4 py-1.5 text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {bulkPending ? "Working…" : `${bulkStep.label} (${selected.size})`}
+            </button>
+          )}
         </div>
       )}
 
@@ -178,14 +253,12 @@ export function FulfillmentClient({
                 className="flex flex-col gap-2 rounded-lg border border-black/10 p-4 sm:flex-row sm:items-start sm:justify-between dark:border-white/10"
               >
                 <div className="flex items-start gap-3">
-                  {bulkStep && (
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={selected.has(job.id)}
-                      onChange={() => toggle(job.id)}
-                    />
-                  )}
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={selected.has(job.id)}
+                    onChange={() => toggle(job.id)}
+                  />
                   <div>
                     <p className="font-medium">
                       {r.recipient.firstName} {r.recipient.lastName}
@@ -197,8 +270,6 @@ export function FulfillmentClient({
                       )}
                     </p>
                     <p className="text-sm text-foreground/70">
-                      {r.shippingAddressLine1}
-                      {r.shippingAddressLine2 ? `, ${r.shippingAddressLine2}` : ""},{" "}
                       {r.shippingAddressCity} {r.shippingAddressPostcode}
                     </p>
                     <p className="text-xs text-foreground/50">

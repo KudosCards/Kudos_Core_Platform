@@ -58,7 +58,25 @@ then posted, together. A bulk transition endpoint (array of job ids → one stat
 deferred, because a queue that only advances one card at a time doesn't match how the work is
 actually done.
 
+**Data minimisation on the queue, not just accountability.** The recipients are children; the
+addresses are their homes. GDPR wants the *least* data exposed, not merely a log of who saw
+everything. So the queue *list* deliberately withholds the street address (`shippingAddressLine1/2`)
+— it carries only name, occasion, design, postage, and city + postcode, which is enough to triage
+and plan a print run. The full address is revealed only through two audited paths: a single card's
+detail view, and a **`POST /fulfillment/export`** print-run endpoint that returns full dispatch
+addresses and writes one audit row per card in the same transaction as the read (so the trail
+can't be dodged by reading without recording). This reduces the blast radius of a curious or
+compromised ops account — no single screen exposes every child's home address — and makes the audit
+trail *precise* (per-card access at a known time) rather than noisy (per-account list-view rows).
+The ops UI turns an export straight into a CSV for mail-merged address labels, so the
+triage-then-pull-labels workflow stays fast.
+
 ## Alternatives considered
+
+- **Audit the queue list instead of minimising it** — rejected as the primary fix: it doubles down
+  on over-exposure (faithfully recording that everyone sees everything) rather than reducing what's
+  exposed, and it fights the audit schema (a cross-account list-view has no single `accountId`).
+  Minimise-plus-audited-export is the stronger GDPR posture.
 
 - **Supabase `app_metadata` role claim** — rejected: moves the security-critical allowlist out of
   the repo into dashboard-managed metadata, harder to audit, seed, and test.
