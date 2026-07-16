@@ -413,6 +413,18 @@ model FulfillmentJob {
   @@map("fulfillment_jobs")
 }
 
+/// A Kudos Cards internal operator (print/post staff), distinct from a tuition
+/// centre's Membership. Presence here grants cross-account access to the
+/// fulfillment queue via PlatformAdminGuard — see docs/adr/0010. userId is the
+/// Supabase auth user id, same source as Membership.userId.
+model PlatformAdmin {
+  id        String   @id @default(uuid())
+  userId    String   @unique @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("platform_admins")
+}
+
 // ---------------------------------------------------------------------------
 // Compliance
 // ---------------------------------------------------------------------------
