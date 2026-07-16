@@ -75,6 +75,12 @@ export class CatalogSyncService {
       throw new BadGatewayException(`Could not read the catalog from Airtable: ${message}`);
     }
 
+    // Self-heal the storage bucket: create it (public) in the very project the
+    // uploads target, so a missing/mis-named/wrong-project bucket can't turn
+    // every artwork copy into "Bucket not found". Idempotent — a no-op when it
+    // already exists.
+    await this.ensureBucket();
+
     const summary: CatalogSyncSummary = {
       fetched: records.length,
       created: 0,
@@ -129,6 +135,33 @@ export class CatalogSyncService {
         `images copied ${summary.imagesCopied}, errors ${summary.errors.length}`,
     );
     return summary;
+  }
+
+  /**
+   * Ensures the design-assets bucket exists and is public, using the same
+   * client (project + service key) the uploads use — so operators never have to
+   * hand-create it in the right project. createBucket is idempotent-ish: it
+   * errors "already exists", which we treat as success (then make sure it's
+   * public so thumbnails render). Any other failure is logged, not fatal — the
+   * per-card copy will still report the real reason.
+   */
+  private async ensureBucket(): Promise<void> {
+    const { error } = await this.storage.storage.createBucket(DESIGN_ASSETS_BUCKET, {
+      public: true,
+    });
+    if (!error) {
+      this.logger.log(`Created storage bucket "${DESIGN_ASSETS_BUCKET}"`);
+      return;
+    }
+    if (/exist/i.test(error.message)) {
+      // Already there — make sure it's public (a private bucket would upload
+      // fine but the stored public URLs wouldn't render).
+      await this.storage.storage
+        .updateBucket(DESIGN_ASSETS_BUCKET, { public: true })
+        .catch(() => undefined);
+      return;
+    }
+    this.logger.warn(`Could not ensure "${DESIGN_ASSETS_BUCKET}" bucket: ${error.message}`);
   }
 
   /**

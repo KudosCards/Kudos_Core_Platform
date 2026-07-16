@@ -18,8 +18,14 @@ const sourceMock: CatalogSource = {
 
 /** A fake Supabase storage client that records uploads without any network. */
 const uploadedPaths: string[] = [];
+const createdBuckets: string[] = [];
 const storageMock = {
   storage: {
+    createBucket: (name: string) => {
+      createdBuckets.push(name);
+      return Promise.resolve({ data: { name }, error: null });
+    },
+    updateBucket: () => Promise.resolve({ data: null, error: null }),
     from: () => ({
       upload: (path: string) => {
         uploadedPaths.push(path);
@@ -73,6 +79,7 @@ describe("Catalog sync (e2e)", () => {
   beforeEach(() => {
     activeCards = [];
     uploadedPaths.length = 0;
+    createdBuckets.length = 0;
   });
 
   async function opsToken(): Promise<string> {
@@ -130,6 +137,8 @@ describe("Catalog sync (e2e)", () => {
 
     expect(response.body).toMatchObject({ fetched: 1, created: 1, updated: 0, imagesCopied: 1 });
     expect(uploadedPaths).toEqual([`catalog/${externalId}.png`]);
+    // The sync self-heals the storage bucket before copying artwork.
+    expect(createdBuckets).toContain("design-assets");
 
     const design = await prisma.cardDesign.findUnique({ where: { externalId } });
     expect(design).not.toBeNull();
