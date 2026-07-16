@@ -23,6 +23,18 @@ export interface SignedUpload {
 export class StorageService {
   constructor(@Inject(DESIGN_ASSET_STORAGE_CLIENT) private readonly supabase: SupabaseClient) {}
 
+  /**
+   * `dto.contentType` is validated by CreateUploadDto for shape (must look
+   * like an image MIME type) but is NOT enforced here — the installed
+   * @supabase/storage-js version's `createSignedUploadUrl(path, options?)`
+   * has no parameter to constrain what a client actually PUTs to the
+   * resulting URL (confirmed against its type signature; `options` is only
+   * `{ upsert }`). A client can request a URL claiming "image/png" and then
+   * upload arbitrary bytes/content-type to it. Real enforcement has to come
+   * from the `design-assets` Supabase Storage bucket's own configuration
+   * (`allowedMimeTypes` / `fileSizeLimit`, set via the Supabase dashboard or
+   * Management API) — this service has no code-level way to add it.
+   */
   async createSignedUpload(accountId: string, dto: CreateUploadDto): Promise<SignedUpload> {
     const path = `${accountId}/${randomUUID()}-${sanitizeFileName(dto.fileName)}`;
 

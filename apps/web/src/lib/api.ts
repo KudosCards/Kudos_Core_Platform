@@ -36,12 +36,32 @@ export async function apiFetch<T>(
 
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
-    throw new ApiError(
-      `API request to ${path} failed with ${response.status}`,
-      response.status,
-      body,
-    );
+    throw new ApiError(extractErrorMessage(body, path, response.status), response.status, body);
   }
 
   return response.json() as Promise<T>;
+}
+
+/**
+ * Nest's default exception filter returns `{ message, error, statusCode }`,
+ * where `message` is a plain string for most exceptions (Conflict, Forbidden,
+ * NotFound, ...) but an array of strings for ValidationPipe failures (one per
+ * invalid field). Previously every caller only ever saw a generic
+ * "API request to X failed with 403" — the real, actionable reason (e.g.
+ * "This plan allows up to 5 cards per batch order") was sitting in the
+ * response body but nothing read it.
+ */
+function extractErrorMessage(body: unknown, path: string, status: number): string {
+  const fallback = `API request to ${path} failed with ${status}`;
+  if (!body || typeof body !== "object" || !("message" in body)) {
+    return fallback;
+  }
+  const { message } = body as { message: unknown };
+  if (typeof message === "string" && message.length > 0) {
+    return message;
+  }
+  if (Array.isArray(message) && message.every((m) => typeof m === "string") && message.length > 0) {
+    return message.join(", ");
+  }
+  return fallback;
 }

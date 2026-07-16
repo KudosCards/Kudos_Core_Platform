@@ -1,6 +1,6 @@
 import { serverApiFetch } from "@/lib/api.server";
 import type { OccasionWithRecipient } from "../approvals/approvals-client";
-import { BatchOrdersClient } from "./batch-orders-client";
+import { BatchOrdersClient, type UnfinishedBatchOrder } from "./batch-orders-client";
 
 interface Paginated<T> {
   items: T[];
@@ -10,9 +10,22 @@ interface Paginated<T> {
 }
 
 export default async function BatchOrdersPage() {
-  const occasions = await serverApiFetch<Paginated<OccasionWithRecipient>>(
-    "/occasions?status=approved&perPage=50",
+  const [occasions, orders] = await Promise.all([
+    serverApiFetch<Paginated<OccasionWithRecipient>>("/occasions?status=approved&perPage=50"),
+    serverApiFetch<Paginated<UnfinishedBatchOrder>>("/batch-orders?perPage=50"),
+  ]);
+
+  // No multi-status filter on the list endpoint, so fetch everything recent
+  // and filter here — "unfinished" means still holding occasions hostage
+  // (queued, not yet paid or released) with no other place in the UI to see it.
+  const unfinishedOrders = (orders?.items ?? []).filter(
+    (order) => order.status === "draft" || order.status === "pending_payment",
   );
 
-  return <BatchOrdersClient initialOccasions={occasions?.items ?? []} />;
+  return (
+    <BatchOrdersClient
+      initialOccasions={occasions?.items ?? []}
+      initialUnfinishedOrders={unfinishedOrders}
+    />
+  );
 }

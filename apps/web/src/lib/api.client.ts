@@ -11,7 +11,13 @@ export async function clientApiFetch<T>(path: string, init?: RequestInit): Promi
   } = await supabase.auth.getSession();
 
   if (!session) {
-    throw new Error("No active session — redirecting to login should have happened already");
+    // The middleware only guards navigation, not calls made from an
+    // already-mounted Client Component — a session that expires while the
+    // user is active on a page needs to be handled here too, or every
+    // caller's catch block was showing a permanent, misleading generic
+    // error instead of ever getting the user back to a working state.
+    window.location.assign("/login");
+    throw new Error("Session expired — redirecting to login");
   }
 
   return apiFetch<T>(path, session.access_token, init);

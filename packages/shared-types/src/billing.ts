@@ -38,7 +38,12 @@ export const planEntitlementSchema = z.object({
   planId: z.string(),
   recipientCap: z.number().int().positive().nullable(), // null = unlimited
   batchOrderMaxSize: z.number().int().positive(),
-  cardDiscountPercent: z.number().min(0).max(100),
+  // Prisma's Decimal(5,2) column serialises to JSON as a string (Prisma.Decimal
+  // has a toJSON() returning e.g. "10.00"), not a number — z.coerce handles
+  // either shape rather than assuming the JS-side representation.
+  cardDiscountPercent: z.coerce.number().min(0).max(100),
   autoSendEnabled: z.boolean(),
+  /** Null for the free plan, which has no Stripe subscription object at all. */
+  stripePriceId: z.string().nullable(),
 });
 export type PlanEntitlement = z.infer<typeof planEntitlementSchema>;

@@ -14,8 +14,13 @@ export const occasionSchema = z
     /** Computed: occasionDate minus the postage lead time for the chosen dispatch option. */
     dispatchDate: z.coerce.date().nullable(),
     status: occasionStatusSchema,
+    /** Set by POST /occasions/:id/approve; copied into OrderRecipient.savedDesignId at checkout. */
+    savedDesignId: z.string().uuid().nullable(),
     createdAt: z.coerce.date(),
     updatedAt: z.coerce.date(),
+    // OccasionsService always nests the recipient's display name — every
+    // real response includes this, not just occasions with a recipientId.
+    recipient: z.object({ firstName: z.string(), lastName: z.string() }).nullable(),
   })
   .refine((o) => o.source !== "recurring_per_recipient" || o.recipientId !== null, {
     message: "recurring_per_recipient occasions must have a recipientId",
@@ -23,10 +28,14 @@ export const occasionSchema = z
   });
 export type Occasion = z.infer<typeof occasionSchema>;
 
+/**
+ * Matches CreateOccasionDto exactly. No `source` field — OccasionsService
+ * always hardcodes `source: "one_off_campaign"` server-side; recurring
+ * occasions only ever come from the birthday scheduler, never this endpoint.
+ */
 export const createOccasionInputSchema = z.object({
-  recipientId: z.string().uuid().nullable(),
+  recipientId: z.string().uuid().optional(),
   type: occasionTypeSchema,
-  source: occasionSourceSchema,
   occasionDate: z.coerce.date(),
 });
 export type CreateOccasionInput = z.infer<typeof createOccasionInputSchema>;

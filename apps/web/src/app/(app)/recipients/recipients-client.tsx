@@ -34,14 +34,24 @@ export function RecipientsClient({
   const [page, setPage] = useState(initialPage);
   const [error, setError] = useState<string | null>(null);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+  const [paginating, setPaginating] = useState(false);
+  const [addingRecipient, setAddingRecipient] = useState(false);
 
   const reload = useCallback(async (targetPage: number) => {
-    const result = await clientApiFetch<Paginated<Recipient>>(
-      `/recipients?page=${targetPage}&perPage=${PER_PAGE}`,
-    );
-    setRecipients(result.items);
-    setTotal(result.total);
-    setPage(targetPage);
+    setPaginating(true);
+    try {
+      const result = await clientApiFetch<Paginated<Recipient>>(
+        `/recipients?page=${targetPage}&perPage=${PER_PAGE}`,
+      );
+      setRecipients(result.items);
+      setTotal(result.total);
+      setPage(targetPage);
+      setError(null);
+    } catch (reloadError) {
+      setError(reloadError instanceof ApiError ? reloadError.message : "Could not load recipients");
+    } finally {
+      setPaginating(false);
+    }
   }, []);
 
   async function handleAddRecipient(event: FormEvent<HTMLFormElement>) {
@@ -53,6 +63,10 @@ export function RecipientsClient({
     const dateOfBirth = String(formData.get("dateOfBirth") || "");
     const addressPostcode = String(formData.get("addressPostcode") || "");
 
+    // Recipients without a postcode/DOB have no distinguishing info, so the
+    // DB's dedupe constraint can't catch a rapid double-submit (Postgres
+    // treats NULL as always-distinct) — this guard is the only thing that does.
+    setAddingRecipient(true);
     try {
       await clientApiFetch("/recipients", {
         method: "POST",
@@ -67,6 +81,8 @@ export function RecipientsClient({
       await reload(1); // new recipients sort first (createdAt desc) — jump back to page 1 to see it
     } catch (submitError) {
       setError(submitError instanceof ApiError ? submitError.message : "Could not add recipient");
+    } finally {
+      setAddingRecipient(false);
     }
   }
 
@@ -138,9 +154,10 @@ export function RecipientsClient({
           </div>
           <button
             type="submit"
-            className="self-start rounded-full bg-foreground px-4 py-2 text-sm text-background hover:opacity-90"
+            disabled={addingRecipient}
+            className="self-start rounded-full bg-foreground px-4 py-2 text-sm text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Add recipient
+            {addingRecipient ? "Adding…" : "Add recipient"}
           </button>
         </form>
 
@@ -207,7 +224,7 @@ export function RecipientsClient({
         <div className="flex items-center justify-between text-sm">
           <button
             type="button"
-            disabled={page <= 1}
+            disabled={page <= 1 || paginating}
             onClick={() => void reload(page - 1)}
             className="rounded-full border border-black/20 px-4 py-2 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
           >
@@ -218,7 +235,7 @@ export function RecipientsClient({
           </span>
           <button
             type="button"
-            disabled={page * PER_PAGE >= total}
+            disabled={page * PER_PAGE >= total || paginating}
             onClick={() => void reload(page + 1)}
             className="rounded-full border border-black/20 px-4 py-2 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
           >

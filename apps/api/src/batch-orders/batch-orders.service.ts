@@ -197,52 +197,72 @@ export class BatchOrdersService {
   }
 
   async checkout(accountId: string, actorUserId: string, id: string): Promise<CheckoutResult> {
-    const order = await this.prisma.batchOrder.findFirst({
+    const existing = await this.prisma.batchOrder.findFirst({
       where: { id, accountId },
       include: ORDER_RECIPIENTS_INCLUDE,
     });
-    if (!order) {
+    if (!existing) {
       throw new NotFoundException("Batch order not found");
     }
-    if (order.status !== "draft") {
-      throw new ConflictException(`Batch order is "${order.status}", not a draft`);
+    if (existing.status !== "draft") {
+      throw new ConflictException(`Batch order is "${existing.status}", not a draft`);
+    }
+
+    // Status-guarded, and BEFORE the Stripe call — not after. Calling Stripe
+    // first would let two concurrent checkout requests each create a real,
+    // live Checkout Session before either learns it lost the DB race,
+    // leaking an orphaned (unreturned, but still payable-in-principle)
+    // session per collision. Guarding first means at most one request ever
+    // reaches Stripe for a given draft.
+    const { count } = await this.prisma.batchOrder.updateMany({
+      where: { id, accountId, status: "draft" },
+      data: { status: "pending_payment" },
+    });
+    if (count === 0) {
+      throw new ConflictException("Batch order was already checked out by a concurrent request");
     }
 
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
-    const session = await this.stripe.checkout.sessions.create({
-      mode: "payment",
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price_data: {
-            currency: order.currency.toLowerCase(),
-            unit_amount: order.totalMinor,
-            product_data: {
-              name: `Kudos Cards order — ${order.orderRecipients.length} card(s)`,
+    let session: Stripe.Checkout.Session;
+    try {
+      session = await this.stripe.checkout.sessions.create({
+        mode: "payment",
+        payment_method_types: ["card"],
+        line_items: [
+          {
+            price_data: {
+              currency: existing.currency.toLowerCase(),
+              unit_amount: existing.totalMinor,
+              product_data: {
+                name: `Kudos Cards order — ${existing.orderRecipients.length} card(s)`,
+              },
             },
+            quantity: 1,
           },
-          quantity: 1,
-        },
-      ],
-      success_url: `${webAppUrl}/batch-orders/success?batchOrderId=${order.id}`,
-      cancel_url: `${webAppUrl}/batch-orders/cancelled?batchOrderId=${order.id}`,
-      metadata: { batchOrderId: order.id, accountId },
-    });
+        ],
+        success_url: `${webAppUrl}/batch-orders/success?batchOrderId=${existing.id}`,
+        cancel_url: `${webAppUrl}/batch-orders/cancelled?batchOrderId=${existing.id}`,
+        metadata: { batchOrderId: existing.id, accountId },
+      });
+    } catch (error) {
+      // Compensating action: we already claimed pending_payment above, so a
+      // failed Stripe call must hand the draft back rather than leave the
+      // order stuck in pending_payment with no Checkout Session behind it.
+      await this.prisma.batchOrder.updateMany({
+        where: { id, accountId, status: "pending_payment" },
+        data: { status: "draft" },
+      });
+      throw error;
+    }
 
-    // Status-guarded, not a bare update — if two checkout requests raced for
-    // this draft, only one may transition it to pending_payment.
-    const { count } = await this.prisma.batchOrder.updateMany({
-      where: { id, accountId, status: "draft" },
+    await this.prisma.batchOrder.update({
+      where: { id },
       data: {
-        status: "pending_payment",
         paymentMethod: "card",
         stripePaymentIntentId:
           typeof session.payment_intent === "string" ? session.payment_intent : null,
       },
     });
-    if (count === 0) {
-      throw new ConflictException("Batch order was already checked out by a concurrent request");
-    }
 
     await this.audit.record({
       accountId,
@@ -259,10 +279,17 @@ export class BatchOrdersService {
     return { checkoutUrl: session.url };
   }
 
+  /**
+   * Cancellable from "draft" (never checked out) or "pending_payment" (checked
+   * out but the customer abandoned/never completed Stripe Checkout) — not
+   * from "paid" onward, since ADR 0008 defers refunds to a later phase. A
+   * pending_payment order left with no path to release is otherwise stuck
+   * forever, holding its occasions "queued" indefinitely.
+   */
   async cancel(accountId: string, actorUserId: string, id: string): Promise<BatchOrder> {
     const order = await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.batchOrder.updateMany({
-        where: { id, accountId, status: "draft" },
+        where: { id, accountId, status: { in: ["draft", "pending_payment"] } },
         data: { status: "cancelled" },
       });
       if (count === 0) {
@@ -270,7 +297,9 @@ export class BatchOrdersService {
         if (!existing) {
           throw new NotFoundException("Batch order not found");
         }
-        throw new ConflictException(`Batch order is "${existing.status}", not a draft`);
+        throw new ConflictException(
+          `Batch order is "${existing.status}", not a draft or pending payment`,
+        );
       }
 
       const orderRecipients = await tx.orderRecipient.findMany({ where: { batchOrderId: id } });

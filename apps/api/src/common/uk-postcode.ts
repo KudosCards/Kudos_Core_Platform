@@ -1,2 +1,4 @@
-/** Single source of truth — was previously duplicated across create-recipient.dto.ts and csv-row.util.ts. */
-export const UK_POSTCODE_REGEX = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
+/** Re-exported from @kudos/shared-types, the actual single source of truth —
+ * apps/api and the wire-contract package must never have their own separate
+ * copies of this regex, or the two are guaranteed to drift eventually. */
+export { ukPostcodeRegex as UK_POSTCODE_REGEX } from "@kudos/shared-types";

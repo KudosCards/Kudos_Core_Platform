@@ -249,16 +249,14 @@ export class RecipientsService {
       ]),
     );
 
-    let activeCount =
-      entitlement.recipientCap === null
-        ? 0
-        : await this.prisma.recipient.count({ where: { accountId, status: "active" } });
-
-    const toCreate: Prisma.RecipientCreateManyInput[] = [];
     // Rows already queued for creation in *this* import, keyed the same way, so
     // a second occurrence of the same new person within one file gets merged
     // into the first instead of violating the DB's unique dedupe constraint.
-    const pendingByKey = new Map<string, Prisma.RecipientCreateManyInput>();
+    // This pass only resolves update-vs-new-candidate; the cap decision is
+    // deferred to the transaction below so it can't race a concurrent create()
+    // or importCsv() the way a plain pre-read count() would.
+    const pendingByKey = new Map<string, { rowNumber: number; recipient: Prisma.RecipientCreateManyInput }>();
+    const candidateNewRows: { rowNumber: number; recipient: Prisma.RecipientCreateManyInput }[] = [];
     const toUpdate: { id: string; email: string | null }[] = [];
 
     for (const { rowNumber, parsed } of parsedRows) {
@@ -279,38 +277,73 @@ export class RecipientsService {
 
       const pending = hasDistinguishingInfo ? pendingByKey.get(key) : undefined;
       if (pending) {
-        pending.email = parsed.email ?? pending.email;
+        pending.recipient.email = parsed.email ?? pending.recipient.email;
         summary.updated += 1;
         continue;
       }
 
-      if (!this.isUnderCap(entitlement, activeCount, 1)) {
-        summary.rejected.push({
-          row: rowNumber,
-          reason: `Plan recipient cap (${entitlement.recipientCap}) reached`,
-        });
-        continue;
-      }
-
-      const newRecipient: Prisma.RecipientCreateManyInput = {
-        accountId,
-        firstName: parsed.firstName,
-        lastName: parsed.lastName,
-        dateOfBirth: parsed.dateOfBirth,
-        addressPostcode: parsed.addressPostcode,
-        email: parsed.email,
+      const candidate = {
+        rowNumber,
+        recipient: {
+          accountId,
+          firstName: parsed.firstName,
+          lastName: parsed.lastName,
+          dateOfBirth: parsed.dateOfBirth,
+          addressPostcode: parsed.addressPostcode,
+          email: parsed.email,
+        } satisfies Prisma.RecipientCreateManyInput,
       };
-      toCreate.push(newRecipient);
+      candidateNewRows.push(candidate);
       if (hasDistinguishingInfo) {
-        pendingByKey.set(key, newRecipient);
+        pendingByKey.set(key, candidate);
       }
-      activeCount += 1;
-      summary.created += 1;
     }
 
-    if (toCreate.length > 0) {
-      await this.prisma.recipient.createMany({ data: toCreate });
-    }
+    // Same TOCTOU concern as create(): reading activeCount and inserting must
+    // happen atomically relative to any other concurrent create()/importCsv()
+    // for this account, or two imports run at once could jointly exceed the
+    // plan's recipient cap even though each individually looked fine.
+    // Built inside the transaction callback below, which Prisma may retry on
+    // a serialization conflict (P2034) — so it must return its result rather
+    // than mutate `summary` directly, or a retry would double-push rejections.
+    const { toCreate, capRejected } = await this.runSerializable(async (tx) => {
+      let activeCount =
+        entitlement.recipientCap === null
+          ? 0
+          : await tx.recipient.count({ where: { accountId, status: "active" } });
+
+      const accepted: Prisma.RecipientCreateManyInput[] = [];
+      const rejected: ImportSummary["rejected"] = [];
+      for (const { rowNumber, recipient } of candidateNewRows) {
+        if (!this.isUnderCap(entitlement, activeCount, 1)) {
+          rejected.push({
+            row: rowNumber,
+            reason: `Plan recipient cap (${entitlement.recipientCap}) reached`,
+          });
+          continue;
+        }
+        accepted.push(recipient);
+        activeCount += 1;
+      }
+
+      if (accepted.length > 0) {
+        // skipDuplicates guards the rare window where a concurrent request
+        // creates a recipient matching this batch's dedupe key between our
+        // pre-transaction lookup and this insert, instead of a raw P2002
+        // crashing the whole import.
+        await tx.recipient.createMany({ data: accepted, skipDuplicates: true });
+      }
+      return { toCreate: accepted, capRejected: rejected };
+    });
+    summary.created = toCreate.length;
+    summary.rejected.push(...capRejected);
+
+    // One UPDATE per matched existing recipient, not batched: Prisma has no
+    // "update many rows, each with a different value" primitive short of
+    // raw SQL, and each row's new email differs. Acceptable because this is
+    // bounded by how many existing recipients a single CSV import re-matches
+    // (typically a small fraction of the file, not its full row count) —
+    // revisit with a raw `UPDATE ... FROM (VALUES ...)` if that stops holding.
     await Promise.all(
       toUpdate.map(({ id, email }) =>
         this.prisma.recipient.update({ where: { id }, data: { email } }),

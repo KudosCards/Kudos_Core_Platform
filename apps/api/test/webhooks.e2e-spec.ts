@@ -245,4 +245,41 @@ describe("Webhooks (e2e)", () => {
     const revertedAccount = await prisma.account.findUniqueOrThrow({ where: { id: accountId } });
     expect(revertedAccount.planId).toBe("free");
   });
+
+  it("releases an abandoned checkout back to draft on checkout.session.expired", async () => {
+    const { token } = await signUp();
+    const { batchOrderId } = await createPendingPaymentBatchOrder(token);
+
+    const payload = buildStripeEventPayload("checkout.session.expired", {
+      id: `cs_test_${randomUUID()}`,
+      metadata: { batchOrderId },
+    });
+    await postWebhook(payload).expect(201);
+
+    const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+    expect(order.status).toBe("draft");
+  });
+
+  it("ignores an unrecognized Stripe event type", async () => {
+    const payload = buildStripeEventPayload("customer.created", { id: "cus_test_irrelevant" });
+    await postWebhook(payload).expect(201);
+  });
+
+  it("no-ops checkout.session.completed for a batchOrderId that doesn't exist", async () => {
+    const payload = buildStripeEventPayload("checkout.session.completed", {
+      id: `cs_test_${randomUUID()}`,
+      metadata: { batchOrderId: randomUUID() },
+    });
+    await postWebhook(payload).expect(201);
+  });
+
+  it("no-ops a subscription event missing accountId/planId metadata", async () => {
+    const payload = buildStripeEventPayload("customer.subscription.created", {
+      id: `sub_test_${randomUUID()}`,
+      status: "active",
+      metadata: {},
+      items: { data: [{ current_period_end: Math.floor(Date.now() / 1000) + 1000 }] },
+    });
+    await postWebhook(payload).expect(201);
+  });
 });
