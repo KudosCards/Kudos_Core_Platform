@@ -8,6 +8,8 @@ import { LogoutButton } from "./logout-button";
 const navItems = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Recipients", href: "/recipients" },
+  { label: "Designs", href: "/designs" },
+  { label: "Approvals", href: "/approvals" },
 ];
 
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {

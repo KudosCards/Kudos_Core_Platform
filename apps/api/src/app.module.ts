@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
 import { LoggerModule } from "nestjs-pino";
 import { validateEnv } from "./config/env.schema";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -7,6 +8,10 @@ import { HealthModule } from "./health/health.module";
 import { AuthModule } from "./auth/auth.module";
 import { AccountsModule } from "./accounts/accounts.module";
 import { RecipientsModule } from "./recipients/recipients.module";
+import { CardDesignsModule } from "./card-designs/card-designs.module";
+import { SavedDesignsModule } from "./saved-designs/saved-designs.module";
+import { StorageModule } from "./storage/storage.module";
+import { OccasionsModule } from "./occasions/occasions.module";
 
 @Module({
   imports: [
@@ -14,6 +19,7 @@ import { RecipientsModule } from "./recipients/recipients.module";
       isGlobal: true,
       validate: validateEnv,
     }),
+    ScheduleModule.forRoot(),
     LoggerModule.forRoot({
       pinoHttp: {
         level: process.env.NODE_ENV === "production" ? "info" : "debug",
@@ -26,6 +32,10 @@ import { RecipientsModule } from "./recipients/recipients.module";
     AuthModule,
     AccountsModule,
     RecipientsModule,
+    CardDesignsModule,
+    SavedDesignsModule,
+    StorageModule,
+    OccasionsModule,
   ],
 })
 export class AppModule {}

@@ -10,17 +10,13 @@ import { parse } from "csv-parse/sync";
 import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { AuditService } from "../audit/audit.service";
+import type { Paginated } from "../common/paginated";
 import type { CreateRecipientDto } from "./dto/create-recipient.dto";
 import type { UpdateRecipientDto } from "./dto/update-recipient.dto";
 import type { ListRecipientsQueryDto } from "./dto/list-recipients-query.dto";
 import { parseRecipientRow, type ParsedRecipientRow } from "./csv-row.util";
 
-export interface Paginated<T> {
-  items: T[];
-  total: number;
-  page: number;
-  perPage: number;
-}
+export type { Paginated };
 
 export interface ImportSummary {
   created: number;
