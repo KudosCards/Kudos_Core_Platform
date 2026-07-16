@@ -18,6 +18,7 @@ import { WebhooksModule } from "./webhooks/webhooks.module";
 import { SubscriptionsModule } from "./subscriptions/subscriptions.module";
 import { MessagesModule } from "./messages/messages.module";
 import { FulfillmentModule } from "./fulfillment/fulfillment.module";
+import { CatalogModule } from "./catalog/catalog.module";
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { FulfillmentModule } from "./fulfillment/fulfillment.module";
     SubscriptionsModule,
     MessagesModule,
     FulfillmentModule,
+    CatalogModule,
   ],
 })
 export class AppModule {}

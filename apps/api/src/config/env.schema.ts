@@ -21,6 +21,22 @@ export const envSchema = z.object({
 
   WEB_APP_URL: z.string().url(),
 
+  // Airtable-sourced card catalog (see docs/adr/0011-airtable-catalog-sync.md).
+  // Optional: the app boots without them; the catalog sync reports "not
+  // configured" until both are set. Treat blank the same as unset.
+  AIRTABLE_API_KEY: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  AIRTABLE_BASE_ID: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  // The table holding the card designs; defaults to the name in the Airtable base.
+  AIRTABLE_CARDS_TABLE: z.string().min(1).default("Card List"),
+
   // Treat an unset/blank env var the same as "not provided" rather than
   // failing url() validation on an empty string.
   SENTRY_DSN: z

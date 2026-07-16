@@ -91,6 +91,9 @@ crash, just no upgrades.
 | `STRIPE_SECRET_KEY` | **test key first** (`sk_test_...`), see step 5 |
 | `STRIPE_WEBHOOK_SECRET` | signing secret from 2b |
 | `WEB_APP_URL` | the live Netlify URL (CORS + Stripe redirect targets) |
+| `AIRTABLE_API_KEY` | read-only Airtable PAT (`data.records:read` on the cards base) — step 4b |
+| `AIRTABLE_BASE_ID` | the cards base id (`app…`) — step 4b |
+| `AIRTABLE_CARDS_TABLE` | *(optional; defaults to `Card List`)* |
 | `PLATFORM_ADMIN_USER_IDS` | *(optional, step 4)* |
 | `SENTRY_DSN` | *(optional)* |
 
@@ -107,6 +110,22 @@ team access:
    (`pnpm --filter @kudos/api exec prisma db seed`), or insert directly:
    `INSERT INTO platform_admins (id, user_id) VALUES (gen_random_uuid(), '<supabase-user-id>');`
 3. They can then reach `/fulfillment` in the web app; everyone else is redirected away.
+
+### 4b. Load the card catalog from Airtable (ADR 0011)
+
+The catalog (`card_designs`) is synced from the Airtable "Card List" base — the real products, not
+the three seeded placeholders.
+
+1. In Airtable, create a **Personal access token** (Builder hub → Personal access tokens) with
+   scope `data.records:read`, scoped to **only** the cards base. Copy the `pat…` value.
+2. Set `AIRTABLE_API_KEY` (the token) and `AIRTABLE_BASE_ID` (the `app…` id from the base URL) in
+   Railway (step 3). Redeploy.
+3. As an ops admin, open **/catalog** in the web app and click **Refresh catalog from Airtable**
+   (or wait for the nightly 4am sync). Only cards with `Status = Active` import; retired cards are
+   deactivated automatically. The button reports created / updated / deactivated / images-copied /
+   errors.
+4. Artwork is copied into the `design-assets` bucket, so make sure that bucket exists (step 1a)
+   before the first sync.
 
 ---
 
