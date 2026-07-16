@@ -50,6 +50,10 @@ export const cardDesignSchema = z.object({
   thumbnailUrl: z.string().url(),
   document: designDocumentSchema,
   isActive: z.boolean(),
+  /** Airtable record id this design was synced from; null for seeded templates. */
+  externalId: z.string().nullable(),
+  /** Human-facing product code from Airtable (e.g. "KC-BDAY-GEN-001"); null for seeds. */
+  sku: z.string().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });

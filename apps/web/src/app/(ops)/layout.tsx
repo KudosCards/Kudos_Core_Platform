@@ -38,6 +38,12 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
           >
             Fulfillment queue
           </Link>
+          <Link
+            href="/catalog"
+            className="rounded-md px-3 py-2 text-foreground/70 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
+          >
+            Card catalog
+          </Link>
         </div>
         <div className="flex flex-col gap-2 border-t border-black/10 pt-4 text-sm dark:border-white/10">
           <LogoutButton />
