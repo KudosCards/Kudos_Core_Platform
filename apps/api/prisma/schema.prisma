@@ -142,10 +142,17 @@ model Occasion {
   occasionDate DateTime       @map("occasion_date") @db.Date
   dispatchDate DateTime?      @map("dispatch_date") @db.Date
   status       OccasionStatus @default(scheduled)
+  /// Set when an admin approves the occasion (see docs/adr/0006-phase-2-scope.md). Copied
+  /// into OrderRecipient.savedDesignId by Phase 3's checkout flow — the design choice
+  /// travels with the occasion instead of being re-selected at checkout.
+  savedDesignId String?       @map("saved_design_id")
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
   recipient       Recipient?        @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  // Restrict, not the nullable-relation default of SetNull — an approved occasion
+  // silently losing its design would be a worse state than blocking the delete.
+  savedDesign     SavedDesign?      @relation(fields: [savedDesignId], references: [id], onDelete: Restrict)
   orderRecipients OrderRecipient[]
 
   // Prevents the scheduler from double-creating the same occasion instance on retry.
@@ -189,6 +196,7 @@ model SavedDesign {
   account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   cardDesign      CardDesign       @relation(fields: [cardDesignId], references: [id])
   orderRecipients OrderRecipient[]
+  occasions       Occasion[]
 
   @@index([accountId])
   @@map("saved_designs")

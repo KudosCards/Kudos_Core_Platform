@@ -30,7 +30,7 @@ docs/
 ## Getting started
 
 ```bash
-pnpm install                     # also generates the Prisma client (apps/api postinstall)
+pnpm install                     # also generates the Prisma client and builds @kudos/shared-types (postinstall)
 
 cp apps/api/.env.example apps/api/.env   # fill in DATABASE_URL/DIRECT_URL and the rest
 cp apps/web/.env.example apps/web/.env
