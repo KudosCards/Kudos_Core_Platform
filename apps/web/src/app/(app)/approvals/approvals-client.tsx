@@ -4,27 +4,11 @@ import type { Occasion, SavedDesign } from "@kudos/shared-types";
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { OCCASION_TYPE_LABELS, formatOccasionDate } from "@/lib/occasions";
 
-export interface OccasionWithRecipient extends Occasion {
-  recipient: { firstName: string; lastName: string } | null;
-}
-
-const OCCASION_TYPE_LABELS: Record<string, string> = {
-  birthday: "Birthday",
-  achievement: "Achievement",
-  leaver: "Leaver",
-  staff_recognition: "Staff recognition",
-  seasonal: "Seasonal",
-  bespoke_campaign: "Bespoke campaign",
-};
-
-function formatOccasionDate(value: string | Date): string {
-  return new Date(value).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-}
+// occasionSchema already includes the nested recipient the real API always
+// returns — kept as a named alias since other files import this name.
+export type OccasionWithRecipient = Occasion;
 
 export function ApprovalsClient({
   initialOccasions,

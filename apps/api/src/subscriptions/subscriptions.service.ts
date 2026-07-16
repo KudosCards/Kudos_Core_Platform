@@ -32,6 +32,22 @@ export class SubscriptionsService {
       throw new ConflictException(`Plan "${dto.planId}" is not yet configured for checkout`);
     }
 
+    // Without this guard, an account could end up with two live Stripe
+    // subscriptions (e.g. a second checkout completed before the first
+    // subscription.created webhook lands, or a customer wanting to switch
+    // plans without first cancelling) — double-billing, and Account.planId
+    // left to flap between whichever subscription's webhook arrives last.
+    // Changing plans in-place isn't built yet, so the safe behaviour for now
+    // is to block a second subscription rather than silently create one.
+    const existingSubscription = await this.prisma.subscription.findFirst({
+      where: { accountId, status: { in: ["active", "trialing", "past_due"] } },
+    });
+    if (existingSubscription) {
+      throw new ConflictException(
+        "This account already has an active subscription — contact us to change plans",
+      );
+    }
+
     const account = await this.prisma.account.findUniqueOrThrow({ where: { id: accountId } });
     const stripeCustomerId = await this.getOrCreateStripeCustomer(
       account.id,

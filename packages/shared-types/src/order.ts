@@ -1,35 +1,56 @@
 import { z } from "zod";
-import { addressSchema } from "./recipient";
-import { dispatchOptionSchema, orderRecipientStatusSchema, postageClassSchema } from "./enums";
+import { ukPostcodeRegex } from "./recipient";
+import {
+  batchOrderStatusSchema,
+  dispatchOptionSchema,
+  orderRecipientStatusSchema,
+  paymentMethodSchema,
+  postageClassSchema,
+} from "./enums";
 
 /**
  * One order representing a whole batch (e.g. "10 birthday cards this week").
  * Replaces the legacy pattern of one WooCommerce cart line per recipient.
+ * Mirrors BatchOrdersService's response shape, which always nests its lines
+ * — see orderRecipientSchema below.
  */
 export const batchOrderSchema = z.object({
   id: z.string().uuid(),
   accountId: z.string().uuid(),
   createdByUserId: z.string().uuid(),
-  status: z.enum(["draft", "pending_payment", "paid", "fulfilling", "completed", "cancelled"]),
-  currency: z.literal("GBP"),
+  status: batchOrderStatusSchema,
+  // A plain string column defaulting to "GBP" in Postgres, not a fixed
+  // literal — checkout.ts lowercases it for Stripe, so it's read as variable.
+  currency: z.string(),
   subtotalMinor: z.number().int().nonnegative(),
   postageMinor: z.number().int().nonnegative(),
   totalMinor: z.number().int().nonnegative(),
-  paymentMethod: z.enum(["card", "wallet"]).nullable(),
+  paymentMethod: paymentMethodSchema.nullable(),
   stripePaymentIntentId: z.string().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
+  orderRecipients: z.array(z.lazy(() => orderRecipientSchema)),
 });
 export type BatchOrder = z.infer<typeof batchOrderSchema>;
 
-/** One recipient's line within a BatchOrder — design, address, dispatch timing, status. */
+/**
+ * One recipient's line within a BatchOrder — design, address, dispatch
+ * timing, status. Shipping address is flat columns here (matching the
+ * OrderRecipient Prisma model), unlike Recipient's own address fields
+ * (see recipient.ts) which happen to share the same flat-column shape by
+ * coincidence, not a common type.
+ */
 export const orderRecipientSchema = z.object({
   id: z.string().uuid(),
   batchOrderId: z.string().uuid(),
   recipientId: z.string().uuid(),
   occasionId: z.string().uuid().nullable(),
   savedDesignId: z.string().uuid(),
-  shippingAddress: addressSchema,
+  shippingAddressLine1: z.string().min(1).max(200),
+  shippingAddressLine2: z.string().max(200).nullable(),
+  shippingAddressCity: z.string().min(1).max(120),
+  shippingAddressPostcode: z.string().regex(ukPostcodeRegex, "Must be a valid UK postcode"),
+  shippingAddressCountry: z.string(),
   dispatchOption: dispatchOptionSchema,
   postageClass: postageClassSchema,
   priceMinor: z.number().int().nonnegative(),
@@ -39,21 +60,31 @@ export const orderRecipientSchema = z.object({
 });
 export type OrderRecipient = z.infer<typeof orderRecipientSchema>;
 
+/**
+ * Matches CreateBatchOrderDto/CreateBatchOrderLineDto exactly: recipientId
+ * and savedDesignId are deliberately NOT client-supplied — the server
+ * derives both from the referenced (already-approved) Occasion, per the
+ * design documented on Occasion.savedDesignId in schema.prisma. Payment
+ * method isn't part of order creation either; POST /batch-orders/:id/checkout
+ * is a separate step. There's no fixed line-count literal here because the
+ * real cap is PlanEntitlement.batchOrderMaxSize, enforced dynamically
+ * server-side per account — this is just a sane upper safety bound.
+ */
 export const createBatchOrderInputSchema = z.object({
   lines: z
     .array(
       z.object({
-        recipientId: z.string().uuid(),
-        occasionId: z.string().uuid().nullable(),
-        savedDesignId: z.string().uuid(),
-        shippingAddress: addressSchema,
+        occasionId: z.string().uuid(),
+        shippingAddressLine1: z.string().min(1).max(200),
+        shippingAddressLine2: z.string().max(200).optional(),
+        shippingAddressCity: z.string().min(1).max(120),
+        shippingAddressPostcode: z.string().regex(ukPostcodeRegex, "Must be a valid UK postcode"),
         dispatchOption: dispatchOptionSchema,
         postageClass: postageClassSchema,
       }),
     )
     .min(1)
-    .max(20), // mirrors the current plan-enforced multi-card order cap
-  paymentMethod: z.enum(["card", "wallet"]),
+    .max(200),
 });
 export type CreateBatchOrderInput = z.infer<typeof createBatchOrderInputSchema>;
 

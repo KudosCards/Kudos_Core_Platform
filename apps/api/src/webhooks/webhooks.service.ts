@@ -40,6 +40,9 @@ export class WebhooksService {
       case "checkout.session.completed":
         await this.handleCheckoutSessionCompleted(event.data.object);
         break;
+      case "checkout.session.expired":
+        await this.handleCheckoutSessionExpired(event.data.object);
+        break;
       case "payment_intent.payment_failed":
         await this.handlePaymentFailed(event.data.object);
         break;
@@ -70,6 +73,26 @@ export class WebhooksService {
         data: { status: "paid" },
       });
       if (count === 0) {
+        // Not a no-op in every case: a redelivered event for an order
+        // already "paid" is the expected, harmless case Stripe's at-least-
+        // once delivery guarantees. But if the order is in any OTHER
+        // status (e.g. "cancelled" — a customer released a stuck
+        // pending_payment order via cancel() at the same moment they
+        // completed payment in another tab), Stripe has now been paid for
+        // an order this system considers abandoned. Refunds are out of
+        // scope for this phase (ADR 0008), so the only safe thing to do
+        // is make this loudly auditable rather than silently swallow it.
+        const current = await tx.batchOrder.findUnique({ where: { id: batchOrderId } });
+        if (current && current.status !== "paid") {
+          await this.audit.record({
+            accountId: current.accountId,
+            actorUserId: SYSTEM_ACTOR,
+            action: "payment_succeeded_after_cancel_anomaly",
+            targetType: "BatchOrder",
+            targetId: batchOrderId,
+            metadata: { stripeCheckoutSessionId: session.id, orderStatus: current.status },
+          });
+        }
         return;
       }
 
@@ -108,9 +131,11 @@ export class WebhooksService {
       return;
     }
 
-    // BatchOrder stays "pending_payment" — Stripe's own retry/dunning flow
-    // applies, and the customer can always restart checkout on the same
-    // draft-turned-pending order via a fresh Checkout Session.
+    // BatchOrder stays "pending_payment" — Stripe Checkout's hosted page lets
+    // the customer retry with a different card on the same session without
+    // any new event here. The order is only released if the session is
+    // outright abandoned (handleCheckoutSessionExpired) or manually
+    // cancelled (BatchOrdersService.cancel).
     await this.audit.record({
       accountId: order.accountId,
       actorUserId: SYSTEM_ACTOR,
@@ -118,6 +143,35 @@ export class WebhooksService {
       targetType: "BatchOrder",
       targetId: order.id,
       metadata: { stripePaymentIntentId: paymentIntent.id },
+    });
+  }
+
+  /** Stripe expires an unpaid Checkout Session (default: 24h after creation)
+   * if the customer never completes or abandons it. Hands the order back to
+   * "draft" so it isn't stuck in "pending_payment" forever with no route to
+   * retry other than the manual cancel endpoint. */
+  private async handleCheckoutSessionExpired(session: Stripe.Checkout.Session): Promise<void> {
+    const batchOrderId = session.metadata?.batchOrderId;
+    if (!batchOrderId) {
+      return;
+    }
+
+    const { count } = await this.prisma.batchOrder.updateMany({
+      where: { id: batchOrderId, status: "pending_payment" },
+      data: { status: "draft" },
+    });
+    if (count === 0) {
+      return;
+    }
+
+    const order = await this.prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+    await this.audit.record({
+      accountId: order.accountId,
+      actorUserId: SYSTEM_ACTOR,
+      action: "checkout_session_expired",
+      targetType: "BatchOrder",
+      targetId: batchOrderId,
+      metadata: { stripeCheckoutSessionId: session.id },
     });
   }
 

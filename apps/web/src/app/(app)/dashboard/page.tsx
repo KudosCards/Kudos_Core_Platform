@@ -10,9 +10,12 @@ interface Paginated<T> {
 }
 
 export default async function DashboardPage() {
+  // Both already rendered as optional below (`account?.name`, `recipients?.total
+  // ?? 0`) — a transient failure here should degrade gracefully rather than
+  // hit Next's generic error boundary, same as the parent layout's own fetch.
   const [account, recipients] = await Promise.all([
-    serverApiFetch<Account>("/accounts/me"),
-    serverApiFetch<Paginated<Recipient>>("/recipients?perPage=1"),
+    serverApiFetch<Account>("/accounts/me").catch(() => null),
+    serverApiFetch<Paginated<Recipient>>("/recipients?perPage=1").catch(() => null),
   ]);
 
   return (

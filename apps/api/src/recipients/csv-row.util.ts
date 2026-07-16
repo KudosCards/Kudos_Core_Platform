@@ -1,11 +1,10 @@
 import { z } from "zod";
+import { ukDateRegex } from "@kudos/shared-types";
 import { UK_POSTCODE_REGEX } from "../common/uk-postcode";
-
-const UK_DATE_REGEX = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 
 /** Matches the legacy CSV import contract: dd/mm/yyyy only. */
 export function parseUkDate(value: string): Date {
-  const match = UK_DATE_REGEX.exec(value.trim());
+  const match = ukDateRegex.exec(value.trim());
   if (!match) {
     throw new Error(`Expected dd/mm/yyyy, got "${value}"`);
   }

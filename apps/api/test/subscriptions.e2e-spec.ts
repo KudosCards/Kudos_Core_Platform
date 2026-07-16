@@ -117,4 +117,51 @@ describe("Subscriptions (e2e)", () => {
       });
     }
   });
+
+  it("rejects starting a second subscription while one is already active", async () => {
+    const { token, accountId } = await signUp();
+    await prisma.planEntitlement.update({
+      where: { planId: "pro" },
+      data: { stripePriceId: "price_test_pro" },
+    });
+    await prisma.planEntitlement.update({
+      where: { planId: "centre" },
+      data: { stripePriceId: "price_test_centre" },
+    });
+
+    try {
+      await request(app.getHttpServer())
+        .post("/subscriptions/checkout")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ planId: "pro" })
+        .expect(201);
+      // Simulate the customer.subscription.created webhook having landed.
+      await prisma.subscription.create({
+        data: {
+          accountId,
+          planId: "pro",
+          stripeSubscriptionId: `sub_test_${randomUUID()}`,
+          status: "active",
+          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      checkoutSessionsCreate.mockClear();
+      await request(app.getHttpServer())
+        .post("/subscriptions/checkout")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ planId: "centre" })
+        .expect(409);
+      expect(checkoutSessionsCreate).not.toHaveBeenCalled();
+    } finally {
+      await prisma.planEntitlement.update({
+        where: { planId: "pro" },
+        data: { stripePriceId: null },
+      });
+      await prisma.planEntitlement.update({
+        where: { planId: "centre" },
+        data: { stripePriceId: null },
+      });
+    }
+  });
 });

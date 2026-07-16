@@ -45,13 +45,11 @@ export function BillingClient({ currentPlanId }: { currentPlanId: string | null 
       );
       window.location.assign(checkoutUrl);
     } catch (upgradeError) {
-      if (upgradeError instanceof ApiError && upgradeError.status === 409) {
-        setError("This plan isn't available for online upgrade yet — please contact us.");
-      } else {
-        setError(
-          upgradeError instanceof ApiError ? upgradeError.message : "Could not start checkout",
-        );
-      }
+      // The API's error message is already specific (e.g. "not yet
+      // configured for checkout" vs "already has an active subscription").
+      setError(
+        upgradeError instanceof ApiError ? upgradeError.message : "Could not start checkout",
+      );
       setPendingPlan(null);
     }
   }

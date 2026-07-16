@@ -220,7 +220,7 @@ describe("Batch orders (e2e)", () => {
       .expect(400);
   });
 
-  it("enforces the plan's batch order max size", async () => {
+  it("allows exactly the plan's batch order max size and rejects one more", async () => {
     const { token } = await signUp();
     // Sequential, not Promise.all: concurrent Serializable transactions
     // against the same account's recipient cap would just add retry noise
@@ -230,6 +230,14 @@ describe("Batch orders (e2e)", () => {
     for (let i = 0; i < 21; i += 1) {
       occasionIds.push(await createApprovedOccasion(token));
     }
+
+    // Exactly at the free plan's batchOrderMaxSize (20, per seed.ts) — the
+    // boundary itself must succeed, not just fail one-over-the-limit.
+    await request(app.getHttpServer())
+      .post("/batch-orders")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ lines: occasionIds.slice(0, 20).map(buildLine) })
+      .expect(201);
 
     await request(app.getHttpServer())
       .post("/batch-orders")
@@ -259,6 +267,36 @@ describe("Batch orders (e2e)", () => {
       .set("Authorization", `Bearer ${otherAccount.token}`)
       .expect(200);
     expect(paginatedBatchOrdersSchema.parse(otherListResponse.body).total).toBe(0);
+  });
+
+  it("rejects findOne/checkout/cancel on a batch order belonging to another account", async () => {
+    const { token } = await signUp();
+    const occasionId = await createApprovedOccasion(token);
+    const createResponse = await request(app.getHttpServer())
+      .post("/batch-orders")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ lines: [buildLine(occasionId)] })
+      .expect(201);
+    const order = batchOrderSchema.parse(createResponse.body);
+
+    const otherAccount = await signUp();
+    await request(app.getHttpServer())
+      .get(`/batch-orders/${order.id}`)
+      .set("Authorization", `Bearer ${otherAccount.token}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/checkout`)
+      .set("Authorization", `Bearer ${otherAccount.token}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/cancel`)
+      .set("Authorization", `Bearer ${otherAccount.token}`)
+      .expect(404);
+    expect(checkoutSessionsCreate).not.toHaveBeenCalled();
+
+    // Still a live draft for its real owner afterwards.
+    const stillDraft = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.id } });
+    expect(stillDraft.status).toBe("draft");
   });
 
   it("checks out a draft batch order via a mocked Stripe Checkout Session", async () => {
@@ -341,7 +379,10 @@ describe("Batch orders (e2e)", () => {
       .expect(201);
   });
 
-  it("rejects cancelling a non-draft batch order", async () => {
+  it("cancels a pending_payment batch order, releasing it back to the account", async () => {
+    // A customer who checked out but abandoned or failed Stripe Checkout
+    // must have a way to release the order rather than it being stuck
+    // forever — cancel() deliberately allows this status too, not just draft.
     const { token } = await signUp();
     const occasionId = await createApprovedOccasion(token);
     const createResponse = await request(app.getHttpServer())
@@ -356,9 +397,61 @@ describe("Batch orders (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(201);
 
+    const cancelResponse = await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/cancel`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    expect(batchOrderSchema.parse(cancelResponse.body).status).toBe("cancelled");
+
+    const occasion = await prisma.occasion.findUniqueOrThrow({ where: { id: occasionId } });
+    expect(occasion.status).toBe("approved");
+  });
+
+  it("rejects cancelling a paid batch order", async () => {
+    const { token } = await signUp();
+    const occasionId = await createApprovedOccasion(token);
+    const createResponse = await request(app.getHttpServer())
+      .post("/batch-orders")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ lines: [buildLine(occasionId)] })
+      .expect(201);
+    const order = batchOrderSchema.parse(createResponse.body);
+
+    await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/checkout`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    // Simulate the webhook marking it paid, since this test file has no real
+    // Stripe to complete a checkout through.
+    await prisma.batchOrder.update({ where: { id: order.id }, data: { status: "paid" } });
+
     await request(app.getHttpServer())
       .post(`/batch-orders/${order.id}/cancel`)
       .set("Authorization", `Bearer ${token}`)
       .expect(409);
+  });
+
+  it("rejects checking out a batch order twice concurrently — only one Stripe session is created", async () => {
+    const { token } = await signUp();
+    const occasionId = await createApprovedOccasion(token);
+    const createResponse = await request(app.getHttpServer())
+      .post("/batch-orders")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ lines: [buildLine(occasionId)] })
+      .expect(201);
+    const order = batchOrderSchema.parse(createResponse.body);
+
+    const results = await Promise.all(
+      [1, 2].map(() =>
+        request(app.getHttpServer())
+          .post(`/batch-orders/${order.id}/checkout`)
+          .set("Authorization", `Bearer ${token}`),
+      ),
+    );
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses).toEqual([201, 409]);
+    // The atomic guard runs before the Stripe call, so the loser must never
+    // reach Stripe at all — not just lose the race after also calling it.
+    expect(checkoutSessionsCreate).toHaveBeenCalledTimes(1);
   });
 });
