@@ -3,9 +3,16 @@
 import type { CardDesign, SavedDesign } from "@kudos/shared-types";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+
+const ALL_CATEGORIES = "all";
+
+/** "well done" -> "Well done", "birthday" -> "Birthday". */
+function formatCategory(category: string): string {
+  return category.charAt(0).toUpperCase() + category.slice(1);
+}
 
 export function DesignsClient({
   templates,
@@ -18,6 +25,20 @@ export function DesignsClient({
   const [savedDesigns] = useState(initialSavedDesigns);
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [category, setCategory] = useState<string>(ALL_CATEGORIES);
+
+  // Sorted unique categories present in the catalog, so a full library stays
+  // browsable instead of one long ungrouped grid. Filtering is client-side —
+  // the page already has every template, so it's instant and needs no refetch.
+  const categories = useMemo(
+    () => [...new Set(templates.map((t) => t.category))].sort((a, b) => a.localeCompare(b)),
+    [templates],
+  );
+  const visibleTemplates = useMemo(
+    () =>
+      category === ALL_CATEGORIES ? templates : templates.filter((t) => t.category === category),
+    [templates, category],
+  );
 
   async function createFromTemplate(template: CardDesign) {
     setError(null);
@@ -45,33 +66,57 @@ export function DesignsClient({
 
       <section className="flex flex-col gap-4">
         <h2 className="font-semibold">Templates</h2>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {templates.map((template) => (
-            <div
-              key={template.id}
-              className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 dark:border-white/10"
-            >
-              <div className="relative aspect-[3/4] w-full overflow-hidden rounded-md bg-black/5 dark:bg-white/5">
-                <Image
-                  src={template.thumbnailUrl}
-                  alt={template.name}
-                  fill
-                  unoptimized
-                  className="object-cover"
-                />
-              </div>
-              <span className="text-sm font-medium">{template.name}</span>
+
+        {categories.length > 1 && (
+          <div className="flex flex-wrap gap-2 text-sm">
+            {[ALL_CATEGORIES, ...categories].map((option) => (
               <button
+                key={option}
                 type="button"
-                disabled={creatingTemplateId === template.id}
-                onClick={() => void createFromTemplate(template)}
-                className="rounded-full bg-foreground px-3 py-1.5 text-xs text-background hover:opacity-90 disabled:opacity-50"
+                onClick={() => setCategory(option)}
+                className={`rounded-full px-3 py-1 ${
+                  option === category
+                    ? "bg-foreground text-background"
+                    : "border border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                }`}
               >
-                {creatingTemplateId === template.id ? "Creating…" : "Use this template"}
+                {option === ALL_CATEGORIES ? "All" : formatCategory(option)}
               </button>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
+
+        {visibleTemplates.length === 0 ? (
+          <p className="text-sm text-foreground/60">No templates in this category yet.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {visibleTemplates.map((template) => (
+              <div
+                key={template.id}
+                className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 dark:border-white/10"
+              >
+                <div className="relative aspect-[3/4] w-full overflow-hidden rounded-md bg-black/5 dark:bg-white/5">
+                  <Image
+                    src={template.thumbnailUrl}
+                    alt={template.name}
+                    fill
+                    unoptimized
+                    className="object-cover"
+                  />
+                </div>
+                <span className="text-sm font-medium">{template.name}</span>
+                <button
+                  type="button"
+                  disabled={creatingTemplateId === template.id}
+                  onClick={() => void createFromTemplate(template)}
+                  className="rounded-full bg-foreground px-3 py-1.5 text-xs text-background hover:opacity-90 disabled:opacity-50"
+                >
+                  {creatingTemplateId === template.id ? "Creating…" : "Use this template"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="flex flex-col gap-4">

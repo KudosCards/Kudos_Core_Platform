@@ -75,6 +75,35 @@ into the ops/fulfillment side later without touching this model.
   sheet, which would orphan the row and create a duplicate. The immutable Airtable record id is the
   safe upsert key; SKU is carried for display only.
 
+## Operability hardening (from live bring-up)
+
+Bringing the first real catalog online surfaced several operator-facing failure
+modes. Each was fixed to fail loudly and, where possible, self-heal — an ops
+tool that can't tell you *why* it failed, or needs precise manual setup, isn't
+finished:
+
+- **Real Airtable errors surface, not a generic 500.** A failed fetch is
+  rethrown as a `502` carrying the reason, and the source maps the HTTP status
+  to an actionable hint (401 → token invalid/regenerated, 403 → token lacks base
+  access, 404 → base/table not found, 422 → table-name mismatch, 429 → rate
+  limited). On a 403/404 it uses the `schema.bases:read` scope to **list the
+  base's actual tables** in the error, so a wrong `AIRTABLE_CARDS_TABLE` names
+  the fix itself. (The default table name was taken from an Airtable *interface
+  page* — "Card List" — not the underlying table; the table id `tbl…` is the
+  robust value to configure.)
+- **The storage bucket is self-created.** The sync calls `createBucket(design-
+  assets, public)` with the same client the uploads use, so a missing,
+  mis-named, or wrong-project bucket can't turn every artwork copy into "Bucket
+  not found". Idempotent; ensures the bucket is public so thumbnails render.
+- **Artwork is copied concurrently.** A few hundred sequential download+upload
+  round-trips ran long enough that the HTTP request dropped before responding
+  (surfacing in the browser as a spurious CORS/`ERR_FAILED`). Copies now run
+  with bounded concurrency (8) and a per-download timeout, so a full catalog
+  syncs in seconds. For a catalog in the thousands the next step is a background
+  job with status polling — deferred until the volume warrants it.
+- **The customer Designs page filters by category**, rather than rendering the
+  whole library as one ungrouped grid, now that the catalog is full.
+
 ## Consequences
 
 - The catalog now reflects the real product library, managed where the team already works, and the

@@ -118,14 +118,20 @@ the three seeded placeholders.
 
 1. In Airtable, create a **Personal access token** (Builder hub → Personal access tokens) with
    scope `data.records:read`, scoped to **only** the cards base. Copy the `pat…` value.
-2. Set `AIRTABLE_API_KEY` (the token) and `AIRTABLE_BASE_ID` (the `app…` id from the base URL) in
-   Railway (step 3). Redeploy.
+2. Set `AIRTABLE_API_KEY` (the token), `AIRTABLE_BASE_ID` (the `app…` id from the base URL), and
+   `AIRTABLE_CARDS_TABLE` (the **table id** `tbl…` from the base's *grid* URL — not an
+   interface-page name, and no quotes) in Railway (step 3). Redeploy.
 3. As an ops admin, open **/catalog** in the web app and click **Refresh catalog from Airtable**
    (or wait for the nightly 4am sync). Only cards with `Status = Active` import; retired cards are
    deactivated automatically. The button reports created / updated / deactivated / images-copied /
    errors.
-4. Artwork is copied into the `design-assets` bucket, so make sure that bucket exists (step 1a)
-   before the first sync.
+4. Artwork is copied into the `design-assets` bucket. The sync **creates that bucket itself**
+   (public) if missing, so no manual step is needed — but if you pre-create it, name it exactly
+   `design-assets` and make it public.
+
+If a sync errors, the ops screen shows the real reason (ADR 0011): a **403** means the token needs
+`data.records:read` and the base added under **Access** (the error also lists the base's real table
+names); a **"table not found"** means `AIRTABLE_CARDS_TABLE` is wrong — use the `tbl…` id.
 
 ---
 
