@@ -77,7 +77,9 @@ export function DesignsClient({
       <section className="flex flex-col gap-4">
         <h2 className="font-semibold">My designs</h2>
         {savedDesigns.length === 0 ? (
-          <p className="text-sm text-foreground/60">No saved designs yet — start from a template above.</p>
+          <p className="text-sm text-foreground/60">
+            No saved designs yet — start from a template above.
+          </p>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {savedDesigns.map((design) => (

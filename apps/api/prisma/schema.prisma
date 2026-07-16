@@ -375,6 +375,8 @@ model PlanEntitlement {
   batchOrderMaxSize    Int     @default(20) @map("batch_order_max_size")
   cardDiscountPercent  Decimal @default(0) @db.Decimal(5, 2) @map("card_discount_percent")
   autoSendEnabled      Boolean @default(false) @map("auto_send_enabled")
+  /// Null for the free plan, which has no Stripe subscription object at all.
+  stripePriceId       String? @map("stripe_price_id")
 
   @@map("plan_entitlements")
 }

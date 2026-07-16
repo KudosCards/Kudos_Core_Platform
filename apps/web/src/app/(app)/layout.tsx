@@ -10,6 +10,8 @@ const navItems = [
   { label: "Recipients", href: "/recipients" },
   { label: "Designs", href: "/designs" },
   { label: "Approvals", href: "/approvals" },
+  { label: "Checkout", href: "/batch-orders" },
+  { label: "Billing", href: "/billing" },
 ];
 
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {

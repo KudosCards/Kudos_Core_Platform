@@ -19,7 +19,11 @@ const OCCASION_TYPE_LABELS: Record<string, string> = {
 };
 
 function formatOccasionDate(value: string | Date): string {
-  return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 export function ApprovalsClient({
@@ -30,7 +34,9 @@ export function ApprovalsClient({
   savedDesigns: SavedDesign[];
 }) {
   const [occasions, setOccasions] = useState(initialOccasions);
-  const [selectedDesignByOccasion, setSelectedDesignByOccasion] = useState<Record<string, string>>({});
+  const [selectedDesignByOccasion, setSelectedDesignByOccasion] = useState<Record<string, string>>(
+    {},
+  );
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,7 +108,9 @@ export function ApprovalsClient({
                     </>
                   )}
                 </p>
-                <p className="text-sm text-foreground/60">{formatOccasionDate(occasion.occasionDate)}</p>
+                <p className="text-sm text-foreground/60">
+                  {formatOccasionDate(occasion.occasionDate)}
+                </p>
               </div>
 
               <div className="flex items-center gap-2">
@@ -147,8 +155,11 @@ export function ApprovalsClient({
 
       {savedDesigns.length === 0 && (
         <p className="text-sm text-foreground/60">
-          You don&apos;t have any saved designs yet — visit <a href="/designs" className="underline">Designs</a> to
-          create one before approving occasions.
+          You don&apos;t have any saved designs yet — visit{" "}
+          <a href="/designs" className="underline">
+            Designs
+          </a>{" "}
+          to create one before approving occasions.
         </p>
       )}
     </div>

@@ -88,9 +88,7 @@ export function DesignCanvas({
                 strokeWidth={isSelected ? 0.5 : 0}
                 onClick={() => onSelect(element.id)}
                 onTap={() => onSelect(element.id)}
-                onDragEnd={(e) =>
-                  onElementChange({ ...element, x: e.target.x(), y: e.target.y() })
-                }
+                onDragEnd={(e) => onElementChange({ ...element, x: e.target.x(), y: e.target.y() })}
               />
             );
           }

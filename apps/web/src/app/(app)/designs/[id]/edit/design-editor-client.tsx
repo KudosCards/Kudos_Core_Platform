@@ -143,7 +143,9 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
           className="rounded-md border border-black/10 px-3 py-2 text-lg font-semibold dark:border-white/10"
         />
         <div className="flex items-center gap-3">
-          {savedAt && <span className="text-xs text-foreground/50">Saved {savedAt.toLocaleTimeString()}</span>}
+          {savedAt && (
+            <span className="text-xs text-foreground/50">Saved {savedAt.toLocaleTimeString()}</span>
+          )}
           <button
             type="button"
             disabled={saving}
@@ -236,7 +238,9 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
                 Font
                 <select
                   value={selectedElement.fontFamily}
-                  onChange={(e) => updateElement({ ...selectedElement, fontFamily: e.target.value })}
+                  onChange={(e) =>
+                    updateElement({ ...selectedElement, fontFamily: e.target.value })
+                  }
                   className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
                 >
                   {FONT_OPTIONS.map((font) => (

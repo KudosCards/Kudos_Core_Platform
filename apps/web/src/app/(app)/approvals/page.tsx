@@ -11,14 +11,13 @@ interface Paginated<T> {
 
 export default async function ApprovalsPage() {
   const [occasions, savedDesigns] = await Promise.all([
-    serverApiFetch<Paginated<OccasionWithRecipient>>("/occasions?status=pending_approval&perPage=50"),
+    serverApiFetch<Paginated<OccasionWithRecipient>>(
+      "/occasions?status=pending_approval&perPage=50",
+    ),
     serverApiFetch<SavedDesign[]>("/saved-designs"),
   ]);
 
   return (
-    <ApprovalsClient
-      initialOccasions={occasions?.items ?? []}
-      savedDesigns={savedDesigns ?? []}
-    />
+    <ApprovalsClient initialOccasions={occasions?.items ?? []} savedDesigns={savedDesigns ?? []} />
   );
 }

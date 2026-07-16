@@ -142,6 +142,10 @@ describe("Recipients (e2e)", () => {
   });
 
   it("enforces the plan's recipient cap", async () => {
+    // This mutates the *global* free-plan entitlement row (not account-scoped),
+    // so any other e2e spec file creating recipients on the free plan while
+    // this window is open would see the same cap-of-1 — see the maxWorkers: 1
+    // note in jest-e2e.json for why e2e spec files must run serially.
     const { token, accountId } = await signUp();
     await prisma.planEntitlement.update({
       where: { planId: "free" },
@@ -252,9 +256,11 @@ describe("Recipients (e2e)", () => {
 
     // Second data row has an extra field vs. the header — a mismatched column
     // count, which csv-parse throws on synchronously if not caught.
-    const csv = ["firstName,lastName,postcode", "Good,Row,SW1A 1AA", "Bad,Row,SW1A 2AA,extra,columns"].join(
-      "\n",
-    );
+    const csv = [
+      "firstName,lastName,postcode",
+      "Good,Row,SW1A 1AA",
+      "Bad,Row,SW1A 2AA,extra,columns",
+    ].join("\n");
 
     await request(app.getHttpServer())
       .post("/recipients/import")
