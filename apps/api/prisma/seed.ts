@@ -110,6 +110,25 @@ async function main(): Promise<void> {
     });
   }
   console.log(`Seeded ${CARD_DESIGN_TEMPLATES.length} card design templates`);
+
+  // Bootstrap platform (ops) admins from an env var — a comma-separated list of
+  // Supabase user ids. Empty/unset in CI (no real users exist there); set in
+  // real environments to grant the print/post team fulfillment-queue access.
+  // See docs/adr/0010-phase-5-fulfillment-ops.md.
+  const platformAdminIds = (process.env.PLATFORM_ADMIN_USER_IDS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+  for (const userId of platformAdminIds) {
+    await prisma.platformAdmin.upsert({
+      where: { userId },
+      update: {},
+      create: { userId },
+    });
+  }
+  if (platformAdminIds.length > 0) {
+    console.log(`Seeded ${platformAdminIds.length} platform admin(s)`);
+  }
 }
 
 main()

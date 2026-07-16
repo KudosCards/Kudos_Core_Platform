@@ -12,9 +12,15 @@ export interface CurrentMembershipContext {
   role: MembershipRole;
 }
 
+/** Populated by PlatformAdminGuard for internal ops (print/post) staff. */
+export interface PlatformAdminContext {
+  userId: string;
+}
+
 declare module "express" {
   interface Request {
     authUser?: AuthenticatedUser;
     membership?: CurrentMembershipContext;
+    platformAdmin?: PlatformAdminContext;
   }
 }
