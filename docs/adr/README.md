@@ -12,3 +12,4 @@ point for a new ADR.
 - [0006 — Phase 2 scope](./0006-phase-2-scope.md)
 - [0007 — shared-types build step](./0007-shared-types-build-step.md)
 - [0008 — Checkout pricing](./0008-checkout-pricing.md)
+- [0009 — Phase 4 scope: digital message pages](./0009-phase-4-message-pages.md)

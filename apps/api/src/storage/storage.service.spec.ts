@@ -35,7 +35,7 @@ describe("StorageService", () => {
     const { client, from } = buildMockClient();
     const service = new StorageService(client);
 
-    const result = await service.createSignedUpload(accountId, {
+    const result = await service.createSignedUpload(DESIGN_ASSETS_BUCKET, accountId, {
       fileName: "photo.png",
       contentType: "image/png",
     });
@@ -56,7 +56,7 @@ describe("StorageService", () => {
     const { client } = buildMockClient({ createSignedUploadUrl });
     const service = new StorageService(client);
 
-    await service.createSignedUpload(accountId, {
+    await service.createSignedUpload(DESIGN_ASSETS_BUCKET, accountId, {
       fileName: "../../etc/passwd.png",
       contentType: "image/png",
     });
@@ -75,7 +75,10 @@ describe("StorageService", () => {
     const service = new StorageService(client);
 
     await expect(
-      service.createSignedUpload(accountId, { fileName: "a.png", contentType: "image/png" }),
+      service.createSignedUpload(DESIGN_ASSETS_BUCKET, accountId, {
+        fileName: "a.png",
+        contentType: "image/png",
+      }),
     ).rejects.toThrow(InternalServerErrorException);
   });
 });
