@@ -162,8 +162,16 @@ export class AirtableCatalogSource implements CatalogSource {
       const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
       if (!response.ok) {
         const body = await response.text().catch(() => "");
+        // A 403/404 here is almost always a wrong TABLE name (Airtable folds
+        // "not found" and "no permission" into one code). If the token can read
+        // the base schema, list the real table names so the operator knows
+        // exactly what to set AIRTABLE_CARDS_TABLE to — no guessing.
+        const available =
+          response.status === 403 || response.status === 404
+            ? await this.describeTables(apiKey, baseId)
+            : "";
         throw new Error(
-          `Airtable request failed (${response.status}) — ${hintFor(response.status, this.config.tableName)}. ${body.slice(0, 200)}`,
+          `Airtable request failed (${response.status}) — ${hintFor(response.status, this.config.tableName)}.${available} ${body.slice(0, 160)}`,
         );
       }
 
@@ -176,6 +184,30 @@ export class AirtableCatalogSource implements CatalogSource {
     }
 
     throw new Error(`Airtable pagination exceeded ${MAX_PAGES} pages — aborting`);
+  }
+
+  /**
+   * Best-effort: uses the schema.bases:read scope to list the base's real table
+   * names, so a "table not found" error can name them. Returns "" if the scope
+   * is missing or the call fails — never throws, so it can only add detail.
+   */
+  private async describeTables(apiKey: string, baseId: string): Promise<string> {
+    try {
+      const response = await fetch(`${AIRTABLE_API_BASE}/meta/bases/${baseId}/tables`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!response.ok) {
+        return "";
+      }
+      const data = (await response.json()) as { tables?: { id: string; name: string }[] };
+      const names = (data.tables ?? []).map((t) => `"${t.name}" (${t.id})`);
+      if (names.length === 0) {
+        return "";
+      }
+      return ` The token CAN see this base; its tables are: ${names.join(", ")}. Set AIRTABLE_CARDS_TABLE to one of these (the name or the tbl… id).`;
+    } catch {
+      return "";
+    }
   }
 }
 

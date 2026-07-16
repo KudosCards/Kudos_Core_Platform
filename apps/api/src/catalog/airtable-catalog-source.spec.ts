@@ -98,4 +98,28 @@ describe("AirtableCatalogSource", () => {
       /401.*token is invalid/,
     );
   });
+
+  it("on a 403 lists the base's real tables (via schema) so the operator can fix the table name", async () => {
+    fetchSpy = jest
+      .spyOn(global, "fetch")
+      // 1) records fetch is forbidden / table-not-found
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: () => Promise.resolve('{"error":{"type":"INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND"}}'),
+      } as unknown as Response)
+      // 2) schema fetch succeeds and returns the real tables
+      .mockResolvedValueOnce(
+        jsonResponse({
+          tables: [
+            { id: "tblAAA", name: "Cards" },
+            { id: "tblBBB", name: "Recipients" },
+          ],
+        }),
+      );
+
+    await expect(new AirtableCatalogSource(config).fetchActiveCards()).rejects.toThrow(
+      /tables are: "Cards" \(tblAAA\), "Recipients" \(tblBBB\)/,
+    );
+  });
 });
