@@ -23,6 +23,15 @@ export interface CatalogSyncSummary {
   errors: { externalId: string; sku: string | null; reason: string }[];
 }
 
+// How many artwork copies run at once. High enough that a few hundred cards
+// finish in seconds (so the request doesn't time out), low enough not to hammer
+// Supabase storage or exhaust the DB connection pool.
+const IMAGE_COPY_CONCURRENCY = 8;
+
+// Cap on a single artwork download so one hung Airtable attachment can't stall
+// the whole run.
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 20_000;
+
 const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -93,13 +102,13 @@ export class CatalogSyncService {
     const existing = await this.prisma.cardDesign.findMany({ where: { externalId: { not: null } } });
     const byExternalId = new Map(existing.map((design) => [design.externalId as string, design]));
 
-    for (const record of records) {
+    // Copy artwork with bounded concurrency, not one-at-a-time: a few hundred
+    // sequential image download+upload round-trips take long enough that the
+    // HTTP request times out before responding. Tallies are applied after each
+    // card resolves (single-threaded, so no locking needed).
+    await mapWithConcurrency(records, IMAGE_COPY_CONCURRENCY, async (record) => {
       try {
         const copied = await this.resolveArtwork(record, byExternalId.get(record.externalId));
-        if (copied.copiedNow) {
-          summary.imagesCopied += 1;
-        }
-
         const data = {
           category: record.category,
           name: record.title,
@@ -115,6 +124,9 @@ export class CatalogSyncService {
           update: data,
         });
 
+        if (copied.copiedNow) {
+          summary.imagesCopied += 1;
+        }
         if (byExternalId.has(record.externalId)) {
           summary.updated += 1;
         } else {
@@ -125,7 +137,7 @@ export class CatalogSyncService {
         this.logger.error(`Failed to sync card ${record.sku ?? record.externalId}: ${reason}`);
         summary.errors.push({ externalId: record.externalId, sku: record.sku, reason });
       }
-    }
+    });
 
     summary.deactivated = await this.deactivateRetired(records);
 
@@ -196,7 +208,9 @@ export class CatalogSyncService {
     externalId: string,
     image: NonNullable<CatalogCardRecord["frontImage"]>,
   ): Promise<string> {
-    const response = await fetch(image.url);
+    const response = await fetch(image.url, {
+      signal: AbortSignal.timeout(IMAGE_DOWNLOAD_TIMEOUT_MS),
+    });
     if (!response.ok) {
       throw new Error(`Could not download artwork (${response.status})`);
     }
@@ -247,4 +261,25 @@ function extensionFor(filename: string | null, contentType: string): string {
 function placeholderThumbnail(title: string): string {
   const label = encodeURIComponent(title.slice(0, 30));
   return `https://placehold.co/450x600/e5e7eb/374151?text=${label}`;
+}
+
+/**
+ * Runs `fn` over `items` with at most `limit` in flight at once. A fixed pool of
+ * workers pulls from a shared cursor — simple, no dependency, and keeps memory
+ * flat regardless of how large the catalog grows.
+ */
+async function mapWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      await fn(items[index]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
 }
