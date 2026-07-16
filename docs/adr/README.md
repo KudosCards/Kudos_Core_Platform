@@ -11,3 +11,4 @@ point for a new ADR.
 - [0005 — JWT verification via JWKS](./0005-jwt-verification-via-jwks.md)
 - [0006 — Phase 2 scope](./0006-phase-2-scope.md)
 - [0007 — shared-types build step](./0007-shared-types-build-step.md)
+- [0008 — Checkout pricing](./0008-checkout-pricing.md)

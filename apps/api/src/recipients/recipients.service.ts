@@ -50,7 +50,11 @@ export class RecipientsService {
     private readonly audit: AuditService,
   ) {}
 
-  async create(accountId: string, actorUserId: string, dto: CreateRecipientDto): Promise<Recipient> {
+  async create(
+    accountId: string,
+    actorUserId: string,
+    dto: CreateRecipientDto,
+  ): Promise<Recipient> {
     let recipient: Recipient;
     try {
       // Cap-check-then-insert is a classic TOCTOU race: two concurrent creates
@@ -185,7 +189,11 @@ export class RecipientsService {
     return recipient;
   }
 
-  async importCsv(accountId: string, actorUserId: string, csvBuffer: Buffer): Promise<ImportSummary> {
+  async importCsv(
+    accountId: string,
+    actorUserId: string,
+    csvBuffer: Buffer,
+  ): Promise<ImportSummary> {
     let rows: Record<string, string>[];
     try {
       rows = parse(csvBuffer, { columns: true, skip_empty_lines: true, trim: true });
@@ -255,7 +263,12 @@ export class RecipientsService {
 
     for (const { rowNumber, parsed } of parsedRows) {
       const hasDistinguishingInfo = parsed.addressPostcode !== null || parsed.dateOfBirth !== null;
-      const key = dedupeKey(parsed.firstName, parsed.lastName, parsed.addressPostcode, parsed.dateOfBirth);
+      const key = dedupeKey(
+        parsed.firstName,
+        parsed.lastName,
+        parsed.addressPostcode,
+        parsed.dateOfBirth,
+      );
 
       const existing = hasDistinguishingInfo ? existingByKey.get(key) : undefined;
       if (existing) {
@@ -299,7 +312,9 @@ export class RecipientsService {
       await this.prisma.recipient.createMany({ data: toCreate });
     }
     await Promise.all(
-      toUpdate.map(({ id, email }) => this.prisma.recipient.update({ where: { id }, data: { email } } )),
+      toUpdate.map(({ id, email }) =>
+        this.prisma.recipient.update({ where: { id }, data: { email } }),
+      ),
     );
 
     await this.audit.record({
@@ -308,7 +323,11 @@ export class RecipientsService {
       action: "import",
       targetType: "Recipient",
       targetId: accountId,
-      metadata: { created: summary.created, updated: summary.updated, rejected: summary.rejected.length },
+      metadata: {
+        created: summary.created,
+        updated: summary.updated,
+        rejected: summary.rejected.length,
+      },
     });
 
     return summary;
@@ -322,7 +341,9 @@ export class RecipientsService {
     activeCount: number,
     additional: number,
   ): boolean {
-    return entitlement.recipientCap === null || activeCount + additional <= entitlement.recipientCap;
+    return (
+      entitlement.recipientCap === null || activeCount + additional <= entitlement.recipientCap
+    );
   }
 
   private async assertUnderCap(
@@ -336,9 +357,7 @@ export class RecipientsService {
     }
     const activeCount = await client.recipient.count({ where: { accountId, status: "active" } });
     if (!this.isUnderCap(entitlement, activeCount, additional)) {
-      throw new ForbiddenException(
-        `This plan allows up to ${entitlement.recipientCap} recipients`,
-      );
+      throw new ForbiddenException(`This plan allows up to ${entitlement.recipientCap} recipients`);
     }
   }
 

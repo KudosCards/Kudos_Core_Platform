@@ -12,7 +12,9 @@ import type { ApproveOccasionDto } from "./dto/approve-occasion.dto";
 /** Just enough of the recipient to show a human-readable name in the UI. */
 const RECIPIENT_SELECT = { select: { firstName: true, lastName: true } } as const;
 
-export type Occasion = Prisma.OccasionGetPayload<{ include: { recipient: typeof RECIPIENT_SELECT } }>;
+export type Occasion = Prisma.OccasionGetPayload<{
+  include: { recipient: typeof RECIPIENT_SELECT };
+}>;
 
 @Injectable()
 export class OccasionsService {
@@ -167,9 +169,7 @@ export class OccasionsService {
       if (!existing) {
         throw new NotFoundException("Occasion not found");
       }
-      throw new ConflictException(
-        `Occasion is "${existing.status}", not pending approval`,
-      );
+      throw new ConflictException(`Occasion is "${existing.status}", not pending approval`);
     }
 
     return this.prisma.occasion.findFirstOrThrow({

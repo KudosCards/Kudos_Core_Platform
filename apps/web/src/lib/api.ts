@@ -25,7 +25,9 @@ export async function apiFetch<T>(
   const response = await fetch(`${env.NEXT_PUBLIC_API_URL}${path}`, {
     ...init,
     headers: {
-      ...(init.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+      ...(init.body && !(init.body instanceof FormData)
+        ? { "Content-Type": "application/json" }
+        : {}),
       ...init.headers,
       Authorization: `Bearer ${accessToken}`,
     },
@@ -34,7 +36,11 @@ export async function apiFetch<T>(
 
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
-    throw new ApiError(`API request to ${path} failed with ${response.status}`, response.status, body);
+    throw new ApiError(
+      `API request to ${path} failed with ${response.status}`,
+      response.status,
+      body,
+    );
   }
 
   return response.json() as Promise<T>;

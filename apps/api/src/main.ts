@@ -6,7 +6,10 @@ import { configureApp } from "./configure-app";
 import type { EnvConfig } from "./config/env.schema";
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // rawBody: true exposes req.rawBody (the exact bytes Stripe signed) alongside
+  // normal JSON body parsing for every route, so the webhook handler can verify
+  // Stripe's signature without a separate body-parser exclusion for that one route.
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
   app.useLogger(app.get(Logger));
   configureApp(app);
 

@@ -30,7 +30,11 @@ export default async function DashboardPage() {
       </div>
 
       <p className="text-foreground/70">
-        Occasion tracking and card ordering wire up here in Phase 2 and 3.
+        Approve occasions, then head to{" "}
+        <Link href="/batch-orders" className="underline">
+          Checkout
+        </Link>{" "}
+        to print and post them.
       </p>
     </div>
   );

@@ -13,12 +13,20 @@ describe("StorageService", () => {
       createSignedUploadUrl:
         overrides?.createSignedUploadUrl ??
         jest.fn().mockResolvedValue({
-          data: { signedUrl: "https://example.supabase.co/upload", token: "tok", path: "some/path.png" },
+          data: {
+            signedUrl: "https://example.supabase.co/upload",
+            token: "tok",
+            path: "some/path.png",
+          },
           error: null,
         }),
       getPublicUrl:
         overrides?.getPublicUrl ??
-        jest.fn().mockReturnValue({ data: { publicUrl: "https://example.supabase.co/public/some/path.png" } }),
+        jest
+          .fn()
+          .mockReturnValue({
+            data: { publicUrl: "https://example.supabase.co/public/some/path.png" },
+          }),
     });
     return { client: { storage: { from } } as unknown as SupabaseClient, from };
   }

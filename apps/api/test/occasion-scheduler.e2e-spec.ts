@@ -23,7 +23,9 @@ describe("OccasionSchedulerService (e2e)", () => {
     await app.close();
   });
 
-  async function signUpWithRecipient(dateOfBirth: string): Promise<{ accountId: string; recipientId: string }> {
+  async function signUpWithRecipient(
+    dateOfBirth: string,
+  ): Promise<{ accountId: string; recipientId: string }> {
     const token = await mintToken(randomUUID());
     const signupResponse = await request(app.getHttpServer())
       .post("/accounts")

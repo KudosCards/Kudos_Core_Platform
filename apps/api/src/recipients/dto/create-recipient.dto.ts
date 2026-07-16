@@ -1,8 +1,7 @@
 import { ApiPropertyOptional, ApiProperty } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import { IsArray, IsDate, IsEmail, IsOptional, IsString, Length, Matches } from "class-validator";
-
-const UK_POSTCODE_REGEX = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
+import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
 
 export class CreateRecipientDto {
   @ApiProperty()

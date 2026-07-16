@@ -61,9 +61,7 @@ describe("parseRecipientRow", () => {
   });
 
   it("rejects an invalid email", () => {
-    expect(() => parseRecipientRow({ ...baseRow, email: "not-an-email" })).toThrow(
-      /valid email/,
-    );
+    expect(() => parseRecipientRow({ ...baseRow, email: "not-an-email" })).toThrow(/valid email/);
   });
 
   it("parses a fully populated row", () => {
