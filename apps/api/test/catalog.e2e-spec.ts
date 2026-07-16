@@ -207,6 +207,23 @@ describe("Catalog sync (e2e)", () => {
     );
   });
 
+  it("surfaces a real Airtable failure as a 502 with the reason (not a generic 500)", async () => {
+    const token = await opsToken();
+    const spy = jest
+      .spyOn(sourceMock, "fetchActiveCards")
+      .mockRejectedValueOnce(
+        new Error("Airtable request failed (401) — the token is invalid or was regenerated"),
+      );
+
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(502);
+
+    expect((response.body as { message: string }).message).toContain("token is invalid");
+    spy.mockRestore();
+  });
+
   it("does not deactivate anything when the fetch returns no cards", async () => {
     const externalId = `rec${randomUUID().slice(0, 14)}`;
     const token = await opsToken();
