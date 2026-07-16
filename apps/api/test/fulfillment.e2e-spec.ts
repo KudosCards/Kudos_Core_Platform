@@ -171,8 +171,58 @@ describe("Fulfillment (e2e)", () => {
       .get("/fulfillment/jobs?status=pending&perPage=100")
       .set("Authorization", `Bearer ${opsToken}`)
       .expect(200);
-    const ids = (response.body as { items: { id: string }[] }).items.map((j) => j.id);
+    const items = (
+      response.body as { items: { id: string; orderRecipient: Record<string, unknown> }[] }
+    ).items;
+    const ids = items.map((j) => j.id);
     expect(ids).toEqual(expect.arrayContaining([orderA.jobId, orderB.jobId]));
+
+    // Data minimisation: the queue list must NOT carry the street address —
+    // only city + postcode. Full addresses come from the audited export.
+    const sample = items.find((j) => j.id === orderA.jobId)!;
+    expect(sample.orderRecipient).toHaveProperty("shippingAddressCity");
+    expect(sample.orderRecipient).toHaveProperty("shippingAddressPostcode");
+    expect(sample.orderRecipient).not.toHaveProperty("shippingAddressLine1");
+    expect(sample.orderRecipient).not.toHaveProperty("shippingAddressLine2");
+  });
+
+  it("exports full addresses for a print run and writes one audit row per card", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+    const orderA = await createPaidOrder(token);
+    const orderB = await createPaidOrder(token);
+
+    const response = await request(app.getHttpServer())
+      .post("/fulfillment/export")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .send({ jobIds: [orderA.jobId, orderB.jobId] })
+      .expect(201);
+    const rows = response.body as {
+      jobId: string;
+      shippingAddressLine1: string;
+      shippingAddressPostcode: string;
+    }[];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.shippingAddressLine1).toBe("1 Test Street");
+    expect(rows[0]!.shippingAddressPostcode).toBe("SW1A 1AA");
+
+    const auditRows = await prisma.auditLogEntry.findMany({
+      where: {
+        action: "fulfillment_address_export",
+        targetId: { in: [orderA.jobId, orderB.jobId] },
+      },
+    });
+    expect(auditRows).toHaveLength(2);
+  });
+
+  it("refuses the address export to a non-platform-admin", async () => {
+    const { token } = await signUp();
+    const order = await createPaidOrder(token);
+    await request(app.getHttpServer())
+      .post("/fulfillment/export")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ jobIds: [order.jobId] })
+      .expect(403);
   });
 
   it("runs a job through the full lifecycle and propagates each step", async () => {

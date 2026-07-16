@@ -7,11 +7,14 @@ import type { Paginated } from "../common/paginated";
 import {
   FulfillmentService,
   type FulfillmentJob,
+  type FulfillmentQueueJob,
   type BulkTransitionSummary,
+  type ExportedAddress,
 } from "./fulfillment.service";
 import { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { TransitionFulfillmentDto } from "./dto/transition-fulfillment.dto";
 import { BulkTransitionFulfillmentDto } from "./dto/bulk-transition-fulfillment.dto";
+import { ExportAddressesDto } from "./dto/export-addresses.dto";
 
 /**
  * The internal print/post team's queue. Every route is gated by
@@ -33,7 +36,7 @@ export class FulfillmentController {
   }
 
   @Get("jobs")
-  list(@Query() query: ListFulfillmentQueryDto): Promise<Paginated<FulfillmentJob>> {
+  list(@Query() query: ListFulfillmentQueryDto): Promise<Paginated<FulfillmentQueueJob>> {
     return this.fulfillmentService.list(query);
   }
 
@@ -45,11 +48,21 @@ export class FulfillmentController {
     return this.fulfillmentService.findOne(admin.userId, id);
   }
 
+  /** Pull full dispatch addresses for a print run — the audited path to the
+   * street address the queue list deliberately withholds (see the service). */
+  @Post("export")
+  exportAddresses(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body() dto: ExportAddressesDto,
+  ): Promise<ExportedAddress[]> {
+    return this.fulfillmentService.exportAddresses(admin.userId, dto);
+  }
+
   @Post("jobs/:id/claim")
   claim(
     @CurrentPlatformAdmin() admin: PlatformAdminContext,
     @Param("id", ParseUUIDPipe) id: string,
-  ): Promise<FulfillmentJob> {
+  ): Promise<FulfillmentQueueJob> {
     return this.fulfillmentService.claim(admin.userId, id);
   }
 
@@ -58,7 +71,7 @@ export class FulfillmentController {
     @CurrentPlatformAdmin() admin: PlatformAdminContext,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: TransitionFulfillmentDto,
-  ): Promise<FulfillmentJob> {
+  ): Promise<FulfillmentQueueJob> {
     return this.fulfillmentService.transition(admin.userId, id, dto);
   }
 
