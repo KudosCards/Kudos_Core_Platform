@@ -20,6 +20,7 @@ const orderRecipientSchema = z.object({
   dispatchOption: z.string(),
   postageClass: z.string(),
   priceMinor: z.number(),
+  postageMinor: z.number(),
   status: z.string(),
 });
 
@@ -148,10 +149,13 @@ describe("Batch orders (e2e)", () => {
     const order = batchOrderSchema.parse(response.body);
 
     expect(order.status).toBe("draft");
+    // One first-class card: £1.50 card + £1.80 stamp = £3.30.
     expect(order.subtotalMinor).toBe(150);
-    expect(order.totalMinor).toBe(150);
+    expect(order.postageMinor).toBe(180);
+    expect(order.totalMinor).toBe(330);
     expect(order.orderRecipients).toHaveLength(1);
     expect(order.orderRecipients[0]?.priceMinor).toBe(150);
+    expect(order.orderRecipients[0]?.postageMinor).toBe(180);
     expect(order.orderRecipients[0]?.status).toBe("approved");
 
     const occasion = await prisma.occasion.findUniqueOrThrow({ where: { id: occasionId } });
@@ -322,7 +326,8 @@ describe("Batch orders (e2e)", () => {
       Stripe.Checkout.SessionCreateParams,
     ];
     expect(sessionArgs.mode).toBe("payment");
-    expect(sessionArgs.line_items?.[0]?.price_data?.unit_amount).toBe(150);
+    // £1.50 card + £1.80 first-class stamp = £3.30 charged.
+    expect(sessionArgs.line_items?.[0]?.price_data?.unit_amount).toBe(330);
 
     const stored = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.id } });
     expect(stored.status).toBe("pending_payment");

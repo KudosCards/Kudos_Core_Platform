@@ -16,7 +16,7 @@ import type { EnvConfig } from "../config/env.schema";
 import type { Paginated } from "../common/paginated";
 import type { CheckoutResult } from "../common/checkout-result";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
-import { computeCardPriceMinor } from "../billing/billing.constants";
+import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.constants";
 import type { CreateBatchOrderDto } from "./dto/create-batch-order.dto";
 import type { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
 
@@ -88,7 +88,38 @@ export class BatchOrdersService {
       }
 
       const occasionsById = new Map(occasions.map((o) => [o.id, o]));
-      const subtotalMinor = priceMinor * dto.lines.length;
+
+      // Each card is [card price (VAT-inclusive) + one stamp]. Postage is a
+      // per-card charge on top and varies by the line's postage class, so it's
+      // summed line-by-line rather than a flat order-level figure.
+      const lines = dto.lines.map((line) => {
+        const occasion = occasionsById.get(line.occasionId);
+        // Guaranteed present: every occasionId was checked against
+        // occasionsById's source (`occasions`) above.
+        if (!occasion?.recipientId || !occasion.savedDesignId) {
+          throw new ConflictException(
+            `Occasion ${line.occasionId} is missing a recipient or design`,
+          );
+        }
+        return {
+          batchOrderId: "", // set after the order is created
+          recipientId: occasion.recipientId,
+          occasionId: occasion.id,
+          savedDesignId: occasion.savedDesignId,
+          shippingAddressLine1: line.shippingAddressLine1,
+          shippingAddressLine2: line.shippingAddressLine2 ?? null,
+          shippingAddressCity: line.shippingAddressCity,
+          shippingAddressPostcode: line.shippingAddressPostcode,
+          dispatchOption: line.dispatchOption,
+          postageClass: line.postageClass,
+          priceMinor,
+          postageMinor: computePostageMinor(line.postageClass),
+          status: "approved" as const,
+        };
+      });
+
+      const subtotalMinor = lines.reduce((sum, line) => sum + line.priceMinor, 0);
+      const postageMinor = lines.reduce((sum, line) => sum + line.postageMinor, 0);
 
       const order = await tx.batchOrder.create({
         data: {
@@ -96,36 +127,13 @@ export class BatchOrdersService {
           createdByUserId: actorUserId,
           status: "draft",
           subtotalMinor,
-          postageMinor: 0,
-          totalMinor: subtotalMinor,
+          postageMinor,
+          totalMinor: subtotalMinor + postageMinor,
         },
       });
 
       await tx.orderRecipient.createMany({
-        data: dto.lines.map((line) => {
-          const occasion = occasionsById.get(line.occasionId);
-          // Guaranteed present: every occasionId was checked against
-          // occasionsById's source (`occasions`) above.
-          if (!occasion?.recipientId || !occasion.savedDesignId) {
-            throw new ConflictException(
-              `Occasion ${line.occasionId} is missing a recipient or design`,
-            );
-          }
-          return {
-            batchOrderId: order.id,
-            recipientId: occasion.recipientId,
-            occasionId: occasion.id,
-            savedDesignId: occasion.savedDesignId,
-            shippingAddressLine1: line.shippingAddressLine1,
-            shippingAddressLine2: line.shippingAddressLine2 ?? null,
-            shippingAddressCity: line.shippingAddressCity,
-            shippingAddressPostcode: line.shippingAddressPostcode,
-            dispatchOption: line.dispatchOption,
-            postageClass: line.postageClass,
-            priceMinor,
-            status: "approved",
-          };
-        }),
+        data: lines.map((line) => ({ ...line, batchOrderId: order.id })),
       });
 
       return tx.batchOrder.findUniqueOrThrow({

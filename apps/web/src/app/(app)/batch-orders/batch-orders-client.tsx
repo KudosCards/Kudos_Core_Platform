@@ -287,8 +287,8 @@ export function BatchOrdersClient({
                       }
                       className={inputClass}
                     >
-                      <option value="first_class">First class post</option>
-                      <option value="second_class">Second class post</option>
+                      <option value="first_class">First class post (+£1.80/card)</option>
+                      <option value="second_class">Second class post (+£0.91/card)</option>
                     </select>
                   </div>
                 )}

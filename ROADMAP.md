@@ -68,12 +68,9 @@ internal **fulfilment ops queue**.
 
 ## Open decisions (needed before / during the money-path work)
 
-1. **Pricing model — CONFIRMED CHANGE.** Postage is charged **per card, on top of the card
-   price** (5 cards = 5 stamps), plus VAT — _not_ the flat postage-inclusive £1.50 the code
-   currently assumes. This must be corrected before wallet/auto-send. Still to pin down:
-   - Exact per-card postage for 1st vs 2nd class (screenshots suggest ≈ £1.80 / £0.91 — confirm).
-   - VAT treatment (which components are standard-rated vs zero/exempt; is displayed total
-     VAT-inclusive?).
+1. **Pricing model — RESOLVED & IMPLEMENTED (Phase 6, done).** Card price is £1.50 **VAT-inclusive**
+   (minus plan discount); **postage is a separate per-card charge** — £1.80 first class, £0.91 second
+   class, one stamp per card, VAT-exempt. Checkout total = Σ `[ card (incl. VAT) + stamp ]`.
 2. **Marketing site hosting.** New Next.js public route group vs a separate CMS. Recommendation:
    build it as public pages in this app so signup/checkout flow is seamless and version-controlled.
 3. **Auto-send funding.** Wallet balance and/or saved card (Stripe off-session). Recommendation:
@@ -83,10 +80,11 @@ internal **fulfilment ops queue**.
 
 ## Remaining work (proposed phases)
 
-### Phase 6 — Pricing correction (money-path) — _do first_
-Postage becomes a **per-card** line item on top of card price, with VAT handled correctly.
-Touches batch-order pricing, checkout totals, order records, and every downstream total.
-Foundational: wallet and auto-send depend on correct maths.
+### Phase 6 — Pricing correction (money-path) — ✅ done
+Postage is now a **per-card** charge on top of the VAT-inclusive card price (£1.80 first / £0.91
+second class, VAT-exempt). `OrderRecipient.postageMinor`, `BatchOrder.postageMinor`, and
+`totalMinor = subtotal + postage` (what Stripe charges) are all correct; checkout shows the stamp
+cost per class. See ADR 0008 (pricing correction).
 
 ### Phase 7 — Calendar UI
 The missing centrepiece of the journey. Monthly / weekly / list views of each contact's
