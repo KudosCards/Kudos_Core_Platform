@@ -127,6 +127,39 @@ describe("Occasions (e2e)", () => {
     expect(paginatedOccasionsSchema.parse(emptyResponse.body).total).toBe(0);
   });
 
+  it("filters occasions by type and date range (for the calendar)", async () => {
+    const { token } = await signUp();
+    // A May birthday and a December seasonal occasion.
+    await request(app.getHttpServer())
+      .post("/occasions")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ type: "birthday", occasionDate: "2026-05-14" })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post("/occasions")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ type: "seasonal", occasionDate: "2026-12-01" })
+      .expect(201);
+
+    // A May window returns only the birthday.
+    const mayResponse = await request(app.getHttpServer())
+      .get("/occasions?from=2026-05-01&to=2026-05-31")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const may = paginatedOccasionsSchema.parse(mayResponse.body);
+    expect(may.total).toBe(1);
+    expect(may.items[0]?.type).toBe("birthday");
+
+    // A type filter returns only the seasonal occasion.
+    const seasonalResponse = await request(app.getHttpServer())
+      .get("/occasions?type=seasonal")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const seasonal = paginatedOccasionsSchema.parse(seasonalResponse.body);
+    expect(seasonal.total).toBe(1);
+    expect(seasonal.items[0]?.type).toBe("seasonal");
+  });
+
   it("approves an occasion with a saved design, scoped to the account", async () => {
     const { token } = await signUp();
     const savedDesignId = await createSavedDesign(token);
