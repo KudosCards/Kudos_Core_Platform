@@ -1,7 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { FulfillmentJobStatus } from "@prisma/client";
-import { Type } from "class-transformer";
-import { IsEnum, IsInt, IsOptional, Max, Min } from "class-validator";
+import { IsEnum, IsOptional, IsString } from "class-validator";
 
 export class ListFulfillmentQueryDto {
   @ApiPropertyOptional({ enum: FulfillmentJobStatus, default: FulfillmentJobStatus.pending })
@@ -9,18 +8,14 @@ export class ListFulfillmentQueryDto {
   @IsEnum(FulfillmentJobStatus)
   status?: FulfillmentJobStatus;
 
+  // Raw query strings, coerced in the service — see common/pagination.ts.
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page: number = 1;
+  @IsString()
+  page?: string;
 
   @ApiPropertyOptional({ default: 50 })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  perPage: number = 50;
+  @IsString()
+  perPage?: string;
 }

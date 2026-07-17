@@ -1,7 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { OccasionStatus, OccasionType } from "@prisma/client";
-import { Type } from "class-transformer";
-import { IsDateString, IsEnum, IsInt, IsOptional, Max, Min } from "class-validator";
+import { IsDateString, IsEnum, IsOptional, IsString } from "class-validator";
 
 export class ListOccasionsQueryDto {
   @ApiPropertyOptional({ enum: OccasionStatus })
@@ -24,18 +23,14 @@ export class ListOccasionsQueryDto {
   @IsDateString()
   to?: string;
 
+  // Raw query strings, coerced in the service — see common/pagination.ts.
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page: number = 1;
+  @IsString()
+  page?: string;
 
   @ApiPropertyOptional({ default: 25 })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  perPage: number = 25;
+  @IsString()
+  perPage?: string;
 }

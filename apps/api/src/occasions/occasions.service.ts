@@ -11,6 +11,7 @@ import { AuditService } from "../audit/audit.service";
 import { SavedDesignsService } from "../saved-designs/saved-designs.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import type { Paginated } from "../common/paginated";
+import { parsePage, parsePerPage } from "../common/pagination";
 import { POSTAGE_LEAD_DAYS, computeDispatchDate } from "./occasion-scheduling.constants";
 import type { CreateOccasionDto } from "./dto/create-occasion.dto";
 import type { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
@@ -71,6 +72,8 @@ export class OccasionsService {
     actorUserId: string,
     query: ListOccasionsQueryDto,
   ): Promise<Paginated<Occasion>> {
+    const page = parsePage(query.page);
+    const perPage = parsePerPage(query.perPage, 25);
     const where: Prisma.OccasionWhereInput = {
       accountId,
       ...(query.status && { status: query.status }),
@@ -90,8 +93,8 @@ export class OccasionsService {
     // what misbehaves on a pgBouncer pool (see docs/go-live-runbook.md §1c).
     const items = await this.prisma.occasion.findMany({
       where,
-      skip: (query.page - 1) * query.perPage,
-      take: query.perPage,
+      skip: (page - 1) * perPage,
+      take: perPage,
       orderBy: { occasionDate: "asc" },
       include: { recipient: RECIPIENT_SELECT },
     });
@@ -108,11 +111,11 @@ export class OccasionsService {
         type: query.type ?? null,
         from: query.from ?? null,
         to: query.to ?? null,
-        page: query.page,
+        page,
       },
     });
 
-    return { items, total, page: query.page, perPage: query.perPage };
+    return { items, total, page, perPage };
   }
 
   async findOne(accountId: string, actorUserId: string, id: string): Promise<Occasion> {

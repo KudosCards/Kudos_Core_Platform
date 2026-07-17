@@ -1,7 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { RecipientStatus } from "@prisma/client";
-import { Type } from "class-transformer";
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsEnum, IsOptional, IsString } from "class-validator";
 
 export class ListRecipientsQueryDto {
   @ApiPropertyOptional({ enum: RecipientStatus })
@@ -14,18 +13,16 @@ export class ListRecipientsQueryDto {
   @IsString()
   search?: string;
 
+  // Kept as raw query strings and coerced in the service via parsePage/
+  // parsePerPage — NOT class-transformer @Type, which failed in production. See
+  // common/pagination.ts.
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page: number = 1;
+  @IsString()
+  page?: string;
 
   @ApiPropertyOptional({ default: 25 })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  perPage: number = 25;
+  @IsString()
+  perPage?: string;
 }
