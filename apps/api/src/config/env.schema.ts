@@ -37,8 +37,11 @@ export const envSchema = z.object({
   // The table holding the card designs; defaults to the name in the Airtable base.
   AIRTABLE_CARDS_TABLE: z.string().min(1).default("Card List"),
 
-  // Treat an unset/blank env var the same as "not provided" rather than
-  // failing url() validation on an empty string.
+  // Reserved for error monitoring. NOTE: nothing reads this yet — Sentry is not
+  // wired into the API or web app (no @sentry dependency). It's validated here
+  // so the slot is ready, but setting it does not enable monitoring today. See
+  // the go-live runbook's pre-launch section. Treat unset/blank as "not
+  // provided" rather than failing url() on an empty string.
   SENTRY_DSN: z
     .string()
     .url()
