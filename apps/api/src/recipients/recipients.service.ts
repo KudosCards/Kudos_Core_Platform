@@ -98,15 +98,17 @@ export class RecipientsService {
       }),
     };
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.recipient.findMany({
-        where,
-        skip: (query.page - 1) * query.perPage,
-        take: query.perPage,
-        orderBy: { createdAt: "desc" },
-      }),
-      this.prisma.recipient.count({ where }),
-    ]);
+    // Two plain queries, not a $transaction: a paginated total needn't be a
+    // consistent snapshot with the page, and wrapping a read in an explicit
+    // transaction is exactly what misbehaves on a pgBouncer (transaction-mode)
+    // connection pool — see docs/go-live-runbook.md §1c.
+    const items = await this.prisma.recipient.findMany({
+      where,
+      skip: (query.page - 1) * query.perPage,
+      take: query.perPage,
+      orderBy: { createdAt: "desc" },
+    });
+    const total = await this.prisma.recipient.count({ where });
 
     await this.audit.record({
       accountId,

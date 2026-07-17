@@ -85,16 +85,17 @@ export class OccasionsService {
       }),
     };
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.occasion.findMany({
-        where,
-        skip: (query.page - 1) * query.perPage,
-        take: query.perPage,
-        orderBy: { occasionDate: "asc" },
-        include: { recipient: RECIPIENT_SELECT },
-      }),
-      this.prisma.occasion.count({ where }),
-    ]);
+    // Two plain queries, not a $transaction — a paginated total needn't be a
+    // consistent snapshot with the page, and an explicit read transaction is
+    // what misbehaves on a pgBouncer pool (see docs/go-live-runbook.md §1c).
+    const items = await this.prisma.occasion.findMany({
+      where,
+      skip: (query.page - 1) * query.perPage,
+      take: query.perPage,
+      orderBy: { occasionDate: "asc" },
+      include: { recipient: RECIPIENT_SELECT },
+    });
+    const total = await this.prisma.occasion.count({ where });
 
     await this.audit.record({
       accountId,
