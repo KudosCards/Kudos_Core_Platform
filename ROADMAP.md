@@ -38,7 +38,7 @@ The remaining work is mostly customer-facing surface and automation that sits on
 | Milestone moments per contact, choose occasion | ✅ Built |
 | Personalise cards (catalog + editor + `{name}`) | ✅ Built |
 | Bulk multi-card order, per-recipient addresses | ✅ Built |
-| Pay | ⚠️ Card only (**no wallet**) |
+| Pay | ✅ Card **or wallet** (top-up-and-spend balance) |
 | Orders → Kudos HQ → print & post | ✅ Built (ops queue) |
 | Automation / auto-send | ⚠️ Partial (scheduling yes; auto-order/charge/dispatch no) |
 | Subscription tiers | ✅ Built (Stripe) |
@@ -73,8 +73,10 @@ internal **fulfilment ops queue**.
    class, one stamp per card, VAT-exempt. Checkout total = Σ `[ card (incl. VAT) + stamp ]`.
 2. **Marketing site hosting.** New Next.js public route group vs a separate CMS. Recommendation:
    build it as public pages in this app so signup/checkout flow is seamless and version-controlled.
-3. **Auto-send funding.** Wallet balance and/or saved card (Stripe off-session). Recommendation:
-   wallet first (already schema-scaffolded), saved-card later.
+3. **Auto-send funding — wallet now built (Phase 8, done).** Auto-send can debit the account
+   wallet with no human in the loop (reusing `WalletService.payOrder`'s debit-and-settle
+   transaction). Saved-card (Stripe off-session) remains a later option for accounts that prefer
+   not to pre-load a balance.
 
 ---
 
@@ -93,10 +95,15 @@ colour-coded by occasion type, with a **dispatch-dates toggle**, a **type filter
 (approved). Backed by new `from`/`to`/`type` filters on the occasions API. Custom lightweight
 grid, no new dependency.
 
-### Phase 8 — Wallet
-Balance, top-up (Stripe), ledger, and **wallet-as-payment** at checkout. Schema is already
-scaffolded (`WalletLedgerEntry`, `paymentMethod` enum). Also the funding source that makes
-automation friction-free.
+### Phase 8 — Wallet — ✅ done
+Account **wallet** (`/wallet`): current balance, top-up via Stripe (presets £10/£25/£50 + custom,
+credited on verified webhook, idempotent), a ledger of recent activity, and **wallet-as-payment**
+at checkout (Pay by card _or_ Pay with wallet, on a fresh selection or an unfinished draft).
+Balance is the SUM of an append-only `WalletLedgerEntry` ledger (can't drift); every credit/debit
+runs under Serializable isolation so concurrent spends can't overdraw. Wallet payment reuses the
+same post-payment fulfilment step as the Stripe webhook (`settleFulfillment`), so a wallet-paid
+order fulfils identically to a card-paid one. See ADR 0012. This is also the funding source that
+makes Phase 9 automation friction-free.
 
 ### Phase 9 — Auto-send automation
 The "as automated as we can make it" promise, end-to-end: for an upcoming occasion,
@@ -130,6 +137,7 @@ checkout directly, a public card shop, and the "free sample card / 90-second dem
 - **Remaining ~30–35%** is customer-experience surface + automation + marketing — high
   visibility, but layered on top of a proven spine. Risk is low; momentum is high.
 
-Recommended next build: **Phase 6 (pricing correction)** — it's a correctness fix everything
-downstream depends on — then **Phase 7 (Calendar)** as the next visible win, with **Phase 11
-(marketing homepage)** buildable in parallel whenever go-to-market needs it.
+Phases 6, 7, 8, and 11 (homepage) are now shipped. Recommended next build: **Phase 9 (auto-send
+automation)** — the wallet (Phase 8) and per-card pricing (Phase 6) it depends on are both in
+place, so it's now unblocked and is the highest-leverage remaining promise ("as automated as we
+can make it"). **Phase 10 (account & orders experience)** is the natural follow-on.

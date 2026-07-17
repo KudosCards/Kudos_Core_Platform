@@ -3,7 +3,8 @@ import { ConfigService } from "@nestjs/config";
 import Stripe from "stripe";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
-import { MessagesService } from "../messages/messages.service";
+import { BatchOrdersService } from "../batch-orders/batch-orders.service";
+import { WalletService } from "../wallet/wallet.service";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import type { EnvConfig } from "../config/env.schema";
 import { mapStripeSubscriptionStatus } from "./subscription-status.util";
@@ -20,7 +21,8 @@ export class WebhooksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly messages: MessagesService,
+    private readonly batchOrders: BatchOrdersService,
+    private readonly wallet: WalletService,
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
   ) {}
@@ -59,6 +61,13 @@ export class WebhooksService {
   }
 
   private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session): Promise<void> {
+    if (session.metadata?.type === "wallet_topup") {
+      // A wallet top-up — credit the balance (idempotent) rather than fulfil an
+      // order. See wallet.service.ts.
+      await this.wallet.applyTopupFromSession(session);
+      return;
+    }
+
     const batchOrderId = session.metadata?.batchOrderId;
     if (!batchOrderId) {
       // Subscription-mode sessions carry no batchOrderId — that plan change
@@ -98,27 +107,9 @@ export class WebhooksService {
         return;
       }
 
-      const orderRecipients = await tx.orderRecipient.findMany({
-        where: { batchOrderId, status: "approved" },
-      });
-      await tx.orderRecipient.updateMany({
-        where: { batchOrderId, status: "approved" },
-        data: { status: "queued" },
-      });
-      await tx.fulfillmentJob.createMany({
-        data: orderRecipients.map((recipient) => ({
-          orderRecipientId: recipient.id,
-          status: "pending",
-        })),
-        skipDuplicates: true,
-      });
-      // Every paid card gets its QR-code message page here, alongside its
-      // fulfillment job — content empty until the account personalises it.
-      // See docs/adr/0009-phase-4-message-pages.md.
-      await this.messages.createForOrderRecipients(
-        tx,
-        orderRecipients.map((recipient) => recipient.id),
-      );
+      // Shared with wallet payment: recipients → queued, a FulfillmentJob per
+      // card, and each card's QR message page. See batchOrders.settleFulfillment.
+      await this.batchOrders.settleFulfillment(tx, batchOrderId);
 
       const order = await tx.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
       await this.audit.record({

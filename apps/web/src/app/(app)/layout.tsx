@@ -13,6 +13,7 @@ const navItems = [
   { label: "Approvals", href: "/approvals" },
   { label: "Checkout", href: "/batch-orders" },
   { label: "Messages", href: "/messages" },
+  { label: "Wallet", href: "/wallet" },
   { label: "Billing", href: "/billing" },
 ];
 

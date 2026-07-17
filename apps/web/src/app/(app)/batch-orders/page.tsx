@@ -1,3 +1,4 @@
+import type { WalletSummary } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import type { OccasionWithRecipient } from "../approvals/approvals-client";
 import { BatchOrdersClient, type UnfinishedBatchOrder } from "./batch-orders-client";
@@ -10,9 +11,10 @@ interface Paginated<T> {
 }
 
 export default async function BatchOrdersPage() {
-  const [occasions, orders] = await Promise.all([
+  const [occasions, orders, wallet] = await Promise.all([
     serverApiFetch<Paginated<OccasionWithRecipient>>("/occasions?status=approved&perPage=50"),
     serverApiFetch<Paginated<UnfinishedBatchOrder>>("/batch-orders?perPage=50"),
+    serverApiFetch<WalletSummary>("/wallet"),
   ]);
 
   // No multi-status filter on the list endpoint, so fetch everything recent
@@ -26,6 +28,7 @@ export default async function BatchOrdersPage() {
     <BatchOrdersClient
       initialOccasions={occasions?.items ?? []}
       initialUnfinishedOrders={unfinishedOrders}
+      walletBalanceMinor={wallet?.balanceMinor ?? 0}
     />
   );
 }
