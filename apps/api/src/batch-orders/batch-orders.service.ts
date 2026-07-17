@@ -194,16 +194,17 @@ export class BatchOrdersService {
       ...(query.status && { status: query.status }),
     };
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.batchOrder.findMany({
-        where,
-        skip: (query.page - 1) * query.perPage,
-        take: query.perPage,
-        orderBy: { createdAt: "desc" },
-        include: ORDER_RECIPIENTS_INCLUDE,
-      }),
-      this.prisma.batchOrder.count({ where }),
-    ]);
+    // Two plain queries, not a $transaction — a paginated total needn't be a
+    // consistent snapshot with the page, and an explicit read transaction is
+    // what misbehaves on a pgBouncer pool (see docs/go-live-runbook.md §1c).
+    const items = await this.prisma.batchOrder.findMany({
+      where,
+      skip: (query.page - 1) * query.perPage,
+      take: query.perPage,
+      orderBy: { createdAt: "desc" },
+      include: ORDER_RECIPIENTS_INCLUDE,
+    });
+    const total = await this.prisma.batchOrder.count({ where });
 
     await this.audit.record({
       accountId,

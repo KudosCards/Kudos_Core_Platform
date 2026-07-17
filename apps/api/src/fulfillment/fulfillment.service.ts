@@ -100,18 +100,19 @@ export class FulfillmentService {
       status: query.status ?? FulfillmentJobStatus.pending,
     };
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.fulfillmentJob.findMany({
-        where,
-        skip: (query.page - 1) * query.perPage,
-        take: query.perPage,
-        // Oldest first: the queue is worked front-to-back, and dispatchDate
-        // is what actually determines send urgency.
-        orderBy: [{ createdAt: "asc" }],
-        select: QUEUE_SELECT,
-      }),
-      this.prisma.fulfillmentJob.count({ where }),
-    ]);
+    // Two plain queries, not a $transaction — a paginated total needn't be a
+    // consistent snapshot with the page, and an explicit read transaction is
+    // what misbehaves on a pgBouncer pool (see docs/go-live-runbook.md §1c).
+    const items = await this.prisma.fulfillmentJob.findMany({
+      where,
+      skip: (query.page - 1) * query.perPage,
+      take: query.perPage,
+      // Oldest first: the queue is worked front-to-back, and dispatchDate
+      // is what actually determines send urgency.
+      orderBy: [{ createdAt: "asc" }],
+      select: QUEUE_SELECT,
+    });
+    const total = await this.prisma.fulfillmentJob.count({ where });
 
     return { items, total, page: query.page, perPage: query.perPage };
   }
