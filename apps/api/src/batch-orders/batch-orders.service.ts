@@ -17,6 +17,7 @@ import type { Paginated } from "../common/paginated";
 import type { CheckoutResult } from "../common/checkout-result";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.constants";
+import { MessagesService } from "../messages/messages.service";
 import type { CreateBatchOrderDto } from "./dto/create-batch-order.dto";
 import type { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
 
@@ -32,7 +33,37 @@ export class BatchOrdersService {
     private readonly audit: AuditService,
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
+    private readonly messages: MessagesService,
   ) {}
+
+  /**
+   * The post-payment fulfillment step, shared by every way an order gets paid
+   * (Stripe webhook and wallet debit): move the order's approved recipients to
+   * `queued`, create a `FulfillmentJob` per card, and mint each card's QR
+   * message page. Idempotent (status-guarded + skipDuplicates) so a redelivered
+   * webhook or a retried wallet transaction never double-fulfils. Runs inside
+   * the caller's transaction — the caller owns the BatchOrder status transition.
+   */
+  async settleFulfillment(tx: Prisma.TransactionClient, batchOrderId: string): Promise<void> {
+    const orderRecipients = await tx.orderRecipient.findMany({
+      where: { batchOrderId, status: "approved" },
+    });
+    await tx.orderRecipient.updateMany({
+      where: { batchOrderId, status: "approved" },
+      data: { status: "queued" },
+    });
+    await tx.fulfillmentJob.createMany({
+      data: orderRecipients.map((recipient) => ({
+        orderRecipientId: recipient.id,
+        status: "pending" as const,
+      })),
+      skipDuplicates: true,
+    });
+    await this.messages.createForOrderRecipients(
+      tx,
+      orderRecipients.map((recipient) => recipient.id),
+    );
+  }
 
   async create(
     accountId: string,

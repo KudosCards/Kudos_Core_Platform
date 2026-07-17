@@ -40,13 +40,17 @@ function formatGbp(minor: number): string {
 export function BatchOrdersClient({
   initialOccasions,
   initialUnfinishedOrders,
+  walletBalanceMinor,
 }: {
   initialOccasions: OccasionWithRecipient[];
   initialUnfinishedOrders: UnfinishedBatchOrder[];
+  walletBalanceMinor: number;
 }) {
   const [lines, setLines] = useState<Record<string, LineDraft>>({});
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [walletSubmitting, setWalletSubmitting] = useState(false);
   const [unfinishedOrders, setUnfinishedOrders] = useState(initialUnfinishedOrders);
   const [orderActionPending, setOrderActionPending] = useState<string | null>(null);
 
@@ -67,11 +71,10 @@ export function BatchOrdersClient({
     setLines((current) => ({ ...current, [occasionId]: { ...current[occasionId]!, ...patch } }));
   }
 
-  async function handleCheckout() {
-    setError(null);
+  /** Validates the current selection, returning an error message or null. */
+  function validateSelection(): string | null {
     if (selectedIds.length === 0) {
-      setError("Select at least one occasion to include");
-      return;
+      return "Select at least one occasion to include";
     }
     for (const occasionId of selectedIds) {
       const line = lines[occasionId]!;
@@ -80,20 +83,42 @@ export function BatchOrdersClient({
         !line.shippingAddressCity ||
         !line.shippingAddressPostcode
       ) {
-        setError("Fill in the shipping address for every selected card");
-        return;
+        return "Fill in the shipping address for every selected card";
       }
+    }
+    return null;
+  }
+
+  function createDraftFromSelection(): Promise<UnfinishedBatchOrder> {
+    return clientApiFetch<UnfinishedBatchOrder>("/batch-orders", {
+      method: "POST",
+      body: JSON.stringify({
+        lines: selectedIds.map((occasionId) => ({ occasionId, ...lines[occasionId]! })),
+      }),
+    });
+  }
+
+  /** A created draft whose payment step failed must not vanish — its occasions
+   * are already consumed, so surface it in the unfinished list to retry/cancel. */
+  function keepDraftVisible(order: UnfinishedBatchOrder) {
+    setUnfinishedOrders((current) =>
+      current.some((o) => o.id === order.id) ? current : [...current, order],
+    );
+  }
+
+  async function handleCheckout() {
+    setError(null);
+    setNotice(null);
+    const validationError = validateSelection();
+    if (validationError) {
+      setError(validationError);
+      return;
     }
 
     setSubmitting(true);
     let order: UnfinishedBatchOrder | undefined;
     try {
-      order = await clientApiFetch<UnfinishedBatchOrder>("/batch-orders", {
-        method: "POST",
-        body: JSON.stringify({
-          lines: selectedIds.map((occasionId) => ({ occasionId, ...lines[occasionId]! })),
-        }),
-      });
+      order = await createDraftFromSelection();
       const { checkoutUrl } = await clientApiFetch<{ checkoutUrl: string }>(
         `/batch-orders/${order.id}/checkout`,
         { method: "POST" },
@@ -105,12 +130,57 @@ export function BatchOrdersClient({
       );
       setSubmitting(false);
       if (order) {
-        // The draft itself was created even though checkout() failed — it
-        // would otherwise vanish from view with no way to retry or cancel
-        // it (its occasions are already consumed/queued).
-        const createdOrder = order;
-        setUnfinishedOrders((current) => [...current, createdOrder]);
+        keepDraftVisible(order);
       }
+    }
+  }
+
+  async function handleWalletCheckout() {
+    setError(null);
+    setNotice(null);
+    const validationError = validateSelection();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setWalletSubmitting(true);
+    let order: UnfinishedBatchOrder | undefined;
+    try {
+      order = await createDraftFromSelection();
+      await payWithWallet(order.id);
+      // Occasions are now paid & queued — drop them from the selection so the
+      // page reflects it without a full reload.
+      setLines({});
+      setNotice(`Paid ${selectedIds.length} card(s) from your wallet — off to production.`);
+    } catch (walletError) {
+      setError(walletError instanceof ApiError ? walletError.message : "Could not pay from wallet");
+      if (order) {
+        keepDraftVisible(order);
+      }
+    } finally {
+      setWalletSubmitting(false);
+    }
+  }
+
+  /** Shared by the main flow and the unfinished-orders list. Throws on failure
+   * so callers can decide how to surface it. */
+  async function payWithWallet(orderId: string): Promise<void> {
+    await clientApiFetch(`/wallet/pay/${orderId}`, { method: "POST" });
+    setUnfinishedOrders((current) => current.filter((o) => o.id !== orderId));
+  }
+
+  async function payOrderWithWallet(orderId: string) {
+    setError(null);
+    setNotice(null);
+    setOrderActionPending(orderId);
+    try {
+      await payWithWallet(orderId);
+      setNotice("Order paid from your wallet — off to production.");
+    } catch (payError) {
+      setError(payError instanceof ApiError ? payError.message : "Could not pay from wallet");
+    } finally {
+      setOrderActionPending(null);
     }
   }
 
@@ -153,6 +223,16 @@ export function BatchOrdersClient({
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {notice && (
+        <p className="rounded-md border border-green-600/30 bg-green-600/5 px-4 py-3 text-sm text-green-700 dark:text-green-400">
+          {notice}
+        </p>
+      )}
+
+      <p className="text-sm text-foreground/60">
+        Wallet balance: <span className="font-medium text-foreground">{formatGbp(walletBalanceMinor)}</span>{" "}
+        · <a href="/wallet" className="underline">Top up</a>
+      </p>
 
       {unfinishedOrders.length > 0 && (
         <div className="flex flex-col gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
@@ -178,8 +258,25 @@ export function BatchOrdersClient({
                     onClick={() => void resumeCheckout(order.id)}
                     className="rounded-full bg-foreground px-3 py-1 text-xs text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    Resume checkout
+                    {order.status === "draft" ? "Pay by card" : "Resume checkout"}
                   </button>
+                  {order.status === "draft" && (
+                    <button
+                      type="button"
+                      disabled={
+                        orderActionPending === order.id || walletBalanceMinor < order.totalMinor
+                      }
+                      onClick={() => void payOrderWithWallet(order.id)}
+                      title={
+                        walletBalanceMinor < order.totalMinor
+                          ? "Not enough wallet balance — top up first"
+                          : undefined
+                      }
+                      className="rounded-full border border-black/20 px-3 py-1 text-xs hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+                    >
+                      Pay with wallet
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={orderActionPending === order.id}
@@ -299,14 +396,22 @@ export function BatchOrdersClient({
       )}
 
       {initialOccasions.length > 0 && (
-        <div>
+        <div className="flex flex-wrap gap-3">
           <button
             type="button"
-            disabled={submitting || selectedIds.length === 0}
+            disabled={submitting || walletSubmitting || selectedIds.length === 0}
             onClick={() => void handleCheckout()}
             className="rounded-full bg-foreground px-5 py-2 text-sm text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {submitting ? "Starting checkout…" : `Pay for ${selectedIds.length} card(s)`}
+            {submitting ? "Starting checkout…" : `Pay by card for ${selectedIds.length} card(s)`}
+          </button>
+          <button
+            type="button"
+            disabled={submitting || walletSubmitting || selectedIds.length === 0}
+            onClick={() => void handleWalletCheckout()}
+            className="rounded-full border border-black/20 px-5 py-2 text-sm hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+          >
+            {walletSubmitting ? "Paying…" : "Pay with wallet"}
           </button>
         </div>
       )}

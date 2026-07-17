@@ -6,3 +6,4 @@ export * from "./card";
 export * from "./order";
 export * from "./billing";
 export * from "./fulfillment";
+export * from "./wallet";
