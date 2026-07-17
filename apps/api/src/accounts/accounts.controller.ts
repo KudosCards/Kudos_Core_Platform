@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { Account, PlanEntitlement } from "@prisma/client";
 import { AccountsService } from "./accounts.service";
+import { DashboardService, type DashboardSummary } from "./dashboard.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { CreateAccountDto } from "./dto/create-account.dto";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -16,6 +17,7 @@ export class AccountsController {
   constructor(
     private readonly accountsService: AccountsService,
     private readonly entitlements: EntitlementsService,
+    private readonly dashboard: DashboardService,
   ) {}
 
   /** No MembershipGuard here — this is what creates the user's first Membership. */
@@ -38,5 +40,14 @@ export class AccountsController {
     @CurrentMembership() membership: CurrentMembershipContext,
   ): Promise<PlanEntitlement> {
     return this.entitlements.getForAccount(membership.accountId);
+  }
+
+  /** Home-screen counts + wallet balance for the dashboard. */
+  @UseGuards(MembershipGuard)
+  @Get("me/summary")
+  getSummary(
+    @CurrentMembership() membership: CurrentMembershipContext,
+  ): Promise<DashboardSummary> {
+    return this.dashboard.getSummary(membership.accountId);
   }
 }

@@ -26,8 +26,9 @@ personalise per contact & occasion → order (manual or automated) → Kudos HQ 
 
 ## Status at a glance
 
-The **transactional spine is built and live in production** — the hard, foundational 65–70%.
-The remaining work is mostly customer-facing surface and automation that sits on top of it.
+The **core rebuild is complete and live** — the full customer journey works end-to-end, from a
+glossy landing page through contacts, calendar, personalisation, ordering, wallet/auto-send
+payment, fulfilment, and order history. What's left is backlog and enhancement, not critical path.
 
 | Journey step | Status |
 |---|---|
@@ -116,9 +117,18 @@ funds → left approved + audited, resumes on top-up), reusing the same fulfilme
 paths as manual checkout. Ops-only `POST /auto-send/run` manual trigger. See ADR 0013. Fully
 auto-approval (default design, zero human touch) is a documented future tier.
 
-### Phase 10 — Account & orders experience
-Customer **order history** (list, status, pay-pending, view), address book, saved payment
-methods, and a richer dashboard (order counts, birthdays-this-month, notes scratchpad).
+### Phase 10 — Account & orders experience — ✅ done
+Customer **order history** at `/orders`: every batch with status pill (not checked out / awaiting
+payment / paid / in production / completed / cancelled), a per-order **detail view** (cards,
+shipping city+postcode, per-line status, totals, payment method) and **pay-pending** actions on
+unpaid orders (pay by card, pay with wallet, cancel). **Richer dashboard**: a home-screen summary
+(pending approvals, occasions this month, active + completed orders, wallet balance, recipients)
+backed by a single `GET /accounts/me/summary` endpoint, each tile linking to the relevant screen.
+Saved payment methods were **deliberately deferred** — the wallet already removes the re-enter-a-
+card-every-time friction that saved cards would solve; saved-card off-session funding stays in the
+backlog for accounts that prefer not to pre-load a balance. Address management already lives on the
+recipient records (addresses drive both checkout and auto-send), so no separate address book was
+built.
 
 ### Phase 11 — Marketing homepage & public site — ✅ done (homepage)
 Glossy public landing at `/` with the real brand logo: hero, used-by, problem, three steps,
@@ -142,8 +152,9 @@ checkout directly, a public card shop, and the "free sample card / 90-second dem
 - **Remaining ~30–35%** is customer-experience surface + automation + marketing — high
   visibility, but layered on top of a proven spine. Risk is low; momentum is high.
 
-Phases 6, 7, 8, 9, and 11 (homepage) are now shipped — the full customer journey (contacts →
-calendar → personalise → order → **auto-send** → fulfil) works end-to-end. Recommended next build:
-**Phase 10 (account & orders experience)** — order history, address book, saved payment methods,
-and a richer dashboard — now the highest-leverage remaining surface. Backlog items (CRM import,
-coupons, public card shop, fully hands-off auto-approval) follow as demand dictates.
+Phases 6–11 are now shipped — the full customer journey (contacts → calendar → personalise →
+order → **auto-send** → fulfil), plus **order history** and a summary **dashboard**, works
+end-to-end. The core rebuild is complete. Remaining work is backlog/enhancement, prioritised by
+go-to-market: wiring the homepage plan CTAs straight into Stripe subscription checkout, a public
+card shop, coupons/discount codes, CRM import beyond CSV, mobile-number login, saved-card
+off-session funding, and fully hands-off auto-approval. None is on the critical path.
