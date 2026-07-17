@@ -43,11 +43,20 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Validate the JWT locally against the project's (cached) JWKS via
+  // getClaims. With asymmetric signing keys — which this project uses
+  // (ES256, same JWKS the API verifies against) — this is a WebCrypto check
+  // with no per-request network round-trip to the Auth server, unlike
+  // getUser(). It transparently refreshes a near-expiry session first (the
+  // cookie write is captured by setAll above) and only falls back to a
+  // network validation if the project ever switched to a symmetric secret,
+  // so it is never slower than getUser and much faster in the common case.
+  // Real authorization is still enforced server-side by the API; this proxy
+  // only gates navigation and keeps the session cookie fresh.
+  const { data } = await supabase.auth.getClaims();
+  const isAuthenticated = Boolean(data?.claims);
 
-  if (!user && !isPublicPath(request.nextUrl.pathname)) {
+  if (!isAuthenticated && !isPublicPath(request.nextUrl.pathname)) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     return NextResponse.redirect(redirectUrl);
