@@ -127,8 +127,8 @@ function Logo({ className }: { className?: string }) {
     <Image
       src="/marketing/logo.png"
       alt="Kudos Cards — Because you Care"
-      width={440}
-      height={440}
+      width={410}
+      height={475}
       className={className}
       priority
     />
@@ -146,7 +146,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-20 border-b border-slate-100 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/">
-            <Logo className="h-14 w-14" />
+            <Logo className="h-16 w-auto" />
           </Link>
           <nav className="flex items-center gap-6 text-sm font-medium text-slate-600">
             <a href="#how" className="hidden hover:text-slate-900 sm:inline">
@@ -495,7 +495,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t border-slate-100 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 sm:flex-row">
-          <Logo className="h-16 w-16" />
+          <Logo className="h-20 w-auto" />
           <p className="text-sm text-slate-500">
             © {new Date().getFullYear()} Kudos Cards Ltd. The company that allows you to give some
             Kudos.
