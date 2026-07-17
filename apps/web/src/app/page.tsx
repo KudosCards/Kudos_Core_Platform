@@ -122,12 +122,16 @@ const plans = [
   },
 ];
 
-function Wordmark() {
+function Logo({ className }: { className?: string }) {
   return (
-    <span className="text-xl font-extrabold tracking-tight">
-      <span style={{ color: CORAL }}>kudos</span>
-      <span className="text-amber-500"> cards</span>
-    </span>
+    <Image
+      src="/marketing/logo.png"
+      alt="Kudos Cards — Because you Care"
+      width={440}
+      height={440}
+      className={className}
+      priority
+    />
   );
 }
 
@@ -142,7 +146,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-20 border-b border-slate-100 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/">
-            <Wordmark />
+            <Logo className="h-14 w-14" />
           </Link>
           <nav className="flex items-center gap-6 text-sm font-medium text-slate-600">
             <a href="#how" className="hidden hover:text-slate-900 sm:inline">
@@ -491,7 +495,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t border-slate-100 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 sm:flex-row">
-          <Wordmark />
+          <Logo className="h-16 w-16" />
           <p className="text-sm text-slate-500">
             © {new Date().getFullYear()} Kudos Cards Ltd. The company that allows you to give some
             Kudos.
