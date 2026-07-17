@@ -153,15 +153,39 @@ Do a full dry run on **Stripe test mode** before touching real cards:
      order reaches `completed`.
    - Try a plan upgrade at `/billing` (needs the test-mode Price ids seeded) → subscription webhook
      updates the plan.
+   - **Wallet (Phase 8):** at `/wallet`, top up with a test card → confirm the balance updates once
+     the `checkout.session.completed` webhook lands (the same event as order checkout, tagged
+     `metadata.type=wallet_topup`). Then on an unpaid order choose **Pay with wallet** → confirm the
+     balance is debited and the order flips to `paid` with a fulfillment job + message page, exactly
+     like a card payment.
+   - **Auto-send (Phase 9):** on a Pro/Centre account with a funded wallet and a recipient that has
+     a full postal address, approve an occasion with **auto-send** (postage class of your choice).
+     Trigger a run out-of-band with `POST /auto-send/run` (ops-admin token) — or wait for the 7am
+     cron — and confirm the wallet is debited and the card enters fulfillment. Re-run and confirm it
+     is **not** sent twice. With an under-funded wallet, confirm the run leaves the occasion
+     `approved` and records an `auto_send_skipped` audit entry (it resumes automatically once topped
+     up). Note: auto-send makes **no** external Stripe call — the funds are already on the platform —
+     so this only needs a funded wallet, not test-mode card entry.
 3. When all of that passes: swap Railway to the **live** `STRIPE_SECRET_KEY` + live webhook signing
    secret, and re-seed the **live** Stripe Price ids. Redeploy. You're live.
+
+> **Cron jobs** run automatically once the API is deployed (no setup): birthday scheduling (6am),
+> auto-send (7am), and the Airtable catalog pull (4am). No extra Stripe webhook events are needed
+> beyond section 2b — wallet top-ups reuse `checkout.session.completed`.
 
 ---
 
 ## 6. Recommended before real launch 🤖🧑
 
-- A focused pre-launch security review of the newest, most sensitive surfaces — the public
-  message endpoint and the cross-account fulfillment/platform-admin module — since these are the
-  two places the usual per-account walls are deliberately down. (Can be run on request.)
+- **Wire error monitoring.** `SENTRY_DSN` is reserved in the env schema but **nothing reads it yet**
+  — there is no `@sentry` dependency and no init, so the API and web app currently have no
+  crash/error reporting. Before real traffic, add `@sentry/node` (API, init in `main.ts` before app
+  creation) and `@sentry/nextjs` (web), or point the existing Railway/Netlify/Supabase logs at an
+  alerting channel. Until then, production errors are only visible in platform logs.
 - Confirm a database backup/retention policy in Supabase (recipient data is children's PII — UK
   GDPR; the app already keeps an access audit trail, but backups/retention are a dashboard policy).
+- A focused pre-launch security review of the newest, most sensitive surfaces — the public
+  message endpoint and the cross-account fulfillment/platform-admin module — since these are the
+  two places the usual per-account walls are deliberately down. (Full end-to-end review completed
+  2026-07-17 — see the review summary; findings were the CSV upload size cap, now fixed, and this
+  monitoring gap.)

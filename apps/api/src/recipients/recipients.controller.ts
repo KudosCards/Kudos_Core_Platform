@@ -79,7 +79,11 @@ export class RecipientsController {
   }
 
   @ApiConsumes("multipart/form-data")
-  @UseInterceptors(FileInterceptor("file"))
+  // Bound the upload: the whole file is buffered in memory and parsed before
+  // the per-plan recipient cap is even consulted, so without a limit a single
+  // large upload could exhaust the API's memory. 5 MB is ~50k CSV rows — far
+  // above any plan's recipientCap (50–200), so no legitimate import hits it.
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 5 * 1024 * 1024, files: 1 } }))
   @Post("import")
   importCsv(
     @CurrentMembership() membership: CurrentMembershipContext,
