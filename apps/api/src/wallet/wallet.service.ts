@@ -15,9 +15,9 @@ import { BatchOrdersService, type BatchOrder } from "../batch-orders/batch-order
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import type { EnvConfig } from "../config/env.schema";
 import type { CheckoutResult } from "../common/checkout-result";
+import { runSerializable } from "../common/run-serializable";
 import type { TopUpDto } from "./dto/top-up.dto";
 
-const SERIALIZATION_FAILURE = "P2034";
 /** No human is behind a Stripe webhook — see webhooks.service.ts. */
 const SYSTEM_ACTOR = "system:stripe-webhook";
 
@@ -111,7 +111,7 @@ export class WalletService {
     }
 
     const reference = `topup:${session.id}`;
-    const credited = await this.runSerializable(async (tx) => {
+    const credited = await runSerializable(this.prisma, async (tx) => {
       const existing = await tx.walletLedgerEntry.findFirst({ where: { accountId, reference } });
       if (existing) {
         return false; // already credited by an earlier delivery
@@ -148,41 +148,8 @@ export class WalletService {
    * the funds are already on the platform.
    */
   async payOrder(accountId: string, actorUserId: string, batchOrderId: string): Promise<BatchOrder> {
-    const order = await this.runSerializable(async (tx) => {
-      const found = await tx.batchOrder.findFirst({ where: { id: batchOrderId, accountId } });
-      if (!found) {
-        throw new NotFoundException("Batch order not found");
-      }
-      if (found.status !== "draft") {
-        throw new ConflictException(`Order is ${found.status}, not a draft awaiting payment`);
-      }
-
-      const balance = await this.balanceOf(tx, accountId);
-      if (balance < found.totalMinor) {
-        throw new ForbiddenException("Insufficient wallet balance");
-      }
-
-      await tx.walletLedgerEntry.create({
-        data: {
-          accountId,
-          type: "charge",
-          amountMinor: -found.totalMinor,
-          balanceAfterMinor: balance - found.totalMinor,
-          reference: `order:${batchOrderId}`,
-        },
-      });
-
-      // Status-guarded so a concurrent card checkout / second wallet pay can't
-      // pay the same order twice.
-      const { count } = await tx.batchOrder.updateMany({
-        where: { id: batchOrderId, accountId, status: "draft" },
-        data: { status: "paid", paymentMethod: "wallet" },
-      });
-      if (count === 0) {
-        throw new ConflictException("Order was already paid or changed by another request");
-      }
-
-      await this.batchOrders.settleFulfillment(tx, batchOrderId);
+    const order = await runSerializable(this.prisma, async (tx) => {
+      await this.debitAndSettleOrder(tx, accountId, batchOrderId);
       return tx.batchOrder.findUniqueOrThrow({
         where: { id: batchOrderId },
         include: { orderRecipients: true },
@@ -200,6 +167,56 @@ export class WalletService {
     return order;
   }
 
+  /**
+   * Debits the wallet for a draft order and settles its fulfilment — the shared
+   * core of every wallet payment, whether interactive (payOrder) or unattended
+   * (auto-send). MUST run inside a Serializable transaction so the balance read
+   * and the debit can't race a concurrent spend. Throws ForbiddenException on
+   * insufficient funds and ConflictException if the order isn't a payable draft;
+   * either rolls back the caller's transaction. Does not audit — the caller does,
+   * with its own actor.
+   */
+  async debitAndSettleOrder(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    batchOrderId: string,
+  ): Promise<void> {
+    const order = await tx.batchOrder.findFirst({ where: { id: batchOrderId, accountId } });
+    if (!order) {
+      throw new NotFoundException("Batch order not found");
+    }
+    if (order.status !== "draft") {
+      throw new ConflictException(`Order is ${order.status}, not a draft awaiting payment`);
+    }
+
+    const balance = await this.balanceOf(tx, accountId);
+    if (balance < order.totalMinor) {
+      throw new ForbiddenException("Insufficient wallet balance");
+    }
+
+    await tx.walletLedgerEntry.create({
+      data: {
+        accountId,
+        type: "charge",
+        amountMinor: -order.totalMinor,
+        balanceAfterMinor: balance - order.totalMinor,
+        reference: `order:${batchOrderId}`,
+      },
+    });
+
+    // Status-guarded so a concurrent card checkout / second wallet pay can't
+    // pay the same order twice.
+    const { count } = await tx.batchOrder.updateMany({
+      where: { id: batchOrderId, accountId, status: "draft" },
+      data: { status: "paid", paymentMethod: "wallet" },
+    });
+    if (count === 0) {
+      throw new ConflictException("Order was already paid or changed by another request");
+    }
+
+    await this.batchOrders.settleFulfillment(tx, batchOrderId);
+  }
+
   /** Balance = sum of all ledger amounts. Order-independent; can't drift. */
   private async balanceOf(
     client: PrismaService | Prisma.TransactionClient,
@@ -210,27 +227,5 @@ export class WalletService {
       _sum: { amountMinor: true },
     });
     return _sum.amountMinor ?? 0;
-  }
-
-  /** Retries a Serializable transaction on a write-conflict (P2034) — the same
-   * pattern recipients.service uses for cap enforcement. */
-  private async runSerializable<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
-    const maxAttempts = 3;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        return await this.prisma.$transaction(fn, {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        });
-      } catch (error) {
-        const isSerializationFailure =
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === SERIALIZATION_FAILURE;
-        if (!isSerializationFailure || attempt === maxAttempts) {
-          throw error;
-        }
-      }
-    }
-    /* istanbul ignore next -- unreachable: loop always returns or throws */
-    throw new Error("Unreachable");
   }
 }

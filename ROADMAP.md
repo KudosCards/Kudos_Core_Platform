@@ -40,7 +40,7 @@ The remaining work is mostly customer-facing surface and automation that sits on
 | Bulk multi-card order, per-recipient addresses | ✅ Built |
 | Pay | ✅ Card **or wallet** (top-up-and-spend balance) |
 | Orders → Kudos HQ → print & post | ✅ Built (ops queue) |
-| Automation / auto-send | ⚠️ Partial (scheduling yes; auto-order/charge/dispatch no) |
+| Automation / auto-send | ✅ Approve-then-auto (order + wallet charge + timed dispatch) |
 | Subscription tiers | ✅ Built (Stripe) |
 
 Two capabilities exceed the old platform: **QR-linked digital message pages** and a proper
@@ -105,11 +105,16 @@ same post-payment fulfilment step as the Stripe webhook (`settleFulfillment`), s
 order fulfils identically to a card-paid one. See ADR 0012. This is also the funding source that
 makes Phase 9 automation friction-free.
 
-### Phase 9 — Auto-send automation
-The "as automated as we can make it" promise, end-to-end: for an upcoming occasion,
-auto-create the order, charge wallet/saved card, and **time dispatch to arrive before the
-date** (1st class ~3 days before, 2nd ~5). A Pro/Centre entitlement (`autoSendEnabled` exists).
-Builds on the existing scheduler + Phase 6 pricing + Phase 8 wallet.
+### Phase 9 — Auto-send automation — ✅ done
+The "as automated as we can make it" promise, end-to-end — **approve-then-auto**: a human still
+approves each card in the Approvals queue (design + go-ahead), and from there a daily cron
+auto-creates the order from the recipient's stored address, **pays it from the wallet**, and
+**times dispatch to arrive before the date** (1st class 3 days ahead, 2nd 5). Opt-in per occasion
+at approval, gated on the Pro/Centre `autoSendEnabled` entitlement and a complete recipient
+address. Each occasion is ordered-paid-fulfilled in one Serializable transaction (insufficient
+funds → left approved + audited, resumes on top-up), reusing the same fulfilment + wallet-debit
+paths as manual checkout. Ops-only `POST /auto-send/run` manual trigger. See ADR 0013. Fully
+auto-approval (default design, zero human touch) is a documented future tier.
 
 ### Phase 10 — Account & orders experience
 Customer **order history** (list, status, pay-pending, view), address book, saved payment
@@ -137,7 +142,8 @@ checkout directly, a public card shop, and the "free sample card / 90-second dem
 - **Remaining ~30–35%** is customer-experience surface + automation + marketing — high
   visibility, but layered on top of a proven spine. Risk is low; momentum is high.
 
-Phases 6, 7, 8, and 11 (homepage) are now shipped. Recommended next build: **Phase 9 (auto-send
-automation)** — the wallet (Phase 8) and per-card pricing (Phase 6) it depends on are both in
-place, so it's now unblocked and is the highest-leverage remaining promise ("as automated as we
-can make it"). **Phase 10 (account & orders experience)** is the natural follow-on.
+Phases 6, 7, 8, 9, and 11 (homepage) are now shipped — the full customer journey (contacts →
+calendar → personalise → order → **auto-send** → fulfil) works end-to-end. Recommended next build:
+**Phase 10 (account & orders experience)** — order history, address book, saved payment methods,
+and a richer dashboard — now the highest-leverage remaining surface. Backlog items (CRM import,
+coupons, public card shop, fully hands-off auto-approval) follow as demand dictates.

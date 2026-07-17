@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import type { Account } from "@prisma/client";
+import type { Account, PlanEntitlement } from "@prisma/client";
 import { AccountsService } from "./accounts.service";
+import { EntitlementsService } from "../entitlements/entitlements.service";
 import { CreateAccountDto } from "./dto/create-account.dto";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { CurrentMembership } from "../auth/current-membership.decorator";
@@ -12,7 +13,10 @@ import type { AuthenticatedUser, CurrentMembershipContext } from "../auth/types"
 @ApiBearerAuth()
 @Controller("accounts")
 export class AccountsController {
-  constructor(private readonly accountsService: AccountsService) {}
+  constructor(
+    private readonly accountsService: AccountsService,
+    private readonly entitlements: EntitlementsService,
+  ) {}
 
   /** No MembershipGuard here — this is what creates the user's first Membership. */
   @Post()
@@ -24,5 +28,15 @@ export class AccountsController {
   @Get("me")
   getCurrentAccount(@CurrentMembership() membership: CurrentMembershipContext): Promise<Account> {
     return this.accountsService.findById(membership.accountId);
+  }
+
+  /** The account's plan limits and feature gates — lets the UI show/hide
+   * capabilities (e.g. the auto-send opt-in) without hardcoding plan knowledge. */
+  @UseGuards(MembershipGuard)
+  @Get("me/entitlements")
+  getEntitlements(
+    @CurrentMembership() membership: CurrentMembershipContext,
+  ): Promise<PlanEntitlement> {
+    return this.entitlements.getForAccount(membership.accountId);
   }
 }
