@@ -14,7 +14,11 @@ const SERIALIZATION_FAILURE = "P2034";
 export async function runSerializable<T>(
   prisma: PrismaService,
   fn: (tx: Prisma.TransactionClient) => Promise<T>,
-  maxAttempts = 3,
+  // 5, not 3: under real concurrent contention (several requests racing on the
+  // same account) three attempts can all lose the serialization race and
+  // surface a P2034 as a 500. A couple more retries makes the guarded write
+  // reliably resolve to its intended outcome instead of erroring.
+  maxAttempts = 5,
 ): Promise<T> {
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
