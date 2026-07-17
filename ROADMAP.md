@@ -31,10 +31,10 @@ The remaining work is mostly customer-facing surface and automation that sits on
 
 | Journey step | Status |
 |---|---|
-| Marketing homepage (sell membership, how-it-works) | ❌ Not built |
+| Marketing homepage (sell membership, how-it-works) | ✅ Built |
 | Register / log in | ✅ Built (email + password) |
 | Upload CSV of contacts / manage contacts | ✅ Built |
-| Contacts → a **calendar** of moments | ⚠️ Data + scheduling only, **no calendar UI** |
+| Contacts → a **calendar** of moments | ✅ Built (month / week / list) |
 | Milestone moments per contact, choose occasion | ✅ Built |
 | Personalise cards (catalog + editor + `{name}`) | ✅ Built |
 | Bulk multi-card order, per-recipient addresses | ✅ Built |
@@ -86,10 +86,12 @@ second class, VAT-exempt). `OrderRecipient.postageMinor`, `BatchOrder.postageMin
 `totalMinor = subtotal + postage` (what Stripe charges) are all correct; checkout shows the stamp
 cost per class. See ADR 0008 (pricing correction).
 
-### Phase 7 — Calendar UI
-The missing centrepiece of the journey. Monthly / weekly / list views of each contact's
-moments (birthdays + custom occasions), a dispatch-date toggle, filter by occasion type, and
-**"create order from the calendar."** API/data already exist (occasions + dispatch dates).
+### Phase 7 — Calendar UI — ✅ done
+`/calendar` in the customer app: Month / Week / List views of each contact's moments,
+colour-coded by occasion type, with a **dispatch-dates toggle**, a **type filter**, and a
+**"Create an order"** path into checkout. Occasions link to Approvals (pending) or Checkout
+(approved). Backed by new `from`/`to`/`type` filters on the occasions API. Custom lightweight
+grid, no new dependency.
 
 ### Phase 8 — Wallet
 Balance, top-up (Stripe), ledger, and **wallet-as-payment** at checkout. Schema is already
@@ -106,10 +108,11 @@ Builds on the existing scheduler + Phase 6 pricing + Phase 8 wallet.
 Customer **order history** (list, status, pay-pending, view), address book, saved payment
 methods, and a richer dashboard (order counts, birthdays-this-month, notes scratchpad).
 
-### Phase 11 — Marketing homepage & public site
-Glossy landing that sells the membership: hero, how-it-works, plan comparison, social proof,
-clear CTAs into **sign up / log in**. Wires plan selection into the existing Stripe
-subscription checkout. Can be built partly in parallel with 6–10.
+### Phase 11 — Marketing homepage & public site — ✅ done (homepage)
+Glossy public landing at `/` with the real brand logo: hero, used-by, problem, three steps,
+card showcase, benefits, reviews + stats, Free/Pro/Centre plans (correct per-card + postage
+pricing), CTAs into **sign up / log in**. Still open: wiring plan CTAs into Stripe subscription
+checkout directly, a public card shop, and the "free sample card / 90-second demo" features.
 
 ### Later / backlog
 - CRM integrations (import beyond CSV).

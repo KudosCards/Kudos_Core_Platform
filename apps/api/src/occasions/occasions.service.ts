@@ -66,6 +66,15 @@ export class OccasionsService {
     const where: Prisma.OccasionWhereInput = {
       accountId,
       ...(query.status && { status: query.status }),
+      ...(query.type && { type: query.type }),
+      // Date-range window for the calendar (a visible month/week). Bounds are
+      // inclusive; either end may be omitted.
+      ...((query.from || query.to) && {
+        occasionDate: {
+          ...(query.from && { gte: new Date(query.from) }),
+          ...(query.to && { lte: new Date(query.to) }),
+        },
+      }),
     };
 
     const [items, total] = await this.prisma.$transaction([
@@ -85,7 +94,13 @@ export class OccasionsService {
       action: "list",
       targetType: "Occasion",
       targetId: accountId,
-      metadata: { status: query.status ?? null, page: query.page },
+      metadata: {
+        status: query.status ?? null,
+        type: query.type ?? null,
+        from: query.from ?? null,
+        to: query.to ?? null,
+        page: query.page,
+      },
     });
 
     return { items, total, page: query.page, perPage: query.perPage };

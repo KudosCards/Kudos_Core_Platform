@@ -8,6 +8,7 @@ import { LogoutButton } from "./logout-button";
 const navItems = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Recipients", href: "/recipients" },
+  { label: "Calendar", href: "/calendar" },
   { label: "Designs", href: "/designs" },
   { label: "Approvals", href: "/approvals" },
   { label: "Checkout", href: "/batch-orders" },
