@@ -400,7 +400,10 @@ export class RecipientsService {
    * which Postgres raises when two concurrent transactions' reads/writes
    * would otherwise produce a result neither could have seen serially. */
   private async runSerializable<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
-    const maxAttempts = 3;
+    // 5, not 3: under concurrent contention three attempts can all lose the
+    // serialization race and surface a P2034 as a 500 instead of the intended
+    // cap rejection. See common/run-serializable.ts.
+    const maxAttempts = 5;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         return await this.prisma.$transaction(fn, {

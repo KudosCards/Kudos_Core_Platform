@@ -71,6 +71,16 @@ describe("Recipients (e2e)", () => {
     expect(list.items[0]?.id).toBe(created.id);
   });
 
+  it("accepts page and perPage as query-string params (the web always sends them)", async () => {
+    const { token } = await signUp();
+    const response = await request(app.getHttpServer())
+      .get("/recipients?page=1&perPage=100")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const list = paginatedRecipientsSchema.parse(response.body);
+    expect(list.perPage).toBe(100);
+  });
+
   it("rejects a duplicate recipient (same name + postcode + DOB)", async () => {
     const { token } = await signUp();
     const payload = {
