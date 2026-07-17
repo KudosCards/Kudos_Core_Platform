@@ -45,8 +45,17 @@ public read is what lets a saved design / message video render later):
 
 ### 1c. Connection strings
 
-- `DATABASE_URL` = the **pooled** connection (app runtime).
-- `DIRECT_URL` = the **direct** connection (migrations). Both go in Railway (step 3).
+- `DATABASE_URL` = the **pooled** connection (app runtime). **Must include `?pgbouncer=true`** — and,
+  because the API runs long-lived on Railway, a modest cap like `&connection_limit=10`. Use the
+  Supabase *Transaction* pooler string (port **6543**).
+- `DIRECT_URL` = the **direct** connection (port **5432**), used for migrations only.
+
+> ⚠️ **This is the #1 cause of intermittent "a server error occurred" pages in production.** Without
+> `?pgbouncer=true`, Prisma issues prepared statements that Supabase's transaction-mode pooler can't
+> reuse, so *random* authenticated requests fail with `prepared statement "s0" already exists` /
+> `... does not exist` — the errors look transient and hit whatever page you happen to load (e.g.
+> `/recipients`), and never reproduce against a plain local Postgres. Example:
+> `postgresql://…@…pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=10`
 
 ---
 
@@ -95,7 +104,14 @@ crash, just no upgrades.
 | `AIRTABLE_BASE_ID` | the cards base id (`app…`) — step 4b |
 | `AIRTABLE_CARDS_TABLE` | *(optional; defaults to `Card List`)* |
 | `PLATFORM_ADMIN_USER_IDS` | *(optional, step 4)* |
-| `SENTRY_DSN` | *(optional)* |
+| `SENTRY_DSN` | Sentry project DSN — enables API error monitoring (now wired). Leave unset to disable. |
+
+**Netlify (web) env vars** — same `NEXT_PUBLIC_*` as today, plus optionally:
+
+| Var | Value |
+|---|---|
+| `NEXT_PUBLIC_SENTRY_DSN` | Sentry DSN for the web (browser + SSR errors, e.g. a failed page fetch). Leave unset to disable. |
+| `SENTRY_AUTH_TOKEN` | *(optional)* Sentry auth token — only needed to upload source maps for readable stack traces; the build succeeds without it. |
 
 ---
 
@@ -177,11 +193,12 @@ Do a full dry run on **Stripe test mode** before touching real cards:
 
 ## 6. Recommended before real launch 🤖🧑
 
-- **Wire error monitoring.** `SENTRY_DSN` is reserved in the env schema but **nothing reads it yet**
-  — there is no `@sentry` dependency and no init, so the API and web app currently have no
-  crash/error reporting. Before real traffic, add `@sentry/node` (API, init in `main.ts` before app
-  creation) and `@sentry/nextjs` (web), or point the existing Railway/Netlify/Supabase logs at an
-  alerting channel. Until then, production errors are only visible in platform logs.
+- **Turn on error monitoring.** Sentry is now wired into both the API (`@sentry/node`) and the web
+  app (`@sentry/nextjs`) — it stays a **no-op until you set the DSN**. To activate: set `SENTRY_DSN`
+  on Railway and `NEXT_PUBLIC_SENTRY_DSN` on Netlify (optionally `SENTRY_AUTH_TOKEN` on Netlify for
+  readable stack traces). Server-side page errors (like the `/recipients` failure) are captured via
+  the Next `onRequestError` hook; API 5xx errors via a global exception filter. Do this before real
+  traffic so production errors are visible and alertable, not just buried in platform logs.
 - Confirm a database backup/retention policy in Supabase (recipient data is children's PII — UK
   GDPR; the app already keeps an access audit trail, but backups/retention are a dashboard policy).
 - A focused pre-launch security review of the newest, most sensitive surfaces — the public
