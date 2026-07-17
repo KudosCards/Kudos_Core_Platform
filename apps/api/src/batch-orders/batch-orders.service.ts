@@ -14,6 +14,7 @@ import { EntitlementsService } from "../entitlements/entitlements.service";
 import { AuditService } from "../audit/audit.service";
 import type { EnvConfig } from "../config/env.schema";
 import type { Paginated } from "../common/paginated";
+import { parsePage, parsePerPage } from "../common/pagination";
 import type { CheckoutResult } from "../common/checkout-result";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.constants";
@@ -189,6 +190,8 @@ export class BatchOrdersService {
     actorUserId: string,
     query: ListBatchOrdersQueryDto,
   ): Promise<Paginated<BatchOrder>> {
+    const page = parsePage(query.page);
+    const perPage = parsePerPage(query.perPage, 25);
     const where: Prisma.BatchOrderWhereInput = {
       accountId,
       ...(query.status && { status: query.status }),
@@ -199,8 +202,8 @@ export class BatchOrdersService {
     // what misbehaves on a pgBouncer pool (see docs/go-live-runbook.md §1c).
     const items = await this.prisma.batchOrder.findMany({
       where,
-      skip: (query.page - 1) * query.perPage,
-      take: query.perPage,
+      skip: (page - 1) * perPage,
+      take: perPage,
       orderBy: { createdAt: "desc" },
       include: ORDER_RECIPIENTS_INCLUDE,
     });
@@ -212,10 +215,10 @@ export class BatchOrdersService {
       action: "list",
       targetType: "BatchOrder",
       targetId: accountId,
-      metadata: { status: query.status ?? null, page: query.page },
+      metadata: { status: query.status ?? null, page },
     });
 
-    return { items, total, page: query.page, perPage: query.perPage };
+    return { items, total, page, perPage };
   }
 
   async findOne(accountId: string, actorUserId: string, id: string): Promise<BatchOrder> {

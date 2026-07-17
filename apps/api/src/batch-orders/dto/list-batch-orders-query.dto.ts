@@ -1,7 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { BatchOrderStatus } from "@prisma/client";
-import { Type } from "class-transformer";
-import { IsEnum, IsInt, IsOptional, Max, Min } from "class-validator";
+import { IsEnum, IsOptional, IsString } from "class-validator";
 
 export class ListBatchOrdersQueryDto {
   @ApiPropertyOptional({ enum: BatchOrderStatus })
@@ -9,18 +8,14 @@ export class ListBatchOrdersQueryDto {
   @IsEnum(BatchOrderStatus)
   status?: BatchOrderStatus;
 
+  // Raw query strings, coerced in the service — see common/pagination.ts.
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page: number = 1;
+  @IsString()
+  page?: string;
 
   @ApiPropertyOptional({ default: 25 })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  perPage: number = 25;
+  @IsString()
+  perPage?: string;
 }

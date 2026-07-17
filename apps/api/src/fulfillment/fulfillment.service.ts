@@ -3,6 +3,7 @@ import { FulfillmentJobStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import type { Paginated } from "../common/paginated";
+import { parsePage, parsePerPage } from "../common/pagination";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import type { TransitionFulfillmentDto, TransitionableStatus } from "./dto/transition-fulfillment.dto";
 import type { BulkTransitionFulfillmentDto } from "./dto/bulk-transition-fulfillment.dto";
@@ -96,6 +97,8 @@ export class FulfillmentService {
   ) {}
 
   async list(query: ListFulfillmentQueryDto): Promise<Paginated<FulfillmentQueueJob>> {
+    const page = parsePage(query.page);
+    const perPage = parsePerPage(query.perPage, 50);
     const where: Prisma.FulfillmentJobWhereInput = {
       status: query.status ?? FulfillmentJobStatus.pending,
     };
@@ -105,8 +108,8 @@ export class FulfillmentService {
     // what misbehaves on a pgBouncer pool (see docs/go-live-runbook.md §1c).
     const items = await this.prisma.fulfillmentJob.findMany({
       where,
-      skip: (query.page - 1) * query.perPage,
-      take: query.perPage,
+      skip: (page - 1) * perPage,
+      take: perPage,
       // Oldest first: the queue is worked front-to-back, and dispatchDate
       // is what actually determines send urgency.
       orderBy: [{ createdAt: "asc" }],
@@ -114,7 +117,7 @@ export class FulfillmentService {
     });
     const total = await this.prisma.fulfillmentJob.count({ where });
 
-    return { items, total, page: query.page, perPage: query.perPage };
+    return { items, total, page, perPage };
   }
 
   async findOne(actorUserId: string, id: string): Promise<FulfillmentJob> {

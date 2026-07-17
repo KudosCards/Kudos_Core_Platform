@@ -11,6 +11,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { AuditService } from "../audit/audit.service";
 import type { Paginated } from "../common/paginated";
+import { parsePage, parsePerPage } from "../common/pagination";
 import type { CreateRecipientDto } from "./dto/create-recipient.dto";
 import type { UpdateRecipientDto } from "./dto/update-recipient.dto";
 import type { ListRecipientsQueryDto } from "./dto/list-recipients-query.dto";
@@ -87,6 +88,8 @@ export class RecipientsService {
     actorUserId: string,
     query: ListRecipientsQueryDto,
   ): Promise<Paginated<Recipient>> {
+    const page = parsePage(query.page);
+    const perPage = parsePerPage(query.perPage, 25);
     const where: Prisma.RecipientWhereInput = {
       accountId,
       ...(query.status && { status: query.status }),
@@ -104,8 +107,8 @@ export class RecipientsService {
     // connection pool — see docs/go-live-runbook.md §1c.
     const items = await this.prisma.recipient.findMany({
       where,
-      skip: (query.page - 1) * query.perPage,
-      take: query.perPage,
+      skip: (page - 1) * perPage,
+      take: perPage,
       orderBy: { createdAt: "desc" },
     });
     const total = await this.prisma.recipient.count({ where });
@@ -116,10 +119,10 @@ export class RecipientsService {
       action: "list",
       targetType: "Recipient",
       targetId: accountId,
-      metadata: { status: query.status ?? null, search: query.search ?? null, page: query.page },
+      metadata: { status: query.status ?? null, search: query.search ?? null, page },
     });
 
-    return { items, total, page: query.page, perPage: query.perPage };
+    return { items, total, page, perPage };
   }
 
   async findOne(accountId: string, actorUserId: string, id: string): Promise<Recipient> {
