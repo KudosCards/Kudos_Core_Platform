@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { accountSchema } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
@@ -7,6 +8,7 @@ import Stripe from "stripe";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { STRIPE_CLIENT } from "../src/billing/stripe-client.provider";
 import type { AutoSendResult } from "../src/auto-send/auto-send.service";
+import type { EnvConfig } from "../src/config/env.schema";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
@@ -29,8 +31,8 @@ describe("Auto-send (e2e)", () => {
     } as unknown as Stripe;
     app = await createTestApp([{ provide: STRIPE_CLIENT, useValue: mockStripe }]);
     prisma = app.get(PrismaService);
-    const { ConfigService } = await import("@nestjs/config");
-    webhookSecret = app.get(ConfigService).get("STRIPE_WEBHOOK_SECRET");
+    const config = app.get(ConfigService<EnvConfig, true>);
+    webhookSecret = config.get("STRIPE_WEBHOOK_SECRET", { infer: true });
   });
 
   afterAll(async () => {
