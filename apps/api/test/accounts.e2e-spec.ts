@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import { accountSchema } from "@kudos/shared-types";
+import {
+  accountSchema,
+  dashboardSummarySchema,
+  planEntitlementSchema,
+} from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { createTestApp } from "./util/create-test-app";
@@ -79,5 +83,76 @@ describe("Accounts (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ type: "not-a-real-type", name: "Bad Type" })
       .expect(400);
+  });
+
+  async function signUp(): Promise<string> {
+    const token = await mintToken(randomUUID());
+    await request(app.getHttpServer())
+      .post("/accounts")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ type: "organisation", name: `Centre ${randomUUID()}` })
+      .expect(201);
+    return token;
+  }
+
+  it("returns the plan entitlement for the current account", async () => {
+    const token = await signUp();
+    const response = await request(app.getHttpServer())
+      .get("/accounts/me/entitlements")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const entitlement = planEntitlementSchema.parse(response.body);
+    // A fresh account is on the free plan — no auto-send.
+    expect(entitlement.planId).toBe("free");
+    expect(entitlement.autoSendEnabled).toBe(false);
+  });
+
+  it("requires auth for the dashboard summary", async () => {
+    await request(app.getHttpServer()).get("/accounts/me/summary").expect(401);
+  });
+
+  it("reports a zeroed summary for a brand-new account", async () => {
+    const token = await signUp();
+    const response = await request(app.getHttpServer())
+      .get("/accounts/me/summary")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(dashboardSummarySchema.parse(response.body)).toEqual({
+      recipientCount: 0,
+      walletBalanceMinor: 0,
+      pendingApprovals: 0,
+      occasionsThisMonth: 0,
+      activeOrders: 0,
+      completedOrders: 0,
+    });
+  });
+
+  it("counts recipients and this-month occasions awaiting approval in the summary", async () => {
+    const token = await signUp();
+    const recipientResponse = await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ firstName: "Sam", lastName: "Recipient" })
+      .expect(201);
+    const recipientId = (recipientResponse.body as { id: string }).id;
+
+    // An occasion dated today is in the current calendar month and starts
+    // pending_approval.
+    const today = new Date().toISOString().slice(0, 10);
+    await request(app.getHttpServer())
+      .post("/occasions")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ type: "achievement", occasionDate: today, recipientId })
+      .expect(201);
+
+    const response = await request(app.getHttpServer())
+      .get("/accounts/me/summary")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const summary = dashboardSummarySchema.parse(response.body);
+    expect(summary.recipientCount).toBe(1);
+    expect(summary.pendingApprovals).toBe(1);
+    expect(summary.occasionsThisMonth).toBe(1);
+    expect(summary.activeOrders).toBe(0);
   });
 });
