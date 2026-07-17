@@ -142,6 +142,15 @@ model Occasion {
   occasionDate DateTime       @map("occasion_date") @db.Date
   dispatchDate DateTime?      @map("dispatch_date") @db.Date
   status       OccasionStatus @default(scheduled)
+  /// How this occasion is sent once approved. `asap` (default) means a human
+  /// checks it out manually; `auto_send` means the auto-send cron creates the
+  /// order, pays it from the wallet, and posts it timed to the dispatchDate —
+  /// no manual checkout. See docs/adr/0013-auto-send.md.
+  dispatchOption DispatchOption @default(asap) @map("dispatch_option")
+  /// Postage class chosen at approval for auto_send occasions; drives both the
+  /// stamp cost and the dispatchDate lead time. Ignored for `asap` occasions
+  /// (postage is chosen per line at manual checkout).
+  postageClass  PostageClass   @default(second_class) @map("postage_class")
   /// Set when an admin approves the occasion (see docs/adr/0006-phase-2-scope.md). Copied
   /// into OrderRecipient.savedDesignId by Phase 3's checkout flow — the design choice
   /// travels with the occasion instead of being re-selected at checkout.

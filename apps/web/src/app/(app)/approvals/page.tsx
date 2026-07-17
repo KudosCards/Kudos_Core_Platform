@@ -1,4 +1,4 @@
-import type { SavedDesign } from "@kudos/shared-types";
+import type { PlanEntitlement, SavedDesign } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { ApprovalsClient, type OccasionWithRecipient } from "./approvals-client";
 
@@ -10,14 +10,19 @@ interface Paginated<T> {
 }
 
 export default async function ApprovalsPage() {
-  const [occasions, savedDesigns] = await Promise.all([
+  const [occasions, savedDesigns, entitlements] = await Promise.all([
     serverApiFetch<Paginated<OccasionWithRecipient>>(
       "/occasions?status=pending_approval&perPage=50",
     ),
     serverApiFetch<SavedDesign[]>("/saved-designs"),
+    serverApiFetch<PlanEntitlement>("/accounts/me/entitlements"),
   ]);
 
   return (
-    <ApprovalsClient initialOccasions={occasions?.items ?? []} savedDesigns={savedDesigns ?? []} />
+    <ApprovalsClient
+      initialOccasions={occasions?.items ?? []}
+      savedDesigns={savedDesigns ?? []}
+      autoSendEnabled={entitlements?.autoSendEnabled ?? false}
+    />
   );
 }

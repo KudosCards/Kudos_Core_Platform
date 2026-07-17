@@ -20,6 +20,7 @@ import { MessagesModule } from "./messages/messages.module";
 import { FulfillmentModule } from "./fulfillment/fulfillment.module";
 import { CatalogModule } from "./catalog/catalog.module";
 import { WalletModule } from "./wallet/wallet.module";
+import { AutoSendModule } from "./auto-send/auto-send.module";
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { WalletModule } from "./wallet/wallet.module";
     FulfillmentModule,
     CatalogModule,
     WalletModule,
+    AutoSendModule,
   ],
 })
 export class AppModule {}

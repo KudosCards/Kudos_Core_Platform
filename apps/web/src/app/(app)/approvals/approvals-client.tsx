@@ -10,17 +10,23 @@ import { OCCASION_TYPE_LABELS, formatOccasionDate } from "@/lib/occasions";
 // returns — kept as a named alias since other files import this name.
 export type OccasionWithRecipient = Occasion;
 
+type PostageClass = "first_class" | "second_class";
+
 export function ApprovalsClient({
   initialOccasions,
   savedDesigns,
+  autoSendEnabled,
 }: {
   initialOccasions: OccasionWithRecipient[];
   savedDesigns: SavedDesign[];
+  autoSendEnabled: boolean;
 }) {
   const [occasions, setOccasions] = useState(initialOccasions);
   const [selectedDesignByOccasion, setSelectedDesignByOccasion] = useState<Record<string, string>>(
     {},
   );
+  const [autoSendByOccasion, setAutoSendByOccasion] = useState<Record<string, boolean>>({});
+  const [postageByOccasion, setPostageByOccasion] = useState<Record<string, PostageClass>>({});
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,12 +40,17 @@ export function ApprovalsClient({
       setError("Choose a design before approving");
       return;
     }
+    const autoSend = autoSendByOccasion[occasion.id] ?? false;
     setError(null);
     setPendingAction(occasion.id);
     try {
       await clientApiFetch(`/occasions/${occasion.id}/approve`, {
         method: "POST",
-        body: JSON.stringify({ savedDesignId }),
+        body: JSON.stringify({
+          savedDesignId,
+          dispatchOption: autoSend ? "auto_send" : "asap",
+          ...(autoSend && { postageClass: postageByOccasion[occasion.id] ?? "second_class" }),
+        }),
       });
       removeFromList(occasion.id);
     } catch (approveError) {
@@ -68,6 +79,9 @@ export function ApprovalsClient({
         <h1 className="text-2xl font-semibold">Approvals</h1>
         <p className="text-foreground/60">
           Review upcoming occasions and choose a design before they&apos;re sent.
+          {autoSendEnabled
+            ? " Turn on auto-send to have us order, pay from your wallet, and post the card automatically — timed to arrive on time."
+            : ""}
         </p>
       </div>
 
@@ -77,63 +91,101 @@ export function ApprovalsClient({
         <p className="text-sm text-foreground/60">Nothing waiting for approval right now.</p>
       ) : (
         <div className="flex flex-col gap-3">
-          {occasions.map((occasion) => (
-            <div
-              key={occasion.id}
-              className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-white/10"
-            >
-              <div>
-                <p className="font-medium">
-                  {OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type}
-                  {occasion.recipient && (
-                    <>
-                      {" for "}
-                      {occasion.recipient.firstName} {occasion.recipient.lastName}
-                    </>
-                  )}
-                </p>
-                <p className="text-sm text-foreground/60">
-                  {formatOccasionDate(occasion.occasionDate)}
-                </p>
-              </div>
+          {occasions.map((occasion) => {
+            const autoSend = autoSendByOccasion[occasion.id] ?? false;
+            return (
+              <div
+                key={occasion.id}
+                className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium">
+                      {OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type}
+                      {occasion.recipient && (
+                        <>
+                          {" for "}
+                          {occasion.recipient.firstName} {occasion.recipient.lastName}
+                        </>
+                      )}
+                    </p>
+                    <p className="text-sm text-foreground/60">
+                      {formatOccasionDate(occasion.occasionDate)}
+                    </p>
+                  </div>
 
-              <div className="flex items-center gap-2">
-                <select
-                  value={selectedDesignByOccasion[occasion.id] ?? ""}
-                  onChange={(e) =>
-                    setSelectedDesignByOccasion((current) => ({
-                      ...current,
-                      [occasion.id]: e.target.value,
-                    }))
-                  }
-                  className="rounded-md border border-black/10 px-2 py-1.5 text-sm dark:border-white/10"
-                >
-                  <option value="">Choose a design…</option>
-                  {savedDesigns.map((design) => (
-                    <option key={design.id} value={design.id}>
-                      {design.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  disabled={pendingAction === occasion.id}
-                  onClick={() => void approve(occasion)}
-                  className="rounded-full bg-foreground px-4 py-1.5 text-sm text-background hover:opacity-90 disabled:opacity-50"
-                >
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  disabled={pendingAction === occasion.id}
-                  onClick={() => void skip(occasion)}
-                  className="rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/5"
-                >
-                  Skip
-                </button>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedDesignByOccasion[occasion.id] ?? ""}
+                      onChange={(e) =>
+                        setSelectedDesignByOccasion((current) => ({
+                          ...current,
+                          [occasion.id]: e.target.value,
+                        }))
+                      }
+                      className="rounded-md border border-black/10 px-2 py-1.5 text-sm dark:border-white/10"
+                    >
+                      <option value="">Choose a design…</option>
+                      {savedDesigns.map((design) => (
+                        <option key={design.id} value={design.id}>
+                          {design.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={pendingAction === occasion.id}
+                      onClick={() => void approve(occasion)}
+                      className="rounded-full bg-foreground px-4 py-1.5 text-sm text-background hover:opacity-90 disabled:opacity-50"
+                    >
+                      {autoSend ? "Approve & auto-send" : "Approve"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={pendingAction === occasion.id}
+                      onClick={() => void skip(occasion)}
+                      className="rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/5"
+                    >
+                      Skip
+                    </button>
+                  </div>
+                </div>
+
+                {autoSendEnabled && (
+                  <div className="flex flex-wrap items-center gap-3 border-t border-black/5 pt-3 text-sm dark:border-white/5">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={autoSend}
+                        onChange={(e) =>
+                          setAutoSendByOccasion((current) => ({
+                            ...current,
+                            [occasion.id]: e.target.checked,
+                          }))
+                        }
+                      />
+                      <span>Auto-send — we order, pay from your wallet, and post it automatically</span>
+                    </label>
+                    {autoSend && (
+                      <select
+                        value={postageByOccasion[occasion.id] ?? "second_class"}
+                        onChange={(e) =>
+                          setPostageByOccasion((current) => ({
+                            ...current,
+                            [occasion.id]: e.target.value as PostageClass,
+                          }))
+                        }
+                        className="rounded-md border border-black/10 px-2 py-1.5 text-sm dark:border-white/10"
+                      >
+                        <option value="second_class">Second class (posts ~5 days ahead)</option>
+                        <option value="first_class">First class (posts ~3 days ahead)</option>
+                      </select>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

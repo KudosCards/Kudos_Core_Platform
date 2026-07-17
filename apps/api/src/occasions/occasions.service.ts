@@ -1,10 +1,17 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { SavedDesignsService } from "../saved-designs/saved-designs.service";
+import { EntitlementsService } from "../entitlements/entitlements.service";
 import type { Paginated } from "../common/paginated";
-import { computeDispatchDate } from "./occasion-scheduling.constants";
+import { POSTAGE_LEAD_DAYS, computeDispatchDate } from "./occasion-scheduling.constants";
 import type { CreateOccasionDto } from "./dto/create-occasion.dto";
 import type { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
 import type { ApproveOccasionDto } from "./dto/approve-occasion.dto";
@@ -22,6 +29,7 @@ export class OccasionsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly savedDesigns: SavedDesignsService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   async create(accountId: string, actorUserId: string, dto: CreateOccasionDto): Promise<Occasion> {
@@ -134,10 +142,27 @@ export class OccasionsService {
     // account-scoped lookup SavedDesignsController uses).
     await this.savedDesigns.findOne(accountId, dto.savedDesignId);
 
-    const occasion = await this.transitionFromPendingApproval(accountId, id, {
+    const dispatchOption = dto.dispatchOption ?? "asap";
+    const postageClass = dto.postageClass ?? "second_class";
+
+    const update: Prisma.OccasionUncheckedUpdateManyInput = {
       status: "approved",
       savedDesignId: dto.savedDesignId,
-    });
+      dispatchOption,
+      postageClass,
+    };
+
+    // Auto-send moves money and posts a card with no further human step, so the
+    // gates are enforced up front, not discovered later by the cron: the plan
+    // must permit it, and the recipient must have an address we can actually
+    // post to. dispatchDate is re-timed to the chosen postage class (the
+    // occasion may have been scheduled with the default 5-day lead).
+    if (dispatchOption === "auto_send") {
+      const occasionDate = await this.assertAutoSendAllowed(accountId, id);
+      update.dispatchDate = computeDispatchDate(occasionDate, POSTAGE_LEAD_DAYS[postageClass]);
+    }
+
+    const occasion = await this.transitionFromPendingApproval(accountId, id, update);
 
     await this.audit.record({
       accountId,
@@ -145,9 +170,39 @@ export class OccasionsService {
       action: "approve",
       targetType: "Occasion",
       targetId: id,
-      metadata: { savedDesignId: dto.savedDesignId },
+      metadata: { savedDesignId: dto.savedDesignId, dispatchOption, postageClass },
     });
     return occasion;
+  }
+
+  /**
+   * Auto-send requires the plan entitlement and a complete recipient address —
+   * both checked here before the occasion is approved. Returns the occasionDate
+   * so the caller can re-time the dispatch date to the postage class.
+   */
+  private async assertAutoSendAllowed(accountId: string, occasionId: string): Promise<Date> {
+    const entitlement = await this.entitlements.getForAccount(accountId);
+    if (!entitlement.autoSendEnabled) {
+      throw new ForbiddenException("Auto-send isn't available on your plan — upgrade to enable it");
+    }
+
+    const occasion = await this.prisma.occasion.findFirst({
+      where: { id: occasionId, accountId },
+      include: { recipient: true },
+    });
+    if (!occasion) {
+      throw new NotFoundException("Occasion not found");
+    }
+    if (!occasion.recipient) {
+      throw new BadRequestException("Auto-send needs a recipient with a postal address");
+    }
+    const { addressLine1, addressCity, addressPostcode } = occasion.recipient;
+    if (!addressLine1 || !addressCity || !addressPostcode) {
+      throw new BadRequestException(
+        "This recipient is missing a postal address — add one before enabling auto-send",
+      );
+    }
+    return occasion.occasionDate;
   }
 
   async skip(accountId: string, actorUserId: string, id: string): Promise<Occasion> {
