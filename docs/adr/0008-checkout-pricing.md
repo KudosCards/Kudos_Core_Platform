@@ -21,6 +21,7 @@ Centre £19.97/mo, both incl. VAT — matching the comment already in `apps/api/
 - **`OrderRecipient.postageClass`** (first/second class) is a fulfillment preference only — it
   does not change the price, since the flat £1.50 already includes postage. `BatchOrder.postageMinor`
   is always `0` in this phase.
+  _(Superseded — see the 2026-07-17 pricing correction below.)_
 - **Stripe Checkout** (hosted redirect), not embedded Elements, for both the batch-order payment
   and the plan subscription. Given live keys are already in place, minimizing custom
   payment-handling code (card entry, 3-D Secure, PCI scope) is the right call for a first payments
@@ -38,6 +39,22 @@ Centre £19.97/mo, both incl. VAT — matching the comment already in `apps/api/
 - **Building wallet and refunds alongside first-time checkout** — rejected: both are genuinely
   separate features (their own state machines, their own Stripe flows) and bundling them in risks
   all three being weaker. Sequencing them as focused follow-ups keeps each one correct.
+
+## Pricing correction (2026-07-17)
+
+Confirmed with the business during live testing: **postage is _not_ baked into the card price**.
+The correct model is:
+
+- The **£1.50 card price is VAT-inclusive** and the plan discount still applies on top (Free £1.50,
+  Pro £1.35, Centre £1.275 ≈ the advertised "from £1.28").
+- **Postage is a separate charge, per card**: one stamp per card — **£1.80 first class, £0.91
+  second class** (`POSTAGE_MINOR` in `billing.constants.ts`). Royal Mail stamps are VAT-exempt, so
+  no VAT is added on postage. Five cards = five stamps.
+- Checkout total = Σ per card `[ tier card price (incl. VAT) + chosen stamp ]`.
+
+`OrderRecipient` now carries a per-line `postageMinor`, `BatchOrder.postageMinor` is the real sum,
+and `totalMinor = subtotalMinor + postageMinor` (what Stripe charges). The earlier
+"postage-inclusive, `postageMinor` always 0" decision is superseded.
 
 ## Consequences
 

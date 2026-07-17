@@ -286,7 +286,10 @@ model OrderRecipient {
   shippingAddressCountry  String        @default("GB") @map("shipping_address_country")
   dispatchOption  DispatchOption
   postageClass    PostageClass
+  /// Card price (VAT-inclusive, after the plan discount) for this one card.
   priceMinor      Int                   @map("price_minor")
+  /// The stamp cost for this one card (per-card postage, VAT-exempt).
+  postageMinor    Int                   @default(0) @map("postage_minor")
   status          OrderRecipientStatus  @default(pending_approval)
   createdAt       DateTime              @default(now()) @map("created_at")
   updatedAt       DateTime              @updatedAt @map("updated_at")

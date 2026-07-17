@@ -53,7 +53,10 @@ export const orderRecipientSchema = z.object({
   shippingAddressCountry: z.string(),
   dispatchOption: dispatchOptionSchema,
   postageClass: postageClassSchema,
+  /** Card price (VAT-inclusive, after plan discount) for this one card. */
   priceMinor: z.number().int().nonnegative(),
+  /** Stamp cost for this one card (per-card postage, VAT-exempt). */
+  postageMinor: z.number().int().nonnegative(),
   status: orderRecipientStatusSchema,
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),

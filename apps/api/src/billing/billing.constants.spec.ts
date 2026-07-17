@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { computeCardPriceMinor } from "./billing.constants";
+import { computeCardPriceMinor, computePostageMinor } from "./billing.constants";
 
 describe("computeCardPriceMinor", () => {
   it("applies no discount for the free plan (0%)", () => {
@@ -16,5 +16,15 @@ describe("computeCardPriceMinor", () => {
 
   it("accepts a Prisma.Decimal (the type PlanEntitlement.cardDiscountPercent actually is)", () => {
     expect(computeCardPriceMinor(new Prisma.Decimal("10.00"))).toBe(135);
+  });
+});
+
+describe("computePostageMinor", () => {
+  it("charges £1.80 per card for first class", () => {
+    expect(computePostageMinor("first_class")).toBe(180);
+  });
+
+  it("charges £0.91 per card for second class", () => {
+    expect(computePostageMinor("second_class")).toBe(91);
   });
 });
