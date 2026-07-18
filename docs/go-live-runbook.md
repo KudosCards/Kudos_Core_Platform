@@ -75,7 +75,14 @@ Create two **recurring monthly** Prices and copy their `price_...` ids:
 | Pro | £9.97 / month, incl. VAT | → seed `plan_entitlements.stripe_price_id` for `pro` |
 | Centre | £19.97 / month, incl. VAT | → seed for `centre` |
 
-Then wire them to the plans. **Preferred (env-driven, so test-mode vs live is just a var swap):**
+**Fully automated (recommended): let the script create the Prices *and* wire them in.**
+Run it where the credentials already live (so no secret is shared) — on Railway:
+`railway run pnpm --filter @kudos/api run setup:stripe-plans`. It creates the Pro/Centre
+Products + monthly Prices (£9.97 / £19.97, GBP) in whichever mode `STRIPE_SECRET_KEY` belongs to
+and writes their ids to `plan_entitlements`. It's idempotent (keyed on a Stripe `lookup_key`), so
+re-running is safe. Use the **live** key when you're ready for real subscriptions.
+
+Or wire them by hand. **Env-driven (test-mode vs live is just a var swap):**
 set `STRIPE_PRICE_ID_PRO` and `STRIPE_PRICE_ID_CENTRE` in Railway (step 3) and run the seed —
 `pnpm --filter @kudos/api exec prisma db seed`. The seed reads those vars and writes each plan's
 `stripe_price_id`; leaving a var unset preserves whatever is already stored (so a reseed never wipes
