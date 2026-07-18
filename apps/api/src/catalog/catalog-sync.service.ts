@@ -9,7 +9,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CardDesign, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { DESIGN_ASSET_STORAGE_CLIENT } from "../storage/design-asset-storage.provider";
-import { DESIGN_ASSETS_BUCKET } from "../storage/storage.service";
+import {
+  BUCKET_CONFIGS,
+  DESIGN_ASSETS_BUCKET,
+  ensureBucketConfigured,
+} from "../storage/storage.service";
 import { CATALOG_SOURCE, type CatalogCardRecord, type CatalogSource } from "./catalog-source";
 import { buildCardDocument } from "./card-document.util";
 
@@ -150,30 +154,19 @@ export class CatalogSyncService {
   }
 
   /**
-   * Ensures the design-assets bucket exists and is public, using the same
-   * client (project + service key) the uploads use — so operators never have to
-   * hand-create it in the right project. createBucket is idempotent-ish: it
-   * errors "already exists", which we treat as success (then make sure it's
-   * public so thumbnails render). Any other failure is logged, not fatal — the
-   * per-card copy will still report the real reason.
+   * Ensures the design-assets bucket exists — public, with the shared
+   * mime/size limits (`BUCKET_CONFIGS`) — using the same client (project +
+   * service key) the uploads use, so operators never have to hand-create it in
+   * the right project. Idempotent and non-fatal: a failure is logged and the
+   * per-card copy still reports the real reason. Shares one implementation
+   * with the boot-time ensure in StorageService so the bucket's config can't
+   * drift between the two paths.
    */
   private async ensureBucket(): Promise<void> {
-    const { error } = await this.storage.storage.createBucket(DESIGN_ASSETS_BUCKET, {
-      public: true,
-    });
-    if (!error) {
-      this.logger.log(`Created storage bucket "${DESIGN_ASSETS_BUCKET}"`);
-      return;
+    const config = BUCKET_CONFIGS.find((c) => c.name === DESIGN_ASSETS_BUCKET);
+    if (config) {
+      await ensureBucketConfigured(this.storage, config, this.logger);
     }
-    if (/exist/i.test(error.message)) {
-      // Already there — make sure it's public (a private bucket would upload
-      // fine but the stored public URLs wouldn't render).
-      await this.storage.storage
-        .updateBucket(DESIGN_ASSETS_BUCKET, { public: true })
-        .catch(() => undefined);
-      return;
-    }
-    this.logger.warn(`Could not ensure "${DESIGN_ASSETS_BUCKET}" bucket: ${error.message}`);
   }
 
   /**

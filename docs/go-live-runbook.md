@@ -21,20 +21,25 @@ Legend: 🧑 = you (dashboard/manual), 🤖 = already handled in code.
 
 ## 1. Supabase 🧑
 
-### 1a. Storage buckets
+### 1a. Storage buckets 🤖
 
-Two **public-read** buckets must exist (uploads go direct from the browser via signed URLs; the
+Two **public-read** buckets are used (uploads go direct from the browser via signed URLs; the
 public read is what lets a saved design / message video render later):
 
-| Bucket | Used by | Recommended limits |
+| Bucket | Used by | Enforced limits |
 |---|---|---|
-| `design-assets` | card designer image uploads (Phase 2) | `allowedMimeTypes`: image/png, image/jpeg, image/webp, image/gif · `fileSizeLimit`: ~5 MB |
-| `message-videos` | message-page video uploads (Phase 4) | `allowedMimeTypes`: video/mp4, video/quicktime, video/webm · `fileSizeLimit`: ~50 MB |
+| `design-assets` | card designer image uploads (Phase 2) + Airtable artwork copies | `allowedMimeTypes`: image/png, image/jpeg, image/webp, image/gif · `fileSizeLimit`: 10 MB |
+| `message-videos` | message-page video uploads (Phase 4) | `allowedMimeTypes`: video/mp4, video/quicktime, video/webm · `fileSizeLimit`: 50 MB |
 
-> The API validates the *claimed* content-type in its DTOs, but the installed Supabase SDK can't
-> enforce what's actually uploaded to a signed URL — the bucket's `allowedMimeTypes`/`fileSizeLimit`
-> are the real enforcement. This is why the limits above matter (see ADR 0009 and the note in
-> `storage.service.ts`). Create both buckets as **Public**.
+> **Now automatic.** On every production boot the API creates both buckets (public) with exactly
+> the limits above and re-applies them if a bucket already exists — see
+> `BUCKET_CONFIGS` / `StorageService.onApplicationBootstrap` in `storage.service.ts`. This matters
+> because the API validates the *claimed* content-type in its DTOs, but the installed Supabase SDK
+> can't constrain what's actually PUT to a signed URL — the bucket's `allowedMimeTypes`/
+> `fileSizeLimit` are the real enforcement (see ADR 0009). Nothing to create by hand; if you *do*
+> pre-create them in the dashboard, just name them exactly `design-assets` / `message-videos` and
+> the boot step will bring their limits into line. Requires `SUPABASE_URL` +
+> `SUPABASE_SERVICE_ROLE_KEY` (already set for the app).
 
 ### 1b. Auth
 
@@ -199,8 +204,23 @@ Do a full dry run on **Stripe test mode** before touching real cards:
   readable stack traces). Server-side page errors (like the `/recipients` failure) are captured via
   the Next `onRequestError` hook; API 5xx errors via a global exception filter. Do this before real
   traffic so production errors are visible and alertable, not just buried in platform logs.
-- Confirm a database backup/retention policy in Supabase (recipient data is children's PII — UK
-  GDPR; the app already keeps an access audit trail, but backups/retention are a dashboard policy).
+- **Confirm a database backup/retention policy in Supabase** 🧑 (recipient data is children's PII —
+  UK GDPR; the app already keeps an access audit trail, but backups/retention are a dashboard
+  policy). Concretely, in the Supabase dashboard:
+  - **Database → Backups:** confirm daily backups are on. On Pro, enable **Point-in-Time Recovery
+    (PITR)** so you can restore to any moment (not just the nightly snapshot) — worth it once real
+    orders and payments are flowing, since a bad migration or accidental delete is otherwise only
+    recoverable to the last nightly backup. Note the retention window (7 days default; extendable).
+  - **GDPR retention** is a *policy* decision, not just a backup one: agree how long a delivered
+    order's recipient address is kept and whether recipients are purged after a period of
+    inactivity. The audit trail (`audit_logs`) already records every access to a recipient's PII;
+    pair it with a documented retention period. A data-subject **erasure** request today means
+    deleting the `recipient` row (cascades to their occasions/orders) — fine for launch, but worth
+    a short written procedure before scale.
+  - **Storage** is backed up separately from Postgres — the `design-assets`/`message-videos`
+    buckets hold uploaded artwork and personalised videos. For launch the risk is low (assets are
+    regenerable/re-uploadable and the catalog re-syncs from Airtable), but note it so it isn't a
+    surprise.
 - A focused pre-launch security review of the newest, most sensitive surfaces — the public
   message endpoint and the cross-account fulfillment/platform-admin module — since these are the
   two places the usual per-account walls are deliberately down. (Full end-to-end review completed
