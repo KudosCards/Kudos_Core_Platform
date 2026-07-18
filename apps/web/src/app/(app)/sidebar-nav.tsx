@@ -43,7 +43,14 @@ const GROUPS: NavGroup[] = [
   },
 ];
 
-export function SidebarNav({ pendingApprovals = 0 }: { pendingApprovals?: number }) {
+export function SidebarNav({
+  pendingApprovals = 0,
+  onNavigate,
+}: {
+  pendingApprovals?: number;
+  /** Called when a nav link is clicked — lets the mobile drawer close itself. */
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
@@ -60,6 +67,7 @@ export function SidebarNav({ pendingApprovals = 0 }: { pendingApprovals?: number
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onNavigate}
                 aria-current={active ? "page" : undefined}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                   active

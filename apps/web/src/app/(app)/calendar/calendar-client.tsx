@@ -242,16 +242,17 @@ function GridView({
   const cellHeight = view === "week" ? "min-h-40" : "min-h-24";
 
   return (
-    <div className="card overflow-hidden">
-      <div className="grid grid-cols-7 border-b border-border bg-foreground/[0.02] text-xs font-semibold uppercase tracking-wide text-muted">
-        {WEEKDAYS.map((d) => (
-          <div key={d} className="px-2 py-2.5 text-center">
-            {d}
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7">
-        {days.map((day) => {
+    <div className="card overflow-x-auto">
+      <div className="min-w-[560px]">
+        <div className="grid grid-cols-7 border-b border-border bg-foreground/[0.02] text-xs font-semibold uppercase tracking-wide text-muted">
+          {WEEKDAYS.map((d) => (
+            <div key={d} className="px-2 py-2.5 text-center">
+              {d}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {days.map((day) => {
           const key = ymdUTC(day);
           const inMonth = view === "week" || day.getUTCMonth() === anchor.getUTCMonth();
           const isToday = key === todayKey;
@@ -281,6 +282,7 @@ function GridView({
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );
