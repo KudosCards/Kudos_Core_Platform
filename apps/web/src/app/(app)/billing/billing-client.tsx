@@ -56,12 +56,14 @@ export function BillingClient({ currentPlanId }: { currentPlanId: string | null 
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Billing</h1>
-        <p className="text-foreground/60">Manage your plan.</p>
+      <div className="flex flex-col gap-1">
+        <h1 className="text-3xl font-bold tracking-tight">Billing</h1>
+        <p className="text-muted">Manage your plan.</p>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         {PLANS.map((plan) => {
@@ -69,25 +71,27 @@ export function BillingClient({ currentPlanId }: { currentPlanId: string | null 
           return (
             <div
               key={plan.planId}
-              className="flex flex-col gap-3 rounded-lg border border-black/10 p-5 dark:border-white/10"
+              className={`flex flex-col gap-3 rounded-xl border p-5 ${
+                isCurrent ? "border-accent bg-accent-soft/40" : "border-border bg-surface"
+              }`}
             >
               <div>
-                <p className="font-medium">{plan.name}</p>
-                <p className="text-2xl font-semibold">{plan.priceLabel}</p>
+                <p className="font-semibold">{plan.name}</p>
+                <p className="text-2xl font-bold tracking-tight">{plan.priceLabel}</p>
               </div>
-              <p className="flex-1 text-sm text-foreground/60">{plan.description}</p>
+              <p className="flex-1 text-sm text-muted">{plan.description}</p>
               {isCurrent ? (
-                <span className="rounded-full bg-black/5 px-4 py-1.5 text-center text-sm font-medium dark:bg-white/10">
+                <span className="rounded-lg bg-surface px-4 py-1.5 text-center text-sm font-semibold text-accent">
                   Current plan
                 </span>
               ) : plan.planId === "free" ? (
-                <span className="text-center text-sm text-foreground/40">—</span>
+                <span className="text-center text-sm text-muted">—</span>
               ) : (
                 <button
                   type="button"
                   disabled={pendingPlan === plan.planId}
                   onClick={() => void upgrade(plan.planId as "pro" | "centre")}
-                  className="rounded-full bg-foreground px-4 py-1.5 text-sm text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="btn-accent"
                 >
                   {pendingPlan === plan.planId ? "Redirecting…" : `Switch to ${plan.name}`}
                 </button>

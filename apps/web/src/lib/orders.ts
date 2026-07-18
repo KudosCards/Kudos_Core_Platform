@@ -10,14 +10,15 @@ export const ORDER_STATUS_LABELS: Record<BatchOrderStatus, string> = {
   cancelled: "Cancelled",
 };
 
-/** Tailwind classes for a small status pill, per order status. */
+/** Tailwind classes (bg + text) for a small status pill, per order status.
+ * Composed with the pill sizing utilities at the call site. */
 export const ORDER_STATUS_CLASSES: Record<BatchOrderStatus, string> = {
-  draft: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  pending_payment: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  paid: "bg-blue-500/10 text-blue-700 dark:text-blue-400",
-  fulfilling: "bg-blue-500/10 text-blue-700 dark:text-blue-400",
-  completed: "bg-green-600/10 text-green-700 dark:text-green-400",
-  cancelled: "bg-black/5 text-foreground/50 dark:bg-white/10",
+  draft: "bg-foreground/[0.07] text-muted",
+  pending_payment: "bg-amber-500/15 text-amber-700",
+  paid: "bg-blue-500/10 text-blue-700",
+  fulfilling: "bg-accent-soft text-accent",
+  completed: "bg-[#e8f1ea] text-[#2f7d54]",
+  cancelled: "bg-foreground/[0.07] text-muted",
 };
 
 export const ORDER_RECIPIENT_STATUS_LABELS: Record<OrderRecipientStatus, string> = {

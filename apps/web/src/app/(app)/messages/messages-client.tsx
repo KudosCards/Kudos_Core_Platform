@@ -82,45 +82,49 @@ export function MessagesClient({ initialPages }: { initialPages: AccountMessageP
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Message pages</h1>
-        <p className="text-foreground/60">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-3xl font-bold tracking-tight">Message pages</h1>
+        <p className="text-muted">
           Add a message, emoji, or video to each card&apos;s QR page. Recipients scan the code on
           their card to see it.
         </p>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+      )}
 
       {pages.length === 0 ? (
-        <p className="text-sm text-foreground/60">
+        <div className="card p-8 text-center text-sm text-muted">
           No message pages yet — they&apos;re created automatically once a card order is paid.
-        </p>
+        </div>
       ) : (
         <div className="flex flex-col gap-4">
           {pages.map((page) => {
             const publicUrl = `/r/${page.slug}`;
             return (
-              <div
-                key={page.id}
-                className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10"
-              >
+              <div key={page.id} className="card flex flex-col gap-3 p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium">
+                    <p className="font-semibold">
                       {page.orderRecipient.recipient.firstName}{" "}
                       {page.orderRecipient.recipient.lastName}
                       {page.orderRecipient.occasion && (
-                        <span className="text-foreground/60">
+                        <span className="text-muted">
                           {" · "}
                           {OCCASION_TYPE_LABELS[page.orderRecipient.occasion.type] ??
                             page.orderRecipient.occasion.type}
                         </span>
                       )}
                     </p>
-                    <p className="text-xs text-foreground/50">
+                    <p className="text-xs text-muted">
                       {page.viewCount} view{page.viewCount === 1 ? "" : "s"} ·{" "}
-                      <a href={publicUrl} target="_blank" rel="noreferrer" className="underline">
+                      <a
+                        href={publicUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-accent hover:underline"
+                      >
                         open page
                       </a>
                     </p>
@@ -133,7 +137,7 @@ export function MessagesClient({ initialPages }: { initialPages: AccountMessageP
                     value={page.message ?? ""}
                     maxLength={2000}
                     onChange={(e) => patchLocal(page.id, { message: e.target.value })}
-                    className="min-h-20 rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/10"
+                    className="min-h-20 rounded-md border border-border bg-surface px-3 py-2 text-sm"
                   />
                   <div className="flex flex-col gap-2">
                     <input
@@ -141,9 +145,9 @@ export function MessagesClient({ initialPages }: { initialPages: AccountMessageP
                       value={page.emoji ?? ""}
                       maxLength={8}
                       onChange={(e) => patchLocal(page.id, { emoji: e.target.value })}
-                      className="w-24 rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/10"
+                      className="w-24 rounded-md border border-border bg-surface px-3 py-2 text-sm"
                     />
-                    <label className="cursor-pointer rounded-md border border-black/20 px-3 py-2 text-center text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5">
+                    <label className="cursor-pointer rounded-md border border-border px-3 py-2 text-center text-xs hover:bg-foreground/[0.03]">
                       {uploadingId === page.id
                         ? "Uploading…"
                         : page.videoUrl
@@ -164,13 +168,13 @@ export function MessagesClient({ initialPages }: { initialPages: AccountMessageP
                   </div>
                 </div>
 
-                {page.videoUrl && <p className="text-xs text-foreground/50">Video attached.</p>}
+                {page.videoUrl && <p className="text-xs text-muted">Video attached.</p>}
 
                 <button
                   type="button"
                   disabled={savingId === page.id}
                   onClick={() => void save(page)}
-                  className="self-start rounded-full bg-foreground px-4 py-1.5 text-sm text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="btn-accent self-start"
                 >
                   {savingId === page.id ? "Saving…" : "Save"}
                 </button>

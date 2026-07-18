@@ -132,17 +132,14 @@ export function CalendarClient({
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Calendar</h1>
-          <p className="text-sm text-foreground/60">
-            Every contact&apos;s upcoming moments. Approve and order them ahead of time.
+        <div className="flex flex-col gap-1">
+          <h1 className="text-3xl font-bold tracking-tight">Calendar</h1>
+          <p className="text-muted">
+            Every recipient&apos;s upcoming moment. Approve and order ahead of time.
           </p>
         </div>
-        <Link
-          href="/batch-orders"
-          className="rounded-full bg-foreground px-4 py-2 text-sm text-background hover:opacity-90"
-        >
-          Create an order →
+        <Link href="/batch-orders" className="btn-accent">
+          Create an order <span aria-hidden>→</span>
         </Link>
       </div>
 
@@ -152,7 +149,7 @@ export function CalendarClient({
           <button
             type="button"
             onClick={() => move(-1)}
-            className="rounded-md border border-black/15 px-2.5 py-1 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+            className="rounded-md border border-border bg-surface px-2.5 py-1 text-sm hover:bg-foreground/[0.03]"
             aria-label="Previous"
           >
             ‹
@@ -160,20 +157,20 @@ export function CalendarClient({
           <button
             type="button"
             onClick={() => setAnchor(today)}
-            className="rounded-md border border-black/15 px-3 py-1 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+            className="rounded-md border border-border bg-surface px-3 py-1 text-sm hover:bg-foreground/[0.03]"
           >
             Today
           </button>
           <button
             type="button"
             onClick={() => move(1)}
-            className="rounded-md border border-black/15 px-2.5 py-1 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+            className="rounded-md border border-border bg-surface px-2.5 py-1 text-sm hover:bg-foreground/[0.03]"
             aria-label="Next"
           >
             ›
           </button>
-          <span className="ml-2 text-sm font-medium">{periodLabel(view, anchor)}</span>
-          {loading && <span className="text-xs text-foreground/40">Loading…</span>}
+          <span className="ml-2 text-sm font-semibold">{periodLabel(view, anchor)}</span>
+          {loading && <span className="text-xs text-muted">Loading…</span>}
         </div>
 
         <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -182,13 +179,14 @@ export function CalendarClient({
               type="checkbox"
               checked={showDispatch}
               onChange={(e) => setShowDispatch(e.target.checked)}
+              className="accent-accent"
             />
             Dispatch dates
           </label>
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            className="rounded-md border border-black/15 px-2 py-1 dark:border-white/15"
+            className="rounded-md border border-border bg-surface px-2 py-1"
           >
             <option value="all">All occasions</option>
             {OCCASION_TYPES.map((type) => (
@@ -197,14 +195,14 @@ export function CalendarClient({
               </option>
             ))}
           </select>
-          <div className="flex rounded-md border border-black/15 p-0.5 dark:border-white/15">
+          <div className="flex rounded-md border border-border bg-surface p-0.5">
             {VIEWS.map((v) => (
               <button
                 key={v}
                 type="button"
                 onClick={() => setView(v)}
                 className={`rounded px-3 py-1 capitalize ${
-                  v === view ? "bg-foreground text-background" : "hover:bg-black/5 dark:hover:bg-white/5"
+                  v === view ? "bg-accent text-white" : "hover:bg-foreground/[0.04]"
                 }`}
               >
                 {v}
@@ -214,7 +212,9 @@ export function CalendarClient({
         </div>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+      )}
 
       {view === "list" ? (
         <ListView anchor={anchor} byDay={byDay} todayKey={todayKey} />
@@ -242,10 +242,10 @@ function GridView({
   const cellHeight = view === "week" ? "min-h-40" : "min-h-24";
 
   return (
-    <div className="overflow-hidden rounded-lg border border-black/10 dark:border-white/10">
-      <div className="grid grid-cols-7 border-b border-black/10 bg-black/[0.03] text-xs font-semibold text-foreground/60 dark:border-white/10 dark:bg-white/[0.03]">
+    <div className="card overflow-hidden">
+      <div className="grid grid-cols-7 border-b border-border bg-foreground/[0.02] text-xs font-semibold uppercase tracking-wide text-muted">
         {WEEKDAYS.map((d) => (
-          <div key={d} className="px-2 py-2 text-center">
+          <div key={d} className="px-2 py-2.5 text-center">
             {d}
           </div>
         ))}
@@ -261,15 +261,15 @@ function GridView({
           return (
             <div
               key={key}
-              className={`${cellHeight} flex flex-col gap-1 border-t border-l border-black/10 p-1.5 first:border-l-0 dark:border-white/10 ${
-                inMonth ? "" : "bg-black/[0.02] text-foreground/40 dark:bg-white/[0.02]"
+              className={`${cellHeight} flex flex-col gap-1 border-t border-l border-border p-1.5 first:border-l-0 ${
+                isToday ? "bg-accent-soft/50" : inMonth ? "" : "bg-foreground/[0.02] text-muted"
               }`}
             >
               <span
                 className={`self-end text-xs ${
                   isToday
-                    ? "flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-background"
-                    : "text-foreground/50"
+                    ? "flex h-5 w-5 items-center justify-center rounded-full bg-foreground font-semibold text-white"
+                    : "text-muted"
                 }`}
               >
                 {day.getUTCDate()}
@@ -277,7 +277,7 @@ function GridView({
               {shown.map((occasion) => (
                 <OccasionPill key={occasion.id} occasion={occasion} />
               ))}
-              {extra > 0 && <span className="px-1 text-xs text-foreground/40">+{extra} more</span>}
+              {extra > 0 && <span className="px-1 text-xs text-muted">+{extra} more</span>}
             </div>
           );
         })}
@@ -298,25 +298,25 @@ function ListView({
   const days = [...byDay.keys()].sort();
   if (days.length === 0) {
     return (
-      <p className="text-sm text-foreground/60">
+      <div className="card p-8 text-center text-sm text-muted">
         No occasions in {anchor.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })}.
-      </p>
+      </div>
     );
   }
   return (
-    <div className="flex flex-col divide-y divide-black/5 rounded-lg border border-black/10 dark:divide-white/5 dark:border-white/10">
+    <div className="card flex flex-col divide-y divide-border overflow-hidden">
       {days.map((key) => {
         const date = new Date(`${key}T00:00:00Z`);
         return (
-          <div key={key} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:gap-6">
-            <div className="w-40 shrink-0 text-sm font-medium">
+          <div key={key} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-6">
+            <div className="w-40 shrink-0 text-sm font-semibold">
               {date.toLocaleDateString("en-GB", {
                 weekday: "short",
                 day: "numeric",
                 month: "long",
                 timeZone: "UTC",
               })}
-              {key === todayKey && <span className="ml-2 text-xs text-foreground/40">Today</span>}
+              {key === todayKey && <span className="ml-2 text-xs text-accent">Today</span>}
             </div>
             <div className="flex flex-1 flex-wrap gap-1.5">
               {(byDay.get(key) ?? []).map((occasion) => (
