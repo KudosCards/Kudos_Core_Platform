@@ -83,8 +83,9 @@ const CARD_DESIGN_TEMPLATES = [
 
 /**
  * Mirrors the legacy site's three tiers (Free / Pro £9.97 / Centre £19.97).
- * Actual Stripe price wiring lands in Phase 3 — this seed only establishes
- * the entitlement limits these plan ids are checked against.
+ * Entitlement limits these plan ids are checked against. The paid tiers' Stripe
+ * price ids come from env vars (see below) rather than being hardcoded, since
+ * they differ between Stripe test mode and live.
  */
 const PLAN_ENTITLEMENTS = [
   { planId: "free", recipientCap: 50, batchOrderMaxSize: 20, cardDiscountPercent: 0, autoSendEnabled: false },
@@ -92,15 +93,38 @@ const PLAN_ENTITLEMENTS = [
   { planId: "centre", recipientCap: null, batchOrderMaxSize: 20, cardDiscountPercent: 15, autoSendEnabled: true },
 ];
 
+/**
+ * The Stripe recurring Price id for each paid plan, supplied via env so the
+ * same seed serves test-mode and live without a code change (mirrors how
+ * PLATFORM_ADMIN_USER_IDS is provided). Until set, `POST /subscriptions/checkout`
+ * cleanly returns 409 "not yet configured" for that plan — no crash. Setting a
+ * var and re-running the seed activates upgrades; leaving one unset preserves
+ * whatever price id is already stored (so a CI reseed never wipes it).
+ */
+const STRIPE_PRICE_IDS: Record<string, string | undefined> = {
+  pro: process.env.STRIPE_PRICE_ID_PRO?.trim() || undefined,
+  centre: process.env.STRIPE_PRICE_ID_CENTRE?.trim() || undefined,
+};
+
 async function main(): Promise<void> {
   for (const plan of PLAN_ENTITLEMENTS) {
+    const stripePriceId = STRIPE_PRICE_IDS[plan.planId];
+    // Only include stripePriceId when provided, so an upsert without the env
+    // var set leaves an already-configured price id untouched.
+    const data = stripePriceId ? { ...plan, stripePriceId } : plan;
     await prisma.planEntitlement.upsert({
       where: { planId: plan.planId },
-      update: plan,
-      create: plan,
+      update: data,
+      create: data,
     });
   }
-  console.log(`Seeded ${PLAN_ENTITLEMENTS.length} plan entitlements`);
+  const configured = Object.entries(STRIPE_PRICE_IDS)
+    .filter(([, id]) => id)
+    .map(([plan]) => plan);
+  console.log(
+    `Seeded ${PLAN_ENTITLEMENTS.length} plan entitlements` +
+      (configured.length ? ` (Stripe price ids set for: ${configured.join(", ")})` : ""),
+  );
 
   for (const template of CARD_DESIGN_TEMPLATES) {
     await prisma.cardDesign.upsert({
