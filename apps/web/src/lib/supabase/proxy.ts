@@ -43,23 +43,26 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     },
   );
 
-  // Validate the JWT locally against the project's (cached) JWKS via
-  // getClaims. With asymmetric signing keys — which this project uses
-  // (ES256, same JWKS the API verifies against) — this is a WebCrypto check
-  // with no per-request network round-trip to the Auth server, unlike
-  // getUser(). It transparently refreshes a near-expiry session first (the
-  // cookie write is captured by setAll above) and only falls back to a
-  // network validation if the project ever switched to a symmetric secret,
-  // so it is never slower than getUser and much faster in the common case.
-  // Real authorization is still enforced server-side by the API; this proxy
-  // only gates navigation and keeps the session cookie fresh.
-  const { data } = await supabase.auth.getClaims();
-  const isAuthenticated = Boolean(data?.claims);
+  // Refresh + validate the session with getUser — the proven @supabase/ssr
+  // pattern. (A previous getClaims()-based optimisation crashed Netlify's
+  // Edge runtime — "edge function invocation failed" — so this is deliberately
+  // the boring, known-good call.) Wrapped so a transient auth failure can
+  // never crash the edge function: navigation gating fails open, and the app
+  // shell still enforces auth server-side (its /accounts/me fetch redirects to
+  // /login when there's no session), so nothing sensitive is exposed.
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  if (!isAuthenticated && !isPublicPath(request.nextUrl.pathname)) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/login";
-    return NextResponse.redirect(redirectUrl);
+    if (!user && !isPublicPath(request.nextUrl.pathname)) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/login";
+      return NextResponse.redirect(redirectUrl);
+    }
+  } catch {
+    // Don't take the whole site down on an auth hiccup — let the request
+    // through; the authenticated layout re-checks the session and redirects.
   }
 
   return response;
