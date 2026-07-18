@@ -75,10 +75,17 @@ Create two **recurring monthly** Prices and copy their `price_...` ids:
 | Pro | £9.97 / month, incl. VAT | → seed `plan_entitlements.stripe_price_id` for `pro` |
 | Centre | £19.97 / month, incl. VAT | → seed for `centre` |
 
-Then set them in the DB (either edit the `PLAN_ENTITLEMENTS` seed and re-run `prisma db seed`, or
-`UPDATE plan_entitlements SET stripe_price_id = 'price_...' WHERE plan_id = 'pro';` etc). Until this
-is done, `POST /subscriptions/checkout` correctly returns a clean 409 ("not yet configured") — no
-crash, just no upgrades.
+Then wire them to the plans. **Preferred (env-driven, so test-mode vs live is just a var swap):**
+set `STRIPE_PRICE_ID_PRO` and `STRIPE_PRICE_ID_CENTRE` in Railway (step 3) and run the seed —
+`pnpm --filter @kudos/api exec prisma db seed`. The seed reads those vars and writes each plan's
+`stripe_price_id`; leaving a var unset preserves whatever is already stored (so a reseed never wipes
+a live price). *Quick alternative:* `UPDATE plan_entitlements SET stripe_price_id = 'price_...'
+WHERE plan_id = 'pro';` (and `centre`). Until this is done, `POST /subscriptions/checkout` correctly
+returns a clean 409 ("not yet configured") — no crash, just no upgrades.
+
+> Swapping test-mode → live later is then just: change the two `STRIPE_PRICE_ID_*` vars to the live
+> `price_...` ids and re-run the seed (alongside the `STRIPE_SECRET_KEY`/webhook-secret swap in
+> step 5).
 
 > The £1.50/card price is **not** a Stripe Price object — it's `CARD_PRICE_MINOR` in code
 > (`billing.constants.ts`), charged via a dynamic Checkout line item. Nothing to configure.
@@ -104,6 +111,8 @@ crash, just no upgrades.
 | `SUPABASE_SERVICE_ROLE_KEY` | service role key |
 | `STRIPE_SECRET_KEY` | **test key first** (`sk_test_...`), see step 5 |
 | `STRIPE_WEBHOOK_SECRET` | signing secret from 2b |
+| `STRIPE_PRICE_ID_PRO` | Pro plan's Stripe `price_...` id (test-mode first) — read by the seed, step 2a |
+| `STRIPE_PRICE_ID_CENTRE` | Centre plan's Stripe `price_...` id (test-mode first) — read by the seed, step 2a |
 | `WEB_APP_URL` | the live Netlify URL (CORS + Stripe redirect targets) |
 | `AIRTABLE_API_KEY` | read-only Airtable PAT (`data.records:read` on the cards base) — step 4b |
 | `AIRTABLE_BASE_ID` | the cards base id (`app…`) — step 4b |
