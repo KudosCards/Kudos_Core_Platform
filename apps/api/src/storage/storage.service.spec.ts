@@ -1,6 +1,11 @@
 import { InternalServerErrorException } from "@nestjs/common";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { StorageService, DESIGN_ASSETS_BUCKET } from "./storage.service";
+import {
+  StorageService,
+  DESIGN_ASSETS_BUCKET,
+  ensureBucketConfigured,
+  type BucketConfig,
+} from "./storage.service";
 
 describe("StorageService", () => {
   const accountId = "11111111-1111-1111-1111-111111111111";
@@ -80,5 +85,51 @@ describe("StorageService", () => {
         contentType: "image/png",
       }),
     ).rejects.toThrow(InternalServerErrorException);
+  });
+
+  describe("ensureBucketConfigured", () => {
+    const config: BucketConfig = {
+      name: "design-assets",
+      allowedMimeTypes: ["image/png", "image/jpeg"],
+      fileSizeLimit: "10MB",
+    };
+
+    it("creates the bucket public with its mime/size limits", async () => {
+      const createBucket = jest.fn().mockResolvedValue({ data: { name: config.name }, error: null });
+      const updateBucket = jest.fn();
+      const client = { storage: { createBucket, updateBucket } } as unknown as SupabaseClient;
+
+      await ensureBucketConfigured(client, config);
+
+      expect(createBucket).toHaveBeenCalledWith(config.name, {
+        public: true,
+        allowedMimeTypes: config.allowedMimeTypes,
+        fileSizeLimit: "10MB",
+      });
+      expect(updateBucket).not.toHaveBeenCalled();
+    });
+
+    it("updates an existing bucket so the limits are enforced on it too", async () => {
+      const createBucket = jest
+        .fn()
+        .mockResolvedValue({ data: null, error: { message: "The resource already exists" } });
+      const updateBucket = jest.fn().mockResolvedValue({ data: null, error: null });
+      const client = { storage: { createBucket, updateBucket } } as unknown as SupabaseClient;
+
+      await ensureBucketConfigured(client, config);
+
+      expect(updateBucket).toHaveBeenCalledWith(config.name, {
+        public: true,
+        allowedMimeTypes: config.allowedMimeTypes,
+        fileSizeLimit: "10MB",
+      });
+    });
+
+    it("swallows a thrown SDK/network error rather than crashing boot", async () => {
+      const createBucket = jest.fn().mockRejectedValue(new Error("network down"));
+      const client = { storage: { createBucket } } as unknown as SupabaseClient;
+
+      await expect(ensureBucketConfigured(client, config)).resolves.toBeUndefined();
+    });
   });
 });
