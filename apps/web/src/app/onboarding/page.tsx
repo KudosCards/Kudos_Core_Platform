@@ -50,27 +50,33 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-sm flex-1 flex-col justify-center gap-4 px-6 py-24">
-      <h1 className="text-2xl font-semibold">Set up your account</h1>
-      <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <label className="flex flex-col gap-1 text-sm">
-          Organisation or your name
-          <input
-            type="text"
-            name="name"
-            required
-            className="rounded-md border border-black/10 px-3 py-2 dark:border-white/10"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-full bg-foreground px-4 py-2 text-background transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {submitting ? "Setting up…" : "Continue"}
-        </button>
-      </form>
+    <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-6 py-16">
+      <div className="text-center">
+        <p className="text-2xl font-bold tracking-tight">Kudos Cards</p>
+        <p className="text-sm text-muted">Recognition, delivered</p>
+      </div>
+      <div className="card flex flex-col gap-4 p-6">
+        <h1 className="text-xl font-bold tracking-tight">Set up your account</h1>
+        <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
+          {error && (
+            <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+              {error}
+            </p>
+          )}
+          <label className="flex flex-col gap-1 text-sm">
+            Organisation or your name
+            <input
+              type="text"
+              name="name"
+              required
+              className="rounded-md border border-border bg-surface px-3 py-2"
+            />
+          </label>
+          <button type="submit" disabled={submitting} className="btn-accent">
+            {submitting ? "Setting up…" : "Continue"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

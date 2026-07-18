@@ -1,26 +1,116 @@
 @import "tailwindcss";
 
+/*
+ * Kudos Cards design refresh — a single, consistent light theme with a red
+ * brand accent on a warm neutral canvas. `dark:` utilities are gated to an
+ * explicit `.dark` ancestor (which we never add), so scattered dark-mode
+ * classes in existing pages simply no-op instead of fighting this palette.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4f3f1; /* warm page canvas */
+  --surface: #ffffff; /* cards, sidebar, bars */
+  --foreground: #1b1a18; /* near-black ink */
+  --muted: #6f6b66; /* secondary text */
+  --border: #e7e3dd; /* hairline borders */
+  --accent: #e5372a; /* brand red */
+  --accent-hover: #c92e22;
+  --accent-soft: #fcebe9; /* red-tinted fills: active nav, banners, pills */
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+}
+
+/* ---- Shared building blocks, so every page speaks the same visual language ---- */
+
+.btn-accent,
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    opacity 0.15s ease;
+}
+.btn-accent {
+  background: var(--accent);
+  color: #ffffff;
+}
+.btn-accent:hover {
+  background: var(--accent-hover);
+}
+.btn-secondary {
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  font-weight: 500;
+}
+.btn-secondary:hover {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+.btn-accent:disabled,
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.section-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--muted) 90%, transparent);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  padding: 0.2rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pill-accent {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.pill-muted {
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+  color: var(--muted);
+}
+.pill-positive {
+  background: #e8f1ea;
+  color: #2f7d54;
 }

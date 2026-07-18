@@ -113,71 +113,47 @@ export function RecipientsClient({
     }
   }
 
+  const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
+
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Recipients</h1>
-        <p className="text-foreground/60">{total} total</p>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-3xl font-bold tracking-tight">Recipients</h1>
+        <p className="text-muted">{total} total</p>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+      )}
 
-      <section className="grid gap-8 lg:grid-cols-2">
+      <section className="grid gap-6 lg:grid-cols-2">
         <form
           onSubmit={(event) => void handleAddRecipient(event)}
-          className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10"
+          className="card flex flex-col gap-3 p-6"
         >
           <h2 className="font-semibold">Add a recipient</h2>
           <div className="grid grid-cols-2 gap-3">
-            <input
-              name="firstName"
-              placeholder="First name"
-              required
-              className="rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/10"
-            />
-            <input
-              name="lastName"
-              placeholder="Last name"
-              required
-              className="rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/10"
-            />
-            <input
-              type="date"
-              name="dateOfBirth"
-              className="rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/10"
-            />
-            <input
-              name="addressPostcode"
-              placeholder="Postcode"
-              className="rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/10"
-            />
+            <input name="firstName" placeholder="First name" required className={inputClass} />
+            <input name="lastName" placeholder="Last name" required className={inputClass} />
+            <input type="date" name="dateOfBirth" className={inputClass} />
+            <input name="addressPostcode" placeholder="Postcode" className={inputClass} />
           </div>
-          <button
-            type="submit"
-            disabled={addingRecipient}
-            className="self-start rounded-full bg-foreground px-4 py-2 text-sm text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-          >
+          <button type="submit" disabled={addingRecipient} className="btn-accent self-start">
             {addingRecipient ? "Adding…" : "Add recipient"}
           </button>
         </form>
 
-        <form
-          onSubmit={(event) => void handleImport(event)}
-          className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10"
-        >
+        <form onSubmit={(event) => void handleImport(event)} className="card flex flex-col gap-3 p-6">
           <h2 className="font-semibold">Import from CSV</h2>
-          <p className="text-xs text-foreground/60">
+          <p className="text-xs text-muted">
             Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), postcode, email
           </p>
           <input type="file" name="file" accept=".csv" required className="text-sm" />
-          <button
-            type="submit"
-            className="self-start rounded-full border border-black/20 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
-          >
+          <button type="submit" className="btn-secondary self-start">
             Import
           </button>
           {importSummary && (
-            <p className="text-sm text-foreground/70">
+            <p className="text-sm text-muted">
               Created {importSummary.created}, updated {importSummary.updated}
               {importSummary.rejected.length > 0 && `, rejected ${importSummary.rejected.length}`}
             </p>
@@ -185,40 +161,44 @@ export function RecipientsClient({
         </form>
       </section>
 
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-black/10 text-foreground/60 dark:border-white/10">
-            <th className="py-2 font-medium">Name</th>
-            <th className="py-2 font-medium">Date of birth</th>
-            <th className="py-2 font-medium">Postcode</th>
-            <th className="py-2 font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {recipients.length === 0 ? (
-            <tr>
-              <td colSpan={4} className="py-4 text-foreground/60">
-                No recipients yet.
-              </td>
+      <div className="card overflow-hidden">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="section-label px-5 py-3">Name</th>
+              <th className="section-label px-5 py-3">Date of birth</th>
+              <th className="section-label px-5 py-3">Postcode</th>
+              <th className="section-label px-5 py-3">Status</th>
             </tr>
-          ) : (
-            recipients.map((recipient) => (
-              <tr key={recipient.id} className="border-b border-black/5 dark:border-white/5">
-                <td className="py-2">
-                  {recipient.firstName} {recipient.lastName}
+          </thead>
+          <tbody>
+            {recipients.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-5 py-6 text-muted">
+                  No recipients yet.
                 </td>
-                <td className="py-2">
-                  {recipient.dateOfBirth
-                    ? new Date(recipient.dateOfBirth).toLocaleDateString("en-GB")
-                    : "—"}
-                </td>
-                <td className="py-2">{recipient.addressPostcode ?? "—"}</td>
-                <td className="py-2">{recipient.status}</td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              recipients.map((recipient) => (
+                <tr key={recipient.id} className="border-b border-border last:border-0">
+                  <td className="px-5 py-3 font-medium">
+                    {recipient.firstName} {recipient.lastName}
+                  </td>
+                  <td className="px-5 py-3 text-muted">
+                    {recipient.dateOfBirth
+                      ? new Date(recipient.dateOfBirth).toLocaleDateString("en-GB")
+                      : "—"}
+                  </td>
+                  <td className="px-5 py-3 text-muted">{recipient.addressPostcode ?? "—"}</td>
+                  <td className="px-5 py-3">
+                    <span className="pill pill-muted capitalize">{recipient.status}</span>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {total > PER_PAGE && (
         <div className="flex items-center justify-between text-sm">
@@ -226,18 +206,18 @@ export function RecipientsClient({
             type="button"
             disabled={page <= 1 || paginating}
             onClick={() => void reload(page - 1)}
-            className="rounded-full border border-black/20 px-4 py-2 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+            className="btn-secondary"
           >
             Previous
           </button>
-          <span className="text-foreground/60">
+          <span className="text-muted">
             Page {page} of {Math.max(1, Math.ceil(total / PER_PAGE))}
           </span>
           <button
             type="button"
             disabled={page * PER_PAGE >= total || paginating}
             onClick={() => void reload(page + 1)}
-            className="rounded-full border border-black/20 px-4 py-2 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+            className="btn-secondary"
           >
             Next
           </button>

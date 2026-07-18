@@ -57,12 +57,14 @@ export function DesignsClient({
 
   return (
     <div className="flex flex-col gap-10">
-      <div>
-        <h1 className="text-2xl font-semibold">Designs</h1>
-        <p className="text-foreground/60">Start from a template, then personalise it.</p>
+      <div className="flex flex-col gap-1">
+        <h1 className="text-3xl font-bold tracking-tight">Designs</h1>
+        <p className="text-muted">Start from a template, then personalise it.</p>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+      )}
 
       <section className="flex flex-col gap-4">
         <h2 className="font-semibold">Templates</h2>
@@ -76,8 +78,8 @@ export function DesignsClient({
                 onClick={() => setCategory(option)}
                 className={`rounded-full px-3 py-1 ${
                   option === category
-                    ? "bg-foreground text-background"
-                    : "border border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                    ? "bg-accent text-white"
+                    : "border border-border bg-surface hover:bg-foreground/[0.03]"
                 }`}
               >
                 {option === ALL_CATEGORIES ? "All" : formatCategory(option)}
@@ -87,15 +89,14 @@ export function DesignsClient({
         )}
 
         {visibleTemplates.length === 0 ? (
-          <p className="text-sm text-foreground/60">No templates in this category yet.</p>
+          <div className="card p-8 text-center text-sm text-muted">
+            No templates in this category yet.
+          </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {visibleTemplates.map((template) => (
-              <div
-                key={template.id}
-                className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 dark:border-white/10"
-              >
-                <div className="relative aspect-[3/4] w-full overflow-hidden rounded-md bg-black/5 dark:bg-white/5">
+              <div key={template.id} className="card flex flex-col gap-2 p-3">
+                <div className="relative aspect-[3/4] w-full overflow-hidden rounded-md bg-foreground/5">
                   <Image
                     src={template.thumbnailUrl}
                     alt={template.name}
@@ -109,7 +110,7 @@ export function DesignsClient({
                   type="button"
                   disabled={creatingTemplateId === template.id}
                   onClick={() => void createFromTemplate(template)}
-                  className="rounded-full bg-foreground px-3 py-1.5 text-xs text-background hover:opacity-90 disabled:opacity-50"
+                  className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
                 >
                   {creatingTemplateId === template.id ? "Creating…" : "Use this template"}
                 </button>
@@ -122,18 +123,18 @@ export function DesignsClient({
       <section className="flex flex-col gap-4">
         <h2 className="font-semibold">My designs</h2>
         {savedDesigns.length === 0 ? (
-          <p className="text-sm text-foreground/60">
+          <div className="card p-8 text-center text-sm text-muted">
             No saved designs yet — start from a template above.
-          </p>
+          </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {savedDesigns.map((design) => (
               <a
                 key={design.id}
                 href={`/designs/${design.id}/edit`}
-                className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 hover:border-black/30 dark:border-white/10 dark:hover:border-white/30"
+                className="card flex flex-col gap-2 p-3 transition-colors hover:border-foreground/30"
               >
-                <div className="flex aspect-[3/4] w-full items-center justify-center rounded-md bg-black/5 text-xs text-foreground/50 dark:bg-white/5">
+                <div className="flex aspect-[3/4] w-full items-center justify-center rounded-md bg-foreground/5 text-xs text-muted">
                   Edit
                 </div>
                 <span className="text-sm font-medium">{design.name}</span>

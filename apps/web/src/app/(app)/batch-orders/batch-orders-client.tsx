@@ -24,7 +24,7 @@ const EMPTY_LINE: LineDraft = {
   postageClass: "first_class",
 };
 
-const inputClass = "rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/10";
+const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
 
 export interface UnfinishedBatchOrder {
   id: string;
@@ -214,24 +214,29 @@ export function BatchOrdersClient({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Checkout</h1>
-        <p className="text-foreground/60">
-          Choose which approved occasions to print and post, add a shipping address for each, then
-          pay to send them to production.
+      <div className="flex flex-col gap-1">
+        <h1 className="text-3xl font-bold tracking-tight">Checkout</h1>
+        <p className="text-muted">
+          Choose which approved occasions to send to print. Kudos Cards prints, packs and posts every
+          card straight to your recipient — no shipping admin on your end.
         </p>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+      )}
       {notice && (
-        <p className="rounded-md border border-green-600/30 bg-green-600/5 px-4 py-3 text-sm text-green-700 dark:text-green-400">
+        <p className="rounded-lg bg-[#e8f1ea] px-4 py-3 text-sm font-medium text-[#2f7d54]">
           {notice}
         </p>
       )}
 
-      <p className="text-sm text-foreground/60">
-        Wallet balance: <span className="font-medium text-foreground">{formatGbp(walletBalanceMinor)}</span>{" "}
-        · <a href="/wallet" className="underline">Top up</a>
+      <p className="text-sm text-muted">
+        Wallet balance:{" "}
+        <span className="font-semibold text-foreground">{formatGbp(walletBalanceMinor)}</span> ·{" "}
+        <a href="/wallet" className="text-accent hover:underline">
+          Top up
+        </a>
       </p>
 
       {unfinishedOrders.length > 0 && (
@@ -245,18 +250,18 @@ export function BatchOrdersClient({
             {unfinishedOrders.map((order) => (
               <div
                 key={order.id}
-                className="flex items-center justify-between rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/10"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm"
               >
                 <span>
                   {order.orderRecipients.length} card(s) · {formatGbp(order.totalMinor)} ·{" "}
                   {order.status === "draft" ? "not checked out" : "payment pending"}
                 </span>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     disabled={orderActionPending === order.id}
                     onClick={() => void resumeCheckout(order.id)}
-                    className="rounded-full bg-foreground px-3 py-1 text-xs text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-md bg-accent px-3 py-1 text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {order.status === "draft" ? "Pay by card" : "Resume checkout"}
                   </button>
@@ -272,7 +277,7 @@ export function BatchOrdersClient({
                           ? "Not enough wallet balance — top up first"
                           : undefined
                       }
-                      className="rounded-full border border-black/20 px-3 py-1 text-xs hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+                      className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-foreground/[0.03] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       Pay with wallet
                     </button>
@@ -281,7 +286,7 @@ export function BatchOrdersClient({
                     type="button"
                     disabled={orderActionPending === order.id}
                     onClick={() => void cancelOrder(order.id)}
-                    className="rounded-full border border-black/20 px-3 py-1 text-xs hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+                    className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-foreground/[0.03] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Cancel
                   </button>
@@ -293,29 +298,27 @@ export function BatchOrdersClient({
       )}
 
       {initialOccasions.length === 0 ? (
-        <p className="text-sm text-foreground/60">
+        <div className="card p-8 text-center text-sm text-muted">
           Nothing is approved and ready yet — visit{" "}
-          <a href="/approvals" className="underline">
+          <a href="/approvals" className="text-accent hover:underline">
             Approvals
           </a>{" "}
           to approve some occasions first.
-        </p>
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
           {initialOccasions.map((occasion) => {
             const selected = lines[occasion.id];
             return (
-              <div
-                key={occasion.id}
-                className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10"
-              >
+              <div key={occasion.id} className="card flex flex-col gap-3 p-4">
                 <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={selected !== undefined}
                     onChange={() => toggle(occasion.id)}
+                    className="accent-accent"
                   />
-                  <span className="font-medium">
+                  <span className="font-semibold">
                     {OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type}
                     {occasion.recipient && (
                       <>
@@ -324,7 +327,7 @@ export function BatchOrdersClient({
                       </>
                     )}
                   </span>
-                  <span className="text-sm text-foreground/60">
+                  <span className="text-sm text-muted">
                     {formatOccasionDate(occasion.occasionDate)}
                   </span>
                 </label>
@@ -401,7 +404,7 @@ export function BatchOrdersClient({
             type="button"
             disabled={submitting || walletSubmitting || selectedIds.length === 0}
             onClick={() => void handleCheckout()}
-            className="rounded-full bg-foreground px-5 py-2 text-sm text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="btn-accent"
           >
             {submitting ? "Starting checkout…" : `Pay by card for ${selectedIds.length} card(s)`}
           </button>
@@ -409,7 +412,7 @@ export function BatchOrdersClient({
             type="button"
             disabled={submitting || walletSubmitting || selectedIds.length === 0}
             onClick={() => void handleWalletCheckout()}
-            className="rounded-full border border-black/20 px-5 py-2 text-sm hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+            className="btn-secondary"
           >
             {walletSubmitting ? "Paying…" : "Pay with wallet"}
           </button>
