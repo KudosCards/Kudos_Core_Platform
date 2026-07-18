@@ -41,9 +41,9 @@ export default async function MessagePage({ params }: { params: Promise<{ slug: 
 
   if (!page) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-        <p className="text-lg font-medium">This message couldn&apos;t be found</p>
-        <p className="max-w-sm text-foreground/60">
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+        <p className="text-lg font-semibold">This message couldn&apos;t be found</p>
+        <p className="max-w-sm text-muted">
           The link may be mistyped, or the card hasn&apos;t been sent yet.
         </p>
       </div>
@@ -54,30 +54,40 @@ export default async function MessagePage({ params }: { params: Promise<{ slug: 
   const hasContent = page.message || page.emoji || page.videoUrl;
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 py-16 text-center">
-      {page.emoji && <div className="text-6xl">{page.emoji}</div>}
-      <h1 className="text-3xl font-semibold">
-        {greeting}, {page.recipientFirstName}
-      </h1>
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-5 py-14 text-center">
+      <div className="flex w-full max-w-md flex-col items-center gap-6">
+        {page.emoji && <div className="text-6xl leading-none sm:text-7xl">{page.emoji}</div>}
+        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+          {greeting}, {page.recipientFirstName}
+        </h1>
 
-      {page.videoUrl && (
-        <video
-          controls
-          playsInline
-          src={page.videoUrl}
-          className="w-full max-w-md rounded-lg border border-black/10 dark:border-white/10"
-        />
-      )}
+        {page.videoUrl && (
+          <video
+            controls
+            playsInline
+            src={page.videoUrl}
+            className="aspect-video w-full rounded-xl border border-border bg-black/5 shadow-sm"
+          />
+        )}
 
-      {page.message && (
-        <p className="max-w-md whitespace-pre-wrap text-lg text-foreground/80">{page.message}</p>
-      )}
+        {page.message && (
+          <p className="w-full whitespace-pre-wrap text-lg leading-relaxed text-foreground/80">
+            {page.message}
+          </p>
+        )}
 
-      {!hasContent && (
-        <p className="max-w-sm text-foreground/60">
-          Your card is on its way — a personal message will appear here soon.
-        </p>
-      )}
+        {!hasContent && (
+          <p className="text-muted">
+            Your card is on its way — a personal message will appear here soon.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-6 flex items-center gap-1.5 text-xs text-muted">
+        <span className="font-semibold text-foreground/70">Kudos Cards</span>
+        <span aria-hidden>·</span>
+        <span>Recognition, delivered</span>
+      </div>
     </div>
   );
 }

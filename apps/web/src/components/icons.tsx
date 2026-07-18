@@ -89,6 +89,16 @@ export const Icons = {
       <path d="M2 10h20" />
     </Svg>
   ),
+  menu: (props: IconProps) => (
+    <Svg {...props}>
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </Svg>
+  ),
+  close: (props: IconProps) => (
+    <Svg {...props}>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </Svg>
+  ),
 } as const;
 
 export type IconName = keyof typeof Icons;

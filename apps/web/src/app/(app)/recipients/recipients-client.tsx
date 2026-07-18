@@ -161,8 +161,8 @@ export function RecipientsClient({
         </form>
       </section>
 
-      <div className="card overflow-hidden">
-        <table className="w-full text-left text-sm">
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-[520px] text-left text-sm">
           <thead>
             <tr className="border-b border-border">
               <th className="section-label px-5 py-3">Name</th>
