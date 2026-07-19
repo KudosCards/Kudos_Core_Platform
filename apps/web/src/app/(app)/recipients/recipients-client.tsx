@@ -7,6 +7,19 @@ import { clientApiFetch } from "@/lib/api.client";
 
 export const PER_PAGE = 100;
 
+/** Friendly labels for where a recipient came from (see the integrations spine). */
+const SOURCE_LABELS: Record<string, string> = {
+  manual: "Manual",
+  csv: "CSV",
+  api: "API",
+  brevo: "Brevo",
+  hubspot: "HubSpot",
+  gohighlevel: "GoHighLevel",
+};
+function sourceLabel(source: string): string {
+  return SOURCE_LABELS[source] ?? source;
+}
+
 export interface Paginated<T> {
   items: T[];
   total: number;
@@ -162,39 +175,49 @@ export function RecipientsClient({
       </section>
 
       <div className="card overflow-x-auto">
-        <table className="w-full min-w-[520px] text-left text-sm">
+        <table className="w-full min-w-[620px] text-left text-sm">
           <thead>
             <tr className="border-b border-border">
               <th className="section-label px-5 py-3">Name</th>
               <th className="section-label px-5 py-3">Date of birth</th>
               <th className="section-label px-5 py-3">Postcode</th>
+              <th className="section-label px-5 py-3">Source</th>
               <th className="section-label px-5 py-3">Status</th>
             </tr>
           </thead>
           <tbody>
             {recipients.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-5 py-6 text-muted">
+                <td colSpan={5} className="px-5 py-6 text-muted">
                   No recipients yet.
                 </td>
               </tr>
             ) : (
-              recipients.map((recipient) => (
-                <tr key={recipient.id} className="border-b border-border last:border-0">
-                  <td className="px-5 py-3 font-medium">
-                    {recipient.firstName} {recipient.lastName}
-                  </td>
-                  <td className="px-5 py-3 text-muted">
-                    {recipient.dateOfBirth
-                      ? new Date(recipient.dateOfBirth).toLocaleDateString("en-GB")
-                      : "—"}
-                  </td>
-                  <td className="px-5 py-3 text-muted">{recipient.addressPostcode ?? "—"}</td>
-                  <td className="px-5 py-3">
-                    <span className="pill pill-muted capitalize">{recipient.status}</span>
-                  </td>
-                </tr>
-              ))
+              recipients.map((recipient) => {
+                const fromIntegration =
+                  recipient.source !== "manual" && recipient.source !== "csv";
+                return (
+                  <tr key={recipient.id} className="border-b border-border last:border-0">
+                    <td className="px-5 py-3 font-medium">
+                      {recipient.firstName} {recipient.lastName}
+                    </td>
+                    <td className="px-5 py-3 text-muted">
+                      {recipient.dateOfBirth
+                        ? new Date(recipient.dateOfBirth).toLocaleDateString("en-GB")
+                        : "—"}
+                    </td>
+                    <td className="px-5 py-3 text-muted">{recipient.addressPostcode ?? "—"}</td>
+                    <td className="px-5 py-3">
+                      <span className={`pill ${fromIntegration ? "pill-accent" : "pill-muted"}`}>
+                        {sourceLabel(recipient.source)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="pill pill-muted capitalize">{recipient.status}</span>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
