@@ -45,8 +45,29 @@ model Account {
   walletEntries WalletLedgerEntry[]
   subscriptions Subscription[]
   auditLogs     AuditLogEntry[]
+  apiKeys       AccountApiKey[]
 
   @@map("accounts")
+}
+
+/// A per-account API key for the inbound integrations endpoint (push contacts
+/// into Recipients). Only the SHA-256 hash is stored — the plaintext key is
+/// shown to the customer exactly once, at creation. See ADR 0015.
+model AccountApiKey {
+  id         String    @id @default(uuid())
+  accountId  String    @map("account_id")
+  label      String
+  keyHash    String    @unique @map("key_hash")
+  /// A short non-secret prefix (e.g. "kudos_ab12cd…") for display in the UI.
+  prefix     String
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("account_api_keys")
 }
 
 /// userId references the Supabase Auth user (managed outside Prisma's schema),
@@ -90,6 +111,12 @@ model Recipient {
   addressCountry String?        @default("GB") @map("address_country")
   tags          String[]        @default([])
   status        RecipientStatus @default(active)
+  /// Where this recipient came from: "manual", "csv", "api", or a CRM id
+  /// ("brevo", "hubspot", …). See docs/adr/0015-crm-integrations.md.
+  source        String          @default("manual")
+  /// The stable id of this contact in its source system (a CRM record id, or
+  /// the caller's own id for the inbound API). Null for manual/CSV recipients.
+  externalId    String?         @map("external_id")
   createdAt     DateTime        @default(now()) @map("created_at")
   updatedAt     DateTime        @updatedAt @map("updated_at")
 
@@ -99,6 +126,10 @@ model Recipient {
 
   // Mirrors the legacy CSV-import dedupe rule: same name + postcode + DOB = same person.
   @@unique([accountId, firstName, lastName, addressPostcode, dateOfBirth], name: "recipient_dedupe_key")
+  // Source-based identity for integrations: re-syncing a CRM contact updates
+  // the same row instead of duplicating. externalId is null for manual/CSV
+  // recipients, and Postgres treats NULLs as distinct, so they never collide.
+  @@unique([accountId, source, externalId], name: "recipient_source_key")
   @@index([accountId, status])
   @@map("recipients")
 }
