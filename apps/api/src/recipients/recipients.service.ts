@@ -25,6 +25,32 @@ export interface ImportSummary {
   rejected: { row: number; reason: string }[];
 }
 
+/**
+ * A contact after DTO parsing — the normalized shape every integration source
+ * maps to before it reaches the ingest funnel. `externalId` is the stable id in
+ * the source system; the remaining fields are already coerced (dates parsed,
+ * blanks → null). See docs/adr/0015-crm-integrations.md.
+ */
+export interface NormalizedContact {
+  externalId: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  dateOfBirth: Date | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  addressCity: string | null;
+  addressPostcode: string | null;
+  addressCountry: string | null;
+}
+
+export interface IngestResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: { externalId: string; reason: string }[];
+}
+
 const UNIQUE_CONSTRAINT_VIOLATION = "P2002";
 const SERIALIZATION_FAILURE = "P2034";
 
@@ -291,6 +317,7 @@ export class RecipientsService {
         rowNumber,
         recipient: {
           accountId,
+          source: "csv",
           firstName: parsed.firstName,
           lastName: parsed.lastName,
           dateOfBirth: parsed.dateOfBirth,
@@ -369,6 +396,140 @@ export class RecipientsService {
     });
 
     return summary;
+  }
+
+  /**
+   * The integration ingest funnel: upsert a batch of external contacts as
+   * recipients, keyed on (accountId, source, externalId). Every integration
+   * lane (the inbound API today; CRM adapters later) maps to NormalizedContact
+   * and calls this, so plan-cap enforcement, dedupe, and the audit trail live
+   * in exactly one place. One-way: a re-sync updates matched rows and creates
+   * new ones; it never deletes. See docs/adr/0015-crm-integrations.md.
+   */
+  async ingestFromSource(
+    accountId: string,
+    source: string,
+    contacts: NormalizedContact[],
+    actorUserId: string,
+  ): Promise<IngestResult> {
+    // Collapse duplicate externalIds within the batch (last occurrence wins) so
+    // one payload can't fight the (accountId, source, externalId) unique index.
+    const byExternalId = new Map<string, NormalizedContact>();
+    for (const contact of contacts) {
+      byExternalId.set(contact.externalId, contact);
+    }
+    const unique = [...byExternalId.values()];
+
+    const existing = await this.prisma.recipient.findMany({
+      where: { accountId, source, externalId: { in: unique.map((c) => c.externalId) } },
+      select: { id: true, externalId: true },
+    });
+    const idByExternalId = new Map(existing.map((r) => [r.externalId as string, r.id]));
+
+    const toUpdate = unique.filter((c) => idByExternalId.has(c.externalId));
+    const toCreate = unique.filter((c) => !idByExternalId.has(c.externalId));
+
+    const entitlement = await this.entitlements.getForAccount(accountId);
+
+    // Same TOCTOU concern as create()/importCsv(): the cap read and the insert
+    // must be atomic relative to any other concurrent write for this account.
+    // Returns its results (never mutates outer state) so a P2034 retry can't
+    // double-count. capSkipped is returned per-attempt for the same reason.
+    const { createdCount, capSkippedIds } = await this.runSerializable(async (tx) => {
+      let activeCount =
+        entitlement.recipientCap === null
+          ? 0
+          : await tx.recipient.count({ where: { accountId, status: "active" } });
+
+      const accepted: Prisma.RecipientCreateManyInput[] = [];
+      const capSkippedIds: string[] = [];
+      for (const contact of toCreate) {
+        if (!this.isUnderCap(entitlement, activeCount, 1)) {
+          capSkippedIds.push(contact.externalId);
+          continue;
+        }
+        accepted.push(this.toCreateInput(accountId, source, contact));
+        activeCount += 1;
+      }
+
+      let createdCount = 0;
+      if (accepted.length > 0) {
+        // skipDuplicates absorbs the case where a create collides with the
+        // name+postcode+DOB dedupe key of an *existing* recipient from another
+        // source, instead of a raw P2002 aborting the whole ingest.
+        const result = await tx.recipient.createMany({ data: accepted, skipDuplicates: true });
+        createdCount = result.count;
+      }
+      return { createdCount, capSkippedIds };
+    });
+
+    // Refresh matched recipients — merge, don't clear: only overwrite fields the
+    // incoming contact actually provides, so a CRM that doesn't carry an address
+    // can't wipe one the customer added by hand.
+    for (const contact of toUpdate) {
+      await this.prisma.recipient.update({
+        where: { id: idByExternalId.get(contact.externalId) },
+        data: this.toUpdateInput(contact),
+      });
+    }
+
+    const errors = capSkippedIds.map((externalId) => ({
+      externalId,
+      reason: `Plan recipient cap (${entitlement.recipientCap}) reached`,
+    }));
+    // Anything neither created nor updated nor cap-blocked collided with an
+    // existing recipient's name+postcode+DOB dedupe key (a same-person match
+    // from another source) — counted as skipped without a per-id reason.
+    const dedupeSkipped = toCreate.length - capSkippedIds.length - createdCount;
+    const skipped = capSkippedIds.length + Math.max(0, dedupeSkipped);
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "ingest",
+      targetType: "Recipient",
+      targetId: accountId,
+      metadata: { source, created: createdCount, updated: toUpdate.length, skipped },
+    });
+
+    return { created: createdCount, updated: toUpdate.length, skipped, errors };
+  }
+
+  private toCreateInput(
+    accountId: string,
+    source: string,
+    contact: NormalizedContact,
+  ): Prisma.RecipientCreateManyInput {
+    return {
+      accountId,
+      source,
+      externalId: contact.externalId,
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      email: contact.email,
+      dateOfBirth: contact.dateOfBirth,
+      addressLine1: contact.addressLine1,
+      addressLine2: contact.addressLine2,
+      addressCity: contact.addressCity,
+      addressPostcode: contact.addressPostcode,
+      addressCountry: contact.addressCountry ?? undefined,
+    };
+  }
+
+  /** Only the fields the contact actually carries — see the "merge, don't clear"
+   * note in ingestFromSource. Name is always present (required upstream). */
+  private toUpdateInput(contact: NormalizedContact): Prisma.RecipientUpdateInput {
+    return {
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      ...(contact.email !== null && { email: contact.email }),
+      ...(contact.dateOfBirth !== null && { dateOfBirth: contact.dateOfBirth }),
+      ...(contact.addressLine1 !== null && { addressLine1: contact.addressLine1 }),
+      ...(contact.addressLine2 !== null && { addressLine2: contact.addressLine2 }),
+      ...(contact.addressCity !== null && { addressCity: contact.addressCity }),
+      ...(contact.addressPostcode !== null && { addressPostcode: contact.addressPostcode }),
+      ...(contact.addressCountry !== null && { addressCountry: contact.addressCountry }),
+    };
   }
 
   /** Single source of truth for the cap comparison, shared by create() (via

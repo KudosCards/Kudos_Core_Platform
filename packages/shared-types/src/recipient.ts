@@ -44,6 +44,10 @@ export const recipientSchema = z.object({
   addressCountry: z.string().nullable(),
   tags: z.array(z.string()).default([]),
   status: recipientStatusSchema,
+  /** Where the recipient came from: "manual", "csv", "api", or a CRM id. */
+  source: z.string(),
+  /** Stable id of the contact in its source system; null for manual/CSV. */
+  externalId: z.string().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });

@@ -21,6 +21,7 @@ import { FulfillmentModule } from "./fulfillment/fulfillment.module";
 import { CatalogModule } from "./catalog/catalog.module";
 import { WalletModule } from "./wallet/wallet.module";
 import { AutoSendModule } from "./auto-send/auto-send.module";
+import { IntegrationsModule } from "./integrations/integrations.module";
 
 @Module({
   imports: [
@@ -33,7 +34,7 @@ import { AutoSendModule } from "./auto-send/auto-send.module";
       pinoHttp: {
         level: process.env.NODE_ENV === "production" ? "info" : "debug",
         transport: process.env.NODE_ENV === "production" ? undefined : { target: "pino-pretty" },
-        redact: ["req.headers.authorization"],
+        redact: ["req.headers.authorization", 'req.headers["x-api-key"]'],
       },
     }),
     PrismaModule,
@@ -54,6 +55,7 @@ import { AutoSendModule } from "./auto-send/auto-send.module";
     CatalogModule,
     WalletModule,
     AutoSendModule,
+    IntegrationsModule,
   ],
 })
 export class AppModule {}

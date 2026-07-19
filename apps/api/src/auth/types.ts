@@ -17,10 +17,17 @@ export interface PlatformAdminContext {
   userId: string;
 }
 
+/** Populated by ApiKeyGuard for the inbound integrations endpoint. */
+export interface ApiKeyContext {
+  accountId: string;
+  keyId: string;
+}
+
 declare module "express" {
   interface Request {
     authUser?: AuthenticatedUser;
     membership?: CurrentMembershipContext;
     platformAdmin?: PlatformAdminContext;
+    apiKey?: ApiKeyContext;
   }
 }
