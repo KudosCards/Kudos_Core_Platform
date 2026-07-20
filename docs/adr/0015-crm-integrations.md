@@ -60,7 +60,28 @@ Inbound is deliberately **lenient** on shape (e.g. non-UK postcodes accepted, DO
 data varies, and a contact with no DOB is still worth having — it's flagged as needing a birthday
 before it can be scheduled, rather than rejected.
 
-## Deferred (not needed for Phase 1)
+## Phase 2 — Brevo adapter (the API-key lane, shipped)
+
+The first real CRM, in-house (no platform), proving a connector slots into the funnel:
+
+- `CrmConnection` model — one per `(account, provider)`. The Brevo API key is stored
+  **AES-256-GCM encrypted** (`common/crypto.service.ts`, key from `CREDENTIALS_ENCRYPTION_KEY`);
+  never in plaintext, never returned.
+- A mockable **`BREVO_CLIENT`** (interface + token, exactly like `CATALOG_SOURCE`) with an HTTP
+  implementation (paginated `GET /v3/contacts`) and a `verifyKey` used at connect time so a bad key
+  fails immediately. A `mapBrevoContact` maps a Brevo contact (+ a configurable field mapping —
+  FIRSTNAME/LASTNAME default; DOB/postcode optional custom attributes) to `NormalizedContact`.
+- `CrmConnectionsService`: connect (verify → encrypt → store), list (masked), disconnect, and
+  **sync** (fetch → `ingestFromSource(source = "brevo")`), recording the outcome on the connection.
+  A **nightly cron** re-syncs every enabled connection (5am, staggered from the others).
+- Web: the Brevo card on the Integrations page becomes connect (API key + optional field mapping) →
+  connected state with **Sync now** / last-synced / disconnect and an import summary.
+
+Verified against local Postgres: encryption round-trip + tamper-detection unit tests, and Brevo e2e
+(connect stores encrypted, bad key → 401, sync ingests as `source = brevo` and skips unaddressable
+contacts, re-sync dedupes, cross-account scoping).
+
+## Deferred (not needed for Phase 1–2)
 
 - **Build vs platform for OAuth CRMs.** Chosen direction: Nango for the OAuth plumbing (auth + token
   refresh + a proxy), our own mapping/sync. **Cloud vs self-host is an open decision** — self-host

@@ -15,8 +15,9 @@ import type { AccountApiKey } from "@prisma/client";
 import type { Request } from "express";
 import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentMembership } from "../auth/current-membership.decorator";
+import { CurrentUser } from "../auth/current-user.decorator";
 import { Public } from "../auth/public.decorator";
-import type { CurrentMembershipContext } from "../auth/types";
+import type { AuthenticatedUser, CurrentMembershipContext } from "../auth/types";
 import {
   RecipientsService,
   type IngestResult,
@@ -24,7 +25,13 @@ import {
 } from "../recipients/recipients.service";
 import { ApiKeyService } from "./api-key.service";
 import { ApiKeyGuard } from "./api-key.guard";
+import {
+  CrmConnectionsService,
+  type CrmConnectionView,
+  type CrmSyncResult,
+} from "./crm-connections.service";
 import { CreateApiKeyDto } from "./dto/create-api-key.dto";
+import { ConnectCrmDto } from "./dto/connect-crm.dto";
 import { IngestContactsDto } from "./dto/ingest-contacts.dto";
 import type { ExternalContactDto } from "./dto/external-contact.dto";
 
@@ -73,6 +80,7 @@ export class IntegrationsController {
   constructor(
     private readonly apiKeys: ApiKeyService,
     private readonly recipients: RecipientsService,
+    private readonly crmConnections: CrmConnectionsService,
   ) {}
 
   // ---- API key management (account holder, Supabase JWT) ----
@@ -108,6 +116,55 @@ export class IntegrationsController {
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<void> {
     await this.apiKeys.revoke(membership.accountId, id);
+  }
+
+  // ---- CRM connections (account holder, Supabase JWT) ----
+
+  @ApiBearerAuth()
+  @UseGuards(MembershipGuard)
+  @Post("connections")
+  connectCrm(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ConnectCrmDto,
+  ): Promise<CrmConnectionView> {
+    return this.crmConnections.connect(
+      membership.accountId,
+      user.id,
+      dto.provider,
+      dto.apiKey,
+      dto.fieldMapping,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(MembershipGuard)
+  @Get("connections")
+  listCrm(@CurrentMembership() membership: CurrentMembershipContext): Promise<CrmConnectionView[]> {
+    return this.crmConnections.list(membership.accountId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(MembershipGuard)
+  @Post("connections/:provider/sync")
+  syncCrm(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("provider") provider: string,
+  ): Promise<CrmSyncResult> {
+    return this.crmConnections.sync(membership.accountId, user.id, provider);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(MembershipGuard)
+  @Delete("connections/:provider")
+  @HttpCode(204)
+  disconnectCrm(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("provider") provider: string,
+  ): Promise<void> {
+    return this.crmConnections.disconnect(membership.accountId, user.id, provider);
   }
 
   // ---- Inbound contact push (external systems, per-account API key) ----

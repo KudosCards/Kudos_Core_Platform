@@ -44,10 +44,35 @@ model Account {
   batchOrders   BatchOrder[]
   walletEntries WalletLedgerEntry[]
   subscriptions Subscription[]
-  auditLogs     AuditLogEntry[]
-  apiKeys       AccountApiKey[]
+  auditLogs      AuditLogEntry[]
+  apiKeys        AccountApiKey[]
+  crmConnections CrmConnection[]
 
   @@map("accounts")
+}
+
+/// A customer's connection to an external CRM (Brevo, …) that recipients are
+/// synced *from*. The CRM API key is stored AES-256-GCM encrypted (see
+/// common/crypto.service.ts) — never in plaintext. One connection per provider
+/// per account. See docs/adr/0015-crm-integrations.md.
+model CrmConnection {
+  id              String    @id @default(uuid())
+  accountId       String    @map("account_id")
+  /// The CRM: "brevo" today; "hubspot"/"gohighlevel" later.
+  provider        String
+  encryptedApiKey String    @map("encrypted_api_key")
+  /// Optional per-connection field mapping (CRM attribute name → our field).
+  fieldMapping    Json?     @map("field_mapping")
+  syncEnabled     Boolean   @default(true) @map("sync_enabled")
+  lastSyncedAt    DateTime? @map("last_synced_at")
+  lastSyncStatus  String?   @map("last_sync_status")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, provider])
+  @@map("crm_connections")
 }
 
 /// A per-account API key for the inbound integrations endpoint (push contacts

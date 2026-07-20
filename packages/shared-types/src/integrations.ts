@@ -58,3 +58,19 @@ export const createdApiKeySchema = accountApiKeySchema.extend({
   key: z.string(),
 });
 export type CreatedApiKey = z.infer<typeof createdApiKeySchema>;
+
+/** A connection to an external CRM (Brevo, …) — never includes the API key. */
+export const crmConnectionSchema = z.object({
+  provider: z.string(),
+  syncEnabled: z.boolean(),
+  lastSyncedAt: z.coerce.date().nullable(),
+  lastSyncStatus: z.string().nullable(),
+  createdAt: z.coerce.date(),
+});
+export type CrmConnection = z.infer<typeof crmConnectionSchema>;
+
+/** The outcome of a CRM sync — the ingest summary plus how many were fetched. */
+export const crmSyncResultSchema = ingestResultSchema.extend({
+  fetched: z.number().int().nonnegative(),
+});
+export type CrmSyncResult = z.infer<typeof crmSyncResultSchema>;

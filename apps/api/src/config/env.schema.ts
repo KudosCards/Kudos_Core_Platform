@@ -46,6 +46,17 @@ export const envSchema = z.object({
     .url()
     .optional()
     .or(z.literal("").transform(() => undefined)),
+
+  // Secret used to encrypt customers' stored CRM API keys at rest (AES-256-GCM,
+  // see common/crypto.service.ts). A 64-char hex or 32-byte base64 string is
+  // used as the key directly; anything else is SHA-256-hashed to 32 bytes.
+  // Optional at boot: without it the app runs, but connecting a CRM returns a
+  // clean "not configured" instead of storing a key unencrypted.
+  CREDENTIALS_ENCRYPTION_KEY: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
