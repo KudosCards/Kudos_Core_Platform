@@ -1,10 +1,47 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { createClient } from "@/lib/supabase/client";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
+import { qrDataUrl } from "@/lib/qr";
+
+/** The scannable QR for a card's message page, plus a download for printing.
+ * Encodes the absolute /r/<slug> URL (built client-side from the current
+ * origin, so it's correct in any environment). */
+function QrCode({ slug, filename }: { slug: string; filename: string }) {
+  const [dataUrl, setDataUrl] = useState<string>("");
+  useEffect(() => {
+    let active = true;
+    const url = `${window.location.origin}/r/${slug}`;
+    void qrDataUrl(url).then((d) => {
+      if (active) setDataUrl(d);
+    });
+    return () => {
+      active = false;
+    };
+  }, [slug]);
+
+  if (!dataUrl) {
+    return <div className="h-24 w-24 shrink-0 animate-pulse rounded-md bg-foreground/5" />;
+  }
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-1">
+      {/* eslint-disable-next-line @next/next/no-img-element -- data-URL QR, not an optimisable asset */}
+      <img
+        src={dataUrl}
+        alt="QR code linking to this card's message page"
+        width={96}
+        height={96}
+        className="rounded-md border border-border"
+      />
+      <a href={dataUrl} download={filename} className="text-xs text-accent hover:underline">
+        Download
+      </a>
+    </div>
+  );
+}
 
 export interface AccountMessagePage {
   id: string;
@@ -104,7 +141,7 @@ export function MessagesClient({ initialPages }: { initialPages: AccountMessageP
             const publicUrl = `/r/${page.slug}`;
             return (
               <div key={page.id} className="card flex flex-col gap-3 p-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="font-semibold">
                       {page.orderRecipient.recipient.firstName}{" "}
@@ -128,7 +165,15 @@ export function MessagesClient({ initialPages }: { initialPages: AccountMessageP
                         open page
                       </a>
                     </p>
+                    <p className="mt-1 text-xs text-muted">
+                      This card&apos;s QR code — it prints on the card and opens this page when
+                      scanned.
+                    </p>
                   </div>
+                  <QrCode
+                    slug={page.slug}
+                    filename={`kudos-qr-${page.orderRecipient.recipient.firstName}-${page.orderRecipient.recipient.lastName}.png`}
+                  />
                 </div>
 
                 <div className="grid gap-2 sm:grid-cols-[1fr_auto]">

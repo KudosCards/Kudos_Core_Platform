@@ -28,6 +28,21 @@ export const designElementSchema = z.discriminatedUnion("kind", [
     height: z.number().positive(),
     rotation: z.number().default(0),
   }),
+  z.object({
+    /**
+     * A QR code printed on the card that resolves to the recipient's digital
+     * message page (/r/<slug>), where they watch the linked video. The slug is
+     * per-sent-card, so the element only carries placement — the actual URL is
+     * substituted per recipient at render time (like the {name} text token).
+     */
+    kind: z.literal("qr"),
+    id: z.string(),
+    x: z.number(),
+    y: z.number(),
+    /** QR codes are square; a single side length in canvas units. */
+    size: z.number().positive(),
+    rotation: z.number().default(0),
+  }),
 ]);
 export type DesignElement = z.infer<typeof designElementSchema>;
 
@@ -40,6 +55,12 @@ export type DesignPage = z.infer<typeof designPageSchema>;
 export const designDocumentSchema = z.object({
   version: z.literal(1),
   pages: z.array(designPageSchema).min(1),
+  /**
+   * Default video the card's QR code links to. Copied onto each recipient's
+   * message page when an order is paid (and overridable per recipient from the
+   * Messages page). Only meaningful when a `qr` element is placed on the card.
+   */
+  videoUrl: z.string().url().nullable().optional(),
 });
 export type DesignDocument = z.infer<typeof designDocumentSchema>;
 

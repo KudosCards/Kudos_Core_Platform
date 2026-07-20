@@ -6,6 +6,18 @@ import type { UpdateMessagePageDto } from "./dto/update-message-page.dto";
 
 const RECORD_NOT_FOUND = "P2025";
 
+/** Reads the design document's default video URL (set in the card designer),
+ * defensively — the document is stored as free-form JSON. */
+function defaultVideoUrl(document: Prisma.JsonValue): string | null {
+  if (document && typeof document === "object" && !Array.isArray(document)) {
+    const value = (document as Record<string, unknown>).videoUrl;
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+  return null;
+}
+
 /** The public, unauthenticated view — deliberately narrow. Exposes only what a
  * card recipient needs to see their own message, plus their first name for a
  * personal greeting (the same name already handwritten on the physical card
@@ -71,10 +83,18 @@ export class MessagesService {
     if (orderRecipientIds.length === 0) {
       return;
     }
+    // Load each recipient's saved design so the page can be seeded with the
+    // design's default video (the QR then works from the first scan). The
+    // subscriber can still personalise or change it per recipient on /messages.
+    const recipients = await tx.orderRecipient.findMany({
+      where: { id: { in: orderRecipientIds } },
+      select: { id: true, savedDesign: { select: { document: true } } },
+    });
     await tx.messagePage.createMany({
-      data: orderRecipientIds.map((orderRecipientId) => ({
-        orderRecipientId,
+      data: recipients.map((recipient) => ({
+        orderRecipientId: recipient.id,
         slug: generateSlug(),
+        videoUrl: defaultVideoUrl(recipient.savedDesign.document),
       })),
       skipDuplicates: true,
     });

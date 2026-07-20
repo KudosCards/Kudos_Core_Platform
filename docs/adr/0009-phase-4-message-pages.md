@@ -88,3 +88,30 @@ Supabase dashboard, not something this codebase can enforce itself.
   defend an endpoint against anonymous abuse rather than relying on auth as the gate.
 - Fulfillment progression remaining unbuilt is now a documented, deliberate gap rather than a
   silent one — worth a dedicated ops phase later.
+
+## Addendum (2026-07-20): the QR code + video linking
+
+Phase 4 shipped the message-page *target* (`/r/<slug>`) and noted a card would carry a QR code to
+it — but never generated the QR or gave the subscriber a way to attach a video from the designer.
+This addendum closes that loop.
+
+- **A `qr` design element** (shared-types `designElementSchema`) — placement + size only. Like the
+  `{name}` text token, the element carries no URL: the real per-recipient `/r/<slug>` is substituted
+  at render time, because the slug is per sent card, not per design. The card designer renders a
+  placeholder QR so the subscriber can position it inside the card.
+- **A document-level default video** (`designDocumentSchema.videoUrl`) set from the designer's
+  "Video link" field (URL-based first — YouTube/Vimeo/hosted; per-recipient upload to the
+  `message-videos` bucket already exists on the Messages page).
+- **Seeding:** when the payment webhook creates a `MessagePage` per `OrderRecipient`
+  (`createForOrderRecipients`), it now copies the design's default `videoUrl` onto each page — so the
+  QR works from the first scan. The subscriber can still override per recipient on `/messages`.
+- **The real QR is shown on `/messages`** per card (encoding the absolute `/r/<slug>`), with a
+  download for printing. Deliberately client-side (`qrcode`), so no new API surface or stored image.
+
+Scope kept deliberately narrow: **there is no server-side card rasteriser** in this codebase (ops
+composites the card from the design document + recipient data), so this phase delivers the QR as a
+downloadable per-recipient asset rather than compositing it into a print-ready card image — that
+belongs with whatever print pipeline ops adopts, and is the natural follow-up.
+
+- Video scope: **per-recipient** (reuses the Phase 4 message page), not one video per design —
+  chosen for personalisation, since the per-recipient page already existed.
