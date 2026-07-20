@@ -47,6 +47,18 @@ export class ApiKeyService {
     });
   }
 
+  /** Non-secret identity for the account a key belongs to — used by the inbound
+   * "who am I" endpoint (e.g. Zapier's connection test / label). */
+  async accountSummary(
+    accountId: string,
+  ): Promise<{ accountId: string; accountName: string; plan: string | null }> {
+    const account = await this.prisma.account.findUniqueOrThrow({
+      where: { id: accountId },
+      select: { id: true, name: true, planId: true },
+    });
+    return { accountId: account.id, accountName: account.name, plan: account.planId };
+  }
+
   async revoke(accountId: string, id: string): Promise<void> {
     // Scope accountId into the mutation so one account can never revoke
     // another's key, and only flip keys that aren't already revoked.

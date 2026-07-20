@@ -114,6 +114,32 @@ describe("Integrations (e2e)", () => {
     expect(turing?.dateOfBirth).not.toBeNull();
   });
 
+  it("GET /integrations/me returns the account identity for a valid key (Zapier auth test)", async () => {
+    const { token, accountId } = await signUp();
+    const apiKey = await createApiKey(token);
+
+    const res = await request(app.getHttpServer())
+      .get("/integrations/me")
+      .set("x-api-key", apiKey)
+      .expect(200);
+
+    const identity = z
+      .object({ accountId: z.string().uuid(), accountName: z.string(), plan: z.string().nullable() })
+      .parse(res.body);
+    expect(identity.accountId).toBe(accountId);
+    expect(identity.accountName).toMatch(/^Test Centre /);
+    // Never leaks anything secret.
+    expect(JSON.stringify(res.body)).not.toContain("keyHash");
+  });
+
+  it("GET /integrations/me rejects a missing or invalid key with 401", async () => {
+    await request(app.getHttpServer()).get("/integrations/me").expect(401);
+    await request(app.getHttpServer())
+      .get("/integrations/me")
+      .set("x-api-key", "kudos_notarealkey")
+      .expect(401);
+  });
+
   it("re-ingesting the same externalId updates instead of duplicating", async () => {
     const { token } = await signUp();
     const apiKey = await createApiKey(token);

@@ -497,12 +497,21 @@ export function IntegrationsClient({
         <BrevoConnector connection={brevo} onChange={(next) => updateConnection("brevo", next)} />
         <HubSpotConnector connection={hubspot} onChange={(next) => updateConnection("hubspot", next)} />
         <div className="grid gap-4 sm:grid-cols-2">
-          {["GoHighLevel"].map((name) => (
-            <div key={name} className="card flex items-center justify-between gap-3 p-4">
-              <span className="font-semibold">{name}</span>
-              <span className="pill pill-muted">Coming soon</span>
+          <div className="card flex flex-col gap-2 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-semibold">Zapier</span>
+              <span className="pill pill-accent">Via API key</span>
             </div>
-          ))}
+            <p className="text-xs text-muted">
+              Connect Kudos to 6,000+ apps. Create an API key below, then add the{" "}
+              <span className="font-medium">Kudos Cards</span> app in Zapier and paste the key to
+              start importing contacts.
+            </p>
+          </div>
+          <div className="card flex items-center justify-between gap-3 p-4">
+            <span className="font-semibold">GoHighLevel</span>
+            <span className="pill pill-muted">Coming soon</span>
+          </div>
         </div>
       </div>
 
