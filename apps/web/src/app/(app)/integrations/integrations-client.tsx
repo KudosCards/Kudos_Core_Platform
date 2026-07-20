@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import type {
   AccountApiKey,
   CreatedApiKey,
@@ -9,6 +9,11 @@ import type {
 } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+
+/** Action buttons in a connector header: full-width (side-by-side) on mobile so
+ * they're easy to tap, natural width on larger screens. */
+const PRIMARY_BTN = "btn-accent flex-1 sm:flex-none";
+const SECONDARY_BTN = "btn-secondary flex-1 sm:flex-none";
 
 /** Provider slug → the name we show. Falls back to a capitalised slug. */
 function labelFor(provider: string): string {
@@ -43,7 +48,60 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
   );
 }
 
-/** The one live connector in Phase 2. HubSpot/GoHighLevel come with the OAuth lane. */
+/** Shared shell every CRM connector renders into, so they line up visually and
+ * behave the same on mobile: the name + status sit on one row, the actions drop
+ * to a full-width row beneath on small screens and move inline on `sm+`. */
+function ConnectorShell({
+  name,
+  status,
+  actions,
+  children,
+}: {
+  name: string;
+  status?: ReactNode;
+  actions?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="card flex flex-col gap-3 p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold">{name}</span>
+          {status}
+        </div>
+        {actions ? <div className="flex w-full gap-2 sm:w-auto">{actions}</div> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const CONNECTED_PILL = <span className="pill pill-positive">Connected</span>;
+
+/** Small green summary shown after a manual sync. */
+function SyncSummary({ result }: { result: CrmSyncResult }) {
+  return (
+    <p className="rounded-lg bg-[#e8f1ea] px-4 py-2 text-sm font-medium text-[#2f7d54]">
+      Imported {result.created} new, {result.updated} updated
+      {result.skipped > 0 ? `, ${result.skipped} skipped` : ""} (of {result.fetched} fetched).
+    </p>
+  );
+}
+
+/** "Last synced …" line shared by the connected connectors. */
+function LastSynced({ connection }: { connection: CrmConnection }) {
+  return (
+    <p className="text-xs text-muted">
+      Last synced {formatDate(connection.lastSyncedAt)}
+      {connection.lastSyncStatus && connection.lastSyncStatus !== "ok"
+        ? ` · ${connection.lastSyncStatus}`
+        : ""}{" "}
+      · syncs automatically each night.
+    </p>
+  );
+}
+
+/** Brevo — the API-key lane: paste a key, optionally map custom attributes. */
 function BrevoConnector({
   connection,
   onChange,
@@ -125,26 +183,17 @@ function BrevoConnector({
   const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
 
   return (
-    <div className="card flex flex-col gap-3 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <span className="font-semibold">Brevo</span>
-          {connection && (
-            <span className="ml-2 pill pill-positive">Connected</span>
-          )}
-        </div>
-        {!connection && !open && (
-          <button type="button" onClick={() => setOpen(true)} className="btn-accent">
-            Connect
-          </button>
-        )}
-        {connection && (
-          <div className="flex gap-2">
+    <ConnectorShell
+      name="Brevo"
+      status={connection ? CONNECTED_PILL : null}
+      actions={
+        connection ? (
+          <>
             <button
               type="button"
               disabled={busy !== null}
               onClick={() => void sync()}
-              className="btn-accent"
+              className={PRIMARY_BTN}
             >
               {busy === "sync" ? "Syncing…" : "Sync now"}
             </button>
@@ -152,35 +201,27 @@ function BrevoConnector({
               type="button"
               disabled={busy !== null}
               onClick={() => void disconnect()}
-              className="btn-secondary"
+              className={SECONDARY_BTN}
             >
               Disconnect
             </button>
-          </div>
-        )}
-      </div>
-
+          </>
+        ) : !open ? (
+          <button type="button" onClick={() => setOpen(true)} className={PRIMARY_BTN}>
+            Connect
+          </button>
+        ) : null
+      }
+    >
       {error && <p className="text-sm font-medium text-accent">{error}</p>}
-
-      {connection && (
-        <p className="text-xs text-muted">
-          Last synced {formatDate(connection.lastSyncedAt)}
-          {connection.lastSyncStatus && connection.lastSyncStatus !== "ok"
-            ? ` · ${connection.lastSyncStatus}`
-            : ""}{" "}
-          · syncs automatically each night.
-        </p>
-      )}
-
-      {result && (
-        <p className="rounded-lg bg-[#e8f1ea] px-4 py-2 text-sm font-medium text-[#2f7d54]">
-          Imported {result.created} new, {result.updated} updated
-          {result.skipped > 0 ? `, ${result.skipped} skipped` : ""} (of {result.fetched} fetched).
-        </p>
-      )}
+      {connection && <LastSynced connection={connection} />}
+      {result && <SyncSummary result={result} />}
 
       {!connection && open && (
-        <form onSubmit={(e) => void connect(e)} className="flex flex-col gap-3 border-t border-border pt-3">
+        <form
+          onSubmit={(e) => void connect(e)}
+          className="flex flex-col gap-3 border-t border-border pt-3"
+        >
           <label className="flex flex-col gap-1 text-sm">
             Brevo API key
             <input
@@ -220,16 +261,24 @@ function BrevoConnector({
             </p>
           </details>
           <div className="flex gap-2">
-            <button type="submit" disabled={busy === "connect"} className="btn-accent">
+            <button
+              type="submit"
+              disabled={busy === "connect"}
+              className="btn-accent flex-1 sm:flex-none"
+            >
               {busy === "connect" ? "Connecting…" : "Connect Brevo"}
             </button>
-            <button type="button" onClick={() => setOpen(false)} className="btn-secondary">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="btn-secondary flex-1 sm:flex-none"
+            >
               Cancel
             </button>
           </div>
         </form>
       )}
-    </div>
+    </ConnectorShell>
   );
 }
 
@@ -298,29 +347,17 @@ function HubSpotConnector({
   }
 
   return (
-    <div className="card flex flex-col gap-3 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <span className="font-semibold">HubSpot</span>
-          {connection && <span className="ml-2 pill pill-positive">Connected</span>}
-        </div>
-        {!connection && (
-          <button
-            type="button"
-            disabled={busy === "connect"}
-            onClick={() => void connect()}
-            className="btn-accent"
-          >
-            {busy === "connect" ? "Redirecting…" : "Connect"}
-          </button>
-        )}
-        {connection && (
-          <div className="flex gap-2">
+    <ConnectorShell
+      name="HubSpot"
+      status={connection ? CONNECTED_PILL : null}
+      actions={
+        connection ? (
+          <>
             <button
               type="button"
               disabled={busy !== null}
               onClick={() => void sync()}
-              className="btn-accent"
+              className={PRIMARY_BTN}
             >
               {busy === "sync" ? "Syncing…" : "Sync now"}
             </button>
@@ -328,40 +365,33 @@ function HubSpotConnector({
               type="button"
               disabled={busy !== null}
               onClick={() => void disconnect()}
-              className="btn-secondary"
+              className={SECONDARY_BTN}
             >
               Disconnect
             </button>
-          </div>
-        )}
-      </div>
-
+          </>
+        ) : (
+          <button
+            type="button"
+            disabled={busy === "connect"}
+            onClick={() => void connect()}
+            className={PRIMARY_BTN}
+          >
+            {busy === "connect" ? "Redirecting…" : "Connect"}
+          </button>
+        )
+      }
+    >
       {error && <p className="text-sm font-medium text-accent">{error}</p>}
-
       {!connection && (
         <p className="text-xs text-muted">
           Connect your HubSpot account to import contacts. You&apos;ll be sent to HubSpot to approve
           read-only access to your contacts — no password is shared with us.
         </p>
       )}
-
-      {connection && (
-        <p className="text-xs text-muted">
-          Last synced {formatDate(connection.lastSyncedAt)}
-          {connection.lastSyncStatus && connection.lastSyncStatus !== "ok"
-            ? ` · ${connection.lastSyncStatus}`
-            : ""}{" "}
-          · syncs automatically each night.
-        </p>
-      )}
-
-      {result && (
-        <p className="rounded-lg bg-[#e8f1ea] px-4 py-2 text-sm font-medium text-[#2f7d54]">
-          Imported {result.created} new, {result.updated} updated
-          {result.skipped > 0 ? `, ${result.skipped} skipped` : ""} (of {result.fetched} fetched).
-        </p>
-      )}
-    </div>
+      {connection && <LastSynced connection={connection} />}
+      {result && <SyncSummary result={result} />}
+    </ConnectorShell>
   );
 }
 
@@ -467,10 +497,10 @@ export function IntegrationsClient({
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold tracking-tight">Integrations</h1>
-        <p className="text-muted">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Integrations</h1>
+        <p className="text-sm text-muted sm:text-base">
           Bring recipients in from your CRM or any other system. Contacts you sync or push appear on
           the Recipients page tagged with their source.
         </p>
@@ -481,8 +511,8 @@ export function IntegrationsClient({
       )}
 
       {/* CRM connectors */}
-      <div className="flex flex-col gap-3">
-        <h2 className="font-semibold">Connect a CRM</h2>
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Connect a CRM</h2>
         {notice && (
           <p
             className={
@@ -494,31 +524,33 @@ export function IntegrationsClient({
             {notice.text}
           </p>
         )}
-        <BrevoConnector connection={brevo} onChange={(next) => updateConnection("brevo", next)} />
-        <HubSpotConnector connection={hubspot} onChange={(next) => updateConnection("hubspot", next)} />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="card flex flex-col gap-2 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-semibold">Zapier</span>
-              <span className="pill pill-accent">Via API key</span>
-            </div>
+        <div className="flex flex-col gap-3">
+          <BrevoConnector connection={brevo} onChange={(next) => updateConnection("brevo", next)} />
+          <HubSpotConnector
+            connection={hubspot}
+            onChange={(next) => updateConnection("hubspot", next)}
+          />
+          <ConnectorShell
+            name="Zapier"
+            status={<span className="pill pill-accent">Via API key</span>}
+          >
             <p className="text-xs text-muted">
               Connect Kudos to 6,000+ apps. Create an API key below, then add the{" "}
               <span className="font-medium">Kudos Cards</span> app in Zapier and paste the key to
               start importing contacts.
             </p>
-          </div>
-          <div className="card flex items-center justify-between gap-3 p-4">
-            <span className="font-semibold">GoHighLevel</span>
-            <span className="pill pill-muted">Coming soon</span>
-          </div>
+          </ConnectorShell>
+          <ConnectorShell
+            name="GoHighLevel"
+            status={<span className="pill pill-muted">Coming soon</span>}
+          />
         </div>
-      </div>
+      </section>
 
       {/* API keys */}
-      <div className="flex flex-col gap-3">
-        <div>
-          <h2 className="font-semibold">API keys</h2>
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold">API keys</h2>
           <p className="text-sm text-muted">
             Prefer to push contacts yourself? Create a key to send them in from any system. The full
             key is shown once — store it somewhere safe.
@@ -539,15 +571,15 @@ export function IntegrationsClient({
           </div>
         )}
 
-        <form onSubmit={(e) => void createKey(e)} className="flex flex-wrap items-center gap-2">
+        <form onSubmit={(e) => void createKey(e)} className="flex flex-col gap-2 sm:flex-row">
           <input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="Label (e.g. Nightly sync)"
             maxLength={80}
-            className="min-w-56 flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm"
+            className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm sm:flex-1"
           />
-          <button type="submit" disabled={creating} className="btn-accent">
+          <button type="submit" disabled={creating} className="btn-accent w-full sm:w-auto">
             {creating ? "Creating…" : "Create key"}
           </button>
         </form>
@@ -559,13 +591,13 @@ export function IntegrationsClient({
               return (
                 <div
                   key={key.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm"
+                  className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-5"
                 >
                   <div className="flex flex-col">
                     <span className="font-medium">{key.label}</span>
                     <span className="font-mono text-xs text-muted">{key.prefix}…</span>
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-muted">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
                     <span>Created {formatDate(key.createdAt)}</span>
                     <span>Last used {formatDate(key.lastUsedAt)}</span>
                     {revoked ? (
@@ -586,12 +618,12 @@ export function IntegrationsClient({
             })}
           </div>
         )}
-      </div>
+      </section>
 
       {/* How-to */}
-      <div className="flex flex-col gap-3">
-        <div>
-          <h2 className="font-semibold">Push contacts to your account</h2>
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold">Push contacts to your account</h2>
           <p className="text-sm text-muted">
             Send a <code className="font-mono text-xs">POST</code> to the endpoint below with your
             key. Re-sending a contact with the same{" "}
@@ -610,7 +642,7 @@ export function IntegrationsClient({
           </div>
           <pre className="overflow-x-auto p-4 font-mono text-xs leading-relaxed">{curl}</pre>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
