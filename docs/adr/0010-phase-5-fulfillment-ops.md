@@ -123,3 +123,24 @@ overrides, or refunds. Those are a deliberate later step behind their own audit 
 
 Verified: e2e covers gating (401 no token, 403 non-admin) and that a paid order flows into the
 overview totals, the cross-account orders list, and the per-account subscriber aggregates.
+
+## Addendum (2026-07-20): super-admin dashboard load-speed pass
+
+Three targeted fixes after the dashboard felt slow to load:
+
+- **Instant paint.** The `(ops)` route group had no `loading.tsx` (unlike `(app)`), so every ops
+  page — including the dashboard — showed the *previous* page frozen until the server component
+  finished fetching. Added a generic `(ops)/loading.tsx` (table silhouette) plus a KPI-card
+  skeleton for `/admin` and table skeletons for `/admin/orders` and `/admin/subscribers`, so a
+  navigation paints immediately and streams the data in.
+- **Fewer DB round-trips.** `/admin/overview` fired **ten** queries; under a small pgbouncer pool
+  those don't all run at once, they queue. Folded count+sum into one `aggregate` per window and the
+  account breakdown into one `groupBy(type)` — **six** queries now, same results.
+- **Indexes for the admin query shapes.** The admin queries filter by `BatchOrder.status` alone and
+  order by `createdAt`, and list accounts newest-first — none of which the existing indexes served.
+  Added `batch_orders(status, created_at)`, `batch_orders(created_at)`, `accounts(created_at)`, and
+  `subscriptions(status)`.
+
+Not changed: `apiFetch` stays `no-store` (per-request auth; caching platform-wide aggregates across
+admins is a later, deliberate call). On a large table the new indexes should be created
+`CONCURRENTLY`; at current data volume the plain migration is instantaneous.

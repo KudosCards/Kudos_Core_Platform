@@ -63,43 +63,40 @@ export class AdminService {
     const since = new Date(Date.now() - THIRTY_DAYS_MS);
     const paidWhere = { status: { in: PAID_STATUSES } };
 
-    const [
-      total,
-      organisations,
-      individuals,
-      byPlan,
-      activeSubscriptions,
-      paidOrders,
-      paidOrdersLast30,
-      revenueAll,
-      revenueLast30,
-      cardsSent,
-    ] = await Promise.all([
-      this.prisma.account.count(),
-      this.prisma.account.count({ where: { type: "organisation" } }),
-      this.prisma.account.count({ where: { type: "individual" } }),
+    // Six queries (down from ten): count+sum are folded into one aggregate per
+    // window, and the account breakdown comes from a single groupBy. Fewer
+    // round-trips matters under a small pgbouncer pool, where "parallel" queries
+    // otherwise queue behind each other.
+    const [byType, byPlan, activeSubscriptions, allTime, last30, cardsSent] = await Promise.all([
+      this.prisma.account.groupBy({ by: ["type"], _count: { _all: true } }),
       this.prisma.account.groupBy({ by: ["planId"], _count: { _all: true } }),
       this.prisma.subscription.count({ where: { status: { in: ACTIVE_SUB_STATUSES } } }),
-      this.prisma.batchOrder.count({ where: paidWhere }),
-      this.prisma.batchOrder.count({ where: { ...paidWhere, createdAt: { gte: since } } }),
-      this.prisma.batchOrder.aggregate({ where: paidWhere, _sum: { totalMinor: true } }),
+      this.prisma.batchOrder.aggregate({
+        where: paidWhere,
+        _count: true,
+        _sum: { totalMinor: true },
+      }),
       this.prisma.batchOrder.aggregate({
         where: { ...paidWhere, createdAt: { gte: since } },
+        _count: true,
         _sum: { totalMinor: true },
       }),
       this.prisma.orderRecipient.count({ where: { batchOrder: paidWhere } }),
     ]);
 
+    const organisations = byType.find((row) => row.type === "organisation")?._count._all ?? 0;
+    const individuals = byType.find((row) => row.type === "individual")?._count._all ?? 0;
+
     return {
-      accounts: { total, organisations, individuals },
+      accounts: { total: organisations + individuals, organisations, individuals },
       subscribersByPlan: byPlan
         .map((row) => ({ plan: row.planId ?? "free", count: row._count._all }))
         .sort((a, b) => b.count - a.count),
       activeSubscriptions,
-      orders: { paid: paidOrders, last30Days: paidOrdersLast30 },
+      orders: { paid: allTime._count, last30Days: last30._count },
       revenueMinor: {
-        allTime: revenueAll._sum.totalMinor ?? 0,
-        last30Days: revenueLast30._sum.totalMinor ?? 0,
+        allTime: allTime._sum.totalMinor ?? 0,
+        last30Days: last30._sum.totalMinor ?? 0,
       },
       cardsSent,
     };
