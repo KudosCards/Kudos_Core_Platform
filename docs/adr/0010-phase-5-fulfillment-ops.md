@@ -96,3 +96,30 @@ triage-then-pull-labels workflow stays fast.
   being refused and an admin seeing across accounts.
 - The first platform admin must be bootstrapped via `PLATFORM_ADMIN_USER_IDS` (or a manual row) in
   each real environment — documented, since it can't be seeded blindly.
+
+## Addendum (2026-07-20): the super-admin dashboard
+
+Phase 5 built the ops *fulfillment* surface (print/post queue). This adds a *business* view on the
+same gated `(ops)` shell — where Kudos Cards tracks the platform as a whole.
+
+- **API `/admin`** (new module), every route behind `PlatformAdminGuard` — the same cross-account
+  privileged axis as `/fulfillment`, never account-scoped:
+  - `GET /admin/overview` — platform KPIs: accounts (total + org/individual), accounts by plan,
+    active subscriptions, paid orders (all-time + last 30 days), revenue (all-time + last 30 days,
+    minor units), cards sent. "Paid" = `paid | fulfilling | completed` (a draft is a cart; a
+    cancelled/pending order never collected money).
+  - `GET /admin/orders` — every order across accounts, newest first, with account name + card
+    count; optional `status` filter (drafts hidden by default).
+  - `GET /admin/subscribers` — every account with its plan, order count, cards sent, total spend,
+    and whether it has an active Stripe subscription. Per-page aggregates are folded from one
+    `batchOrder` query rather than an N+1.
+- **Web `(ops)/admin`** — a Dashboard (KPI cards + accounts-by-plan), an Orders table (status
+  filter chips, reusing the customer order-status labels/pills), and a Subscribers table. Added to
+  the ops sidebar under a new "Overview" group. Routes live under `/admin/*` to avoid colliding with
+  the customer app's `(app)/orders`.
+
+Read-only by design: this phase is *visibility*, not administration — no impersonation, plan
+overrides, or refunds. Those are a deliberate later step behind their own audit trail.
+
+Verified: e2e covers gating (401 no token, 403 non-admin) and that a paid order flows into the
+overview totals, the cross-account orders list, and the per-account subscriber aggregates.

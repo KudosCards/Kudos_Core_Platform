@@ -30,6 +30,22 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
       <aside className="flex w-56 shrink-0 flex-col justify-between border-r border-black/10 px-4 py-6 dark:border-white/10">
         <div className="flex flex-col gap-2 text-sm font-medium">
           <span className="px-3 text-xs font-semibold tracking-wide text-foreground/40 uppercase">
+            Overview
+          </span>
+          {[
+            { href: "/admin", label: "Dashboard" },
+            { href: "/admin/orders", label: "Orders" },
+            { href: "/admin/subscribers", label: "Subscribers" },
+          ].map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="rounded-md px-3 py-2 text-foreground/70 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
+            >
+              {item.label}
+            </Link>
+          ))}
+          <span className="mt-3 px-3 text-xs font-semibold tracking-wide text-foreground/40 uppercase">
             Operations
           </span>
           <Link
