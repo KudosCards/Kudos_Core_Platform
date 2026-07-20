@@ -57,6 +57,27 @@ export const envSchema = z.object({
     .min(1)
     .optional()
     .or(z.literal("").transform(() => undefined)),
+
+  // HubSpot OAuth (see docs/adr/0015-crm-integrations.md, Phase 3). Optional: the
+  // app boots without them and connecting HubSpot returns a clean "not
+  // configured" until all three are set. The redirect URI must exactly match the
+  // one registered in the HubSpot app (…/integrations/oauth/hubspot/callback on
+  // this API's public host). Treat blank the same as unset.
+  HUBSPOT_CLIENT_ID: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  HUBSPOT_CLIENT_SECRET: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  HUBSPOT_REDIRECT_URI: z
+    .string()
+    .url()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

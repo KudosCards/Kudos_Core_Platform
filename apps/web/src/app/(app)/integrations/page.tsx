@@ -3,8 +3,13 @@ import { serverApiFetch } from "@/lib/api.server";
 import { env } from "@/lib/env";
 import { IntegrationsClient } from "./integrations-client";
 
-export default async function IntegrationsPage() {
-  const [keys, connections] = await Promise.all([
+export default async function IntegrationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ connected?: string; error?: string }>;
+}) {
+  const [params, keys, connections] = await Promise.all([
+    searchParams,
     serverApiFetch<AccountApiKey[]>("/integrations/api-keys"),
     serverApiFetch<CrmConnection[]>("/integrations/connections"),
   ]);
@@ -14,6 +19,8 @@ export default async function IntegrationsPage() {
       initialKeys={keys ?? []}
       initialConnections={connections ?? []}
       apiBaseUrl={env.NEXT_PUBLIC_API_URL}
+      connectedProvider={params.connected ?? null}
+      errorProvider={params.error ?? null}
     />
   );
 }

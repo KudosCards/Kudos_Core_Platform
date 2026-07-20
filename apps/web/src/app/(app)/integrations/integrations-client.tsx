@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type {
   AccountApiKey,
   CreatedApiKey,
@@ -9,6 +9,12 @@ import type {
 } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+
+/** Provider slug → the name we show. Falls back to a capitalised slug. */
+function labelFor(provider: string): string {
+  const known: Record<string, string> = { brevo: "Brevo", hubspot: "HubSpot" };
+  return known[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
+}
 
 function formatDate(value: Date | string | null): string {
   if (!value) return "—";
@@ -227,14 +233,150 @@ function BrevoConnector({
   );
 }
 
+/** HubSpot uses OAuth: no API key to paste — "Connect" bounces the user through
+ * HubSpot's consent screen and back. The connected state mirrors Brevo's. */
+function HubSpotConnector({
+  connection,
+  onChange,
+}: {
+  connection: CrmConnection | undefined;
+  onChange: (next: CrmConnection | null) => void;
+}) {
+  const [busy, setBusy] = useState<null | "connect" | "sync" | "disconnect">(null);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<CrmSyncResult | null>(null);
+
+  async function connect() {
+    setError(null);
+    setBusy("connect");
+    try {
+      // The API builds HubSpot's consent URL (with a signed state); we redirect
+      // the browser to it. HubSpot returns to the API callback, which lands us
+      // back here with ?connected=hubspot.
+      const { url } = await clientApiFetch<{ url: string }>("/integrations/oauth/hubspot/start");
+      window.location.href = url;
+    } catch (connectError) {
+      setError(
+        connectError instanceof ApiError ? connectError.message : "Could not start HubSpot connect",
+      );
+      setBusy(null);
+    }
+  }
+
+  async function sync() {
+    setError(null);
+    setResult(null);
+    setBusy("sync");
+    try {
+      const syncResult = await clientApiFetch<CrmSyncResult>(
+        "/integrations/connections/hubspot/sync",
+        { method: "POST" },
+      );
+      setResult(syncResult);
+      if (connection) onChange({ ...connection, lastSyncedAt: new Date(), lastSyncStatus: "ok" });
+    } catch (syncError) {
+      setError(syncError instanceof ApiError ? syncError.message : "Sync failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function disconnect() {
+    setError(null);
+    setBusy("disconnect");
+    try {
+      await clientApiFetch("/integrations/connections/hubspot", { method: "DELETE" });
+      onChange(null);
+      setResult(null);
+    } catch (disconnectError) {
+      setError(
+        disconnectError instanceof ApiError ? disconnectError.message : "Could not disconnect",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="card flex flex-col gap-3 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <span className="font-semibold">HubSpot</span>
+          {connection && <span className="ml-2 pill pill-positive">Connected</span>}
+        </div>
+        {!connection && (
+          <button
+            type="button"
+            disabled={busy === "connect"}
+            onClick={() => void connect()}
+            className="btn-accent"
+          >
+            {busy === "connect" ? "Redirecting…" : "Connect"}
+          </button>
+        )}
+        {connection && (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void sync()}
+              className="btn-accent"
+            >
+              {busy === "sync" ? "Syncing…" : "Sync now"}
+            </button>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void disconnect()}
+              className="btn-secondary"
+            >
+              Disconnect
+            </button>
+          </div>
+        )}
+      </div>
+
+      {error && <p className="text-sm font-medium text-accent">{error}</p>}
+
+      {!connection && (
+        <p className="text-xs text-muted">
+          Connect your HubSpot account to import contacts. You&apos;ll be sent to HubSpot to approve
+          read-only access to your contacts — no password is shared with us.
+        </p>
+      )}
+
+      {connection && (
+        <p className="text-xs text-muted">
+          Last synced {formatDate(connection.lastSyncedAt)}
+          {connection.lastSyncStatus && connection.lastSyncStatus !== "ok"
+            ? ` · ${connection.lastSyncStatus}`
+            : ""}{" "}
+          · syncs automatically each night.
+        </p>
+      )}
+
+      {result && (
+        <p className="rounded-lg bg-[#e8f1ea] px-4 py-2 text-sm font-medium text-[#2f7d54]">
+          Imported {result.created} new, {result.updated} updated
+          {result.skipped > 0 ? `, ${result.skipped} skipped` : ""} (of {result.fetched} fetched).
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function IntegrationsClient({
   initialKeys,
   initialConnections,
   apiBaseUrl,
+  connectedProvider,
+  errorProvider,
 }: {
   initialKeys: AccountApiKey[];
   initialConnections: CrmConnection[];
   apiBaseUrl: string;
+  connectedProvider: string | null;
+  errorProvider: string | null;
 }) {
   const [keys, setKeys] = useState<AccountApiKey[]>(initialKeys);
   const [connections, setConnections] = useState<CrmConnection[]>(initialConnections);
@@ -244,14 +386,39 @@ export function IntegrationsClient({
   const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
-  const brevo = connections.find((c) => c.provider === "brevo");
+  // The OAuth round-trip lands back here with ?connected=<provider> or
+  // ?error=<provider>, read server-side and passed in — so the banner renders
+  // identically on server and client (no hydration mismatch, no setState-in-effect).
+  const [notice] = useState<{ tone: "ok" | "bad"; text: string } | null>(() => {
+    if (connectedProvider) {
+      return {
+        tone: "ok",
+        text: `${labelFor(connectedProvider)} connected — click “Sync now” to import your contacts.`,
+      };
+    }
+    if (errorProvider) {
+      return { tone: "bad", text: `We couldn't connect ${labelFor(errorProvider)}. Please try again.` };
+    }
+    return null;
+  });
 
-  function updateBrevo(next: CrmConnection | null) {
+  const brevo = connections.find((c) => c.provider === "brevo");
+  const hubspot = connections.find((c) => c.provider === "hubspot");
+
+  function updateConnection(provider: string, next: CrmConnection | null) {
     setConnections((current) => {
-      const others = current.filter((c) => c.provider !== "brevo");
+      const others = current.filter((c) => c.provider !== provider);
       return next ? [...others, next] : others;
     });
   }
+
+  // Once shown, strip the query flag from the URL bar so a refresh is clean.
+  // Touches only the browser history (an external system), never React state.
+  useEffect(() => {
+    if ((connectedProvider || errorProvider) && typeof window !== "undefined") {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [connectedProvider, errorProvider]);
 
   const endpoint = `${apiBaseUrl.replace(/\/$/, "")}/integrations/contacts`;
   const sampleKey = newKey?.key ?? "YOUR_API_KEY";
@@ -316,9 +483,21 @@ export function IntegrationsClient({
       {/* CRM connectors */}
       <div className="flex flex-col gap-3">
         <h2 className="font-semibold">Connect a CRM</h2>
-        <BrevoConnector connection={brevo} onChange={updateBrevo} />
+        {notice && (
+          <p
+            className={
+              notice.tone === "ok"
+                ? "rounded-lg bg-[#e8f1ea] px-4 py-2 text-sm font-medium text-[#2f7d54]"
+                : "rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent"
+            }
+          >
+            {notice.text}
+          </p>
+        )}
+        <BrevoConnector connection={brevo} onChange={(next) => updateConnection("brevo", next)} />
+        <HubSpotConnector connection={hubspot} onChange={(next) => updateConnection("hubspot", next)} />
         <div className="grid gap-4 sm:grid-cols-2">
-          {["HubSpot", "GoHighLevel"].map((name) => (
+          {["GoHighLevel"].map((name) => (
             <div key={name} className="card flex items-center justify-between gap-3 p-4">
               <span className="font-semibold">{name}</span>
               <span className="pill pill-muted">Coming soon</span>

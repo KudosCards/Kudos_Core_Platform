@@ -96,8 +96,10 @@ describe("CRM connections — Brevo (e2e)", () => {
     expect(connectionViewSchema.parse(res.body)).toMatchObject({ provider: "brevo", syncEnabled: true });
 
     const stored = await prisma.crmConnection.findFirstOrThrow({ where: { accountId } });
+    expect(stored.authType).toBe("api_key");
+    expect(stored.encryptedApiKey).not.toBeNull();
     expect(stored.encryptedApiKey).not.toContain("brevo-key-good");
-    expect(stored.encryptedApiKey.split(":")).toHaveLength(3); // iv:tag:ciphertext
+    expect(stored.encryptedApiKey!.split(":")).toHaveLength(3); // iv:tag:ciphertext
 
     // The connection list never leaks the key.
     const list = await request(app.getHttpServer())
