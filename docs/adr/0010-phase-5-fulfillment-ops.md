@@ -144,3 +144,28 @@ Three targeted fixes after the dashboard felt slow to load:
 Not changed: `apiFetch` stays `no-store` (per-request auth; caching platform-wide aggregates across
 admins is a later, deliberate call). On a large table the new indexes should be created
 `CONCURRENTLY`; at current data volume the plain migration is instantaneous.
+
+## Addendum (2026-07-20): super-admin dashboard UI/UX uplift
+
+A design pass bringing the admin surface in line with richer mockups:
+
+- **Human order numbers.** `BatchOrder.orderNumber` — a sequential number starting at 1000, rendered
+  as `ORD-1035`. Separate from the uuid id so ops/customers get a short reference.
+- **Dashboard widgets.** `/admin/overview` now returns a 12-month revenue series, a
+  signup→first-order→cards-fulfilled funnel (account counts), an at-risk count, and a
+  "needs-attention" list. The page renders KPI cards (incl. at-risk), a revenue bar chart,
+  accounts-by-plan meters, the funnel, and the at-risk list.
+- **Account health.** Subscribers get a derived status — **Active** (current subscription),
+  **Churned** (had a subscription, now cancelled/past-due), **At-risk** (no active subscription and
+  no activity for 30+ days). Shown as a pill and filterable.
+- **Orders & subscribers tables.** Instant client-side search + status/plan/health dropdowns
+  (the API also supports them server-side for when data outgrows a page), a Fulfillment column
+  derived from order status, subscriber multi-select + **CSV export**, and a polished table style.
+- **Fulfillment queue.** Filter chips now show per-status counts (`GET /fulfillment/counts`), with
+  the active chip in the brand accent.
+- **Plan display names.** The admin shows **Free / Starter / Growth** for `free / pro / centre` —
+  a display-only mapping (`lib/admin.ts`), no billing/Stripe/plan-id change.
+
+At-risk/churned thresholds and the plan display-map are single-source constants, easy to tune.
+Verified: admin e2e extended (overview widgets, order number, health); full suite green on a fresh
+DB (18 e2e suites/125 tests); lint/typecheck/build clean; server boots.

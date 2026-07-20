@@ -95,9 +95,11 @@ function downloadCsv(rows: ExportedAddress[]): void {
 export function FulfillmentClient({
   initialJobs,
   status,
+  counts,
 }: {
   initialJobs: FulfillmentJob[];
   status: FulfillmentStatus;
+  counts: Record<string, number>;
 }) {
   const router = useRouter();
   const [jobs, setJobs] = useState(initialJobs);
@@ -204,13 +206,18 @@ export function FulfillmentClient({
             key={tab}
             type="button"
             onClick={() => router.push(`/fulfillment?status=${tab}`)}
-            className={`rounded-full px-3 py-1 ${
+            className={`flex items-center gap-2 rounded-full px-3 py-1 capitalize ${
               tab === status
-                ? "bg-foreground text-background"
+                ? "bg-accent text-white"
                 : "border border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
             }`}
           >
-            {tab.replace("_", " ")}
+            <span>{tab.replace("_", " ")}</span>
+            <span
+              className={`tabular-nums ${tab === status ? "text-white/80" : "text-foreground/50"}`}
+            >
+              {counts[tab] ?? 0}
+            </span>
           </button>
         ))}
       </div>
