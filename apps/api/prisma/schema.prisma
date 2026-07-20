@@ -48,6 +48,8 @@ model Account {
   apiKeys        AccountApiKey[]
   crmConnections CrmConnection[]
 
+  // Super-admin subscribers list is ordered newest-first.
+  @@index([createdAt])
   @@map("accounts")
 }
 
@@ -327,6 +329,10 @@ model BatchOrder {
   orderRecipients OrderRecipient[]
 
   @@index([accountId, status])
+  // Super-admin dashboard: status-filtered lists + status aggregates (ordered by
+  // date), and the default "all non-draft, newest first" list.
+  @@index([status, createdAt])
+  @@index([createdAt])
   @@map("batch_orders")
 }
 
@@ -428,6 +434,8 @@ model Subscription {
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId])
+  // Super-admin overview counts active subscriptions across all accounts.
+  @@index([status])
   @@map("subscriptions")
 }
 
