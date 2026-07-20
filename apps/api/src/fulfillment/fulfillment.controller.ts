@@ -40,6 +40,12 @@ export class FulfillmentController {
     return this.fulfillmentService.list(query);
   }
 
+  /** Per-status job counts for the queue's filter chips. */
+  @Get("counts")
+  counts(): Promise<Record<string, number>> {
+    return this.fulfillmentService.counts();
+  }
+
   @Get("jobs/:id")
   findOne(
     @CurrentPlatformAdmin() admin: PlatformAdminContext,

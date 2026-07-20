@@ -31,9 +31,12 @@ export default async function FulfillmentPage({
     ? (statusParam as FulfillmentStatus)
     : "pending";
 
-  const result = await serverApiFetch<Paginated<FulfillmentJob>>(
-    `/fulfillment/jobs?status=${status}&perPage=100`,
-  );
+  const [result, counts] = await Promise.all([
+    serverApiFetch<Paginated<FulfillmentJob>>(`/fulfillment/jobs?status=${status}&perPage=100`),
+    serverApiFetch<Record<string, number>>("/fulfillment/counts"),
+  ]);
 
-  return <FulfillmentClient initialJobs={result?.items ?? []} status={status} />;
+  return (
+    <FulfillmentClient initialJobs={result?.items ?? []} status={status} counts={counts ?? {}} />
+  );
 }

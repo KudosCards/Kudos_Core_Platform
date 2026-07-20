@@ -120,6 +120,26 @@ export class FulfillmentService {
     return { items, total, page, perPage };
   }
 
+  /** Job counts per status, for the queue's filter chips. */
+  async counts(): Promise<Record<FulfillmentJobStatus, number>> {
+    const grouped = await this.prisma.fulfillmentJob.groupBy({
+      by: ["status"],
+      _count: { _all: true },
+    });
+    const result: Record<FulfillmentJobStatus, number> = {
+      pending: 0,
+      in_progress: 0,
+      printed: 0,
+      posted: 0,
+      delivered: 0,
+      failed: 0,
+    };
+    for (const row of grouped) {
+      result[row.status] = row._count._all;
+    }
+    return result;
+  }
+
   async findOne(actorUserId: string, id: string): Promise<FulfillmentJob> {
     const job = await this.prisma.fulfillmentJob.findUnique({
       where: { id },

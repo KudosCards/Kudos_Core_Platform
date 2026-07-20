@@ -19,13 +19,24 @@ const overviewSchema = z.object({
   }),
   subscribersByPlan: z.array(z.object({ plan: z.string(), count: z.number() })),
   activeSubscriptions: z.number(),
+  atRiskCount: z.number(),
   orders: z.object({ paid: z.number(), last30Days: z.number() }),
   revenueMinor: z.object({ allTime: z.number(), last30Days: z.number() }),
+  monthlyRevenueMinor: z.array(z.object({ label: z.string(), minor: z.number() })),
   cardsSent: z.number(),
+  funnel: z.object({
+    signedUp: z.number(),
+    placedFirstOrder: z.number(),
+    cardsFulfilled: z.number(),
+  }),
+  needsAttention: z.array(
+    z.object({ id: z.string(), name: z.string(), lastActivityDays: z.number() }),
+  ),
 });
 
 const orderRowSchema = z.object({
   id: z.string(),
+  orderNumber: z.number(),
   accountId: z.string(),
   accountName: z.string(),
   status: z.string(),
@@ -41,11 +52,12 @@ const subscriberRowSchema = z.object({
   name: z.string(),
   type: z.string(),
   plan: z.string(),
+  health: z.enum(["active", "at_risk", "churned", "none"]),
   createdAt: z.coerce.date(),
+  lastActivityAt: z.coerce.date(),
   orderCount: z.number(),
   cardsSent: z.number(),
   totalSpentMinor: z.number(),
-  hasActiveSubscription: z.boolean(),
   hasStripeCustomer: z.boolean(),
 });
 
@@ -198,6 +210,13 @@ describe("Admin — super admin dashboard (e2e)", () => {
     expect(overview.orders.paid).toBeGreaterThanOrEqual(1);
     expect(overview.revenueMinor.allTime).toBeGreaterThanOrEqual(totalMinor);
     expect(overview.cardsSent).toBeGreaterThanOrEqual(1);
+    // New dashboard widgets.
+    expect(overview.monthlyRevenueMinor).toHaveLength(12);
+    expect(overview.funnel.signedUp).toBeGreaterThanOrEqual(1);
+    expect(overview.funnel.placedFirstOrder).toBeGreaterThanOrEqual(1);
+    // The paid order this test just made contributes to the latest month.
+    const latestMonth = overview.monthlyRevenueMinor[overview.monthlyRevenueMinor.length - 1]!;
+    expect(latestMonth.minor).toBeGreaterThanOrEqual(totalMinor);
   });
 
   it("lists orders cross-account, newest first, with account name + card count", async () => {

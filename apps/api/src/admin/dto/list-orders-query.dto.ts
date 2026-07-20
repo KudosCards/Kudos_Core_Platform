@@ -8,6 +8,11 @@ export class ListAdminOrdersQueryDto {
   @IsEnum(BatchOrderStatus)
   status?: BatchOrderStatus;
 
+  @ApiPropertyOptional({ description: "Match account name or order number." })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
   // Raw query strings, coerced in the service — see common/pagination.ts.
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
