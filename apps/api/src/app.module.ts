@@ -18,6 +18,7 @@ import { WebhooksModule } from "./webhooks/webhooks.module";
 import { SubscriptionsModule } from "./subscriptions/subscriptions.module";
 import { MessagesModule } from "./messages/messages.module";
 import { FulfillmentModule } from "./fulfillment/fulfillment.module";
+import { AdminModule } from "./admin/admin.module";
 import { CatalogModule } from "./catalog/catalog.module";
 import { WalletModule } from "./wallet/wallet.module";
 import { AutoSendModule } from "./auto-send/auto-send.module";
@@ -52,6 +53,7 @@ import { IntegrationsModule } from "./integrations/integrations.module";
     SubscriptionsModule,
     MessagesModule,
     FulfillmentModule,
+    AdminModule,
     CatalogModule,
     WalletModule,
     AutoSendModule,
