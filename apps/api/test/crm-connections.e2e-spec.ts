@@ -9,6 +9,12 @@ import { BREVO_CLIENT, type BrevoClient, type BrevoContact } from "../src/integr
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
+// CryptoService reads CREDENTIALS_ENCRYPTION_KEY at connect time to encrypt the
+// stored API key. Local dev picks it up from the gitignored .env, but CI has no
+// .env — so provide a deterministic 32-byte test key here, before the app boots,
+// making this suite self-contained and independent of the environment.
+process.env.CREDENTIALS_ENCRYPTION_KEY ??= "0".repeat(64);
+
 const paginatedRecipientsSchema = z.object({
   items: z.array(recipientSchema),
   total: z.number(),
