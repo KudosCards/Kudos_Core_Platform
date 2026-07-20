@@ -10,11 +10,13 @@ export const HUBSPOT_CLIENT = Symbol("HUBSPOT_CLIENT");
 export const HUBSPOT_AUTHORIZE_URL = "https://app.hubspot.com/oauth/authorize";
 
 /**
- * The scopes we request: read-only access to CRM contacts. `oauth` is implied
- * by the flow. We deliberately ask for nothing we don't use — one-way import
- * only, no write-back (see the ADR).
+ * The scopes we request. `oauth` is HubSpot's base scope for an OAuth app (the
+ * developer-platform app config requires it); `crm.objects.contacts.read` is
+ * read-only contact access. These must match the app's required scopes exactly,
+ * or HubSpot rejects the install. We deliberately ask for nothing we don't use —
+ * one-way import only, no contacts.write / no write-back (see the ADR).
  */
-export const HUBSPOT_SCOPES = ["crm.objects.contacts.read"] as const;
+export const HUBSPOT_SCOPES = ["oauth", "crm.objects.contacts.read"] as const;
 
 /** Tokens returned by an OAuth code-exchange or refresh. */
 export interface HubSpotTokens {
