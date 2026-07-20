@@ -227,6 +227,19 @@ export class IntegrationsController {
 
   // ---- Inbound contact push (external systems, per-account API key) ----
 
+  /** Auth-test / identity for a per-account API key. Zapier (and any inbound
+   * caller) hits this to validate the key and label the connection. Non-secret. */
+  @ApiSecurity("api-key")
+  @Public()
+  @UseGuards(ApiKeyGuard)
+  @Get("me")
+  me(
+    @Req() request: Request,
+  ): Promise<{ accountId: string; accountName: string; plan: string | null }> {
+    // ApiKeyGuard guarantees request.apiKey is set.
+    return this.apiKeys.accountSummary(request.apiKey!.accountId);
+  }
+
   @ApiSecurity("api-key")
   @Public()
   @UseGuards(ApiKeyGuard)
