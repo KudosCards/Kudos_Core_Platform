@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import type { AccountApiKey, CreatedApiKey } from "@kudos/shared-types";
+import type {
+  AccountApiKey,
+  CreatedApiKey,
+  CrmConnection,
+  CrmSyncResult,
+} from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 
@@ -32,19 +37,221 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
   );
 }
 
+/** The one live connector in Phase 2. HubSpot/GoHighLevel come with the OAuth lane. */
+function BrevoConnector({
+  connection,
+  onChange,
+}: {
+  connection: CrmConnection | undefined;
+  onChange: (next: CrmConnection | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [dobAttr, setDobAttr] = useState("");
+  const [postcodeAttr, setPostcodeAttr] = useState("");
+  const [busy, setBusy] = useState<null | "connect" | "sync" | "disconnect">(null);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<CrmSyncResult | null>(null);
+
+  async function connect(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!apiKey.trim()) {
+      setError("Paste your Brevo API key");
+      return;
+    }
+    setError(null);
+    setBusy("connect");
+    try {
+      const fieldMapping: Record<string, string> = {};
+      if (dobAttr.trim()) fieldMapping.dateOfBirth = dobAttr.trim();
+      if (postcodeAttr.trim()) fieldMapping.addressPostcode = postcodeAttr.trim();
+      const created = await clientApiFetch<CrmConnection>("/integrations/connections", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "brevo",
+          apiKey: apiKey.trim(),
+          ...(Object.keys(fieldMapping).length > 0 && { fieldMapping }),
+        }),
+      });
+      onChange(created);
+      setApiKey("");
+      setOpen(false);
+    } catch (connectError) {
+      setError(
+        connectError instanceof ApiError ? connectError.message : "Could not connect to Brevo",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function sync() {
+    setError(null);
+    setResult(null);
+    setBusy("sync");
+    try {
+      const syncResult = await clientApiFetch<CrmSyncResult>("/integrations/connections/brevo/sync", {
+        method: "POST",
+      });
+      setResult(syncResult);
+      if (connection) onChange({ ...connection, lastSyncedAt: new Date(), lastSyncStatus: "ok" });
+    } catch (syncError) {
+      setError(syncError instanceof ApiError ? syncError.message : "Sync failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function disconnect() {
+    setError(null);
+    setBusy("disconnect");
+    try {
+      await clientApiFetch("/integrations/connections/brevo", { method: "DELETE" });
+      onChange(null);
+      setResult(null);
+    } catch (disconnectError) {
+      setError(disconnectError instanceof ApiError ? disconnectError.message : "Could not disconnect");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
+
+  return (
+    <div className="card flex flex-col gap-3 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <span className="font-semibold">Brevo</span>
+          {connection && (
+            <span className="ml-2 pill pill-positive">Connected</span>
+          )}
+        </div>
+        {!connection && !open && (
+          <button type="button" onClick={() => setOpen(true)} className="btn-accent">
+            Connect
+          </button>
+        )}
+        {connection && (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void sync()}
+              className="btn-accent"
+            >
+              {busy === "sync" ? "Syncing…" : "Sync now"}
+            </button>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void disconnect()}
+              className="btn-secondary"
+            >
+              Disconnect
+            </button>
+          </div>
+        )}
+      </div>
+
+      {error && <p className="text-sm font-medium text-accent">{error}</p>}
+
+      {connection && (
+        <p className="text-xs text-muted">
+          Last synced {formatDate(connection.lastSyncedAt)}
+          {connection.lastSyncStatus && connection.lastSyncStatus !== "ok"
+            ? ` · ${connection.lastSyncStatus}`
+            : ""}{" "}
+          · syncs automatically each night.
+        </p>
+      )}
+
+      {result && (
+        <p className="rounded-lg bg-[#e8f1ea] px-4 py-2 text-sm font-medium text-[#2f7d54]">
+          Imported {result.created} new, {result.updated} updated
+          {result.skipped > 0 ? `, ${result.skipped} skipped` : ""} (of {result.fetched} fetched).
+        </p>
+      )}
+
+      {!connection && open && (
+        <form onSubmit={(e) => void connect(e)} className="flex flex-col gap-3 border-t border-border pt-3">
+          <label className="flex flex-col gap-1 text-sm">
+            Brevo API key
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="xkeysib-…"
+              className={inputClass}
+              autoComplete="off"
+            />
+          </label>
+          <details className="text-sm">
+            <summary className="cursor-pointer text-muted">Field mapping (optional)</summary>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-muted">Date-of-birth attribute</span>
+                <input
+                  value={dobAttr}
+                  onChange={(e) => setDobAttr(e.target.value)}
+                  placeholder="e.g. DOB"
+                  className={inputClass}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-muted">Postcode attribute</span>
+                <input
+                  value={postcodeAttr}
+                  onChange={(e) => setPostcodeAttr(e.target.value)}
+                  placeholder="e.g. POSTCODE"
+                  className={inputClass}
+                />
+              </label>
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              Name and email use Brevo&apos;s standard fields automatically. Set these only if you
+              store a birthday or postcode in custom Brevo attributes.
+            </p>
+          </details>
+          <div className="flex gap-2">
+            <button type="submit" disabled={busy === "connect"} className="btn-accent">
+              {busy === "connect" ? "Connecting…" : "Connect Brevo"}
+            </button>
+            <button type="button" onClick={() => setOpen(false)} className="btn-secondary">
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
 export function IntegrationsClient({
   initialKeys,
+  initialConnections,
   apiBaseUrl,
 }: {
   initialKeys: AccountApiKey[];
+  initialConnections: CrmConnection[];
   apiBaseUrl: string;
 }) {
   const [keys, setKeys] = useState<AccountApiKey[]>(initialKeys);
+  const [connections, setConnections] = useState<CrmConnection[]>(initialConnections);
   const [label, setLabel] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  const brevo = connections.find((c) => c.provider === "brevo");
+
+  function updateBrevo(next: CrmConnection | null) {
+    setConnections((current) => {
+      const others = current.filter((c) => c.provider !== "brevo");
+      return next ? [...others, next] : others;
+    });
+  }
 
   const endpoint = `${apiBaseUrl.replace(/\/$/, "")}/integrations/contacts`;
   const sampleKey = newKey?.key ?? "YOUR_API_KEY";
@@ -83,9 +290,7 @@ export function IntegrationsClient({
     setRevokingId(id);
     try {
       await clientApiFetch(`/integrations/api-keys/${id}`, { method: "DELETE" });
-      setKeys((current) =>
-        current.map((k) => (k.id === id ? { ...k, revokedAt: new Date() } : k)),
-      );
+      setKeys((current) => current.map((k) => (k.id === id ? { ...k, revokedAt: new Date() } : k)));
       if (newKey?.id === id) setNewKey(null);
     } catch (revokeError) {
       setError(revokeError instanceof ApiError ? revokeError.message : "Could not revoke the key");
@@ -99,8 +304,8 @@ export function IntegrationsClient({
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Integrations</h1>
         <p className="text-muted">
-          Bring recipients in from your CRM or any other system. Contacts you push appear on the
-          Recipients page tagged with their source.
+          Bring recipients in from your CRM or any other system. Contacts you sync or push appear on
+          the Recipients page tagged with their source.
         </p>
       </div>
 
@@ -108,14 +313,18 @@ export function IntegrationsClient({
         <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
       )}
 
-      {/* Connect-a-CRM lane — the managed connectors land in a later phase. */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        {["Brevo", "HubSpot", "GoHighLevel"].map((name) => (
-          <div key={name} className="card flex items-center justify-between gap-3 p-4">
-            <span className="font-semibold">{name}</span>
-            <span className="pill pill-muted">Coming soon</span>
-          </div>
-        ))}
+      {/* CRM connectors */}
+      <div className="flex flex-col gap-3">
+        <h2 className="font-semibold">Connect a CRM</h2>
+        <BrevoConnector connection={brevo} onChange={updateBrevo} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          {["HubSpot", "GoHighLevel"].map((name) => (
+            <div key={name} className="card flex items-center justify-between gap-3 p-4">
+              <span className="font-semibold">{name}</span>
+              <span className="pill pill-muted">Coming soon</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* API keys */}
@@ -123,8 +332,8 @@ export function IntegrationsClient({
         <div>
           <h2 className="font-semibold">API keys</h2>
           <p className="text-sm text-muted">
-            Create a key to push contacts in from any system. The full key is shown once — store it
-            somewhere safe.
+            Prefer to push contacts yourself? Create a key to send them in from any system. The full
+            key is shown once — store it somewhere safe.
           </p>
         </div>
 
@@ -146,7 +355,7 @@ export function IntegrationsClient({
           <input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="Label (e.g. Brevo sync)"
+            placeholder="Label (e.g. Nightly sync)"
             maxLength={80}
             className="min-w-56 flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm"
           />
@@ -197,8 +406,9 @@ export function IntegrationsClient({
           <h2 className="font-semibold">Push contacts to your account</h2>
           <p className="text-sm text-muted">
             Send a <code className="font-mono text-xs">POST</code> to the endpoint below with your
-            key. Re-sending a contact with the same <code className="font-mono text-xs">externalId</code>{" "}
-            updates it instead of creating a duplicate.
+            key. Re-sending a contact with the same{" "}
+            <code className="font-mono text-xs">externalId</code> updates it instead of creating a
+            duplicate.
           </p>
         </div>
         <div className="card flex items-center gap-2 p-3">
