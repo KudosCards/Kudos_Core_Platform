@@ -4,15 +4,20 @@ import {
   Delete,
   Get,
   HttpCode,
+  Logger,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
+  Res,
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiSecurity, ApiTags } from "@nestjs/swagger";
+import { ConfigService } from "@nestjs/config";
 import type { AccountApiKey } from "@prisma/client";
-import type { Request } from "express";
+import type { Request, Response } from "express";
+import type { EnvConfig } from "../config/env.schema";
 import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentMembership } from "../auth/current-membership.decorator";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -77,10 +82,13 @@ function toNormalized(dto: ExternalContactDto): NormalizedContact {
 @ApiTags("integrations")
 @Controller("integrations")
 export class IntegrationsController {
+  private readonly logger = new Logger(IntegrationsController.name);
+
   constructor(
     private readonly apiKeys: ApiKeyService,
     private readonly recipients: RecipientsService,
     private readonly crmConnections: CrmConnectionsService,
+    private readonly config: ConfigService<EnvConfig, true>,
   ) {}
 
   // ---- API key management (account holder, Supabase JWT) ----
@@ -165,6 +173,56 @@ export class IntegrationsController {
     @Param("provider") provider: string,
   ): Promise<void> {
     return this.crmConnections.disconnect(membership.accountId, user.id, provider);
+  }
+
+  // ---- OAuth connect (HubSpot, account holder + provider redirect) ----
+
+  /** Returns the provider's consent URL for the browser to redirect to. The
+   * signed state ties the eventual callback back to this account. */
+  @ApiBearerAuth()
+  @UseGuards(MembershipGuard)
+  @Get("oauth/:provider/start")
+  startOAuth(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("provider") provider: string,
+  ): { url: string } {
+    return this.crmConnections.startOAuth(membership.accountId, user.id, provider);
+  }
+
+  /** The provider redirects the browser here after consent. Public (no JWT — the
+   * signed `state` is what we trust). Always ends in a redirect back to the web
+   * app's Integrations page, flagged success or error. */
+  @Public()
+  @Get("oauth/:provider/callback")
+  async oauthCallback(
+    @Param("provider") provider: string,
+    @Res() res: Response,
+    @Query("code") code?: string,
+    @Query("state") state?: string,
+    @Query("error") error?: string,
+  ): Promise<void> {
+    const webAppUrl = (this.config.get("WEB_APP_URL", { infer: true }) ?? "").replace(/\/$/, "");
+    const back = (status: string) =>
+      `${webAppUrl}/integrations?${status}=${encodeURIComponent(provider)}`;
+
+    if (error || !code || !state) {
+      res.redirect(back("error"));
+      return;
+    }
+    try {
+      await this.crmConnections.completeOAuth(provider, code, state);
+      res.redirect(back("connected"));
+    } catch (callbackError) {
+      // Never surface an exception page to a redirect from the CRM; log and send
+      // the user back with an error flag the UI can explain.
+      this.logger.warn(
+        `OAuth callback failed for ${provider}: ${
+          callbackError instanceof Error ? callbackError.message : "unknown error"
+        }`,
+      );
+      res.redirect(back("error"));
+    }
   }
 
   // ---- Inbound contact push (external systems, per-account API key) ----

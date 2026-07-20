@@ -8,6 +8,7 @@ import { ApiKeyGuard } from "./api-key.guard";
 import { CrmConnectionsService } from "./crm-connections.service";
 import { CrmSyncScheduler } from "./crm-sync.scheduler";
 import { brevoClientProvider } from "./brevo/brevo-client.provider";
+import { hubspotClientProvider } from "./hubspot/hubspot-client.provider";
 
 @Module({
   imports: [RecipientsModule, AuditModule],
@@ -19,6 +20,7 @@ import { brevoClientProvider } from "./brevo/brevo-client.provider";
     CrmConnectionsService,
     CrmSyncScheduler,
     brevoClientProvider,
+    hubspotClientProvider,
   ],
 })
 export class IntegrationsModule {}

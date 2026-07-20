@@ -1,7 +1,7 @@
 # ADR 0015 — CRM integrations: a hybrid, source-agnostic recipient ingest
 
-Status: accepted (Phase 1)
-Date: 2026-07-18
+Status: accepted (Phases 1–3)
+Date: 2026-07-18 (Phase 3 addendum: 2026-07-20)
 
 ## Context
 
@@ -81,14 +81,56 @@ Verified against local Postgres: encryption round-trip + tamper-detection unit t
 (connect stores encrypted, bad key → 401, sync ingests as `source = brevo` and skips unaddressable
 contacts, re-sync dedupes, cross-account scoping).
 
-## Deferred (not needed for Phase 1–2)
+## Phase 3 — HubSpot adapter (the OAuth lane, in-house, shipped)
 
-- **Build vs platform for OAuth CRMs.** Chosen direction: Nango for the OAuth plumbing (auth + token
-  refresh + a proxy), our own mapping/sync. **Cloud vs self-host is an open decision** — self-host
-  keeps customer tokens in our infra (favoured given recipients are often children's data); cloud is
-  faster to start but makes Nango a processor needing a DPA. Decide when Phase 3 starts.
-- **First OAuth CRM** (HubSpot vs GoHighLevel) — decide at Phase 3.
-- Field-mapping UI, Zapier app, and Nango-driven incremental/webhook syncs — later phases.
+The first OAuth CRM. We deliberately built the OAuth **in-house** rather than standing up a
+platform (Nango). The decision that mattered was "keep customer CRM tokens in our own infra" — and
+having already built the hard shared parts in Phase 2 (AES-256-GCM encryption, the mockable-client
+pattern, the ingest funnel), an in-house HubSpot adapter reaches that same goal with **no new
+service to operate** and, critically, is **fully testable in CI against a mocked client** (a
+self-hosted Nango would ship partly unverified from our sandbox). Nango earns its keep when the
+OAuth-CRM count grows — switching to it later is contained, because everything still funnels through
+`ingestFromSource`.
+
+- `CrmConnection` gains an `authType` discriminator (`api_key` | `oauth`) plus OAuth columns:
+  `encryptedAccessToken`, `encryptedRefreshToken`, `tokenExpiresAt`, `externalAccountId`. Both
+  tokens are AES-256-GCM-encrypted at rest with the same `CREDENTIALS_ENCRYPTION_KEY`;
+  `encryptedApiKey` is now nullable (null for OAuth connections). A small provider registry
+  (`CRM_PROVIDERS`) maps each provider to its `authType`.
+- **OAuth flow, in the API.** `GET /integrations/oauth/:provider/start` (account holder, JWT) builds
+  HubSpot's consent URL carrying a **signed `state`** — the account/user id, encrypted with the
+  credentials key, so the auth tag makes a forged/tampered state fail (the CSRF defence) and expires
+  after 10 minutes. `GET /integrations/oauth/:provider/callback` is **public** (HubSpot redirects the
+  browser to it, no JWT — the signed state is what we trust): it validates the state, exchanges the
+  code for tokens via a mockable **`HUBSPOT_CLIENT`**, stores them encrypted, and always redirects
+  back to the web app's Integrations page flagged `?connected=` / `?error=` (never an exception page).
+- **Just-in-time refresh.** `sync` branches on `authType`; the HubSpot path refreshes the access
+  token (and persists the new tokens) when it's missing or within 60s of expiry, then fetches
+  (paginated `GET /crm/v3/objects/contacts`, requesting the mapped property names) and funnels
+  through `ingestFromSource(source = "hubspot")`. The nightly cron re-syncs it like any other
+  connection. `mapHubSpotContact` maps HubSpot properties (firstname/lastname/email defaults;
+  date_of_birth/address configurable, ISO **and** epoch-ms dates parsed) to `NormalizedContact`.
+- **Scopes:** read-only `crm.objects.contacts.read` — one-way import only, no write-back (per this
+  ADR). Env: `HUBSPOT_CLIENT_ID` / `HUBSPOT_CLIENT_SECRET` / `HUBSPOT_REDIRECT_URI`, all optional;
+  unset ⇒ connecting HubSpot returns a clean "not enabled" (same posture as Brevo's encryption key).
+- Web: HubSpot's card becomes a real connector — "Connect" bounces through HubSpot's consent and
+  back; connected state has Sync now / last-synced / disconnect and an import summary. The return
+  flag is read server-side (`searchParams`) so the banner renders without a hydration mismatch.
+
+Verified against local Postgres: HubSpot mapper unit tests (name-required, ISO/epoch date parsing,
+custom mapping) and HubSpot OAuth e2e (start builds a signed-state URL, callback stores tokens
+encrypted, forged/denied state → error redirect with no connection, sync ingests as
+`source = hubspot` skipping unaddressable, re-sync dedupes, **expired token triggers a refresh**,
+cross-account scoping). Full suite green; the compiled server boots and serves `/health`.
+
+## Deferred (not needed for Phase 1–3)
+
+- **Nango / a platform for OAuth CRMs** — revisit when we're onboarding many OAuth CRMs and
+  hand-writing each one's OAuth quirks stops paying off. In-house stays the choice while the count is
+  small. If adopted, self-host remains favoured (keeps CRM tokens in our infra).
+- **GoHighLevel** (the second OAuth CRM) — a new adapter slotting into the same funnel; no new write
+  path. `externalAccountId` is reserved on `CrmConnection` for displaying the connected portal/account.
+- Field-mapping UI, Zapier app, and provider-driven incremental/webhook syncs — later phases.
 
 ## Consequences
 

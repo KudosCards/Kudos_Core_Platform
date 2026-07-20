@@ -56,11 +56,25 @@ model Account {
 /// common/crypto.service.ts) — never in plaintext. One connection per provider
 /// per account. See docs/adr/0015-crm-integrations.md.
 model CrmConnection {
-  id              String    @id @default(uuid())
-  accountId       String    @map("account_id")
-  /// The CRM: "brevo" today; "hubspot"/"gohighlevel" later.
-  provider        String
-  encryptedApiKey String    @map("encrypted_api_key")
+  id       String @id @default(uuid())
+  accountId String @map("account_id")
+  /// The CRM: "brevo" (API key) or "hubspot" (OAuth) today; more later.
+  provider String
+  /// How this connection authenticates: "api_key" (Brevo) or "oauth" (HubSpot).
+  authType String @default("api_key") @map("auth_type")
+
+  /// AES-256-GCM-encrypted API key — set for api_key providers (Brevo), null for OAuth.
+  encryptedApiKey String? @map("encrypted_api_key")
+
+  /// OAuth credentials — set for oauth providers (HubSpot), null for api_key.
+  /// Both tokens are AES-256-GCM-encrypted at rest, never stored in plaintext.
+  encryptedAccessToken  String?   @map("encrypted_access_token")
+  encryptedRefreshToken String?   @map("encrypted_refresh_token")
+  /// When the access token expires — refreshed just-in-time before a sync.
+  tokenExpiresAt        DateTime? @map("token_expires_at")
+  /// The account's id in the provider (e.g. HubSpot hub/portal id) — display only.
+  externalAccountId     String?   @map("external_account_id")
+
   /// Optional per-connection field mapping (CRM attribute name → our field).
   fieldMapping    Json?     @map("field_mapping")
   syncEnabled     Boolean   @default(true) @map("sync_enabled")
