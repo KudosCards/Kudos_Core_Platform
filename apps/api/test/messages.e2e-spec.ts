@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import type { Prisma } from "@prisma/client";
 import { accountSchema } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
@@ -69,6 +70,7 @@ describe("Messages (e2e)", () => {
   async function createPaidOrder(
     token: string,
     recipientFirstName = "Sam",
+    designVideoUrl?: string,
   ): Promise<{ batchOrderId: string }> {
     const recipientResponse = await request(app.getHttpServer())
       .post("/recipients")
@@ -88,6 +90,20 @@ describe("Messages (e2e)", () => {
       .send({ cardDesignId, name: "Test design" })
       .expect(201);
     const savedDesignId = (designResponse.body as { id: string }).id;
+
+    if (designVideoUrl) {
+      // Set the design's default video (the field the card designer writes).
+      const current = await prisma.savedDesign.findUniqueOrThrow({
+        where: { id: savedDesignId },
+        select: { document: true },
+      });
+      await prisma.savedDesign.update({
+        where: { id: savedDesignId },
+        data: {
+          document: { ...(current.document as Prisma.JsonObject), videoUrl: designVideoUrl },
+        },
+      });
+    }
 
     const occasionResponse = await request(app.getHttpServer())
       .post("/occasions")
@@ -133,9 +149,10 @@ describe("Messages (e2e)", () => {
     return { batchOrderId };
   }
 
-  it("lists an account's message pages and personalises one", async () => {
+  it("lists an account's message pages (video seeded from the design) and personalises one", async () => {
     const { token } = await signUp();
-    await createPaidOrder(token, "Ada");
+    const seededVideo = "https://youtu.be/dQw4w9WgXcQ";
+    await createPaidOrder(token, "Ada", seededVideo);
 
     const listResponse = await request(app.getHttpServer())
       .get("/messages")
@@ -145,10 +162,13 @@ describe("Messages (e2e)", () => {
       id: string;
       slug: string;
       message: string | null;
+      videoUrl: string | null;
       viewCount: number;
     }[];
     expect(pages).toHaveLength(1);
     expect(pages[0]!.message).toBeNull();
+    // The design's default video is copied onto each recipient's page at order time.
+    expect(pages[0]!.videoUrl).toBe(seededVideo);
     const pageId = pages[0]!.id;
 
     const updateResponse = await request(app.getHttpServer())

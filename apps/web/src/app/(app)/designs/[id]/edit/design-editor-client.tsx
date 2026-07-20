@@ -38,6 +38,17 @@ function newTextElement(): Extract<DesignElement, { kind: "text" }> {
   };
 }
 
+function newQrElement(): Extract<DesignElement, { kind: "qr" }> {
+  return {
+    kind: "qr",
+    id: crypto.randomUUID(),
+    x: 40,
+    y: 40,
+    size: 120,
+    rotation: 0,
+  };
+}
+
 export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }) {
   const [name, setName] = useState(savedDesign.name);
   const [document_, setDocument] = useState<DesignDocument>(savedDesign.document);
@@ -64,6 +75,15 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
     updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
     setSelectedElementId(element.id);
   }
+
+  function addQrElement() {
+    const element = newQrElement();
+    updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
+    setSelectedElementId(element.id);
+  }
+
+  /** Whether a QR element is placed anywhere in the design (any face). */
+  const hasQr = document_.pages.some((p) => p.elements.some((el) => el.kind === "qr"));
 
   function updateElement(updated: DesignElement) {
     updatePage(activePage, (p) => ({
@@ -197,6 +217,13 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
             >
               {uploading ? "Uploading…" : "Add image"}
             </button>
+            <button
+              type="button"
+              onClick={addQrElement}
+              className="rounded-full border border-black/20 px-3 py-1.5 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
+            >
+              Add video QR
+            </button>
             <input
               ref={fileInputRef}
               type="file"
@@ -208,6 +235,26 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
               }}
             />
           </div>
+
+          {hasQr && (
+            <label className="flex flex-col gap-1 rounded-lg border border-black/10 p-3 text-xs text-foreground/60 dark:border-white/10">
+              <span className="font-medium text-foreground">Video link (for the QR code)</span>
+              <input
+                type="url"
+                inputMode="url"
+                placeholder="https://youtu.be/…"
+                value={document_.videoUrl ?? ""}
+                onChange={(e) =>
+                  setDocument((doc) => ({ ...doc, videoUrl: e.target.value || null }))
+                }
+                className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+              />
+              <span>
+                Recipients scan the QR to watch this. It&apos;s the default for every card from this
+                design — you can personalise or change it per recipient later on the Messages page.
+              </span>
+            </label>
+          )}
 
           <DesignCanvas
             page={page}
@@ -297,6 +344,39 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
                   value={selectedElement.height}
                   onChange={(e) =>
                     updateElement({ ...selectedElement, height: Number(e.target.value) || 1 })
+                  }
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-foreground/60">
+                Rotation (degrees)
+                <input
+                  type="number"
+                  value={selectedElement.rotation}
+                  onChange={(e) =>
+                    updateElement({ ...selectedElement, rotation: Number(e.target.value) || 0 })
+                  }
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                />
+              </label>
+            </>
+          )}
+
+          {selectedElement?.kind === "qr" && (
+            <>
+              <p className="text-xs text-foreground/60">
+                A QR code linking to each recipient&apos;s video message. Set the video in the
+                &ldquo;Video link&rdquo; box, and position it inside the card.
+              </p>
+              <label className="flex flex-col gap-1 text-xs text-foreground/60">
+                Size
+                <input
+                  type="number"
+                  min={40}
+                  max={300}
+                  value={selectedElement.size}
+                  onChange={(e) =>
+                    updateElement({ ...selectedElement, size: Number(e.target.value) || 40 })
                   }
                   className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
                 />

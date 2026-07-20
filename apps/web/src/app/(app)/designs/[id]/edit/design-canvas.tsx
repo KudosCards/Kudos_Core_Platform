@@ -1,11 +1,58 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Stage, Layer, Text, Rect, Image as KonvaImage } from "react-konva";
 import useImage from "use-image";
 import type { DesignElement, DesignPage } from "@kudos/shared-types";
+import { qrDataUrl } from "@/lib/qr";
 
 export const CANVAS_WIDTH = 450;
 export const CANVAS_HEIGHT = 600;
+
+/** Renders a placeholder QR in the editor. The real per-recipient link is
+ * substituted at send time, so here we just encode a sample /r/ URL to show
+ * what it will look like and where it sits. */
+function QrNode({
+  element,
+  isSelected,
+  onSelect,
+  onDragEnd,
+}: {
+  element: Extract<DesignElement, { kind: "qr" }>;
+  isSelected: boolean;
+  onSelect: () => void;
+  onDragEnd: (x: number, y: number) => void;
+}) {
+  const [dataUrl, setDataUrl] = useState<string>("");
+  useEffect(() => {
+    let active = true;
+    const sampleUrl =
+      typeof window !== "undefined" ? `${window.location.origin}/r/preview` : "https://kudos/r/preview";
+    void qrDataUrl(sampleUrl).then((url) => {
+      if (active) setDataUrl(url);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const [image] = useImage(dataUrl);
+  return (
+    <KonvaImage
+      image={image}
+      x={element.x}
+      y={element.y}
+      width={element.size}
+      height={element.size}
+      rotation={element.rotation}
+      draggable
+      stroke={isSelected ? "#2563eb" : "#00000022"}
+      strokeWidth={isSelected ? 2 : 1}
+      onClick={onSelect}
+      onTap={onSelect}
+      onDragEnd={(e) => onDragEnd(e.target.x(), e.target.y())}
+    />
+  );
+}
 
 function ImageNode({
   element,
@@ -89,6 +136,17 @@ export function DesignCanvas({
                 onClick={() => onSelect(element.id)}
                 onTap={() => onSelect(element.id)}
                 onDragEnd={(e) => onElementChange({ ...element, x: e.target.x(), y: e.target.y() })}
+              />
+            );
+          }
+          if (element.kind === "qr") {
+            return (
+              <QrNode
+                key={element.id}
+                element={element}
+                isSelected={isSelected}
+                onSelect={() => onSelect(element.id)}
+                onDragEnd={(x, y) => onElementChange({ ...element, x, y })}
               />
             );
           }
