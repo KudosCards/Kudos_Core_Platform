@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { RecipientStatus } from "@prisma/client";
-import { IsEnum, IsOptional, IsString } from "class-validator";
+import { IsEnum, IsOptional, IsString, IsUUID } from "class-validator";
 
 export class ListRecipientsQueryDto {
   @ApiPropertyOptional({ enum: RecipientStatus })
@@ -12,6 +12,11 @@ export class ListRecipientsQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional({ description: "Only recipients on this list" })
+  @IsOptional()
+  @IsUUID()
+  listId?: string;
 
   // Kept as raw query strings and coerced in the service via parsePage/
   // parsePerPage — NOT class-transformer @Type, which failed in production. See

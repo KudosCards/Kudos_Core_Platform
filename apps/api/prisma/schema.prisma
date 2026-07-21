@@ -47,6 +47,7 @@ model Account {
   auditLogs      AuditLogEntry[]
   apiKeys        AccountApiKey[]
   crmConnections CrmConnection[]
+  recipientLists RecipientList[]
 
   // Super-admin subscribers list is ordered newest-first.
   @@index([createdAt])
@@ -164,6 +165,7 @@ model Recipient {
   account   Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   occasions Occasion[]
   orderRecipients OrderRecipient[]
+  listMemberships RecipientListMembership[]
 
   // Mirrors the legacy CSV-import dedupe rule: same name + postcode + DOB = same person.
   @@unique([accountId, firstName, lastName, addressPostcode, dateOfBirth], name: "recipient_dedupe_key")
@@ -173,6 +175,41 @@ model Recipient {
   @@unique([accountId, source, externalId], name: "recipient_source_key")
   @@index([accountId, status])
   @@map("recipients")
+}
+
+/// A named grouping of recipients a subscriber curates by hand — e.g. a teacher's
+/// "Year 4 class", "Year 5 class". Purely organisational: lists help filter and
+/// personalise cards in bulk; they don't drive occasions or billing on their own.
+/// See docs/adr/0016-recipient-events-and-lists.md.
+model RecipientList {
+  id        String   @id @default(uuid())
+  accountId String   @map("account_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  account Account                   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  members RecipientListMembership[]
+
+  // A list name is unique within an account so "Year 4 class" can't be created twice.
+  @@unique([accountId, name], name: "recipient_list_name_key")
+  @@index([accountId])
+  @@map("recipient_lists")
+}
+
+/// Join row: a recipient's membership in a list (many-to-many). Cascade-deletes
+/// with either side, so archiving a list or a recipient tidies the membership up.
+model RecipientListMembership {
+  listId      String   @map("list_id")
+  recipientId String   @map("recipient_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  list      RecipientList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  recipient Recipient     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@id([listId, recipientId])
+  @@index([recipientId])
+  @@map("recipient_list_memberships")
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +248,10 @@ model Occasion {
   recipientId  String?        @map("recipient_id")
   type         OccasionType
   source       OccasionSource
+  /// Optional human label for a hand-added recipient event ("Graduation", "End
+  /// of exams") — lets the calendar show the real name rather than just the
+  /// broad `type`. Null for auto-scheduled birthdays and campaign occasions.
+  title        String?
   occasionDate DateTime       @map("occasion_date") @db.Date
   dispatchDate DateTime?      @map("dispatch_date") @db.Date
   status       OccasionStatus @default(scheduled)

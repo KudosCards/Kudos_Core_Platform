@@ -271,4 +271,111 @@ describe("Occasions (e2e)", () => {
     const final = await prisma.occasion.findUniqueOrThrow({ where: { id: created.id } });
     expect(["approved", "skipped"]).toContain(final.status);
   });
+
+  it("adds a hand-curated recipient event as a scheduled calendar entry with a title", async () => {
+    const { token } = await signUp();
+    const recipientId = await createRecipient(token);
+
+    const response = await request(app.getHttpServer())
+      .post("/occasions/events")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ recipientId, type: "achievement", title: "Graduation", occasionDate: "2026-07-15" })
+      .expect(201);
+    const created = occasionSchema.parse(response.body);
+
+    expect(created.status).toBe("scheduled");
+    expect(created.source).toBe("one_off_campaign");
+    expect((response.body as { title: string }).title).toBe("Graduation");
+
+    // Filterable by recipient for the recipient detail page.
+    const byRecipient = await request(app.getHttpServer())
+      .get(`/occasions?recipientId=${recipientId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const list = paginatedOccasionsSchema.parse(byRecipient.body);
+    expect(list.items).toHaveLength(1);
+    expect(list.items[0]?.id).toBe(created.id);
+  });
+
+  it("rejects an event for a recipient that doesn't belong to the account", async () => {
+    const accountA = await signUp();
+    const accountB = await signUp();
+    const recipientId = await createRecipient(accountA.token);
+
+    await request(app.getHttpServer())
+      .post("/occasions/events")
+      .set("Authorization", `Bearer ${accountB.token}`)
+      .send({ recipientId, type: "achievement", occasionDate: "2026-07-15" })
+      .expect(404);
+  });
+
+  it("promotes a scheduled event into the approvals queue via prepare", async () => {
+    const { token } = await signUp();
+    const recipientId = await createRecipient(token);
+    const created = occasionSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/occasions/events")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ recipientId, type: "leaver", occasionDate: "2026-07-20" })
+          .expect(201)
+      ).body,
+    );
+
+    const prepared = occasionSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post(`/occasions/${created.id}/prepare`)
+          .set("Authorization", `Bearer ${token}`)
+          .expect(201)
+      ).body,
+    );
+    expect(prepared.status).toBe("pending_approval");
+
+    // It now shows in the approvals queue and can't be prepared again.
+    await request(app.getHttpServer())
+      .post(`/occasions/${created.id}/prepare`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+  });
+
+  it("deletes a scheduled event but refuses to delete one already in the pipeline", async () => {
+    const { token } = await signUp();
+    const recipientId = await createRecipient(token);
+    const created = occasionSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/occasions/events")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ recipientId, type: "seasonal", occasionDate: "2026-08-05" })
+          .expect(201)
+      ).body,
+    );
+
+    // Promote it, then deletion must be refused (409) — it's part of a workflow now.
+    await request(app.getHttpServer())
+      .post(`/occasions/${created.id}/prepare`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    await request(app.getHttpServer())
+      .delete(`/occasions/${created.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+
+    // A fresh scheduled event deletes cleanly.
+    const fresh = occasionSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/occasions/events")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ recipientId, type: "seasonal", occasionDate: "2026-09-05" })
+          .expect(201)
+      ).body,
+    );
+    await request(app.getHttpServer())
+      .delete(`/occasions/${fresh.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(204);
+    expect(await prisma.occasion.findUnique({ where: { id: fresh.id } })).toBeNull();
+  });
 });

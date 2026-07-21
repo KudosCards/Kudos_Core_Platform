@@ -8,6 +8,7 @@ import { HealthModule } from "./health/health.module";
 import { AuthModule } from "./auth/auth.module";
 import { AccountsModule } from "./accounts/accounts.module";
 import { RecipientsModule } from "./recipients/recipients.module";
+import { RecipientListsModule } from "./recipient-lists/recipient-lists.module";
 import { CardDesignsModule } from "./card-designs/card-designs.module";
 import { SavedDesignsModule } from "./saved-designs/saved-designs.module";
 import { StorageModule } from "./storage/storage.module";
@@ -43,6 +44,7 @@ import { IntegrationsModule } from "./integrations/integrations.module";
     AuthModule,
     AccountsModule,
     RecipientsModule,
+    RecipientListsModule,
     CardDesignsModule,
     SavedDesignsModule,
     StorageModule,

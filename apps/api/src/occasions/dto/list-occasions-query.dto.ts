@@ -1,12 +1,17 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { OccasionStatus, OccasionType } from "@prisma/client";
-import { IsDateString, IsEnum, IsOptional, IsString } from "class-validator";
+import { IsDateString, IsEnum, IsOptional, IsString, IsUUID } from "class-validator";
 
 export class ListOccasionsQueryDto {
   @ApiPropertyOptional({ enum: OccasionStatus })
   @IsOptional()
   @IsEnum(OccasionStatus)
   status?: OccasionStatus;
+
+  @ApiPropertyOptional({ description: "Only occasions/events for this recipient" })
+  @IsOptional()
+  @IsUUID()
+  recipientId?: string;
 
   @ApiPropertyOptional({ enum: OccasionType })
   @IsOptional()

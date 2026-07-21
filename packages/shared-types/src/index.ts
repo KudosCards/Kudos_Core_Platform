@@ -1,6 +1,7 @@
 export * from "./enums";
 export * from "./account";
 export * from "./recipient";
+export * from "./recipient-list";
 export * from "./occasion";
 export * from "./card";
 export * from "./order";

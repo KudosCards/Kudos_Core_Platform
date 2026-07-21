@@ -71,6 +71,94 @@ describe("Recipients (e2e)", () => {
     expect(list.items[0]?.id).toBe(created.id);
   });
 
+  it("schedules a birthday event on the calendar the moment a recipient with a DOB is added", async () => {
+    const { token } = await signUp();
+
+    await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      // A December birthday is well outside the 21-day approval window, so it
+      // stays `scheduled` (a calendar marker) rather than being promoted.
+      .send({ firstName: "Birthday", lastName: "Child", dateOfBirth: "2015-12-25" })
+      .expect(201);
+
+    const occasions = await request(app.getHttpServer())
+      .get("/occasions")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    const birthday = (occasions.body.items as { type: string; status: string; occasionDate: string }[]).find(
+      (o) => o.type === "birthday",
+    );
+    expect(birthday).toBeDefined();
+    expect(birthday?.status).toBe("scheduled");
+    expect(birthday?.occasionDate.slice(5, 10)).toBe("12-25");
+  });
+
+  it("does not schedule a birthday for a recipient with no DOB", async () => {
+    const { token } = await signUp();
+    await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ firstName: "No", lastName: "Birthday" })
+      .expect(201);
+
+    const occasions = await request(app.getHttpServer())
+      .get("/occasions")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(occasions.body.items).toHaveLength(0);
+  });
+
+  it("schedules birthday events for CSV-imported recipients too", async () => {
+    const { token } = await signUp();
+    const csv = [
+      "firstName,lastName,dateOfBirth,postcode,email",
+      "Imported,Pupil,25/12/2016,SW1A 2AA,pupil@example.com",
+    ].join("\n");
+
+    await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(csv), "recipients.csv")
+      .expect(201);
+
+    const occasions = await request(app.getHttpServer())
+      .get("/occasions?type=birthday")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(occasions.body.items).toHaveLength(1);
+    expect(occasions.body.items[0].status).toBe("scheduled");
+  });
+
+  it("re-points the scheduled birthday when a recipient's DOB changes", async () => {
+    const { token } = await signUp();
+    const created = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/recipients")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ firstName: "Change", lastName: "OfBirthday", dateOfBirth: "2015-12-25" })
+          .expect(201)
+      ).body,
+    );
+
+    await request(app.getHttpServer())
+      .patch(`/recipients/${created.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ dateOfBirth: "2015-11-10" })
+      .expect(200);
+
+    const occasions = await request(app.getHttpServer())
+      .get("/occasions?type=birthday")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const items = occasions.body.items as { status: string; occasionDate: string }[];
+    // Exactly one scheduled birthday, now pointing at the new date.
+    expect(items).toHaveLength(1);
+    expect(items[0]?.occasionDate.slice(5, 10)).toBe("11-10");
+  });
+
   it("accepts page and perPage as query-string params (the web always sends them)", async () => {
     const { token } = await signUp();
     const response = await request(app.getHttpServer())
