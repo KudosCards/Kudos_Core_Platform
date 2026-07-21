@@ -39,6 +39,12 @@ export async function apiFetch<T>(
     throw new ApiError(extractErrorMessage(body, path, response.status), response.status, body);
   }
 
+  // 204 No Content (and any empty body) has nothing to parse — calling .json()
+  // on it throws. DELETE endpoints return 204, so callers of those get undefined.
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json() as Promise<T>;
 }
 

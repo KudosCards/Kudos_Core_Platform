@@ -1,12 +1,24 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../prisma/prisma.service";
-import { BIRTHDAY_LOOKAHEAD_DAYS, computeDispatchDate } from "./occasion-scheduling.constants";
-import { nextBirthdayOccurrence } from "./next-birthday.util";
+import { BIRTHDAY_LOOKAHEAD_DAYS } from "./occasion-scheduling.constants";
+import { buildScheduledBirthdayOccasion, startOfUtcDay } from "./birthday-occasion.util";
 
 /**
  * Only birthdays are auto-scheduled — see docs/adr/0006-phase-2-scope.md for
  * why the other five OccasionTypes are always created manually via the API.
+ *
+ * The job has two jobs (both idempotent, so a retry is a safe no-op):
+ *   1. Ensure every active recipient with a DOB has a `scheduled` birthday
+ *      occasion for their next birthday — so the calendar is always populated,
+ *      even for birthdays that are months away. (Recipients created through the
+ *      app already get this eagerly on add; this is the catch-all for legacy
+ *      rows, DOBs added later via a CRM sync, and rolling to next year's date
+ *      once this year's birthday has passed.)
+ *   2. Promote the `scheduled` birthday occasions that have entered the
+ *      lookahead window to `pending_approval`, so they surface in the approvals
+ *      queue and the existing approve → order → dispatch flow takes over.
+ * See docs/adr/0016-recipient-events-and-lists.md.
  */
 @Injectable()
 export class OccasionSchedulerService {
@@ -16,8 +28,7 @@ export class OccasionSchedulerService {
 
   @Cron(CronExpression.EVERY_DAY_AT_6AM)
   async scheduleBirthdayOccasions(): Promise<number> {
-    const now = new Date();
-    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const today = startOfUtcDay(new Date());
     const lookaheadEnd = new Date(today);
     lookaheadEnd.setUTCDate(lookaheadEnd.getUTCDate() + BIRTHDAY_LOOKAHEAD_DAYS);
 
@@ -26,35 +37,36 @@ export class OccasionSchedulerService {
       select: { id: true, accountId: true, dateOfBirth: true },
     });
 
-    const candidates = recipients
-      .map((recipient) => ({
-        recipient,
-        occasionDate: nextBirthdayOccurrence(recipient.dateOfBirth as Date, today),
-      }))
-      .filter(({ occasionDate }) => occasionDate <= lookaheadEnd);
-
-    if (candidates.length === 0) {
-      this.logger.log(`No birthdays within the next ${BIRTHDAY_LOOKAHEAD_DAYS} days`);
-      return 0;
+    // 1. Ensure a scheduled birthday occasion exists for every recipient's next
+    //    birthday. skipDuplicates + occasion_idempotency_key make this a no-op
+    //    for occasions that already exist (whatever their current status).
+    if (recipients.length > 0) {
+      await this.prisma.occasion.createMany({
+        data: recipients.map((recipient) =>
+          buildScheduledBirthdayOccasion(
+            { id: recipient.id, accountId: recipient.accountId, dateOfBirth: recipient.dateOfBirth as Date },
+            today,
+          ),
+        ),
+        skipDuplicates: true,
+      });
     }
 
-    // skipDuplicates makes this idempotent against occasion_idempotency_key —
-    // re-running the job (or a retry) never double-creates an occasion.
-    const { count } = await this.prisma.occasion.createMany({
-      data: candidates.map(({ recipient, occasionDate }) => ({
-        accountId: recipient.accountId,
-        recipientId: recipient.id,
-        type: "birthday" as const,
-        source: "recurring_per_recipient" as const,
-        occasionDate,
-        dispatchDate: computeDispatchDate(occasionDate),
-        status: "pending_approval" as const,
-      })),
-      skipDuplicates: true,
+    // 2. Promote the ones now within the lookahead window into the approvals
+    //    queue. A birthday occasion's occasionDate is always today-or-later
+    //    (nextBirthdayOccurrence never returns a past date), so an upper bound
+    //    is all that's needed.
+    const { count } = await this.prisma.occasion.updateMany({
+      where: {
+        type: "birthday",
+        status: "scheduled",
+        occasionDate: { lte: lookaheadEnd },
+      },
+      data: { status: "pending_approval" },
     });
 
     this.logger.log(
-      `Scheduled ${count} new birthday occasion(s) (${candidates.length} candidates within ${BIRTHDAY_LOOKAHEAD_DAYS} days)`,
+      `Birthday scheduler: ${recipients.length} active recipient(s) with a DOB, ${count} occasion(s) promoted into the ${BIRTHDAY_LOOKAHEAD_DAYS}-day approval window`,
     );
     return count;
   }

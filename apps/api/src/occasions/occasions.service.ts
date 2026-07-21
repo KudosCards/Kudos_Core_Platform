@@ -14,6 +14,7 @@ import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
 import { POSTAGE_LEAD_DAYS, computeDispatchDate } from "./occasion-scheduling.constants";
 import type { CreateOccasionDto } from "./dto/create-occasion.dto";
+import type { CreateRecipientEventDto } from "./dto/create-recipient-event.dto";
 import type { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
 import type { ApproveOccasionDto } from "./dto/approve-occasion.dto";
 
@@ -67,6 +68,65 @@ export class OccasionsService {
     return occasion;
   }
 
+  /**
+   * Adds a hand-curated event to a recipient (a graduation, the end of exams)
+   * as a `scheduled` occasion — on the calendar immediately, but out of the
+   * approvals queue until the subscriber prepares a card for it (see prepare()).
+   * Unlike birthdays it's a one-off, so source is `one_off_campaign`.
+   */
+  async createRecipientEvent(
+    accountId: string,
+    actorUserId: string,
+    dto: CreateRecipientEventDto,
+  ): Promise<Occasion> {
+    const recipient = await this.prisma.recipient.findFirst({
+      where: { id: dto.recipientId, accountId },
+    });
+    if (!recipient) {
+      throw new NotFoundException("Recipient not found");
+    }
+
+    const occasionDate = new Date(dto.occasionDate);
+    const title = dto.title?.trim() ? dto.title.trim() : null;
+    try {
+      const occasion = await this.prisma.occasion.create({
+        data: {
+          accountId,
+          recipientId: dto.recipientId,
+          type: dto.type,
+          source: "one_off_campaign",
+          title,
+          occasionDate,
+          dispatchDate: computeDispatchDate(occasionDate),
+          status: "scheduled",
+        },
+        include: { recipient: RECIPIENT_SELECT },
+      });
+
+      await this.audit.record({
+        accountId,
+        actorUserId,
+        action: "create_event",
+        targetType: "Occasion",
+        targetId: occasion.id,
+        metadata: { recipientId: dto.recipientId, type: dto.type, title },
+      });
+      return occasion;
+    } catch (error) {
+      // The idempotency key is (recipientId, type, occasionDate) — a duplicate
+      // event of the same type on the same day for the same recipient collides.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        throw new ConflictException(
+          "That recipient already has an event of this type on this date",
+        );
+      }
+      throw error;
+    }
+  }
+
   async list(
     accountId: string,
     actorUserId: string,
@@ -78,6 +138,7 @@ export class OccasionsService {
       accountId,
       ...(query.status && { status: query.status }),
       ...(query.type && { type: query.type }),
+      ...(query.recipientId && { recipientId: query.recipientId }),
       // Date-range window for the calendar (a visible month/week). Bounds are
       // inclusive; either end may be omitted.
       ...((query.from || query.to) && {
@@ -220,6 +281,66 @@ export class OccasionsService {
       targetId: id,
     });
     return occasion;
+  }
+
+  /**
+   * Promote a `scheduled` calendar event into the approvals queue so a card can
+   * be prepared for it. The status check is in the update's where clause so two
+   * concurrent prepares can't both fire; a birthday auto-promotes via the cron,
+   * but this lets a subscriber pull any event forward on demand.
+   */
+  async prepare(accountId: string, actorUserId: string, id: string): Promise<Occasion> {
+    const { count } = await this.prisma.occasion.updateMany({
+      where: { id, accountId, status: "scheduled" },
+      data: { status: "pending_approval" },
+    });
+    if (count === 0) {
+      const existing = await this.prisma.occasion.findFirst({ where: { id, accountId } });
+      if (!existing) {
+        throw new NotFoundException("Occasion not found");
+      }
+      throw new ConflictException(`Occasion is "${existing.status}", not scheduled`);
+    }
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "prepare",
+      targetType: "Occasion",
+      targetId: id,
+    });
+    return this.prisma.occasion.findFirstOrThrow({
+      where: { id, accountId },
+      include: { recipient: RECIPIENT_SELECT },
+    });
+  }
+
+  /**
+   * Remove a `scheduled` calendar event. Only scheduled events can be deleted —
+   * once an occasion has entered the approval/dispatch pipeline it's part of an
+   * order's history and is skipped, not deleted.
+   */
+  async deleteEvent(accountId: string, actorUserId: string, id: string): Promise<void> {
+    const { count } = await this.prisma.occasion.deleteMany({
+      where: { id, accountId, status: "scheduled" },
+    });
+    if (count === 0) {
+      const existing = await this.prisma.occasion.findFirst({ where: { id, accountId } });
+      if (!existing) {
+        throw new NotFoundException("Occasion not found");
+      }
+      throw new ConflictException(
+        `Occasion is "${existing.status}" — only scheduled events can be deleted`,
+      );
+    }
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "delete_event",
+      targetType: "Occasion",
+      targetId: id,
+    });
   }
 
   /**

@@ -60,7 +60,7 @@ describe("OccasionSchedulerService (e2e)", () => {
     });
   });
 
-  it("does not create an occasion for a birthday outside the lookahead window", async () => {
+  it("keeps a far-off birthday on the calendar as `scheduled` without promoting it to the approvals queue", async () => {
     const inNinetyDays = new Date();
     inNinetyDays.setUTCDate(inNinetyDays.getUTCDate() + 90);
     const dateOfBirth = `2015-${String(inNinetyDays.getUTCMonth() + 1).padStart(2, "0")}-${String(inNinetyDays.getUTCDate()).padStart(2, "0")}`;
@@ -69,8 +69,12 @@ describe("OccasionSchedulerService (e2e)", () => {
 
     await scheduler.scheduleBirthdayOccasions();
 
+    // The recipient's birthday is a calendar event from the moment they're added
+    // (a `scheduled` occasion), but it stays out of the approvals queue until it
+    // enters the lookahead window — so it is present, just not pending_approval.
     const occasions = await prisma.occasion.findMany({ where: { recipientId } });
-    expect(occasions).toHaveLength(0);
+    expect(occasions).toHaveLength(1);
+    expect(occasions[0]).toMatchObject({ type: "birthday", status: "scheduled" });
   });
 
   it("is idempotent — running twice does not create duplicate occasions", async () => {

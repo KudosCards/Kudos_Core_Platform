@@ -16,6 +16,10 @@ import type { CreateRecipientDto } from "./dto/create-recipient.dto";
 import type { UpdateRecipientDto } from "./dto/update-recipient.dto";
 import type { ListRecipientsQueryDto } from "./dto/list-recipients-query.dto";
 import { parseRecipientRow, type ParsedRecipientRow } from "./csv-row.util";
+import {
+  buildScheduledBirthdayOccasion,
+  startOfUtcDay,
+} from "../occasions/birthday-occasion.util";
 
 export type { Paginated };
 
@@ -106,6 +110,21 @@ export class RecipientsService {
       targetType: "Recipient",
       targetId: recipient.id,
     });
+
+    // The recipient's birthday becomes their first calendar event the moment
+    // they're added — no waiting for the nightly scheduler. See
+    // ensureScheduledBirthdays and docs/adr/0016-recipient-events-and-lists.md.
+    if (recipient.dateOfBirth) {
+      await this.prisma.occasion.createMany({
+        data: [
+          buildScheduledBirthdayOccasion(
+            { id: recipient.id, accountId, dateOfBirth: recipient.dateOfBirth },
+            startOfUtcDay(new Date()),
+          ),
+        ],
+        skipDuplicates: true,
+      });
+    }
     return recipient;
   }
 
@@ -119,6 +138,7 @@ export class RecipientsService {
     const where: Prisma.RecipientWhereInput = {
       accountId,
       ...(query.status && { status: query.status }),
+      ...(query.listId && { listMemberships: { some: { listId: query.listId } } }),
       ...(query.search && {
         OR: [
           { firstName: { contains: query.search, mode: "insensitive" } },
@@ -190,6 +210,27 @@ export class RecipientsService {
     }
 
     const recipient = await this.prisma.recipient.findFirstOrThrow({ where: { id, accountId } });
+
+    // If the date of birth changed, re-point the (not-yet-actionable) birthday
+    // event at the new date. Only `scheduled` occasions are touched — one that
+    // has already entered the approval/dispatch pipeline is left alone.
+    if (dto.dateOfBirth !== undefined) {
+      await this.prisma.occasion.deleteMany({
+        where: { recipientId: id, type: "birthday", status: "scheduled" },
+      });
+      if (recipient.dateOfBirth) {
+        await this.prisma.occasion.createMany({
+          data: [
+            buildScheduledBirthdayOccasion(
+              { id: recipient.id, accountId, dateOfBirth: recipient.dateOfBirth },
+              startOfUtcDay(new Date()),
+            ),
+          ],
+          skipDuplicates: true,
+        });
+      }
+    }
+
     await this.audit.record({
       accountId,
       actorUserId,
@@ -382,6 +423,12 @@ export class RecipientsService {
       ),
     );
 
+    // Newly imported recipients with a DOB get their birthday on the calendar
+    // straight away, without waiting for the nightly scheduler.
+    if (summary.created > 0) {
+      await this.ensureScheduledBirthdays(accountId);
+    }
+
     await this.audit.record({
       accountId,
       actorUserId,
@@ -483,6 +530,14 @@ export class RecipientsService {
     const dedupeSkipped = toCreate.length - capSkippedIds.length - createdCount;
     const skipped = capSkippedIds.length + Math.max(0, dedupeSkipped);
 
+    // The reported bug: CRM-synced recipients carry a DOB but never reached the
+    // calendar because only the nightly cron created birthday occasions. Now a
+    // sync schedules them immediately — for both freshly-created contacts and
+    // ones whose update just added a DOB. Idempotent, so a re-sync is a no-op.
+    if (createdCount > 0 || toUpdate.length > 0) {
+      await this.ensureScheduledBirthdays(accountId);
+    }
+
     await this.audit.record({
       accountId,
       actorUserId,
@@ -530,6 +585,34 @@ export class RecipientsService {
       ...(contact.addressPostcode !== null && { addressPostcode: contact.addressPostcode }),
       ...(contact.addressCountry !== null && { addressCountry: contact.addressCountry }),
     };
+  }
+
+  /**
+   * Ensure every active recipient in the account that has a DOB has a birthday
+   * occasion on the calendar. Idempotent (skipDuplicates against the occasion
+   * idempotency key), so it's safe to call after any batch that may have added
+   * recipients — CSV import and CRM ingest both do. Bounded by the account's
+   * recipient cap, so it's a single small scan, not a platform-wide sweep (that
+   * job belongs to the nightly scheduler). See docs/adr/0016-recipient-events-and-lists.md.
+   */
+  private async ensureScheduledBirthdays(accountId: string): Promise<void> {
+    const today = startOfUtcDay(new Date());
+    const recipients = await this.prisma.recipient.findMany({
+      where: { accountId, status: "active", dateOfBirth: { not: null } },
+      select: { id: true, accountId: true, dateOfBirth: true },
+    });
+    if (recipients.length === 0) {
+      return;
+    }
+    await this.prisma.occasion.createMany({
+      data: recipients.map((recipient) =>
+        buildScheduledBirthdayOccasion(
+          { id: recipient.id, accountId, dateOfBirth: recipient.dateOfBirth as Date },
+          today,
+        ),
+      ),
+      skipDuplicates: true,
+    });
   }
 
   /** Single source of truth for the cap comparison, shared by create() (via

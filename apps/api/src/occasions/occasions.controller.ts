@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
@@ -16,6 +18,7 @@ import type { AuthenticatedUser, CurrentMembershipContext } from "../auth/types"
 import type { Paginated } from "../common/paginated";
 import { OccasionsService, type Occasion } from "./occasions.service";
 import { CreateOccasionDto } from "./dto/create-occasion.dto";
+import { CreateRecipientEventDto } from "./dto/create-recipient-event.dto";
 import { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
 import { ApproveOccasionDto } from "./dto/approve-occasion.dto";
 
@@ -33,6 +36,17 @@ export class OccasionsController {
     @Body() dto: CreateOccasionDto,
   ): Promise<Occasion> {
     return this.occasionsService.create(membership.accountId, user.id, dto);
+  }
+
+  /** Add a hand-curated calendar event (graduation, end of exams, …) to a
+   * recipient. Created `scheduled` — see OccasionsService.createRecipientEvent. */
+  @Post("events")
+  createRecipientEvent(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateRecipientEventDto,
+  ): Promise<Occasion> {
+    return this.occasionsService.createRecipientEvent(membership.accountId, user.id, dto);
   }
 
   @Get()
@@ -70,5 +84,26 @@ export class OccasionsController {
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<Occasion> {
     return this.occasionsService.skip(membership.accountId, user.id, id);
+  }
+
+  /** Pull a scheduled event into the approvals queue so a card can be prepared. */
+  @Post(":id/prepare")
+  prepare(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<Occasion> {
+    return this.occasionsService.prepare(membership.accountId, user.id, id);
+  }
+
+  /** Remove a scheduled event from the calendar (scheduled-only). */
+  @Delete(":id")
+  @HttpCode(204)
+  remove(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    return this.occasionsService.deleteEvent(membership.accountId, user.id, id);
   }
 }

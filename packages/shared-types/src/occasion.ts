@@ -15,6 +15,9 @@ export const occasionSchema = z
     recipientId: z.string().uuid().nullable(),
     type: occasionTypeSchema,
     source: occasionSourceSchema,
+    /** Human label for a hand-added recipient event ("Graduation", "End of exams");
+     * null for auto-scheduled birthdays and campaign occasions. */
+    title: z.string().nullable(),
     /** The date the occasion itself falls on (e.g. the birthday), not the dispatch date. */
     occasionDate: z.coerce.date(),
     /** Computed: occasionDate minus the postage lead time for the chosen dispatch option. */
@@ -49,6 +52,20 @@ export const createOccasionInputSchema = z.object({
   occasionDate: z.coerce.date(),
 });
 export type CreateOccasionInput = z.infer<typeof createOccasionInputSchema>;
+
+/**
+ * Matches CreateRecipientEventDto. Adds a hand-curated event (graduation, end
+ * of exams, …) to a recipient; the API creates it as a `scheduled` occasion —
+ * on the calendar immediately, out of the approvals queue until the subscriber
+ * prepares a card for it.
+ */
+export const createRecipientEventInputSchema = z.object({
+  recipientId: z.string().uuid(),
+  type: occasionTypeSchema,
+  title: z.string().max(120).optional(),
+  occasionDate: z.coerce.date(),
+});
+export type CreateRecipientEventInput = z.infer<typeof createRecipientEventInputSchema>;
 
 /**
  * Matches ApproveOccasionDto. dispatchOption defaults to `asap` (manual

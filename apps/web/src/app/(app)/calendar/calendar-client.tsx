@@ -26,6 +26,11 @@ const VIEWS: CalendarView[] = ["month", "week", "list"];
 function occasionHref(occasion: Occasion): string | null {
   if (occasion.status === "pending_approval") return "/approvals";
   if (occasion.status === "approved") return "/batch-orders";
+  // A scheduled event isn't actionable yet — send the user to the recipient so
+  // they can prepare a card or manage the event.
+  if (occasion.status === "scheduled" && occasion.recipientId) {
+    return `/recipients/${occasion.recipientId}`;
+  }
   return null;
 }
 
@@ -33,7 +38,12 @@ function occasionLabel(occasion: Occasion): string {
   if (occasion.recipient) {
     return `${occasion.recipient.firstName} ${occasion.recipient.lastName}`;
   }
-  return OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type;
+  return occasion.title ?? OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type;
+}
+
+/** The occasion's descriptive kind, preferring a hand-entered event title. */
+function occasionKind(occasion: Occasion): string {
+  return occasion.title ?? OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type;
 }
 
 function periodLabel(view: CalendarView, anchor: Date): string {
@@ -54,7 +64,7 @@ function OccasionPill({ occasion }: { occasion: Occasion }) {
   const inner = (
     <span
       className={`block truncate rounded border px-1.5 py-0.5 text-xs ${color}`}
-      title={`${occasionLabel(occasion)} · ${OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type}`}
+      title={`${occasionLabel(occasion)} · ${occasionKind(occasion)}`}
     >
       {occasionLabel(occasion)}
     </span>
