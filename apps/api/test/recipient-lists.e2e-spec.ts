@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
 import {
-  accountSchema,
   recipientListSummarySchema,
   recipientListWithMembersSchema,
 } from "@kudos/shared-types";

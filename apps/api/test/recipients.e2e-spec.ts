@@ -21,6 +21,17 @@ const importSummarySchema = z.object({
   rejected: z.array(z.object({ row: z.number(), reason: z.string() })),
 });
 
+/** Just enough of the occasions list to assert birthday scheduling. */
+const occasionListSchema = z.object({
+  items: z.array(
+    z.object({
+      type: z.string(),
+      status: z.string(),
+      occasionDate: z.string(),
+    }),
+  ),
+});
+
 describe("Recipients (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
@@ -87,7 +98,7 @@ describe("Recipients (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
 
-    const birthday = (occasions.body.items as { type: string; status: string; occasionDate: string }[]).find(
+    const birthday = occasionListSchema.parse(occasions.body).items.find(
       (o) => o.type === "birthday",
     );
     expect(birthday).toBeDefined();
@@ -107,7 +118,7 @@ describe("Recipients (e2e)", () => {
       .get("/occasions")
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
-    expect(occasions.body.items).toHaveLength(0);
+    expect(occasionListSchema.parse(occasions.body).items).toHaveLength(0);
   });
 
   it("schedules birthday events for CSV-imported recipients too", async () => {
@@ -127,8 +138,9 @@ describe("Recipients (e2e)", () => {
       .get("/occasions?type=birthday")
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
-    expect(occasions.body.items).toHaveLength(1);
-    expect(occasions.body.items[0].status).toBe("scheduled");
+    const items = occasionListSchema.parse(occasions.body).items;
+    expect(items).toHaveLength(1);
+    expect(items[0]?.status).toBe("scheduled");
   });
 
   it("re-points the scheduled birthday when a recipient's DOB changes", async () => {
@@ -153,7 +165,7 @@ describe("Recipients (e2e)", () => {
       .get("/occasions?type=birthday")
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
-    const items = occasions.body.items as { status: string; occasionDate: string }[];
+    const items = occasionListSchema.parse(occasions.body).items;
     // Exactly one scheduled birthday, now pointing at the new date.
     expect(items).toHaveLength(1);
     expect(items[0]?.occasionDate.slice(5, 10)).toBe("11-10");
