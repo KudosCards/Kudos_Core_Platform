@@ -57,17 +57,18 @@ export default async function GuestSendPage({ params }: { params: Promise<{ id: 
           <div className="flex flex-col gap-6">
             <div>
               <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
-                Send this card
+                Add to your basket
               </h1>
               <p className="mt-1 text-slate-600">
-                Just the details, no sign-up. Want to save birthdays and never miss one?{" "}
+                Just the details, no sign-up — add this card for someone, then keep shopping or pay.
+                Want to save birthdays and never miss one?{" "}
                 <Link href={`/register?card=${card.id}`} className="font-medium text-rose-600 hover:underline">
                   Create a free account
                 </Link>{" "}
                 instead.
               </p>
             </div>
-            <GuestSendClient cardId={card.id} />
+            <GuestSendClient cardId={card.id} cardName={card.name} thumbnailUrl={card.thumbnailUrl} />
           </div>
         </div>
       </main>
