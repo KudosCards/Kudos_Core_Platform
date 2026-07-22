@@ -18,6 +18,7 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [accountType, setAccountType] = useState<"individual" | "organisation">("organisation");
 
   // A guest who signed up to claim their order (but had to confirm their email
   // first) lands here with no account yet. If a claim token is waiting, finish
@@ -75,7 +76,7 @@ export default function OnboardingPage() {
     try {
       await apiFetch("/accounts", session.access_token, {
         method: "POST",
-        body: JSON.stringify({ type: "organisation", name }),
+        body: JSON.stringify({ type: accountType, name }),
       });
     } catch (apiError) {
       setSubmitting(false);
@@ -112,8 +113,32 @@ export default function OnboardingPage() {
               {error}
             </p>
           )}
+          <div className="flex flex-col gap-1.5 text-sm">
+            <span>Who&apos;s this for?</span>
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  { value: "individual", label: "Just for me" },
+                  { value: "organisation", label: "My organisation" },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setAccountType(option.value)}
+                  className={`rounded-md border px-3 py-2 font-medium transition-colors ${
+                    accountType === option.value
+                      ? "border-accent bg-accent-soft"
+                      : "border-border hover:border-foreground/20"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <label className="flex flex-col gap-1 text-sm">
-            Organisation or your name
+            {accountType === "individual" ? "Your name" : "Organisation name"}
             <input
               type="text"
               name="name"

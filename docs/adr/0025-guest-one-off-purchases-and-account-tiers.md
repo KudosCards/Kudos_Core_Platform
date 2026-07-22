@@ -258,6 +258,24 @@ exactly one receipt carrying the claim token, and none on redelivery.
 **Cannot be verified from this sandbox:** real Brevo delivery (no network path to Brevo, same as
 Stripe/Supabase). Needs `BREVO_API_KEY` + a verified sender in Railway and a live test.
 
+**Phase 6 (personal-account onboarding) — landed.** The signup + onboarding now adapt to who the
+account is for.
+
+- **Signup** (`/register`) and the email-confirmation fallback (`/onboarding`) gained a "Who's this
+  for?" choice — **Just for me** (`individual`) vs **My organisation** (`organisation`) — instead of
+  hard-coding `organisation`. The name field label follows the choice ("Your name" vs "Organisation
+  name"). Default stays `organisation` to preserve the existing business flow; the default can be
+  revisited once consumer traffic is understood.
+- **`/get-started`** is now account-type-aware. A personal account leads with **"Add your first
+  birthday"** — a single name-and-date add form, with spreadsheet import demoted to a
+  *"Got a lot of people?"* disclosure and no CRM callout — rather than the business bulk-import hero.
+  Business accounts are unchanged.
+- Claimed guest accounts (already `individual`) now land in this lighter, consumer-appropriate
+  onboarding automatically.
+
+This completes ADR 0025 end-to-end: guest → personal → business, no-signup buy, account claim,
+reminders, receipts, and a signup/onboarding that fits each tier.
+
 ## Consequences
 
 - One-off buyers convert with **zero signup friction**; the money path, webhook, and fulfilment are

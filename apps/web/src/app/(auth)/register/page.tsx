@@ -13,6 +13,9 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [checkEmail, setCheckEmail] = useState(false);
+  // Personal = an individual tracking their own friends'/family birthdays;
+  // organisation = a business/centre/club. Drives the onboarding they land in.
+  const [accountType, setAccountType] = useState<"individual" | "organisation">("organisation");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -63,7 +66,7 @@ export default function RegisterPage() {
     try {
       await apiFetch("/accounts", data.session.access_token, {
         method: "POST",
-        body: JSON.stringify({ type: "organisation", name }),
+        body: JSON.stringify({ type: accountType, name }),
       });
     } catch (apiError) {
       setSubmitting(false);
@@ -95,8 +98,33 @@ export default function RegisterPage() {
       {error && (
         <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
       )}
+      <div className="flex flex-col gap-1.5 text-sm">
+        <span>Who&apos;s this for?</span>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              { value: "individual", label: "Just for me", hint: "Friends & family" },
+              { value: "organisation", label: "My organisation", hint: "Business, club, centre" },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setAccountType(option.value)}
+              className={`flex flex-col rounded-md border px-3 py-2 text-left transition-colors ${
+                accountType === option.value
+                  ? "border-accent bg-accent-soft"
+                  : "border-border hover:border-foreground/20"
+              }`}
+            >
+              <span className="font-medium">{option.label}</span>
+              <span className="text-xs text-muted">{option.hint}</span>
+            </button>
+          ))}
+        </div>
+      </div>
       <label className="flex flex-col gap-1 text-sm">
-        Organisation or your name
+        {accountType === "individual" ? "Your name" : "Organisation name"}
         <input
           type="text"
           name="name"
