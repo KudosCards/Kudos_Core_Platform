@@ -155,6 +155,10 @@ export class WebhooksService {
       await this.email.sendTransactional({
         to: account.contactEmail,
         subject: "Your Kudos card is on its way 🎉",
+        // A Brevo template (if configured) is used; otherwise the HTML below.
+        // Template param, for reference: {{ params.claimUrl }} — the claim link.
+        templateId: this.config.get("BREVO_GUEST_RECEIPT_TEMPLATE_ID", { infer: true }),
+        params: { claimUrl },
         html: `
           <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#0f172a">
             <h1 style="font-size:20px">Thanks — your card is on its way!</h1>

@@ -256,7 +256,7 @@ fulfilment already succeeded, and the link is also on the success page). e2e ass
 exactly one receipt carrying the claim token, and none on redelivery.
 
 **Cannot be verified from this sandbox:** real Brevo delivery (no network path to Brevo, same as
-Stripe/Supabase). Needs `BREVO_API_KEY` + a verified sender in Railway and a live test.
+Stripe/Supabase). Needs `Brevo_API` + a verified sender in Railway and a live test.
 
 **Phase 6 (personal-account onboarding) — landed.** The signup + onboarding now adapt to who the
 account is for.
@@ -275,6 +275,27 @@ account is for.
 
 This completes ADR 0025 end-to-end: guest → personal → business, no-signup buy, account claim,
 reminders, receipts, and a signup/onboarding that fits each tier.
+
+**Brevo hookup — landed.** The transactional sender is now wired to the platform Brevo account and
+made customisable without a code change.
+
+- **Env var name.** The key is read as `Brevo_API` (matching the Railway variable exactly), not the
+  earlier `BREVO_API_KEY`. Unset ⇒ the email client is a logged no-op, so the API still boots and
+  reminders/receipts simply don't send until it's configured.
+- **Template-or-HTML per send.** `SendEmailInput` gained `templateId?` + `params?`. When a send
+  supplies a `templateId`, the Brevo client posts `{ templateId, params }` and Brevo renders the
+  template designed in the dashboard; otherwise it posts our built-in `htmlContent` fallback. So
+  email copy/design is editable in Brevo with no deploy, and the HTML remains the safe default.
+- **Sender.** `EMAIL_FROM_ADDRESS` must be a **verified** Brevo sender; it's required for the HTML
+  fallbacks but optional when every email uses a template (a template carries its own sender). The
+  provider warns (doesn't fail) when the key is set but the sender isn't.
+- **Which template each send uses & its params** (set the env var to opt a given email into a Brevo
+  template):
+  - Reminder digest — `BREVO_REMINDER_TEMPLATE_ID`. Params: `name` (account name),
+    `calendarUrl` (link to their calendar), `birthdays` (`[{ name, date }]` to loop over).
+  - Guest receipt — `BREVO_GUEST_RECEIPT_TEMPLATE_ID`. Params: `claimUrl` (the account-claim link).
+- **Still not verifiable from this sandbox:** real Brevo delivery (no network path to Brevo). Tests
+  mock `EMAIL_CLIENT`; a live send needs `Brevo_API` + a verified `EMAIL_FROM_ADDRESS` in Railway.
 
 ## Consequences
 
