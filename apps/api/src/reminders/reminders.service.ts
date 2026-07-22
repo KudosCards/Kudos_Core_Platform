@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
+import { BRAND, renderBrandedEmail } from "../email/email-layout";
 
 /** How many days ahead of an occasion we send its reminder. */
 const REMINDER_LEAD_DAYS = 7;
@@ -156,25 +157,43 @@ export class RemindersService {
           month: "long",
           timeZone: "UTC",
         });
-        return `<li style="margin-bottom:6px"><strong>${escapeHtml(name)}</strong> — ${date}</li>`;
+        return `
+          <tr>
+            <td style="padding:10px 0;border-bottom:1px solid ${BRAND.border}">
+              <span style="font-weight:600;color:${BRAND.ink}">${escapeHtml(name)}</span>
+            </td>
+            <td align="right" style="padding:10px 0;border-bottom:1px solid ${BRAND.border};color:${BRAND.muted};white-space:nowrap">
+              ${date}
+            </td>
+          </tr>`;
       })
       .join("");
 
-    return `
-      <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#0f172a">
-        <h1 style="font-size:20px">Upcoming birthdays</h1>
-        <p>Hi ${escapeHtml(accountName)}, these birthdays are coming up:</p>
-        <ul style="padding-left:18px">${rows}</ul>
-        <p style="margin-top:20px">
-          <a href="${webAppUrl}/calendar"
-             style="background:#ef5b52;color:#fff;padding:10px 18px;border-radius:9999px;text-decoration:none;font-weight:600">
-            Review &amp; send in Kudos
-          </a>
-        </p>
-        <p style="color:#64748b;font-size:12px;margin-top:24px">
-          You can turn these reminders off in your Kudos billing settings.
-        </p>
-      </div>`;
+    const count = occasions.length;
+    const bodyHtml = `
+      <p style="margin:0 0 16px">
+        Hi ${escapeHtml(accountName)}, ${
+          count === 1 ? "a birthday is" : `${count} birthdays are`
+        } coming up in the next week:
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 4px">
+        ${rows}
+      </table>
+      <p style="margin:20px 0 0">
+        Review each card and send it in a couple of taps — or turn on automatic sending so it just happens.
+      </p>`;
+
+    return renderBrandedEmail({
+      webAppUrl,
+      preheader:
+        count === 1
+          ? "A birthday is coming up on Kudos Cards"
+          : `${count} birthdays are coming up on Kudos Cards`,
+      heading: count === 1 ? "An upcoming birthday" : "Upcoming birthdays",
+      bodyHtml,
+      cta: { url: `${webAppUrl}/calendar`, label: "Review & send" },
+      footerNote: "You can turn these reminders off any time in your Kudos billing settings.",
+    });
   }
 }
 

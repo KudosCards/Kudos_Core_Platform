@@ -203,8 +203,11 @@ describe("Webhooks (e2e)", () => {
     const calls = sendTransactional.mock.calls as Array<[{ to: string; html: string }]>;
     const receipt = calls.filter((call) => call[0]?.to === "guest-buyer@example.com");
     expect(receipt).toHaveLength(1);
-    // The claim link (carrying the token) is in the email body.
+    // The claim link (carrying the token) is in the email body, rendered
+    // through the shared branded shell (brand footer + accent).
     expect(receipt[0]?.[0]?.html).toContain(claimToken);
+    expect(receipt[0]?.[0]?.html).toContain("Kudos Cards");
+    expect(receipt[0]?.[0]?.html).toContain("#e5372a");
 
     // A redelivered event must NOT send a second receipt.
     sendTransactional.mockClear();

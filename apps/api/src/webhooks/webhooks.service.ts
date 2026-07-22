@@ -7,6 +7,7 @@ import { BatchOrdersService } from "../batch-orders/batch-orders.service";
 import { WalletService } from "../wallet/wallet.service";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
+import { BRAND, renderBrandedEmail } from "../email/email-layout";
 import type { EnvConfig } from "../config/env.schema";
 import { mapStripeSubscriptionStatus } from "./subscription-status.util";
 
@@ -159,22 +160,21 @@ export class WebhooksService {
         // Template param, for reference: {{ params.claimUrl }} — the claim link.
         templateId: this.config.get("BREVO_GUEST_RECEIPT_TEMPLATE_ID", { infer: true }),
         params: { claimUrl },
-        html: `
-          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#0f172a">
-            <h1 style="font-size:20px">Thanks — your card is on its way!</h1>
-            <p>We're printing your card and posting it out.</p>
-            <div style="background:#f8fafc;border-radius:12px;padding:20px;margin-top:16px">
-              <p style="font-weight:600;margin:0 0 6px">Never miss their birthday again</p>
-              <p style="margin:0 0 14px;color:#475569">
-                Create a free account to save this contact, get a reminder next year, and let us send
-                it for you automatically.
+        html: renderBrandedEmail({
+          webAppUrl,
+          preheader: "Your Kudos card is on its way — create a free account to claim it.",
+          heading: "Thanks — your card is on its way!",
+          bodyHtml: `
+            <p style="margin:0 0 16px">We're printing your card now and posting it out.</p>
+            <div style="background:${BRAND.accentSoft};border-radius:12px;padding:18px 20px">
+              <p style="margin:0 0 6px;font-weight:600;color:${BRAND.ink}">Never miss their birthday again</p>
+              <p style="margin:0;color:${BRAND.muted}">
+                Create a free account to save this contact, get a reminder next year, and let us
+                send the card for you automatically.
               </p>
-              <a href="${claimUrl}"
-                 style="background:#ef5b52;color:#fff;padding:10px 18px;border-radius:9999px;text-decoration:none;font-weight:600">
-                Create your account
-              </a>
-            </div>
-          </div>`,
+            </div>`,
+          cta: { url: claimUrl, label: "Create your free account" },
+        }),
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown error";
