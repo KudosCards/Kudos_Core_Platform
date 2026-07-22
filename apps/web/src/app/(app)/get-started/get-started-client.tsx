@@ -5,6 +5,7 @@ import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { clearPendingPlan, readPendingPlan, type PaidPlan } from "@/lib/pending-plan";
+import { ConnectCrmCallout } from "@/components/connect-crm-callout";
 
 /** Read the pending plan from localStorage on the client only (null during SSR),
  * without a setState-in-effect. localStorage doesn't change under us here, so an
@@ -251,6 +252,8 @@ export function GetStartedClient({ initialRecipientCount }: { initialRecipientCo
                 </button>
               </form>
             </details>
+
+            <ConnectCrmCallout compact />
           </div>
         )}
       </Step>

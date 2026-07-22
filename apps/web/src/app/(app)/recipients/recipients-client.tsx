@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { ConnectCrmCallout } from "@/components/connect-crm-callout";
 
 export const PER_PAGE = 100;
 
@@ -322,6 +323,9 @@ export function RecipientsClient({
           )}
         </form>
       </section>
+
+      {/* CRM awareness: the "there's a faster way than CSV" nudge. */}
+      <ConnectCrmCallout />
 
       {/* Lists: organise recipients into named groups (e.g. "Year 4 class"). */}
       <section className="card flex flex-col gap-3 p-6">
