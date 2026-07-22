@@ -120,6 +120,12 @@ export const envSchema = z.object({
     .positive()
     .optional()
     .or(z.literal("").transform(() => undefined)),
+  BREVO_DISPATCH_TEMPLATE_ID: z.coerce
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

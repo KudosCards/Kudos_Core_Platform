@@ -1,7 +1,11 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { FulfillmentJobStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
+import type { EnvConfig } from "../config/env.schema";
+import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
+import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
@@ -89,11 +93,23 @@ export interface BulkTransitionSummary {
   skipped: number;
 }
 
+/** One buyer's just-posted cards for a single order, for the dispatch email. */
+interface DispatchGroup {
+  orderId: string;
+  orderNumber: number;
+  email: string;
+  names: string[];
+}
+
 @Injectable()
 export class FulfillmentService {
+  private readonly logger = new Logger(FulfillmentService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService<EnvConfig, true>,
+    @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
   ) {}
 
   async list(query: ListFulfillmentQueryDto): Promise<Paginated<FulfillmentQueueJob>> {
@@ -201,6 +217,11 @@ export class FulfillmentService {
         );
       }
     });
+    // After commit, best-effort: a card just posted → tell the buyer it's on
+    // its way. A send failure must not undo the (already committed) dispatch.
+    if (dto.toStatus === "posted") {
+      await this.notifyDispatched([id]);
+    }
     return this.prisma.fulfillmentJob.findUniqueOrThrow({
       where: { id },
       select: QUEUE_SELECT,
@@ -258,7 +279,8 @@ export class FulfillmentService {
     actorUserId: string,
     dto: BulkTransitionFulfillmentDto,
   ): Promise<BulkTransitionSummary> {
-    return this.prisma.$transaction(async (tx) => {
+    const postedIds: string[] = [];
+    const summary = await this.prisma.$transaction(async (tx) => {
       let transitioned = 0;
       for (const id of dto.jobIds) {
         const applied = await this.applyTransition(tx, actorUserId, id, dto.toStatus, {
@@ -266,9 +288,113 @@ export class FulfillmentService {
         });
         if (applied) {
           transitioned += 1;
+          if (dto.toStatus === "posted") postedIds.push(id);
         }
       }
       return { transitioned, skipped: dto.jobIds.length - transitioned };
+    });
+    // After commit, best-effort: notify each buyer once per order (grouped), so
+    // a bulk post-run doesn't send one email per card.
+    await this.notifyDispatched(postedIds);
+    return summary;
+  }
+
+  /** After cards are marked posted, email each buyer that their card(s) are on
+   * the way. Grouped by order so a bulk post-run sends one email per order, not
+   * one per card. Fully best-effort — a send failure never rolls back the
+   * (already committed) dispatch. See docs/adr/0025. */
+  private async notifyDispatched(jobIds: string[]): Promise<void> {
+    if (jobIds.length === 0) return;
+    let groups: DispatchGroup[];
+    try {
+      const jobs = await this.prisma.fulfillmentJob.findMany({
+        where: { id: { in: jobIds } },
+        select: {
+          orderRecipient: {
+            select: {
+              recipient: { select: { firstName: true, lastName: true } },
+              batchOrder: {
+                select: {
+                  id: true,
+                  orderNumber: true,
+                  account: { select: { contactEmail: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const byOrder = new Map<string, DispatchGroup>();
+      for (const job of jobs) {
+        const or = job.orderRecipient;
+        const email = or.batchOrder.account.contactEmail;
+        if (!email) continue; // no contact email → nowhere to send (rare)
+        const group = byOrder.get(or.batchOrder.id) ?? {
+          orderId: or.batchOrder.id,
+          orderNumber: or.batchOrder.orderNumber,
+          email,
+          names: [],
+        };
+        group.names.push(`${or.recipient.firstName} ${or.recipient.lastName}`);
+        byOrder.set(or.batchOrder.id, group);
+      }
+      groups = [...byOrder.values()];
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Dispatch notification lookup for [${jobIds.join(", ")}] failed: ${reason}`);
+      return;
+    }
+
+    const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
+    for (const group of groups) {
+      // Per-order try/catch: one buyer's send failing must not skip the rest.
+      try {
+        await this.sendDispatchNotification(webAppUrl, group);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "Unknown error";
+        this.logger.error(`Dispatch email for order ${group.orderId} failed: ${reason}`);
+      }
+    }
+  }
+
+  private async sendDispatchNotification(webAppUrl: string, group: DispatchGroup): Promise<void> {
+    const orderRef = `ORD-${group.orderNumber}`;
+    const orderUrl = `${webAppUrl}/orders/${group.orderId}`;
+    const count = group.names.length;
+    const cards = count === 1 ? "Your card is" : "Your cards are";
+    const list = group.names
+      .map((name) => `<li style="margin-bottom:4px">${escapeHtml(name)}</li>`)
+      .join("");
+
+    await this.email.sendTransactional({
+      to: group.email,
+      subject:
+        count === 1 ? `Your card has been posted (${orderRef})` : `Your cards have been posted (${orderRef})`,
+      // A Brevo template (if configured) is used; otherwise the HTML below.
+      // Template params, for reference: {{ params.orderNumber }},
+      // {{ params.cardCount }}, {{ params.recipientNames }} ([name] to loop),
+      // {{ params.orderUrl }}.
+      templateId: this.config.get("BREVO_DISPATCH_TEMPLATE_ID", { infer: true }),
+      params: {
+        orderNumber: orderRef,
+        cardCount: count,
+        recipientNames: group.names,
+        orderUrl,
+      },
+      html: renderBrandedEmail({
+        webAppUrl,
+        preheader: `${cards} on the way — posted today.`,
+        heading: count === 1 ? "Your card is on its way ✉️" : "Your cards are on their way ✉️",
+        bodyHtml: `
+          <p style="margin:0 0 16px">Good news — we've posted ${
+            count === 1 ? "your card" : `${count} cards`
+          } from order <strong>${orderRef}</strong>. ${
+            count === 1 ? "It's" : "They're"
+          } now on the way in the post.</p>
+          <ul style="margin:0;padding-left:18px;color:${BRAND.ink}">${list}</ul>`,
+        cta: { url: orderUrl, label: "View your order" },
+      }),
     });
   }
 

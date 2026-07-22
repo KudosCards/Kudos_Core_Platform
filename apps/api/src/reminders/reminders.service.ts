@@ -5,7 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
-import { BRAND, renderBrandedEmail } from "../email/email-layout";
+import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
 
 /** How many days ahead of an occasion we send its reminder. */
 const REMINDER_LEAD_DAYS = 7;
@@ -195,13 +195,4 @@ export class RemindersService {
       footerNote: "You can turn these reminders off any time in your Kudos billing settings.",
     });
   }
-}
-
-/** Minimal HTML escaping for names interpolated into the email body. */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
