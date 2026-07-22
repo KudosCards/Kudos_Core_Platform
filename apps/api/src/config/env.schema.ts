@@ -80,20 +80,40 @@ export const envSchema = z.object({
     .or(z.literal("").transform(() => undefined)),
 
   // Transactional email via Brevo (birthday reminders, guest receipts — see
-  // docs/adr/0025). A PLATFORM key (not the per-account CRM keys). Optional: the
-  // app boots without it and the email client becomes a logged no-op, so
-  // reminders simply don't send until it's configured. Treat blank as unset.
-  BREVO_API_KEY: z
+  // docs/adr/0025). A PLATFORM key (not the per-account CRM keys). Named
+  // `Brevo_API` to match the Railway variable. Optional: the app boots without
+  // it and the email client becomes a logged no-op, so reminders simply don't
+  // send until it's configured. Treat blank as unset.
+  Brevo_API: z
     .string()
     .min(1)
     .optional()
     .or(z.literal("").transform(() => undefined)),
+  // The sender emails come from. Must be a VERIFIED sender in the Brevo account.
+  // Optional when every email uses a Brevo template (the template carries its own
+  // sender); required for the built-in HTML fallbacks.
   EMAIL_FROM_ADDRESS: z
     .string()
     .email()
     .optional()
     .or(z.literal("").transform(() => undefined)),
   EMAIL_FROM_NAME: z.string().min(1).default("Kudos Cards"),
+  // Optional Brevo transactional template IDs. Set one to design that email in
+  // the Brevo dashboard instead of using our built-in HTML; unset = HTML
+  // fallback. The template receives the params documented in each email's
+  // send site (see reminders.service.ts / webhooks.service.ts).
+  BREVO_REMINDER_TEMPLATE_ID: z.coerce
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  BREVO_GUEST_RECEIPT_TEMPLATE_ID: z.coerce
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

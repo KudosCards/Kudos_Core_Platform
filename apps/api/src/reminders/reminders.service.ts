@@ -86,6 +86,14 @@ export class RemindersService {
             occasions.length === 1
               ? "An upcoming birthday on Kudos"
               : `${occasions.length} upcoming birthdays on Kudos`,
+          // If a Brevo template is configured it's used (designed in Brevo);
+          // otherwise the built-in HTML below. Template params, for reference
+          // when building the Brevo template:
+          //   {{ params.name }}          — the account name
+          //   {{ params.calendarUrl }}   — link to their calendar
+          //   {{ params.birthdays }}     — [{ name, date }] to loop over
+          templateId: this.config.get("BREVO_REMINDER_TEMPLATE_ID", { infer: true }),
+          params: this.buildDigestParams(account.name, occasions),
           html: this.renderDigest(account.name, occasions),
         });
       } catch (error) {
@@ -112,6 +120,28 @@ export class RemindersService {
       );
     }
     return { accountsEmailed, occasionsCovered };
+  }
+
+  /** Dynamic values a Brevo reminder template can render. */
+  private buildDigestParams(
+    accountName: string,
+    occasions: OccasionWithRecipient[],
+  ): Record<string, unknown> {
+    const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
+    return {
+      name: accountName,
+      calendarUrl: `${webAppUrl}/calendar`,
+      birthdays: occasions.map((occasion) => ({
+        name: occasion.recipient
+          ? `${occasion.recipient.firstName} ${occasion.recipient.lastName}`
+          : "A recipient",
+        date: occasion.occasionDate.toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "long",
+          timeZone: "UTC",
+        }),
+      })),
+    };
   }
 
   private renderDigest(accountName: string, occasions: OccasionWithRecipient[]): string {
