@@ -7,6 +7,7 @@ import request from "supertest";
 import Stripe from "stripe";
 import { PrismaService } from "../src/prisma/prisma.service";
 import type { EnvConfig } from "../src/config/env.schema";
+import { EMAIL_CLIENT } from "../src/email/email.client";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
@@ -36,9 +37,11 @@ describe("Fulfillment (e2e)", () => {
   let prisma: PrismaService;
   let stripe: Stripe;
   let webhookSecret: string;
+  let sendTransactional: jest.Mock;
 
   beforeAll(async () => {
-    app = await createTestApp();
+    sendTransactional = jest.fn().mockResolvedValue(undefined);
+    app = await createTestApp([{ provide: EMAIL_CLIENT, useValue: { sendTransactional } }]);
     prisma = app.get(PrismaService);
     const config = app.get(ConfigService<EnvConfig, true>);
     webhookSecret = config.get("STRIPE_WEBHOOK_SECRET", { infer: true });
@@ -267,6 +270,42 @@ describe("Fulfillment (e2e)", () => {
     batchOrder = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.batchOrderId } });
     expect(occasion.status).toBe("delivered");
     expect(batchOrder.status).toBe("completed"); // only card delivered -> order completed
+  });
+
+  it("emails the buyer a branded dispatch notification when a card is posted", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token, accountId } = await signUp();
+    const order = await createPaidOrder(token);
+    // Give the account a contact email to receive the dispatch notification.
+    await prisma.account.update({
+      where: { id: accountId },
+      data: { contactEmail: "dispatch-buyer@example.com" },
+    });
+    const batchOrder = await prisma.batchOrder.findUniqueOrThrow({
+      where: { id: order.batchOrderId },
+    });
+
+    const transition = (toStatus: string) =>
+      request(app.getHttpServer())
+        .post(`/fulfillment/jobs/${order.jobId}/transition`)
+        .set("Authorization", `Bearer ${opsToken}`)
+        .send({ toStatus })
+        .expect(201);
+
+    await transition("printed");
+    sendTransactional.mockClear();
+    // No email until the card is actually posted.
+    expect(sendTransactional.mock.calls.length).toBe(0);
+
+    await transition("posted");
+    const calls = sendTransactional.mock.calls as Array<[{ to: string; html: string }]>;
+    const dispatch = calls.filter((call) => call[0]?.to === "dispatch-buyer@example.com");
+    expect(dispatch).toHaveLength(1);
+    const html = dispatch[0]?.[0]?.html ?? "";
+    expect(html).toContain(`ORD-${batchOrder.orderNumber}`);
+    expect(html).toContain(`/orders/${order.batchOrderId}`);
+    expect(html).toContain("Kudos Cards");
+    expect(html).toContain("#e5372a");
   });
 
   it("rejects an out-of-order transition", async () => {

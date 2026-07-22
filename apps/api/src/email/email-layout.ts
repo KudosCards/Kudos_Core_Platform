@@ -45,6 +45,15 @@ export interface BrandedEmailOptions {
   footerNote?: string;
 }
 
+/** Minimal HTML escaping for user-supplied values interpolated into a body. */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 /** A bulletproof, table-based CTA button that survives Outlook and dark mode. */
 export function emailButton(url: string, label: string): string {
   return `

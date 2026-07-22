@@ -333,6 +333,20 @@ gets the claim receipt (not the confirmation), and neither re-sends on redeliver
 "button not working? paste this link" fallback under the CTA, so confirm/magic-link/reset still work
 in clients that strip the button. `renderBrandedEmail` gained a `showLinkFallback` flag for this.
 
+**Dispatch notification — landed.** When ops mark a card **posted** (the dispatched state in the
+fulfilment state machine), the buyer now gets a branded "your card is on its way" email. Sent
+**after** the transition transaction commits and **grouped by order**, so a bulk post-run sends one
+email per order (listing the recipient names) rather than one per card. Fully best-effort — a send
+failure is logged, never rolls back the (already committed) dispatch — and a no-op if the account
+has no contact email. Opt into a Brevo template via `BREVO_DISPATCH_TEMPLATE_ID` (params:
+`orderNumber`, `cardCount`, `recipientNames`, `orderUrl`). e2e covers it: posting a card emails the
+buyer exactly once with the order ref + brand shell, and nothing is sent on the earlier `printed`
+step. `escapeHtml` moved into `email-layout.ts` as a shared export (was duplicated in the reminder
+service).
+
+This gives the buyer a full lifecycle of branded email: **confirmation** at payment →
+**dispatch** when the card is posted.
+
 ## Consequences
 
 - One-off buyers convert with **zero signup friction**; the money path, webhook, and fulfilment are
