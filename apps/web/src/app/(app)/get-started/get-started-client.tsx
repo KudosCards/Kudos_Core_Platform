@@ -70,7 +70,17 @@ function Step({
   );
 }
 
-export function GetStartedClient({ initialRecipientCount }: { initialRecipientCount: number }) {
+export function GetStartedClient({
+  initialRecipientCount,
+  accountType = "organisation",
+}: {
+  initialRecipientCount: number;
+  accountType?: "individual" | "organisation";
+}) {
+  // A personal (individual) account is a consumer tracking their own friends'
+  // and family's birthdays — lead with adding one person by hand, not a bulk
+  // spreadsheet import. See docs/adr/0025.
+  const personal = accountType === "individual";
   const [recipientCount, setRecipientCount] = useState(initialRecipientCount);
   const plan = usePendingPlan();
   const [error, setError] = useState<string | null>(null);
@@ -169,10 +179,13 @@ export function GetStartedClient({ initialRecipientCount }: { initialRecipientCo
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold tracking-tight">Let&apos;s get you set up</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          {personal ? "Let's add your first birthday" : "Let's get you set up"}
+        </h1>
         <p className="text-muted">
-          Kudos is at its best in bulk — get your list in once and every birthday is handled for you
-          from then on.
+          {personal
+            ? "Add the people you care about and we'll remind you before every birthday — and can even send the card for you."
+            : "Kudos is at its best in bulk — get your list in once and every birthday is handled for you from then on."}
         </p>
       </div>
 
@@ -194,8 +207,8 @@ export function GetStartedClient({ initialRecipientCount }: { initialRecipientCo
         </div>
       )}
 
-      {/* Step 1 — the priority: get the contact list in. */}
-      <Step n={1} done={hasContacts} title="Upload your contact list">
+      {/* Step 1 — the priority: get the first person(s) in. */}
+      <Step n={1} done={hasContacts} title={personal ? "Add your first birthday" : "Upload your contact list"}>
         {hasContacts ? (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-muted">
@@ -205,6 +218,55 @@ export function GetStartedClient({ initialRecipientCount }: { initialRecipientCo
             <Link href="/recipients" className="btn-secondary w-fit text-sm">
               Manage or import more contacts
             </Link>
+          </div>
+        ) : personal ? (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">
+              Add someone whose birthday you never want to miss — just their name and the date.
+            </p>
+            <form
+              onSubmit={(event) => void handleAddManual(event)}
+              className="flex flex-wrap items-end gap-2"
+            >
+              <input name="firstName" placeholder="First name" className={inputClass} />
+              <input name="lastName" placeholder="Last name" className={inputClass} />
+              <input type="date" name="dateOfBirth" aria-label="Date of birth" className={inputClass} />
+              <button type="submit" disabled={addingManual} className="btn-accent">
+                {addingManual ? "Adding…" : "Add birthday"}
+              </button>
+            </form>
+            <details className="text-sm">
+              <summary className="cursor-pointer text-muted">
+                Got a lot of people? Import a spreadsheet
+              </summary>
+              <form
+                onSubmit={(event) => void handleImport(event)}
+                className="mt-3 flex flex-col gap-2"
+              >
+                <input type="file" name="file" accept=".csv" required className="text-sm" />
+                <div className="flex flex-wrap items-center gap-3">
+                  <button type="submit" disabled={importing} className="btn-secondary">
+                    {importing ? "Importing…" : "Import contacts"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadSampleCsv}
+                    className="text-sm text-accent underline hover:no-underline"
+                  >
+                    Download a template
+                  </button>
+                </div>
+                <p className="text-xs text-muted">
+                  Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), postcode, email
+                </p>
+              </form>
+            </details>
+            {importSummary && (
+              <p className="text-sm text-muted">
+                Imported {importSummary.created} new contact{importSummary.created === 1 ? "" : "s"}
+                {importSummary.rejected.length > 0 && `, ${importSummary.rejected.length} skipped`}.
+              </p>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-4">
