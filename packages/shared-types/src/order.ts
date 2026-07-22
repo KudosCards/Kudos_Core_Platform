@@ -3,6 +3,7 @@ import { ukPostcodeRegex } from "./recipient";
 import {
   batchOrderStatusSchema,
   dispatchOptionSchema,
+  occasionTypeSchema,
   orderRecipientStatusSchema,
   paymentMethodSchema,
   postageClassSchema,
@@ -90,6 +91,25 @@ export const createBatchOrderInputSchema = z.object({
     .max(200),
 });
 export type CreateBatchOrderInput = z.infer<typeof createBatchOrderInputSchema>;
+
+/**
+ * Matches QuickSendDto — the guided "send this card" flow. Turns a saved design
+ * + one recipient into a ready-to-pay draft order in a single call; the returned
+ * BatchOrder is then checked out via POST /batch-orders/:id/checkout. See
+ * docs/adr/0018-guided-first-order.md.
+ */
+export const quickSendInputSchema = z.object({
+  savedDesignId: z.string().uuid(),
+  firstName: z.string().min(1).max(120),
+  lastName: z.string().min(1).max(120),
+  shippingAddressLine1: z.string().min(1).max(200),
+  shippingAddressLine2: z.string().max(200).optional(),
+  shippingAddressCity: z.string().min(1).max(120),
+  shippingAddressPostcode: z.string().regex(ukPostcodeRegex, "Must be a valid UK postcode"),
+  postageClass: postageClassSchema,
+  occasionType: occasionTypeSchema.optional(),
+});
+export type QuickSendInput = z.infer<typeof quickSendInputSchema>;
 
 /** A card's QR-linked digital message page. */
 export const messagePageSchema = z.object({

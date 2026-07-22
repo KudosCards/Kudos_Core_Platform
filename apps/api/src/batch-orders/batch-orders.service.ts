@@ -19,8 +19,11 @@ import type { CheckoutResult } from "../common/checkout-result";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.constants";
 import { MessagesService } from "../messages/messages.service";
+import { RecipientsService } from "../recipients/recipients.service";
+import { computeDispatchDate } from "../occasions/occasion-scheduling.constants";
 import type { CreateBatchOrderDto } from "./dto/create-batch-order.dto";
 import type { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
+import type { QuickSendDto } from "./dto/quick-send.dto";
 
 const ORDER_RECIPIENTS_INCLUDE = { orderRecipients: true } as const;
 
@@ -35,7 +38,75 @@ export class BatchOrdersService {
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
     private readonly messages: MessagesService,
+    private readonly recipients: RecipientsService,
   ) {}
+
+  /**
+   * The guided first-order path: from a saved design + a single recipient to a
+   * ready-to-pay draft order in one call. It creates the recipient, an
+   * `approved` one-off occasion carrying the design, then hands off to the same
+   * create() the manual checkout uses — so the money path (pricing, the
+   * approved → queued transition, cap checks) is identical, not a parallel copy.
+   * The caller then drives the returned draft through the normal
+   * /batch-orders/:id/checkout. See docs/adr/0018-guided-first-order.md.
+   */
+  async quickSend(
+    accountId: string,
+    actorUserId: string,
+    dto: QuickSendDto,
+  ): Promise<BatchOrder> {
+    const savedDesign = await this.prisma.savedDesign.findFirst({
+      where: { id: dto.savedDesignId, accountId },
+    });
+    if (!savedDesign) {
+      throw new NotFoundException("Design not found");
+    }
+
+    // The recipient this card is for. Reuses the audited, cap-checked create so
+    // the guided path can't sidestep the plan's recipient limit.
+    const recipient = await this.recipients.create(accountId, actorUserId, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      addressLine1: dto.shippingAddressLine1,
+      addressLine2: dto.shippingAddressLine2,
+      addressCity: dto.shippingAddressCity,
+      addressPostcode: dto.shippingAddressPostcode,
+    });
+
+    // A one-off occasion, created already `approved` with the design attached —
+    // the guided flow is the human decision that the manual approve step
+    // represents, so there's nothing left to approve. dispatchOption `asap`
+    // means a person checks it out (which is exactly what happens next).
+    const occasionDate = new Date();
+    const occasion = await this.prisma.occasion.create({
+      data: {
+        accountId,
+        recipientId: recipient.id,
+        type: dto.occasionType ?? "bespoke_campaign",
+        source: "one_off_campaign",
+        occasionDate,
+        dispatchDate: computeDispatchDate(occasionDate),
+        status: "approved",
+        savedDesignId: savedDesign.id,
+        dispatchOption: "asap",
+        postageClass: dto.postageClass,
+      },
+    });
+
+    return this.create(accountId, actorUserId, {
+      lines: [
+        {
+          occasionId: occasion.id,
+          shippingAddressLine1: dto.shippingAddressLine1,
+          shippingAddressLine2: dto.shippingAddressLine2,
+          shippingAddressCity: dto.shippingAddressCity,
+          shippingAddressPostcode: dto.shippingAddressPostcode,
+          dispatchOption: "asap",
+          postageClass: dto.postageClass,
+        },
+      ],
+    });
+  }
 
   /**
    * The post-payment fulfillment step, shared by every way an order gets paid
