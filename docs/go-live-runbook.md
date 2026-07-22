@@ -134,6 +134,26 @@ returns a clean 409 ("not yet configured") — no crash, just no upgrades.
 | `NEXT_PUBLIC_SENTRY_DSN` | Sentry DSN for the web (browser + SSR errors, e.g. a failed page fetch). Leave unset to disable. |
 | `SENTRY_AUTH_TOKEN` | *(optional)* Sentry auth token — only needed to upload source maps for readable stack traces; the build succeeds without it. |
 
+### Health checks — point Railway at liveness, not the database 🧑
+
+The API exposes two probes:
+
+- **`GET /health`** — *liveness*. Returns `{ "status": "ok" }` if the process is up. It has **no
+  external dependencies** (no database ping). **Set Railway's healthcheck path to `/health`.**
+- **`GET /health/ready`** — *readiness*. Pings the database; returns Terminus health JSON. Use it for
+  monitoring / uptime checks and manual smoke tests — **not** as the deploy gate.
+
+Why: a deploy healthcheck that pings the DB turns a *transient* database blip (e.g. a provider
+"outbound connectivity" incident) into a **failed deploy** — the app is fine, it just briefly can't
+reach Postgres, so a healthy new version can't roll out and running instances risk being killed.
+Gating on liveness decouples "is the app up?" from "is the DB reachable right now?". If a deploy is
+genuinely misconfigured (wrong `DATABASE_URL`), you'll see it immediately in Sentry and on the first
+request, and `GET /health/ready` will report the database `down`.
+
+If a deploy ever fails **only** at `Network › Healthcheck` while `Build`/`Deploy` succeed, check the
+provider's status page for a networking incident before suspecting the code — that signature is a
+DB/connectivity problem, not a build defect. Retry the deploy once the incident clears.
+
 ---
 
 ## 4. Bootstrap the first ops admin 🧑
