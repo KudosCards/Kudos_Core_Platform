@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -19,6 +20,7 @@ import type { Paginated } from "../common/paginated";
 import { OccasionsService, type Occasion } from "./occasions.service";
 import { CreateOccasionDto } from "./dto/create-occasion.dto";
 import { CreateRecipientEventDto } from "./dto/create-recipient-event.dto";
+import { UpdateOccasionEventDto } from "./dto/update-occasion-event.dto";
 import { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
 import { ApproveOccasionDto } from "./dto/approve-occasion.dto";
 
@@ -84,6 +86,17 @@ export class OccasionsController {
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<Occasion> {
     return this.occasionsService.skip(membership.accountId, user.id, id);
+  }
+
+  /** Edit a scheduled event's label or date (scheduled-only). */
+  @Patch(":id")
+  updateEvent(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: UpdateOccasionEventDto,
+  ): Promise<Occasion> {
+    return this.occasionsService.updateEvent(membership.accountId, user.id, id, dto);
   }
 
   /** Pull a scheduled event into the approvals queue so a card can be prepared. */

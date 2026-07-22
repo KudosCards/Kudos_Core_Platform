@@ -15,6 +15,7 @@ import { parsePage, parsePerPage } from "../common/pagination";
 import { POSTAGE_LEAD_DAYS, computeDispatchDate } from "./occasion-scheduling.constants";
 import type { CreateOccasionDto } from "./dto/create-occasion.dto";
 import type { CreateRecipientEventDto } from "./dto/create-recipient-event.dto";
+import type { UpdateOccasionEventDto } from "./dto/update-occasion-event.dto";
 import type { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
 import type { ApproveOccasionDto } from "./dto/approve-occasion.dto";
 
@@ -127,6 +128,65 @@ export class OccasionsService {
     }
   }
 
+  /**
+   * Edits a `scheduled` recipient event's label and/or date. Scheduled-only:
+   * the status check is in the where clause so an occasion already in the
+   * approval/dispatch pipeline can't be silently re-dated under an order.
+   * Re-times the dispatch date when the event date changes.
+   */
+  async updateEvent(
+    accountId: string,
+    actorUserId: string,
+    id: string,
+    dto: UpdateOccasionEventDto,
+  ): Promise<Occasion> {
+    const data: Prisma.OccasionUncheckedUpdateManyInput = {};
+    if (dto.title !== undefined) {
+      data.title = dto.title.trim() ? dto.title.trim() : null;
+    }
+    if (dto.occasionDate !== undefined) {
+      const occasionDate = new Date(dto.occasionDate);
+      data.occasionDate = occasionDate;
+      data.dispatchDate = computeDispatchDate(occasionDate);
+    }
+
+    let count: number;
+    try {
+      ({ count } = await this.prisma.occasion.updateMany({
+        where: { id, accountId, status: "scheduled" },
+        data,
+      }));
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new ConflictException(
+          "That recipient already has an event of this type on this date",
+        );
+      }
+      throw error;
+    }
+    if (count === 0) {
+      const existing = await this.prisma.occasion.findFirst({ where: { id, accountId } });
+      if (!existing) {
+        throw new NotFoundException("Occasion not found");
+      }
+      throw new ConflictException(
+        `Occasion is "${existing.status}" — only scheduled events can be edited`,
+      );
+    }
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "update_event",
+      targetType: "Occasion",
+      targetId: id,
+    });
+    return this.prisma.occasion.findFirstOrThrow({
+      where: { id, accountId },
+      include: { recipient: RECIPIENT_SELECT },
+    });
+  }
+
   async list(
     accountId: string,
     actorUserId: string,
@@ -139,6 +199,14 @@ export class OccasionsService {
       ...(query.status && { status: query.status }),
       ...(query.type && { type: query.type }),
       ...(query.recipientId && { recipientId: query.recipientId }),
+      // Hide occasions for archived recipients from the account-wide views
+      // (calendar, approvals) without deleting them — restoring the recipient
+      // brings their events straight back. When a specific recipient is
+      // requested (their detail page), show everything so the user can still
+      // see and manage an archived recipient's events.
+      ...(!query.recipientId && {
+        OR: [{ recipientId: null }, { recipient: { status: { not: "archived" } } }],
+      }),
       // Date-range window for the calendar (a visible month/week). Bounds are
       // inclusive; either end may be omitted.
       ...((query.from || query.to) && {

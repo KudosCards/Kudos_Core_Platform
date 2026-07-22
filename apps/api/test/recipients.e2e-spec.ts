@@ -171,6 +171,120 @@ describe("Recipients (e2e)", () => {
     expect(items[0]?.occasionDate.slice(5, 10)).toBe("11-10");
   });
 
+  it("edits a recipient's details", async () => {
+    const { token } = await signUp();
+    const created = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/recipients")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ firstName: "Edit", lastName: "Me" })
+          .expect(201)
+      ).body,
+    );
+
+    const updated = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .patch(`/recipients/${created.id}`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({ firstName: "Edited", email: "edited@example.com", addressPostcode: "SW1A 1AA" })
+          .expect(200)
+      ).body,
+    );
+    expect(updated).toMatchObject({
+      firstName: "Edited",
+      lastName: "Me",
+      email: "edited@example.com",
+      addressPostcode: "SW1A 1AA",
+    });
+  });
+
+  it("archives a recipient via DELETE and restores it via PATCH status", async () => {
+    const { token } = await signUp();
+    const created = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/recipients")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ firstName: "Archive", lastName: "Restore" })
+          .expect(201)
+      ).body,
+    );
+
+    const archived = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .delete(`/recipients/${created.id}`)
+          .set("Authorization", `Bearer ${token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(archived.status).toBe("archived");
+
+    const restored = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .patch(`/recipients/${created.id}`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({ status: "active" })
+          .expect(200)
+      ).body,
+    );
+    expect(restored.status).toBe("active");
+  });
+
+  it("hides an archived recipient's events from the calendar but keeps them on the recipient's own view", async () => {
+    const { token } = await signUp();
+    const created = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/recipients")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ firstName: "Hidden", lastName: "WhenArchived", dateOfBirth: "2015-12-25" })
+          .expect(201)
+      ).body,
+    );
+
+    // Calendar (account-wide) shows the birthday while active…
+    const beforeArchive = await request(app.getHttpServer())
+      .get("/occasions")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(occasionListSchema.parse(beforeArchive.body).items).toHaveLength(1);
+
+    await request(app.getHttpServer())
+      .delete(`/recipients/${created.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    // …hidden from the account-wide calendar once archived…
+    const calendar = await request(app.getHttpServer())
+      .get("/occasions")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(occasionListSchema.parse(calendar.body).items).toHaveLength(0);
+
+    // …but still visible on the recipient's own detail view (so it can be managed).
+    const detail = await request(app.getHttpServer())
+      .get(`/occasions?recipientId=${created.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(occasionListSchema.parse(detail.body).items).toHaveLength(1);
+
+    // Restoring brings it back to the calendar.
+    await request(app.getHttpServer())
+      .patch(`/recipients/${created.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ status: "active" })
+      .expect(200);
+    const afterRestore = await request(app.getHttpServer())
+      .get("/occasions")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(occasionListSchema.parse(afterRestore.body).items).toHaveLength(1);
+  });
+
   it("accepts page and perPage as query-string params (the web always sends them)", async () => {
     const { token } = await signUp();
     const response = await request(app.getHttpServer())

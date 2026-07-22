@@ -87,3 +87,28 @@ small `recipient-lists` module. Deleting a list never touches the recipients on 
   filter to their own statuses, so none pick it up by accident).
 - Two migrations (`recipient_lists`, `occasion_title`) and matching `shared-types` schemas ship with
   this change; the enum list of occasion statuses is unchanged (`scheduled` already existed).
+
+## Addendum (2026-07-22) — CRUD completeness pass
+
+A follow-up audited every user-facing resource for full create/read/update/delete and closed the
+gaps where the API already supported a verb the UI never exposed:
+
+- **Recipients — edit + archive/restore in the UI.** The recipient detail page gained an
+  "Edit details" form (`PATCH /recipients/:id`) and an archive/restore control; the recipients list
+  gained per-row **Edit** and **Archive/Restore** actions. `UpdateRecipientDto` now accepts
+  `status`, so restoring is a normal update (archiving stays available via `DELETE`, which sets
+  `status: archived` — recipients are never hard-deleted, preserving order history).
+- **Archived recipients leave the calendar without losing data.** `OccasionsService.list` now
+  excludes occasions belonging to archived recipients from the account-wide views (calendar,
+  approvals), but still returns them when a specific `recipientId` is requested (the detail page),
+  and the birthday scheduler won't promote an archived recipient's birthday into the approvals
+  queue. Restoring the recipient brings every event straight back — nothing is deleted.
+- **Recipient events — edit.** New `PATCH /occasions/:id` edits a `scheduled` event's title/date
+  (scheduled-only, re-timing the dispatch date); surfaced as inline edit on the recipient detail
+  page. Completes create/read/update/delete for per-recipient events.
+- **Saved designs — rename + delete in the gallery.** The "My designs" cards now expose Rename
+  (`PATCH`) and Delete (`DELETE`) — the API already guarded deleting a design referenced by an
+  order, so that error is surfaced rather than the action silently doing nothing.
+
+No schema changes in this pass. Financial records (orders, wallet ledger) deliberately remain
+create/cancel/pay only — never deletable.
