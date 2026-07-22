@@ -21,7 +21,7 @@ import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.c
 import { MessagesService } from "../messages/messages.service";
 import { RecipientsService } from "../recipients/recipients.service";
 import { computeDispatchDate } from "../occasions/occasion-scheduling.constants";
-import type { CreateBatchOrderDto } from "./dto/create-batch-order.dto";
+import type { CreateBatchOrderDto, CreateBatchOrderLineDto } from "./dto/create-batch-order.dto";
 import type { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
 import type { QuickSendDto } from "./dto/quick-send.dto";
 
@@ -55,6 +55,38 @@ export class BatchOrdersService {
     actorUserId: string | null,
     dto: QuickSendDto,
   ): Promise<BatchOrder> {
+    return this.quickSendMany(accountId, actorUserId, [dto]);
+  }
+
+  /**
+   * Multi-card guided send: turn several freshly-designed saved cards (each with
+   * its own recipient + address) into ONE draft batch order in a single step —
+   * the money path behind a basket checkout. Each card becomes an approved
+   * one-off occasion; they're then checked out together as one order (one
+   * payment). Reuses `create`, so the plan's per-order cap still applies. */
+  async quickSendMany(
+    accountId: string,
+    actorUserId: string | null,
+    items: QuickSendDto[],
+  ): Promise<BatchOrder> {
+    if (items.length === 0) {
+      throw new BadRequestException("At least one card is required");
+    }
+    const lines: CreateBatchOrderLineDto[] = [];
+    for (const dto of items) {
+      lines.push(await this.buildQuickSendLine(accountId, actorUserId, dto));
+    }
+    return this.create(accountId, actorUserId, { lines });
+  }
+
+  /** Create the recipient + approved one-off occasion for a single guided-send
+   * card, returning the order line that consumes it. Shared by quickSend and
+   * quickSendMany so the single- and multi-card paths can never drift. */
+  private async buildQuickSendLine(
+    accountId: string,
+    actorUserId: string | null,
+    dto: QuickSendDto,
+  ): Promise<CreateBatchOrderLineDto> {
     const savedDesign = await this.prisma.savedDesign.findFirst({
       where: { id: dto.savedDesignId, accountId },
     });
@@ -93,19 +125,15 @@ export class BatchOrdersService {
       },
     });
 
-    return this.create(accountId, actorUserId, {
-      lines: [
-        {
-          occasionId: occasion.id,
-          shippingAddressLine1: dto.shippingAddressLine1,
-          shippingAddressLine2: dto.shippingAddressLine2,
-          shippingAddressCity: dto.shippingAddressCity,
-          shippingAddressPostcode: dto.shippingAddressPostcode,
-          dispatchOption: "asap",
-          postageClass: dto.postageClass,
-        },
-      ],
-    });
+    return {
+      occasionId: occasion.id,
+      shippingAddressLine1: dto.shippingAddressLine1,
+      shippingAddressLine2: dto.shippingAddressLine2,
+      shippingAddressCity: dto.shippingAddressCity,
+      shippingAddressPostcode: dto.shippingAddressPostcode,
+      dispatchOption: "asap",
+      postageClass: dto.postageClass,
+    };
   }
 
   /**

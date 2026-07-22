@@ -34,6 +34,39 @@ export const guestCheckoutResultSchema = z.object({
 });
 export type GuestCheckoutResult = z.infer<typeof guestCheckoutResultSchema>;
 
+/** The most cards a guest basket can hold in one payment — mirrors the free
+ * plan's per-order cap (see the API's GUEST_CART_MAX_ITEMS / prisma seed). */
+export const GUEST_CART_MAX_ITEMS = 20;
+
+/**
+ * One personalised card in a guest basket — {@link guestCheckoutInputSchema}
+ * minus the buyer email (which is per-basket, not per-card).
+ */
+export const guestCartItemSchema = z.object({
+  cardDesignId: z.string().uuid(),
+  document: z.record(z.string(), z.unknown()).optional(),
+  recipientFirstName: z.string().min(1).max(120),
+  recipientLastName: z.string().min(1).max(120),
+  shippingAddressLine1: z.string().min(1).max(200),
+  shippingAddressLine2: z.string().min(1).max(200).optional(),
+  shippingAddressCity: z.string().min(1).max(120),
+  shippingAddressPostcode: z.string().regex(ukPostcodeRegex, "Must be a valid UK postcode"),
+  postageClass: postageClassSchema.optional(),
+  occasionType: occasionTypeSchema.optional(),
+});
+export type GuestCartItem = z.infer<typeof guestCartItemSchema>;
+
+/**
+ * A guest basket checkout — POST /guest/cart-checkout. Several personalised
+ * cards bought and sent in one payment, no account. The API mints one guest
+ * account server-side and builds a single batch order. See docs/adr/0025.
+ */
+export const guestCartCheckoutInputSchema = z.object({
+  buyerEmail: z.string().email(),
+  items: z.array(guestCartItemSchema).min(1).max(GUEST_CART_MAX_ITEMS),
+});
+export type GuestCartCheckoutInput = z.infer<typeof guestCartCheckoutInputSchema>;
+
 /** GET /guest/claim/:token — the email a claim token is tied to, for prefill. */
 export const guestClaimInfoSchema = z.object({
   email: z.string().email(),

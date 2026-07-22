@@ -105,6 +105,86 @@ describe("Guest checkout (e2e)", () => {
     expect(orderA.accountId).not.toBe(orderB.accountId);
   });
 
+  function cartItem(overrides: Record<string, unknown> = {}) {
+    return {
+      cardDesignId,
+      recipientFirstName: "Grandma",
+      recipientLastName: "Jones",
+      shippingAddressLine1: "1 Test Street",
+      shippingAddressCity: "London",
+      shippingAddressPostcode: "SW1A 1AA",
+      ...overrides,
+    };
+  }
+
+  it("lets a visitor buy a basket of several cards in one order and one payment", async () => {
+    const buyerEmail = `basket-${randomUUID()}@example.com`;
+    const body = {
+      buyerEmail,
+      items: [
+        cartItem({ recipientFirstName: "Ava", recipientLastName: "Patel" }),
+        cartItem({ recipientFirstName: "Tom", recipientLastName: "Reed" }),
+        cartItem({ recipientFirstName: "Mia", recipientLastName: "Cole" }),
+      ],
+    };
+    const response = await request(app.getHttpServer())
+      .post("/guest/cart-checkout")
+      .send(body)
+      .expect(201);
+
+    const result = guestCheckoutResultSchema.parse(response.body);
+    expect(result.checkoutUrl).toMatch(/^https:\/\/checkout\.stripe\.test\/pay\/cs_test_/);
+
+    // One order, one guest account, no membership — the whole basket.
+    const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: result.orderId } });
+    expect(order.status).toBe("pending_payment");
+    const account = await prisma.account.findUniqueOrThrow({ where: { id: order.accountId } });
+    expect(account.contactEmail).toBe(buyerEmail);
+    expect(await prisma.membership.count({ where: { accountId: account.id } })).toBe(0);
+
+    // Three distinct recipients, each a flat £1.50 card → £4.50 order.
+    const lines = await prisma.orderRecipient.findMany({ where: { batchOrderId: order.id } });
+    expect(lines).toHaveLength(3);
+    expect(lines.every((line) => line.priceMinor === 150)).toBe(true);
+    const recipients = await prisma.recipient.findMany({ where: { accountId: account.id } });
+    expect(recipients.map((r) => r.firstName).sort()).toEqual(["Ava", "Mia", "Tom"]);
+
+    // One Checkout Session for the whole basket, buyer email prefilled.
+    const calls = checkoutSessionsCreate.mock.calls as Array<[{ customer_email?: string }]>;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]?.customer_email).toBe(buyerEmail);
+  });
+
+  it("mints no guest account when any card in the basket is invalid", async () => {
+    const buyerEmail = `bad-basket-${randomUUID()}@example.com`;
+    await request(app.getHttpServer())
+      .post("/guest/cart-checkout")
+      .send({
+        buyerEmail,
+        items: [cartItem(), cartItem({ cardDesignId: randomUUID() })],
+      })
+      .expect(404);
+    // The whole basket is validated before anything is minted — no orphan account.
+    expect(await prisma.account.count({ where: { contactEmail: buyerEmail } })).toBe(0);
+  });
+
+  it("rejects an empty basket", async () => {
+    await request(app.getHttpServer())
+      .post("/guest/cart-checkout")
+      .send({ buyerEmail: `empty-${randomUUID()}@example.com`, items: [] })
+      .expect(400);
+  });
+
+  it("rejects a basket larger than the per-order cap", async () => {
+    await request(app.getHttpServer())
+      .post("/guest/cart-checkout")
+      .send({
+        buyerEmail: `big-${randomUUID()}@example.com`,
+        items: Array.from({ length: 21 }, () => cartItem()),
+      })
+      .expect(400);
+  });
+
   it("rejects a non-existent card design", async () => {
     await request(app.getHttpServer())
       .post("/guest/checkout")
