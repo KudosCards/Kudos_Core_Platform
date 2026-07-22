@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { readPendingCardId } from "@/lib/pending-card";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,7 +29,9 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    // If they came in via "Personalise this card" and confirmed their email in
+    // between, finish that journey in the editor instead of the dashboard.
+    router.push(readPendingCardId() ? "/start" : "/dashboard");
     router.refresh();
   }
 
