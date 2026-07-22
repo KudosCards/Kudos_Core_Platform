@@ -152,6 +152,9 @@ export default function HomePage() {
             <a href="#how" className="hidden hover:text-slate-900 sm:inline">
               How it works
             </a>
+            <Link href="/cards" className="hidden hover:text-slate-900 sm:inline">
+              Card library
+            </Link>
             <a href="#plans" className="hidden hover:text-slate-900 sm:inline">
               Plans
             </a>
@@ -323,6 +326,13 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+          <Link
+            href="/cards"
+            className="w-fit rounded-full px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ backgroundColor: CORAL }}
+          >
+            Browse the card library →
+          </Link>
         </div>
         <Image
           src="/marketing/card-welldone.png"

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch, ApiError } from "@/lib/api";
+import { readPendingCardId } from "@/lib/pending-card";
 
 /**
  * Fallback for a user with a valid Supabase session but no Account yet —
@@ -45,7 +46,7 @@ export default function OnboardingPage() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push(readPendingCardId() ? "/start" : "/dashboard");
     router.refresh();
   }
 

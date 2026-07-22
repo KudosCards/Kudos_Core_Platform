@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch, ApiError } from "@/lib/api";
+import { readPendingCardId, setPendingCardId } from "@/lib/pending-card";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -22,6 +23,15 @@ export default function RegisterPage() {
     const email = String(formData.get("email"));
     const password = String(formData.get("password"));
 
+    // A visitor who arrived via "Personalise this card" carries their chosen
+    // card in ?card= (and usually localStorage already). Persist it so /start
+    // can drop them into the editor once they're authenticated.
+    const cardParam = new URLSearchParams(window.location.search).get("card");
+    if (cardParam) {
+      setPendingCardId(cardParam);
+    }
+    const hasPendingCard = Boolean(cardParam) || Boolean(readPendingCardId());
+
     const supabase = createClient();
     const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
 
@@ -34,7 +44,8 @@ export default function RegisterPage() {
     if (!data.session) {
       // Email confirmation is required before a session exists — the
       // account gets created once they confirm and log in (see the
-      // onboarding flow in (app)/layout.tsx).
+      // onboarding flow in (app)/layout.tsx). The pending card waits in
+      // localStorage and is picked up after they log in.
       setSubmitting(false);
       setCheckEmail(true);
       return;
@@ -51,7 +62,7 @@ export default function RegisterPage() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push(hasPendingCard ? "/start" : "/dashboard");
     router.refresh();
   }
 
