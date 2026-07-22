@@ -1,10 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch, ApiError } from "@/lib/api";
+import { clientApiFetch } from "@/lib/api.client";
 import { readPendingCardId } from "@/lib/pending-card";
+import { readPendingClaimToken, clearPendingClaimToken } from "@/lib/pending-claim";
 import { Logo } from "@/components/logo";
 
 /**
@@ -16,6 +18,40 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // A guest who signed up to claim their order (but had to confirm their email
+  // first) lands here with no account yet. If a claim token is waiting, finish
+  // the claim — attaching this login to the account their order already lives on
+  // — instead of showing the create-account form. See docs/adr/0025.
+  const storedClaimToken = useSyncExternalStore(
+    () => () => {},
+    () => readPendingClaimToken(),
+    () => null,
+  );
+  const [claimDismissed, setClaimDismissed] = useState(false);
+  const claimToken = claimDismissed ? null : storedClaimToken;
+  const claimAttempted = useRef(false);
+
+  useEffect(() => {
+    if (!claimToken || claimAttempted.current) return;
+    claimAttempted.current = true;
+    void (async () => {
+      try {
+        await clientApiFetch("/guest/claim", {
+          method: "POST",
+          body: JSON.stringify({ claimToken }),
+        });
+        clearPendingClaimToken();
+        router.push("/get-started");
+        router.refresh();
+      } catch {
+        // Token expired / already used / user already has an account — drop it
+        // and fall back to the normal account setup below.
+        clearPendingClaimToken();
+        setClaimDismissed(true);
+      }
+    })();
+  }, [claimToken, router]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,6 +85,17 @@ export default function OnboardingPage() {
 
     router.push(readPendingCardId() ? "/start" : "/get-started");
     router.refresh();
+  }
+
+  // While a guest claim is being completed, hold the form back so they don't
+  // create a second account in parallel.
+  if (claimToken) {
+    return (
+      <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center">
+        <Logo className="h-16 w-auto" priority />
+        <p className="text-muted">Saving your order…</p>
+      </div>
+    );
   }
 
   return (

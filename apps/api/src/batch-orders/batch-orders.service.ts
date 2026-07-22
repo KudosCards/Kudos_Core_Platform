@@ -319,7 +319,12 @@ export class BatchOrdersService {
     accountId: string,
     actorUserId: string | null,
     id: string,
-    options?: { customerEmail?: string; successPath?: string; cancelPath?: string },
+    options?: {
+      customerEmail?: string;
+      successPath?: string;
+      cancelPath?: string;
+      successExtraParams?: Record<string, string>;
+    },
   ): Promise<CheckoutResult> {
     const existing = await this.prisma.batchOrder.findFirst({
       where: { id, accountId },
@@ -351,6 +356,8 @@ export class BatchOrdersService {
     // the authenticated /batch-orders/* return pages would bounce them to login).
     const successPath = options?.successPath ?? "/batch-orders/success";
     const cancelPath = options?.cancelPath ?? "/batch-orders/cancelled";
+    // e.g. the guest claim token, so the success page can offer account-claiming.
+    const successQuery = new URLSearchParams({ batchOrderId: existing.id, ...options?.successExtraParams });
     let session: Stripe.Checkout.Session;
     try {
       session = await this.stripe.checkout.sessions.create({
@@ -371,7 +378,7 @@ export class BatchOrdersService {
         // Prefill the buyer's email for guest checkout (Stripe also uses it for
         // the receipt). Account holders leave it unset — Stripe collects it.
         ...(options?.customerEmail && { customer_email: options.customerEmail }),
-        success_url: `${webAppUrl}${successPath}?batchOrderId=${existing.id}`,
+        success_url: `${webAppUrl}${successPath}?${successQuery.toString()}`,
         cancel_url: `${webAppUrl}${cancelPath}?batchOrderId=${existing.id}`,
         metadata: { batchOrderId: existing.id, accountId },
       });

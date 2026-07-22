@@ -5,6 +5,7 @@ import { SavedDesignsModule } from "../saved-designs/saved-designs.module";
 import { BatchOrdersModule } from "../batch-orders/batch-orders.module";
 import { GuestController } from "./guest.controller";
 import { GuestOrdersService } from "./guest-orders.service";
+import { GuestClaimService } from "./guest-claim.service";
 
 @Module({
   // Throttling is scoped to this module (mirroring MessagesModule) so it applies
@@ -16,6 +17,6 @@ import { GuestOrdersService } from "./guest-orders.service";
     BatchOrdersModule,
   ],
   controllers: [GuestController],
-  providers: [GuestOrdersService],
+  providers: [GuestOrdersService, GuestClaimService],
 })
 export class GuestModule {}
