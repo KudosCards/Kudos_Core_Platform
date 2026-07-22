@@ -18,5 +18,11 @@ export const dashboardSummarySchema = z.object({
   activeOrders: z.number().int().nonnegative(),
   /** Orders that have completed fulfilment. */
   completedOrders: z.number().int().nonnegative(),
+  /** True once at least one occasion exists — i.e. birthdays are lined up on the
+   * calendar. Drives the dashboard "get started" checklist. */
+  hasOccasions: z.boolean(),
+  /** True once the account has paid for its first order (status paid or beyond) —
+   * the "completed their first purchase" milestone that dismisses onboarding. */
+  firstOrderPlaced: z.boolean(),
 });
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;

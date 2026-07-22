@@ -124,6 +124,8 @@ describe("Accounts (e2e)", () => {
       occasionsThisMonth: 0,
       activeOrders: 0,
       completedOrders: 0,
+      hasOccasions: false,
+      firstOrderPlaced: false,
     });
   });
 
@@ -154,5 +156,8 @@ describe("Accounts (e2e)", () => {
     expect(summary.pendingApprovals).toBe(1);
     expect(summary.occasionsThisMonth).toBe(1);
     expect(summary.activeOrders).toBe(0);
+    // An occasion now exists, but nothing has been paid for yet.
+    expect(summary.hasOccasions).toBe(true);
+    expect(summary.firstOrderPlaced).toBe(false);
   });
 });
