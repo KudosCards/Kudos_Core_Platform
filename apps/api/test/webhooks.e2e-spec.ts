@@ -218,6 +218,44 @@ describe("Webhooks (e2e)", () => {
     expect(resent).toHaveLength(0);
   });
 
+  it("emails an account holder an order confirmation on payment, exactly once", async () => {
+    const { token, accountId } = await signUp();
+    const { batchOrderId } = await createPendingPaymentBatchOrder(token);
+    // An account holder (NOT a guest): a contact email but no claim token.
+    await prisma.account.update({
+      where: { id: accountId },
+      data: { contactEmail: "account-holder@example.com", claimToken: null },
+    });
+    const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+    sendTransactional.mockClear();
+
+    const payload = buildStripeEventPayload("checkout.session.completed", {
+      id: `cs_test_${randomUUID()}`,
+      metadata: { batchOrderId },
+    });
+    await postWebhook(payload).expect(201);
+
+    const calls = sendTransactional.mock.calls as Array<[{ to: string; html: string }]>;
+    const confirmation = calls.filter((call) => call[0]?.to === "account-holder@example.com");
+    expect(confirmation).toHaveLength(1);
+    const html = confirmation[0]?.[0]?.html ?? "";
+    // The order confirmation carries the order ref, a view link, and the brand
+    // shell — and is NOT the guest claim email.
+    expect(html).toContain(`ORD-${order.orderNumber}`);
+    expect(html).toContain(`/orders/${batchOrderId}`);
+    expect(html).toContain("Kudos Cards");
+    expect(html).not.toContain("Create your free account");
+    expect(html).not.toContain("/gift/claim");
+
+    // A redelivered event must NOT send a second confirmation.
+    sendTransactional.mockClear();
+    await postWebhook(payload).expect(201);
+    const resent = (sendTransactional.mock.calls as Array<[{ to: string }]>).filter(
+      (call) => call[0]?.to === "account-holder@example.com",
+    );
+    expect(resent).toHaveLength(0);
+  });
+
   it("is idempotent under Stripe's at-least-once redelivery", async () => {
     const { token } = await signUp();
     const { batchOrderId } = await createPendingPaymentBatchOrder(token);
