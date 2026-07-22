@@ -11,7 +11,16 @@ interface CookieToSet {
 const PUBLIC_PATHS = ["/", "/login", "/register"];
 
 function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/r/");
+  return (
+    PUBLIC_PATHS.includes(pathname) ||
+    // Public recipient message pages (/r/<slug>).
+    pathname.startsWith("/r/") ||
+    // The public card library: visitors browse /cards and /cards/<id> with no
+    // account — signing up is only triggered when they click "Personalise this
+    // card". See docs/adr/0017-public-card-library.md.
+    pathname === "/cards" ||
+    pathname.startsWith("/cards/")
+  );
 }
 
 /**
