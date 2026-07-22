@@ -10,3 +10,4 @@ export * from "./fulfillment";
 export * from "./wallet";
 export * from "./dashboard";
 export * from "./integrations";
+export * from "./guest";
