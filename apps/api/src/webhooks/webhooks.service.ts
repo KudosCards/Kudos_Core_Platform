@@ -6,6 +6,7 @@ import { AuditService } from "../audit/audit.service";
 import { BatchOrdersService } from "../batch-orders/batch-orders.service";
 import { WalletService } from "../wallet/wallet.service";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
+import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import type { EnvConfig } from "../config/env.schema";
 import { mapStripeSubscriptionStatus } from "./subscription-status.util";
 
@@ -25,6 +26,7 @@ export class WebhooksService {
     private readonly wallet: WalletService,
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
+    @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
   ) {}
 
   /** Verifies the signature first — nothing below this line trusts the
@@ -75,7 +77,7 @@ export class WebhooksService {
       return;
     }
 
-    await this.prisma.$transaction(async (tx) => {
+    const fulfilled = await this.prisma.$transaction(async (tx) => {
       // Status-guarded: Stripe redelivers webhooks at-least-once, so a
       // second delivery of the same event must be a safe no-op, not a
       // second FulfillmentJob per card.
@@ -104,7 +106,7 @@ export class WebhooksService {
             metadata: { stripeCheckoutSessionId: session.id, orderStatus: current.status },
           });
         }
-        return;
+        return false;
       }
 
       // Shared with wallet payment: recipients → queued, a FulfillmentJob per
@@ -120,7 +122,60 @@ export class WebhooksService {
         targetId: batchOrderId,
         metadata: { stripeCheckoutSessionId: session.id },
       });
+      return true;
     });
+
+    // Only on the FIRST delivery (fulfilled === true) — never on a redelivery,
+    // so a guest is emailed their claim link exactly once. Best-effort: a send
+    // failure is logged, not thrown (the payment + fulfilment already succeeded,
+    // and the claim link is also on the success page).
+    if (fulfilled) {
+      await this.maybeSendGuestReceipt(batchOrderId);
+    }
+  }
+
+  /** For a guest one-off order (account still unclaimed → has a claim token and a
+   * contact email), email the buyer their receipt with the account-claim link.
+   * A no-op for account holders. See docs/adr/0025. */
+  private async maybeSendGuestReceipt(batchOrderId: string): Promise<void> {
+    try {
+      const order = await this.prisma.batchOrder.findUnique({
+        where: { id: batchOrderId },
+        select: { accountId: true },
+      });
+      if (!order) return;
+      const account = await this.prisma.account.findUnique({
+        where: { id: order.accountId },
+        select: { name: true, contactEmail: true, claimToken: true },
+      });
+      if (!account?.claimToken || !account.contactEmail) return;
+
+      const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
+      const claimUrl = `${webAppUrl}/gift/claim?token=${encodeURIComponent(account.claimToken)}`;
+      await this.email.sendTransactional({
+        to: account.contactEmail,
+        subject: "Your Kudos card is on its way 🎉",
+        html: `
+          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#0f172a">
+            <h1 style="font-size:20px">Thanks — your card is on its way!</h1>
+            <p>We're printing your card and posting it out.</p>
+            <div style="background:#f8fafc;border-radius:12px;padding:20px;margin-top:16px">
+              <p style="font-weight:600;margin:0 0 6px">Never miss their birthday again</p>
+              <p style="margin:0 0 14px;color:#475569">
+                Create a free account to save this contact, get a reminder next year, and let us send
+                it for you automatically.
+              </p>
+              <a href="${claimUrl}"
+                 style="background:#ef5b52;color:#fff;padding:10px 18px;border-radius:9999px;text-decoration:none;font-weight:600">
+                Create your account
+              </a>
+            </div>
+          </div>`,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Guest receipt email for order ${batchOrderId} failed: ${reason}`);
+    }
   }
 
   private async handlePaymentFailed(paymentIntent: Stripe.PaymentIntent): Promise<void> {
