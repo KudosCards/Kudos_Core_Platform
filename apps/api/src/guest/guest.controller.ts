@@ -1,14 +1,22 @@
-import { Body, Controller, Post, UseGuards } from "@nestjs/common";
-import { ApiTags } from "@nestjs/swagger";
+import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { Public } from "../auth/public.decorator";
+import { CurrentUser } from "../auth/current-user.decorator";
+import type { AuthenticatedUser } from "../auth/types";
+import type { SafeAccount } from "../accounts/accounts.service";
 import { GuestOrdersService, type GuestCheckoutResult } from "./guest-orders.service";
+import { GuestClaimService } from "./guest-claim.service";
 import { GuestCheckoutDto } from "./dto/guest-checkout.dto";
+import { ClaimAccountDto } from "./dto/claim-account.dto";
 
 @ApiTags("guest")
 @Controller("guest")
 export class GuestController {
-  constructor(private readonly guestOrders: GuestOrdersService) {}
+  constructor(
+    private readonly guestOrders: GuestOrdersService,
+    private readonly guestClaim: GuestClaimService,
+  ) {}
 
   /**
    * Public, unauthenticated one-off purchase. @Public() exempts it from the
@@ -22,5 +30,28 @@ export class GuestController {
   @Post("checkout")
   checkout(@Body() dto: GuestCheckoutDto): Promise<GuestCheckoutResult> {
     return this.guestOrders.checkout(dto);
+  }
+
+  /** Public prefill for the claim form — returns the email a token is tied to. */
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Get("claim/:token")
+  claimInfo(@Param("token") token: string): Promise<{ email: string }> {
+    return this.guestClaim.getInfo(token);
+  }
+
+  /**
+   * Attach the authenticated user to the guest account behind the token. NOT
+   * @Public — the global JwtAuthGuard supplies the confirmed Supabase user whose
+   * email must match the order's.
+   */
+  @ApiBearerAuth()
+  @Post("claim")
+  claim(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ClaimAccountDto,
+  ): Promise<SafeAccount> {
+    return this.guestClaim.claim(user, dto.claimToken);
   }
 }

@@ -6,6 +6,19 @@ import type { CreateAccountDto } from "./dto/create-account.dto";
 /** An account safe to return over the API — without the claim-token secret. */
 export type SafeAccount = Omit<Account, "claimToken" | "claimTokenExpiresAt">;
 
+/** Prisma `select` of the SafeAccount columns — keeps the claim-token secret out
+ * of any response object. Shared by every endpoint that returns an account. */
+export const SAFE_ACCOUNT_SELECT = {
+  id: true,
+  type: true,
+  name: true,
+  stripeCustomerId: true,
+  planId: true,
+  contactEmail: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 @Injectable()
 export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -34,16 +47,7 @@ export class AccountsService {
   async findById(accountId: string): Promise<SafeAccount> {
     const account = await this.prisma.account.findUnique({
       where: { id: accountId },
-      select: {
-        id: true,
-        type: true,
-        name: true,
-        stripeCustomerId: true,
-        planId: true,
-        contactEmail: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: SAFE_ACCOUNT_SELECT,
     });
     if (!account) {
       throw new NotFoundException("Account not found");

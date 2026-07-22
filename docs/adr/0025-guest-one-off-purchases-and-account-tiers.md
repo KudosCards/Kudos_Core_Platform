@@ -208,6 +208,25 @@ module) lets an unauthenticated visitor buy and send one card.
   (account checkout still defaults to the authenticated `/batch-orders/*` pages). The success page
   confirms the order and nudges toward an account; the actual account-claim lands in Phase 4.
 
+**Phase 4 (account claim) — landed.** A guest can turn their purchase into a personal account.
+
+- **`GET /guest/claim/:token`** (public, throttled) returns the email a token is tied to, to prefill
+  the claim form and detect an expired/spent link. **`POST /guest/claim`** (authenticated — the
+  global guard supplies the confirmed Supabase user) attaches a `Membership` to the guest account,
+  then nulls the token (single-use). Guards: token valid + unexpired; the user's email must match
+  the order's `contactEmail`; and the user must not already own an account (the "already have an
+  account" case returns a clear 409 — moving a guest order across accounts is a documented later
+  enhancement). The claim token never leaves the API (findById/claim both use `SAFE_ACCOUNT_SELECT`).
+- **Delivering the token:** guest checkout now appends `?claim=<token>` to the Stripe `success_url`
+  (via a new `successExtraParams` option on `batchOrders.checkout`), so `/gift/success` can offer
+  claiming immediately. The same link will go in the Brevo receipt in Phase 5.
+- **Web:** `/gift/claim` (public) prefills the email and takes a password → Supabase sign-up →
+  `POST /guest/claim`. The email-confirmation case is handled without losing the claim: the token is
+  stashed (`pending-claim`) and `/onboarding` (already the no-account fallback) completes the claim
+  after the user confirms and logs in, instead of showing the create-account form.
+- e2e: claim attaches membership + spends the token + `/accounts/me` then resolves; single-use
+  (second claim 404s); email-mismatch 403; already-has-account 409; unknown-token prefill 404.
+
 ## Consequences
 
 - One-off buyers convert with **zero signup friction**; the money path, webhook, and fulfilment are

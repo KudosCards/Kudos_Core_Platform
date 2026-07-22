@@ -33,3 +33,15 @@ export const guestCheckoutResultSchema = z.object({
   orderId: z.string().uuid(),
 });
 export type GuestCheckoutResult = z.infer<typeof guestCheckoutResultSchema>;
+
+/** GET /guest/claim/:token — the email a claim token is tied to, for prefill. */
+export const guestClaimInfoSchema = z.object({
+  email: z.string().email(),
+});
+export type GuestClaimInfo = z.infer<typeof guestClaimInfoSchema>;
+
+/** POST /guest/claim body — the single-use claim token. */
+export const guestClaimInputSchema = z.object({
+  claimToken: z.string().min(1),
+});
+export type GuestClaimInput = z.infer<typeof guestClaimInputSchema>;

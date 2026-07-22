@@ -10,7 +10,16 @@ export const metadata: Metadata = { title: "Your card is on its way — Kudos Ca
  * confirms and nudges toward an account. Account-claiming lands in a later
  * phase. See docs/adr/0025.
  */
-export default function GiftSuccessPage() {
+export default async function GiftSuccessPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ claim?: string }>;
+}) {
+  const { claim } = await searchParams;
+  // With a claim token we can attach a login to this exact order; without one
+  // (e.g. an old link) fall back to a plain sign-up.
+  const claimHref = claim ? `/gift/claim?token=${encodeURIComponent(claim)}` : "/register";
+
   return (
     <div className="min-h-screen bg-white text-slate-900">
       <CardsHeader />
@@ -30,7 +39,7 @@ export default function GiftSuccessPage() {
             for you automatically.
           </p>
           <Link
-            href="/register"
+            href={claimHref}
             className="mt-1 rounded-full bg-rose-600 px-6 py-3 text-center font-semibold text-white transition-opacity hover:opacity-90"
           >
             Create a free account

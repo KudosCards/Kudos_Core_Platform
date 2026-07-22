@@ -38,13 +38,14 @@ export class GuestOrdersService {
     // token is the credential that later lets the buyer attach a login.
     const expiresAt = new Date();
     expiresAt.setUTCDate(expiresAt.getUTCDate() + CLAIM_TOKEN_TTL_DAYS);
+    const claimToken = generateClaimToken();
     const account = await this.prisma.account.create({
       data: {
         type: "individual",
         name: "Guest",
         planId: "free",
         contactEmail: dto.buyerEmail,
-        claimToken: generateClaimToken(),
+        claimToken,
         claimTokenExpiresAt: expiresAt,
       },
     });
@@ -76,6 +77,8 @@ export class GuestOrdersService {
       customerEmail: dto.buyerEmail,
       successPath: "/gift/success",
       cancelPath: "/gift/cancelled",
+      // The success page uses this to offer account-claiming right away.
+      successExtraParams: { claim: claimToken },
     });
 
     return { checkoutUrl, orderId: order.id };
