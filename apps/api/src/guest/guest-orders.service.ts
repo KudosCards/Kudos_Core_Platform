@@ -74,6 +74,8 @@ export class GuestOrdersService {
     // prefilled. Payment-before-fulfilment (webhook) is unchanged for guests.
     const { checkoutUrl } = await this.batchOrders.checkout(account.id, null, order.id, {
       customerEmail: dto.buyerEmail,
+      successPath: "/gift/success",
+      cancelPath: "/gift/cancelled",
     });
 
     return { checkoutUrl, orderId: order.id };

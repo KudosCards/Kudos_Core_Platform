@@ -6,15 +6,14 @@ import type { SavedDesign } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { createClient } from "@/lib/supabase/client";
-import { setPendingCardId } from "@/lib/pending-card";
 
 const CORAL = "#ef5b52";
 
 /**
- * The paywall CTA. A logged-out visitor is sent into sign-up carrying their
- * chosen card (localStorage + ?card= param); an already-signed-in visitor skips
- * straight to the editor with a fresh saved design. See
- * docs/adr/0017-public-card-library.md.
+ * The card CTA. A logged-out visitor goes to the friction-free guest send flow
+ * (buy & post one card, no account needed — Moonpig-style); an already-signed-in
+ * visitor skips straight to the editor with a fresh saved design. See
+ * docs/adr/0025-guest-one-off-purchases-and-account-tiers.md.
  */
 export function PersonaliseButton({ cardId, cardName }: { cardId: string; cardName: string }) {
   const router = useRouter();
@@ -31,10 +30,9 @@ export function PersonaliseButton({ cardId, cardName }: { cardId: string; cardNa
       } = await supabase.auth.getSession();
 
       if (!session) {
-        // Not signed in — remember the card and route into sign-up. /start
-        // consumes it once they're authenticated.
-        setPendingCardId(cardId);
-        router.push(`/register?card=${cardId}`);
+        // Not signed in — no paywall. Go straight to the guest send flow to
+        // personalise, address and buy this one card without an account.
+        router.push(`/cards/${cardId}/send`);
         return;
       }
 

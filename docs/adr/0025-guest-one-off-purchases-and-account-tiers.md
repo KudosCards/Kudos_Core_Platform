@@ -192,6 +192,22 @@ module) lets an unauthenticated visitor buy and send one card.
 - e2e tests cover the happy path (guest account minted with no membership, `createdByUserId` null,
   flat £1.50, buyer email handed to Stripe), per-purchase account isolation, and input validation.
 
+**Phase 3 (web guest flow) — landed.** The public buy-without-signup journey.
+
+- **The `/cards/[id]` CTA is no longer a paywall.** A logged-out visitor who clicks "Personalise
+  this card" now goes straight to the guest send flow (`/cards/[id]/send`) instead of being routed
+  into sign-up; a signed-in visitor still goes to the editor. The send page keeps a "create a free
+  account instead" link (carrying `?card=`) for anyone who'd rather sign up.
+- **`/cards/[id]/send`** (public — already covered by the `/cards/` allowlist) shows the chosen card
+  beside a short form (recipient + delivery address + buyer email) and POSTs to `/guest/checkout`
+  via a new `publicApiPost` helper, then redirects to Stripe. For this phase the card prints from
+  the template as-is; an in-card personalisation editor for guests is a possible follow-up.
+- **Public Stripe return pages** `/gift/success` and `/gift/cancelled` (added to the middleware
+  allowlist — a guest has no session). Guest checkout now passes these as the Stripe
+  `success_url`/`cancel_url` via new `successPath`/`cancelPath` options on `batchOrders.checkout`
+  (account checkout still defaults to the authenticated `/batch-orders/*` pages). The success page
+  confirms the order and nudges toward an account; the actual account-claim lands in Phase 4.
+
 ## Consequences
 
 - One-off buyers convert with **zero signup friction**; the money path, webhook, and fulfilment are

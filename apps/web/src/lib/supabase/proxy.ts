@@ -16,10 +16,12 @@ function isPublicPath(pathname: string): boolean {
     // Public recipient message pages (/r/<slug>).
     pathname.startsWith("/r/") ||
     // The public card library: visitors browse /cards and /cards/<id> with no
-    // account — signing up is only triggered when they click "Personalise this
-    // card". See docs/adr/0017-public-card-library.md.
+    // account, and buy a one-off card via the guest flow (/cards/<id>/send).
+    // See docs/adr/0017-public-card-library.md and 0025.
     pathname === "/cards" ||
-    pathname.startsWith("/cards/")
+    pathname.startsWith("/cards/") ||
+    // Guest checkout's Stripe return pages — the buyer has no session.
+    pathname.startsWith("/gift/")
   );
 }
 
