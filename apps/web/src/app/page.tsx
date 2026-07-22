@@ -469,7 +469,7 @@ export default function HomePage() {
                 ))}
               </ul>
               <Link
-                href="/register"
+                href={plan.name === "Free" ? "/register" : `/register?plan=${plan.name.toLowerCase()}`}
                 className={`mt-auto rounded-full px-5 py-2.5 text-center font-semibold transition-opacity hover:opacity-90 ${
                   plan.highlight ? "text-white" : "border border-slate-200 text-slate-900"
                 }`}

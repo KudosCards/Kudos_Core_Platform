@@ -46,7 +46,7 @@ export default function OnboardingPage() {
       return;
     }
 
-    router.push(readPendingCardId() ? "/start" : "/dashboard");
+    router.push(readPendingCardId() ? "/start" : "/get-started");
     router.refresh();
   }
 
