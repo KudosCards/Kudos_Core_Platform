@@ -74,6 +74,15 @@ describe("Reminders (e2e)", () => {
     // Our account's email was sent exactly one digest.
     expect(countEmailsTo(email)).toBe(1);
 
+    // The digest is rendered through the shared branded shell: brand footer,
+    // brand accent, and the recipient's name in the body.
+    const digest = (sendTransactional.mock.calls as Array<[{ to: string; html: string }]>).find(
+      (call) => call[0]?.to === email,
+    );
+    expect(digest?.[0]?.html).toContain("Kudos Cards");
+    expect(digest?.[0]?.html).toContain("#e5372a");
+    expect(digest?.[0]?.html).toContain("Birthday Soon");
+
     // Its occasion is now marked reminded, so a second run doesn't email again.
     sendTransactional.mockClear();
     await reminders.runDueReminders();

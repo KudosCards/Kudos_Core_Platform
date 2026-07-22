@@ -297,6 +297,24 @@ made customisable without a code change.
 - **Still not verifiable from this sandbox:** real Brevo delivery (no network path to Brevo). Tests
   mock `EMAIL_CLIENT`; a live send needs `Brevo_API` + a verified `EMAIL_FROM_ADDRESS` in Railway.
 
+**Branded email shell — landed.** Every outbound email now renders through one shared, email-safe
+layout so the whole product speaks the same visual language.
+
+- **One source of truth.** `apps/api/src/email/email-layout.ts` (`renderBrandedEmail`) wraps content
+  in a table-based, inline-styled document with the Kudos logo, the app's brand palette (mirrored
+  from `globals.css` — accent `#e5372a`), a bulletproof CTA button, a hidden preheader, and a
+  consistent footer. The reminder digest and guest receipt were refactored onto it (replacing their
+  divergent ad-hoc HTML, including an off-brand `#ef5b52` red). This shell is the HTML fallback; a
+  configured Brevo template still supersedes it per email.
+- **Supabase auth emails.** Signup confirmation, magic link, password reset, invite and email-change
+  are sent by Supabase, not our API, so they can't be branded in code. They're **generated** from
+  the same layout into `docs/email-templates/*.html` (via
+  `apps/api/scripts/generate-auth-email-templates.mjs`) and installed by pasting into Supabase →
+  Authentication → Email Templates (see that folder's `README.md`). Generated, never hand-edited, so
+  they can't drift from the transactional emails.
+- Tests assert both transactional emails carry the brand shell (footer + accent), so a future
+  refactor can't silently un-brand them.
+
 ## Consequences
 
 - One-off buyers convert with **zero signup friction**; the money path, webhook, and fulfilment are
