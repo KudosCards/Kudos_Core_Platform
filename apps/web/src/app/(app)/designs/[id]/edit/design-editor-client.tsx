@@ -156,11 +156,11 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="rounded-md border border-black/10 px-3 py-2 text-lg font-semibold dark:border-white/10"
+          className="min-w-0 flex-1 rounded-md border border-black/10 px-3 py-2 text-lg font-semibold dark:border-white/10"
         />
         <div className="flex items-center gap-3">
           {savedAt && (
@@ -262,16 +262,21 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
             </label>
           )}
 
-          <DesignCanvas
-            page={page}
-            selectedElementId={selectedElementId}
-            onSelect={setSelectedElementId}
-            onElementChange={updateElement}
-            onDeselect={() => setSelectedElementId(null)}
-          />
+          {/* The card is a fixed print size, so the canvas is a fixed-width
+              surface; keep it from breaking the page on a phone by scrolling it
+              inside its own box. (Full touch editing is a desktop experience.) */}
+          <div className="max-w-full overflow-x-auto">
+            <DesignCanvas
+              page={page}
+              selectedElementId={selectedElementId}
+              onSelect={setSelectedElementId}
+              onElementChange={updateElement}
+              onDeselect={() => setSelectedElementId(null)}
+            />
+          </div>
         </div>
 
-        <aside className="flex w-64 flex-col gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10">
+        <aside className="flex w-full flex-col gap-3 rounded-lg border border-black/10 p-4 sm:w-64 dark:border-white/10">
           <h2 className="text-sm font-semibold">
             {selectedElement ? "Selected element" : "Nothing selected"}
           </h2>

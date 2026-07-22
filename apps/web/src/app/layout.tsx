@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Kudos Cards",
   description: "Automated, personalised physical recognition that builds retention and loyalty.",
+  icons: { icon: "/marketing/logo.png", apple: "/marketing/logo.png" },
 };
 
 export default function RootLayout({

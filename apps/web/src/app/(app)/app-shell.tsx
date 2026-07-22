@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { Icons } from "@/components/icons";
+import { Logo } from "@/components/logo";
 import { SidebarNav } from "./sidebar-nav";
 import { LogoutButton } from "./logout-button";
 
@@ -49,10 +50,10 @@ export function AppShell({
   const sidebarInner = (
     <div className="flex h-full flex-col justify-between px-4 py-6">
       <div className="flex flex-col gap-8">
-        <div className="px-3">
-          <p className="text-lg font-bold tracking-tight">Kudos Cards</p>
-          <p className="text-xs text-muted">Recognition, delivered</p>
-        </div>
+        <Link href="/dashboard" onClick={() => setDrawerOpen(false)} className="px-3">
+          <Logo className="h-11 w-auto" priority />
+          <p className="mt-1 text-xs text-muted">Recognition, delivered</p>
+        </Link>
         <SidebarNav pendingApprovals={pendingApprovals} onNavigate={() => setDrawerOpen(false)} />
       </div>
       <div className="mt-6 flex flex-col gap-2 border-t border-border px-3 pt-4">
@@ -114,7 +115,9 @@ export function AppShell({
           >
             <Icons.menu className="size-6" />
           </button>
-          <span className="font-bold tracking-tight">Kudos Cards</span>
+          <Link href="/dashboard" aria-label="Kudos Cards home">
+            <Logo className="h-8 w-auto" priority />
+          </Link>
           <Link href="/batch-orders" className="btn-accent px-3 py-1.5 text-xs">
             Order
           </Link>
