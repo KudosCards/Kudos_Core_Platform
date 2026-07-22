@@ -292,7 +292,7 @@ export function RecipientsClient({
           className="card flex flex-col gap-3 p-6"
         >
           <h2 className="font-semibold">Add a recipient</h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <input name="firstName" placeholder="First name" required className={inputClass} />
             <input name="lastName" placeholder="Last name" required className={inputClass} />
             <input type="date" name="dateOfBirth" className={inputClass} />

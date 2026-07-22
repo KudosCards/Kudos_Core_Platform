@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch, ApiError } from "@/lib/api";
 import { readPendingCardId } from "@/lib/pending-card";
+import { Logo } from "@/components/logo";
 
 /**
  * Fallback for a user with a valid Supabase session but no Account yet —
@@ -52,8 +53,8 @@ export default function OnboardingPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-6 py-16">
-      <div className="text-center">
-        <p className="text-2xl font-bold tracking-tight">Kudos Cards</p>
+      <div className="flex flex-col items-center gap-2 text-center">
+        <Logo className="h-16 w-auto" priority />
         <p className="text-sm text-muted">Recognition, delivered</p>
       </div>
       <div className="card flex flex-col gap-4 p-6">
