@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -64,6 +65,18 @@ export function BillingClient({ currentPlanId }: { currentPlanId: string | null 
       {error && (
         <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
       )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4">
+        <div>
+          <p className="font-semibold">New here? Start with your contacts</p>
+          <p className="text-sm text-muted">
+            Import your list once and every birthday is handled for you from then on.
+          </p>
+        </div>
+        <Link href="/get-started" className="btn-accent">
+          Set up your account
+        </Link>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
         {PLANS.map((plan) => {

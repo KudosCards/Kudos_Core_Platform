@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch, ApiError } from "@/lib/api";
 import { readPendingCardId, setPendingCardId } from "@/lib/pending-card";
+import { setPendingPlan } from "@/lib/pending-plan";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -26,11 +27,19 @@ export default function RegisterPage() {
     // A visitor who arrived via "Personalise this card" carries their chosen
     // card in ?card= (and usually localStorage already). Persist it so /start
     // can drop them into the editor once they're authenticated.
-    const cardParam = new URLSearchParams(window.location.search).get("card");
+    const search = new URLSearchParams(window.location.search);
+    const cardParam = search.get("card");
     if (cardParam) {
       setPendingCardId(cardParam);
     }
     const hasPendingCard = Boolean(cardParam) || Boolean(readPendingCardId());
+
+    // A visitor who chose a paid plan carries it in ?plan= — remembered so the
+    // guided setup can offer to activate it once they're in.
+    const planParam = search.get("plan");
+    if (planParam) {
+      setPendingPlan(planParam);
+    }
 
     const supabase = createClient();
     const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
@@ -62,7 +71,9 @@ export default function RegisterPage() {
       return;
     }
 
-    router.push(hasPendingCard ? "/start" : "/dashboard");
+    // Personalise-a-card visitors finish in the editor; everyone else starts in
+    // the guided setup, whose first job is importing their contact list.
+    router.push(hasPendingCard ? "/start" : "/get-started");
     router.refresh();
   }
 

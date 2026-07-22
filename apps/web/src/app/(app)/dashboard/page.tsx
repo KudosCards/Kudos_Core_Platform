@@ -19,6 +19,9 @@ export default async function DashboardPage() {
   ]);
 
   const pendingApprovals = summary?.pendingApprovals ?? 0;
+  // A brand-new account (no contacts yet) is pointed back at the guided setup —
+  // getting the list in is the thing that makes everything else work.
+  const needsSetup = (summary?.recipientCount ?? 0) === 0;
 
   const stats: StatCard[] = [
     {
@@ -65,6 +68,20 @@ export default async function DashboardPage() {
         <h1 className="text-3xl font-bold tracking-tight">Welcome, {account?.name}</h1>
         <p className="text-muted">Here&apos;s what&apos;s happening with your recognition programme.</p>
       </div>
+
+      {needsSetup && (
+        <div className="flex flex-col gap-4 rounded-xl border border-accent/30 bg-accent-soft p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold text-accent">Finish setting up — import your contacts</p>
+            <p className="text-sm text-accent/80">
+              Add your students or team and every birthday lands on your calendar automatically.
+            </p>
+          </div>
+          <Link href="/get-started" className="btn-accent shrink-0">
+            Get started <span aria-hidden>→</span>
+          </Link>
+        </div>
+      )}
 
       {pendingApprovals > 0 && (
         <div className="flex flex-col gap-4 rounded-xl border border-accent/20 bg-accent-soft p-5 sm:flex-row sm:items-center sm:justify-between">
