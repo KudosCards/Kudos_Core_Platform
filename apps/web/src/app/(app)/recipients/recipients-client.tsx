@@ -52,6 +52,7 @@ export function RecipientsClient({
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [paginating, setPaginating] = useState(false);
   const [addingRecipient, setAddingRecipient] = useState(false);
+  const [rowBusyId, setRowBusyId] = useState<string | null>(null);
 
   // Lists state.
   const [lists, setLists] = useState<RecipientListSummary[]>(initialLists);
@@ -251,6 +252,25 @@ export function RecipientsClient({
     });
   }
 
+  async function toggleArchive(recipient: Recipient) {
+    setError(null);
+    setRowBusyId(recipient.id);
+    try {
+      const updated =
+        recipient.status === "archived"
+          ? await clientApiFetch<Recipient>(`/recipients/${recipient.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ status: "active" }),
+            })
+          : await clientApiFetch<Recipient>(`/recipients/${recipient.id}`, { method: "DELETE" });
+      setRecipients((current) => current.map((r) => (r.id === recipient.id ? updated : r)));
+    } catch (archiveError) {
+      setError(archiveError instanceof ApiError ? archiveError.message : "Could not update the recipient");
+    } finally {
+      setRowBusyId(null);
+    }
+  }
+
   const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
   const activeList = activeListId ? lists.find((l) => l.id === activeListId) : null;
 
@@ -391,7 +411,7 @@ export function RecipientsClient({
       )}
 
       <div className="card overflow-x-auto">
-        <table className="w-full min-w-[680px] text-left text-sm">
+        <table className="w-full min-w-[820px] text-left text-sm">
           <thead>
             <tr className="border-b border-border">
               <th className="w-10 px-5 py-3" />
@@ -400,12 +420,13 @@ export function RecipientsClient({
               <th className="section-label px-5 py-3">Postcode</th>
               <th className="section-label px-5 py-3">Source</th>
               <th className="section-label px-5 py-3">Status</th>
+              <th className="section-label px-5 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {recipients.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-6 text-muted">
+                <td colSpan={7} className="px-5 py-6 text-muted">
                   {activeList ? "No recipients on this list yet." : "No recipients yet."}
                 </td>
               </tr>
@@ -441,6 +462,28 @@ export function RecipientsClient({
                     </td>
                     <td className="px-5 py-3">
                       <span className="pill pill-muted capitalize">{recipient.status}</span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center justify-end gap-1.5 text-xs">
+                        <Link
+                          href={`/recipients/${recipient.id}`}
+                          className="rounded-md border border-border px-2 py-1 hover:bg-foreground/[0.03]"
+                        >
+                          Edit
+                        </Link>
+                        <button
+                          type="button"
+                          disabled={rowBusyId === recipient.id}
+                          onClick={() => void toggleArchive(recipient)}
+                          className="rounded-md border border-border px-2 py-1 hover:bg-foreground/[0.03] disabled:opacity-40"
+                        >
+                          {rowBusyId === recipient.id
+                            ? "…"
+                            : recipient.status === "archived"
+                              ? "Restore"
+                              : "Archive"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

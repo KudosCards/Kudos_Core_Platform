@@ -22,8 +22,9 @@ export function DesignsClient({
   initialSavedDesigns: SavedDesign[];
 }) {
   const router = useRouter();
-  const [savedDesigns] = useState(initialSavedDesigns);
+  const [savedDesigns, setSavedDesigns] = useState(initialSavedDesigns);
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null);
+  const [pendingDesignId, setPendingDesignId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
 
@@ -52,6 +53,40 @@ export function DesignsClient({
     } catch (submitError) {
       setError(submitError instanceof ApiError ? submitError.message : "Could not create a design");
       setCreatingTemplateId(null);
+    }
+  }
+
+  async function renameDesign(design: SavedDesign) {
+    const name = window.prompt("Rename design", design.name)?.trim();
+    if (!name || name === design.name) return;
+    setError(null);
+    setPendingDesignId(design.id);
+    try {
+      const updated = await clientApiFetch<SavedDesign>(`/saved-designs/${design.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      });
+      setSavedDesigns((current) => current.map((d) => (d.id === design.id ? updated : d)));
+    } catch (renameError) {
+      setError(renameError instanceof ApiError ? renameError.message : "Could not rename the design");
+    } finally {
+      setPendingDesignId(null);
+    }
+  }
+
+  async function deleteDesign(design: SavedDesign) {
+    if (!window.confirm(`Delete "${design.name}"? This can't be undone.`)) return;
+    setError(null);
+    setPendingDesignId(design.id);
+    try {
+      await clientApiFetch(`/saved-designs/${design.id}`, { method: "DELETE" });
+      setSavedDesigns((current) => current.filter((d) => d.id !== design.id));
+    } catch (deleteError) {
+      // A design attached to an occasion/order can't be deleted (the API guards
+      // it) — surface that instead of silently doing nothing.
+      setError(deleteError instanceof ApiError ? deleteError.message : "Could not delete the design");
+    } finally {
+      setPendingDesignId(null);
     }
   }
 
@@ -129,16 +164,39 @@ export function DesignsClient({
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {savedDesigns.map((design) => (
-              <a
-                key={design.id}
-                href={`/designs/${design.id}/edit`}
-                className="card flex flex-col gap-2 p-3 transition-colors hover:border-foreground/30"
-              >
-                <div className="flex aspect-[3/4] w-full items-center justify-center rounded-md bg-foreground/5 text-xs text-muted">
+              <div key={design.id} className="card flex flex-col gap-2 p-3">
+                <a
+                  href={`/designs/${design.id}/edit`}
+                  className="flex aspect-[3/4] w-full items-center justify-center rounded-md bg-foreground/5 text-xs text-muted transition-colors hover:bg-foreground/10"
+                >
                   Edit
-                </div>
+                </a>
                 <span className="text-sm font-medium">{design.name}</span>
-              </a>
+                <div className="flex items-center gap-1.5 text-xs">
+                  <a
+                    href={`/designs/${design.id}/edit`}
+                    className="rounded-md border border-border px-2 py-1 hover:bg-foreground/[0.03]"
+                  >
+                    Edit
+                  </a>
+                  <button
+                    type="button"
+                    disabled={pendingDesignId === design.id}
+                    onClick={() => void renameDesign(design)}
+                    className="rounded-md border border-border px-2 py-1 hover:bg-foreground/[0.03] disabled:opacity-40"
+                  >
+                    Rename
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pendingDesignId === design.id}
+                    onClick={() => void deleteDesign(design)}
+                    className="rounded-md border border-border px-2 py-1 text-accent hover:bg-accent-soft disabled:opacity-40"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         )}

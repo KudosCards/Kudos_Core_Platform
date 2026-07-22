@@ -61,6 +61,8 @@ export class OccasionSchedulerService {
         type: "birthday",
         status: "scheduled",
         occasionDate: { lte: lookaheadEnd },
+        // Don't pull an archived recipient's birthday into the approvals queue.
+        recipient: { status: "active" },
       },
       data: { status: "pending_approval" },
     });

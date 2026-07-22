@@ -339,6 +339,53 @@ describe("Occasions (e2e)", () => {
       .expect(409);
   });
 
+  it("edits a scheduled event's title and date", async () => {
+    const { token } = await signUp();
+    const recipientId = await createRecipient(token);
+    const created = occasionSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/occasions/events")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ recipientId, type: "achievement", title: "Exams", occasionDate: "2026-07-15" })
+          .expect(201)
+      ).body,
+    );
+
+    const updated = await request(app.getHttpServer())
+      .patch(`/occasions/${created.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "End of exams", occasionDate: "2026-07-20" })
+      .expect(200);
+    expect((updated.body as { title: string }).title).toBe("End of exams");
+    expect((updated.body as { occasionDate: string }).occasionDate.slice(0, 10)).toBe("2026-07-20");
+    expect(occasionSchema.parse(updated.body).status).toBe("scheduled");
+  });
+
+  it("refuses to edit an event that has left the scheduled state", async () => {
+    const { token } = await signUp();
+    const recipientId = await createRecipient(token);
+    const created = occasionSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/occasions/events")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ recipientId, type: "seasonal", occasionDate: "2026-08-05" })
+          .expect(201)
+      ).body,
+    );
+
+    await request(app.getHttpServer())
+      .post(`/occasions/${created.id}/prepare`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    await request(app.getHttpServer())
+      .patch(`/occasions/${created.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Too late" })
+      .expect(409);
+  });
+
   it("deletes a scheduled event but refuses to delete one already in the pipeline", async () => {
     const { token } = await signUp();
     const recipientId = await createRecipient(token);
