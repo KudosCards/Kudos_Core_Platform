@@ -159,6 +159,20 @@ flow doesn't depend on it.
    link carries a signed, single-use token bound to the Stripe checkout session / order; the API
    verifies the token *and* Supabase's email confirmation before attaching a membership.
 
+## Implementation notes
+
+**Phase 1 (schema) — landed.** `BatchOrder.createdByUserId` is now nullable; `Account` gained
+`contactEmail`, `claimToken` (`@unique`), and `claimTokenExpiresAt`.
+
+- **Claim token: a stored, unique, nullable column** (`Account.claimToken`) rather than a purely
+  signed/stateless token. Chosen because a stored token gives *true* single-use and revocation for
+  free — the claim flow (Phase 4) nulls the column on use/expiry, so a spent or revoked link simply
+  finds no matching row, with no separate blocklist to maintain. `claimTokenExpiresAt` bounds its
+  lifetime.
+- **The token is a secret and never leaves the API.** `AccountsService.findById` (which backs
+  `GET /accounts/me`) uses an explicit `select` of the safe columns, so the token is never fetched
+  into a response object. An e2e test asserts the endpoint body carries no trace of it.
+
 ## Consequences
 
 - One-off buyers convert with **zero signup friction**; the money path, webhook, and fulfilment are

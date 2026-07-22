@@ -3,6 +3,9 @@ import type { Account } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type { CreateAccountDto } from "./dto/create-account.dto";
 
+/** An account safe to return over the API — without the claim-token secret. */
+export type SafeAccount = Omit<Account, "claimToken" | "claimTokenExpiresAt">;
+
 @Injectable()
 export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -24,8 +27,24 @@ export class AccountsService {
     });
   }
 
-  async findById(accountId: string): Promise<Account> {
-    const account = await this.prisma.account.findUnique({ where: { id: accountId } });
+  /** The claim token is a secret (whoever holds it can attach a login to the
+   * account), so it never leaves the service — GET /accounts/me returns this.
+   * An explicit `select` of the safe columns keeps the secret out of the row
+   * entirely rather than fetching then stripping it. */
+  async findById(accountId: string): Promise<SafeAccount> {
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+      select: {
+        id: true,
+        type: true,
+        name: true,
+        stripeCustomerId: true,
+        planId: true,
+        contactEmail: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
     if (!account) {
       throw new NotFoundException("Account not found");
     }

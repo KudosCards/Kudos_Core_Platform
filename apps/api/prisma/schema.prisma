@@ -35,6 +35,15 @@ model Account {
   name             String
   stripeCustomerId String?  @unique @map("stripe_customer_id")
   planId           String?  @map("plan_id")
+  /// Guest one-off buyer's email — captured at Stripe checkout for the receipt
+  /// and the account-claim link. Null for accounts created via normal signup
+  /// (identity comes from the membership's user). See docs/adr/0025.
+  contactEmail     String?  @map("contact_email")
+  /// Single-use token that lets a guest claim (attach a login to) the account
+  /// they just bought from. Set when a guest order is created, nulled on claim
+  /// or expiry. A secret — never returned by the API (findById omits it).
+  claimToken          String?   @unique @map("claim_token")
+  claimTokenExpiresAt DateTime? @map("claim_token_expires_at")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
@@ -359,7 +368,10 @@ model BatchOrder {
   /// at 1000 (see the migration) so the first orders read ORD-1000+.
   orderNumber            Int              @unique @default(autoincrement()) @map("order_number")
   accountId              String           @map("account_id")
-  createdByUserId        String           @map("created_by_user_id")
+  /// The user who placed the order. Null for guest one-off purchases, which are
+  /// created by an unauthenticated visitor against a fresh guest account with no
+  /// membership. See docs/adr/0025.
+  createdByUserId        String?          @map("created_by_user_id")
   status                 BatchOrderStatus @default(draft)
   currency               String           @default("GBP")
   subtotalMinor          Int              @default(0) @map("subtotal_minor")
