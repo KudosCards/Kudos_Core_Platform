@@ -247,9 +247,13 @@ uses it for the headline personal-account feature.
 - e2e (against a mocked email client): an opted-in account gets exactly one digest and only once
   (dedupe); an opted-out account gets none; a birthday outside the window gets none.
 
-**Deferred to a small follow-up (Phase 5b):** the guest **receipt email carrying the claim link**
-(so a buyer who closed the success tab can still claim). The infrastructure is now in place — it's a
-single `sendTransactional` call on `checkout.session.completed` for a guest order.
+**Phase 5b (guest receipt email) — landed.** On `checkout.session.completed` for a guest order (the
+account still has a claim token + contact email), the webhook emails the buyer their receipt with
+the account-claim link — so a buyer who closed the success tab can still claim. Sent **after** the
+fulfilment transaction commits and **only on the first delivery** (`fulfilled === true`), so a
+redelivered webhook never re-emails; best-effort (a send failure is logged, not thrown — payment and
+fulfilment already succeeded, and the link is also on the success page). e2e asserts the guest gets
+exactly one receipt carrying the claim token, and none on redelivery.
 
 **Cannot be verified from this sandbox:** real Brevo delivery (no network path to Brevo, same as
 Stripe/Supabase). Needs `BREVO_API_KEY` + a verified sender in Railway and a live test.

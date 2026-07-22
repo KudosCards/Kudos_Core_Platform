@@ -7,6 +7,7 @@ import request from "supertest";
 import Stripe from "stripe";
 import { PrismaService } from "../src/prisma/prisma.service";
 import type { EnvConfig } from "../src/config/env.schema";
+import { EMAIL_CLIENT } from "../src/email/email.client";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
@@ -35,12 +36,15 @@ describe("Webhooks (e2e)", () => {
   let prisma: PrismaService;
   let stripe: Stripe;
   let webhookSecret: string;
+  let sendTransactional: jest.Mock;
 
   beforeAll(async () => {
     // No STRIPE_CLIENT override: webhooks.constructEvent/generateTestHeaderString
     // are pure local crypto, no network call, so the real Stripe SDK (built
-    // from the placeholder test key) is safe to use as-is here.
-    app = await createTestApp();
+    // from the placeholder test key) is safe to use as-is here. EMAIL_CLIENT is
+    // mocked so the guest-receipt send is observable.
+    sendTransactional = jest.fn().mockResolvedValue(undefined);
+    app = await createTestApp([{ provide: EMAIL_CLIENT, useValue: { sendTransactional } }]);
     prisma = app.get(PrismaService);
     const config = app.get(ConfigService<EnvConfig, true>);
     webhookSecret = config.get("STRIPE_WEBHOOK_SECRET", { infer: true });
@@ -177,6 +181,38 @@ describe("Webhooks (e2e)", () => {
     expect(messagePage).not.toBeNull();
     expect(messagePage!.slug.length).toBeGreaterThanOrEqual(6);
     expect(messagePage!.message).toBeNull();
+  });
+
+  it("emails a guest buyer their claim link on payment, exactly once", async () => {
+    const { token, accountId } = await signUp();
+    const { batchOrderId } = await createPendingPaymentBatchOrder(token);
+    // Make it a guest order: set a claim token + contact email on the account.
+    const claimToken = `claim-${randomUUID()}`;
+    await prisma.account.update({
+      where: { id: accountId },
+      data: { claimToken, contactEmail: "guest-buyer@example.com" },
+    });
+    sendTransactional.mockClear();
+
+    const payload = buildStripeEventPayload("checkout.session.completed", {
+      id: `cs_test_${randomUUID()}`,
+      metadata: { batchOrderId },
+    });
+    await postWebhook(payload).expect(201);
+
+    const calls = sendTransactional.mock.calls as Array<[{ to: string; html: string }]>;
+    const receipt = calls.filter((call) => call[0]?.to === "guest-buyer@example.com");
+    expect(receipt).toHaveLength(1);
+    // The claim link (carrying the token) is in the email body.
+    expect(receipt[0]?.[0]?.html).toContain(claimToken);
+
+    // A redelivered event must NOT send a second receipt.
+    sendTransactional.mockClear();
+    await postWebhook(payload).expect(201);
+    const resent = (sendTransactional.mock.calls as Array<[{ to: string }]>).filter(
+      (call) => call[0]?.to === "guest-buyer@example.com",
+    );
+    expect(resent).toHaveLength(0);
   });
 
   it("is idempotent under Stripe's at-least-once redelivery", async () => {
