@@ -227,6 +227,33 @@ module) lets an unauthenticated visitor buy and send one card.
 - e2e: claim attaches membership + spends the token + `/accounts/me` then resolves; single-use
   (second claim 404s); email-mismatch 403; already-has-account 409; unknown-token prefill 404.
 
+**Phase 5 (transactional email + birthday reminders) — landed.** Stands up transactional email and
+uses it for the headline personal-account feature.
+
+- **Email infrastructure:** `EMAIL_CLIENT` (interface + injectable token, mockable like
+  `BREVO_CLIENT`/`STRIPE_CLIENT`) with a real Brevo transactional impl and a **no-op fallback** when
+  `BREVO_API_KEY`/`EMAIL_FROM_ADDRESS` are unset — so the API boots and reminders simply don't send
+  until it's configured in the environment. New optional env: `BREVO_API_KEY`, `EMAIL_FROM_ADDRESS`,
+  `EMAIL_FROM_NAME`.
+- **Reminders:** a daily cron (`RemindersService`, 8am after the scheduler/auto-send) emails each
+  opted-in account a single digest of birthdays in the next 7 days, with a link to the calendar.
+  `Occasion.reminderSentAt` dedupes so an occasion is never emailed twice; a per-account send
+  failure is logged and retried next run (its occasions aren't marked). New schema:
+  `Occasion.reminderSentAt`, `Account.reminderEmailsEnabled` (opt-out, default on).
+- **Recipients:** the signing-up user's email is now stored as `Account.contactEmail` (reminders
+  need a target); it was already set for guest-claimed accounts.
+- **Opt-out:** `PATCH /accounts/me/notifications` + a toggle on the billing page;
+  `reminderEmailsEnabled` is exposed on the account so the UI reflects state.
+- e2e (against a mocked email client): an opted-in account gets exactly one digest and only once
+  (dedupe); an opted-out account gets none; a birthday outside the window gets none.
+
+**Deferred to a small follow-up (Phase 5b):** the guest **receipt email carrying the claim link**
+(so a buyer who closed the success tab can still claim). The infrastructure is now in place — it's a
+single `sendTransactional` call on `checkout.session.completed` for a guest order.
+
+**Cannot be verified from this sandbox:** real Brevo delivery (no network path to Brevo, same as
+Stripe/Supabase). Needs `BREVO_API_KEY` + a verified sender in Railway and a live test.
+
 ## Consequences
 
 - One-off buyers convert with **zero signup friction**; the money path, webhook, and fulfilment are

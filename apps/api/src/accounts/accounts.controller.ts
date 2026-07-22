@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { Account, PlanEntitlement } from "@prisma/client";
 import { AccountsService, type SafeAccount } from "./accounts.service";
 import { DashboardService, type DashboardSummary } from "./dashboard.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { CreateAccountDto } from "./dto/create-account.dto";
+import { UpdateNotificationsDto } from "./dto/update-notifications.dto";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { CurrentMembership } from "../auth/current-membership.decorator";
 import { MembershipGuard } from "../auth/membership.guard";
@@ -23,7 +24,17 @@ export class AccountsController {
   /** No MembershipGuard here — this is what creates the user's first Membership. */
   @Post()
   signup(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateAccountDto): Promise<Account> {
-    return this.accountsService.signup(user.id, dto);
+    return this.accountsService.signup(user.id, dto, user.email);
+  }
+
+  /** Toggle birthday-reminder emails (opt-out). */
+  @UseGuards(MembershipGuard)
+  @Patch("me/notifications")
+  updateNotifications(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Body() dto: UpdateNotificationsDto,
+  ): Promise<SafeAccount> {
+    return this.accountsService.updateNotifications(membership.accountId, dto.reminderEmailsEnabled);
   }
 
   @UseGuards(MembershipGuard)

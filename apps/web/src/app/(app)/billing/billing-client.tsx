@@ -29,9 +29,37 @@ const PLANS: PlanOption[] = [
   },
 ];
 
-export function BillingClient({ currentPlanId }: { currentPlanId: string | null }) {
+export function BillingClient({
+  currentPlanId,
+  remindersEnabled,
+}: {
+  currentPlanId: string | null;
+  remindersEnabled: boolean;
+}) {
   const [error, setError] = useState<string | null>(null);
   const [pendingPlan, setPendingPlan] = useState<string | null>(null);
+  const [reminders, setReminders] = useState(remindersEnabled);
+  const [savingReminders, setSavingReminders] = useState(false);
+
+  async function toggleReminders() {
+    const next = !reminders;
+    setReminders(next);
+    setSavingReminders(true);
+    setError(null);
+    try {
+      await clientApiFetch("/accounts/me/notifications", {
+        method: "PATCH",
+        body: JSON.stringify({ reminderEmailsEnabled: next }),
+      });
+    } catch (toggleError) {
+      setReminders(!next); // revert on failure
+      setError(
+        toggleError instanceof ApiError ? toggleError.message : "Could not update reminders",
+      );
+    } finally {
+      setSavingReminders(false);
+    }
+  }
 
   async function upgrade(planId: "pro" | "centre") {
     setError(null);
@@ -112,6 +140,31 @@ export function BillingClient({ currentPlanId }: { currentPlanId: string | null 
             </div>
           );
         })}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4">
+        <div>
+          <p className="font-semibold">Birthday reminder emails</p>
+          <p className="text-sm text-muted">
+            We&apos;ll email you a week before each upcoming birthday so nothing slips by.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={reminders}
+          disabled={savingReminders}
+          onClick={() => void toggleReminders()}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
+            reminders ? "bg-accent" : "bg-foreground/20"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              reminders ? "translate-x-5" : "translate-x-0.5"
+            }`}
+          />
+        </button>
       </div>
     </div>
   );

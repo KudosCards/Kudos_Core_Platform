@@ -44,6 +44,9 @@ model Account {
   /// or expiry. A secret — never returned by the API (findById omits it).
   claimToken          String?   @unique @map("claim_token")
   claimTokenExpiresAt DateTime? @map("claim_token_expires_at")
+  /// Whether we email this account upcoming-birthday reminders. Opt-out (default
+  /// on); the reminder cron skips accounts with this false. See docs/adr/0025.
+  reminderEmailsEnabled Boolean @default(true) @map("reminder_emails_enabled")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
@@ -277,6 +280,10 @@ model Occasion {
   /// into OrderRecipient.savedDesignId by Phase 3's checkout flow — the design choice
   /// travels with the occasion instead of being re-selected at checkout.
   savedDesignId String?       @map("saved_design_id")
+  /// When a birthday-reminder email covering this occasion was sent, so the
+  /// daily reminder cron never emails the same upcoming occasion twice. Null
+  /// until reminded. See docs/adr/0025.
+  reminderSentAt DateTime?    @map("reminder_sent_at")
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
