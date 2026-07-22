@@ -15,6 +15,7 @@ export const SAFE_ACCOUNT_SELECT = {
   stripeCustomerId: true,
   planId: true,
   contactEmail: true,
+  reminderEmailsEnabled: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -23,7 +24,9 @@ export const SAFE_ACCOUNT_SELECT = {
 export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async signup(userId: string, dto: CreateAccountDto): Promise<Account> {
+  /** `email` (the signing-up user's, from their verified JWT) is stored as the
+   * account's contactEmail so birthday reminders have somewhere to go. */
+  async signup(userId: string, dto: CreateAccountDto, email: string | null): Promise<Account> {
     const existing = await this.prisma.membership.findFirst({ where: { userId } });
     if (existing) {
       throw new ConflictException("This user already belongs to an account");
@@ -31,12 +34,24 @@ export class AccountsService {
 
     return this.prisma.$transaction(async (tx) => {
       const account = await tx.account.create({
-        data: { type: dto.type, name: dto.name, planId: "free" },
+        data: { type: dto.type, name: dto.name, planId: "free", contactEmail: email },
       });
       await tx.membership.create({
         data: { accountId: account.id, userId, role: "owner" },
       });
       return account;
+    });
+  }
+
+  /** Toggle birthday-reminder emails for the account (opt-out). */
+  async updateNotifications(
+    accountId: string,
+    reminderEmailsEnabled: boolean,
+  ): Promise<SafeAccount> {
+    return this.prisma.account.update({
+      where: { id: accountId },
+      data: { reminderEmailsEnabled },
+      select: SAFE_ACCOUNT_SELECT,
     });
   }
 

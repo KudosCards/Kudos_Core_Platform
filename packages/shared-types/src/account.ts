@@ -7,10 +7,18 @@ export const accountSchema = z.object({
   name: z.string().min(1).max(200),
   stripeCustomerId: z.string().nullable(),
   planId: z.string().nullable(),
+  /** Whether upcoming-birthday reminder emails are on for this account (opt-out). */
+  reminderEmailsEnabled: z.boolean(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });
 export type Account = z.infer<typeof accountSchema>;
+
+/** Body for PATCH /accounts/me/notifications. */
+export const updateNotificationsInputSchema = z.object({
+  reminderEmailsEnabled: z.boolean(),
+});
+export type UpdateNotificationsInput = z.infer<typeof updateNotificationsInputSchema>;
 
 export const createAccountInputSchema = z.object({
   type: accountTypeSchema,

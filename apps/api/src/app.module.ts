@@ -25,6 +25,8 @@ import { WalletModule } from "./wallet/wallet.module";
 import { AutoSendModule } from "./auto-send/auto-send.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
 import { GuestModule } from "./guest/guest.module";
+import { EmailModule } from "./email/email.module";
+import { RemindersModule } from "./reminders/reminders.module";
 
 @Module({
   imports: [
@@ -62,6 +64,8 @@ import { GuestModule } from "./guest/guest.module";
     AutoSendModule,
     IntegrationsModule,
     GuestModule,
+    EmailModule,
+    RemindersModule,
   ],
 })
 export class AppModule {}

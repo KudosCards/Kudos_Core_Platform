@@ -78,6 +78,22 @@ export const envSchema = z.object({
     .url()
     .optional()
     .or(z.literal("").transform(() => undefined)),
+
+  // Transactional email via Brevo (birthday reminders, guest receipts — see
+  // docs/adr/0025). A PLATFORM key (not the per-account CRM keys). Optional: the
+  // app boots without it and the email client becomes a logged no-op, so
+  // reminders simply don't send until it's configured. Treat blank as unset.
+  BREVO_API_KEY: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  EMAIL_FROM_ADDRESS: z
+    .string()
+    .email()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  EMAIL_FROM_NAME: z.string().min(1).default("Kudos Cards"),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
