@@ -372,6 +372,25 @@ with no account.
 The web basket UI (public header with basket + reminders, cart state, `/basket` page) builds on this
 endpoint in a follow-up.
 
+**Multi-card guest basket — web landed.** The public site now gives one-off visitors a Moonpig-style
+basket experience.
+
+- **Shared public header** (`components/public-header.tsx`) across the home page and card library:
+  browse nav, a **Reminders** prompt, a **Basket** with a live count badge, and Sign in. The old
+  `CardsHeader` is now a thin alias so every public page picks it up. Marketing-styled (coral),
+  independent of the app shell.
+- **Reminders icon** — for a signed-out visitor it opens a small prompt ("Never miss a birthday —
+  create a free account…") with Sign up / Sign in, since reminders need an account; a signed-in
+  visitor is sent straight to `/calendar`.
+- **Client cart** (`lib/cart.ts`) — a localStorage store exposed via `useSyncExternalStore`
+  (`useCart` / `useCartCount`), cross-tab synced, capped at `CART_MAX_ITEMS` (20). Each item is a
+  template card + one recipient + address.
+- **Add to basket** — the guest card flow (`/cards/[id]/send`) now *adds to the basket* instead of
+  checking out immediately; the buyer's email moves to the basket. **`/basket`** lists the cards
+  (thumbnail, recipient, address, remove), shows the order summary, and pays for all of them in one
+  go via `POST /guest/cart-checkout` → Stripe. `/basket` is a public path in the middleware.
+- Verified by build + a rendered screenshot pass (header, reminders prompt, basket).
+
 ## Consequences
 
 - One-off buyers convert with **zero signup friction**; the money path, webhook, and fulfilment are

@@ -1,58 +1,58 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import type { GuestCheckoutResult } from "@kudos/shared-types";
-import { ApiError } from "@/lib/api";
-import { publicApiPost } from "@/lib/api.public";
+import { addToCart, CART_MAX_ITEMS } from "@/lib/cart";
 
 const CORAL = "#ef5b52";
 const inputClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none";
 
 /**
- * The guest one-off purchase form — buy and post a single card with no account.
- * Collects the recipient + delivery address + the buyer's email, then hands off
- * to Stripe Checkout (POST /guest/checkout). See docs/adr/0025.
+ * The guest "add this card to your basket" form — no account. Collects the
+ * recipient + delivery address and adds the card to the localStorage basket,
+ * then sends the visitor to /basket to add more or pay. The buyer's email is
+ * collected once at basket checkout, not per card. See docs/adr/0025.
  */
-export function GuestSendClient({ cardId }: { cardId: string }) {
-  const [submitting, setSubmitting] = useState(false);
+export function GuestSendClient({
+  cardId,
+  cardName,
+  thumbnailUrl,
+}: {
+  cardId: string;
+  cardName: string;
+  thumbnailUrl: string;
+}) {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setSubmitting(true);
 
     const data = new FormData(event.currentTarget);
     const line2 = String(data.get("shippingAddressLine2") ?? "").trim();
-    const body = {
+    const added = addToCart({
       cardDesignId: cardId,
-      buyerEmail: String(data.get("buyerEmail") ?? "").trim(),
+      cardName,
+      thumbnailUrl,
       recipientFirstName: String(data.get("recipientFirstName") ?? "").trim(),
       recipientLastName: String(data.get("recipientLastName") ?? "").trim(),
       shippingAddressLine1: String(data.get("shippingAddressLine1") ?? "").trim(),
-      // Omit an empty line 2 — the API rejects an empty string (min length 1).
       ...(line2 && { shippingAddressLine2: line2 }),
       shippingAddressCity: String(data.get("shippingAddressCity") ?? "").trim(),
       shippingAddressPostcode: String(data.get("shippingAddressPostcode") ?? "").trim(),
-    };
+    });
 
-    try {
-      const result = await publicApiPost<GuestCheckoutResult>("/guest/checkout", body);
-      // Off to Stripe. On return the /gift/success page confirms + offers an account.
-      window.location.assign(result.checkoutUrl);
-    } catch (submitError) {
-      setError(
-        submitError instanceof ApiError
-          ? submitError.message
-          : "Something went wrong — please try again.",
-      );
-      setSubmitting(false);
+    if (!added) {
+      setError(`Your basket is full (max ${CART_MAX_ITEMS} cards). Check out first, then add more.`);
+      return;
     }
+    router.push("/basket");
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(event)} className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       {error && (
         <p className="rounded-lg bg-rose-50 px-4 py-2 text-sm font-medium text-rose-600">{error}</p>
       )}
@@ -98,24 +98,15 @@ export function GuestSendClient({ cardId }: { cardId: string }) {
         </div>
       </fieldset>
 
-      <fieldset className="flex flex-col gap-3">
-        <legend className="text-sm font-semibold text-slate-900">Your email</legend>
-        <label className="flex flex-col gap-1 text-sm text-slate-600">
-          For your receipt — and to save this card if you want an account later.
-          <input name="buyerEmail" type="email" required className={inputClass} />
-        </label>
-      </fieldset>
-
       <button
         type="submit"
-        disabled={submitting}
-        className="mt-1 rounded-full px-6 py-3 text-center font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+        className="mt-1 rounded-full px-6 py-3 text-center font-semibold text-white transition-opacity hover:opacity-90"
         style={{ backgroundColor: CORAL }}
       >
-        {submitting ? "Taking you to checkout…" : "Continue to payment — £1.50"}
+        Add to basket — £1.50
       </button>
       <p className="text-center text-xs text-slate-500">
-        No account needed. Secure payment by Stripe. £1.50 includes VAT &amp; UK postage.
+        No account needed. £1.50 a card includes VAT &amp; UK postage. Pay securely at the basket.
       </p>
     </form>
   );

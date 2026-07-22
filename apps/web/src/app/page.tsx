@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { PublicHeader } from "@/components/public-header";
 
 /**
  * Public marketing landing — the page web traffic lands on. Sells the
@@ -142,35 +143,14 @@ function Stars() {
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-white text-slate-900">
-      {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-slate-100 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link href="/">
-            <Logo className="h-16 w-auto" />
-          </Link>
-          <nav className="flex items-center gap-6 text-sm font-medium text-slate-600">
-            <a href="#how" className="hidden hover:text-slate-900 sm:inline">
-              How it works
-            </a>
-            <Link href="/cards" className="hidden hover:text-slate-900 sm:inline">
-              Card library
-            </Link>
-            <a href="#plans" className="hidden hover:text-slate-900 sm:inline">
-              Plans
-            </a>
-            <Link href="/login" className="hover:text-slate-900">
-              Log in
-            </Link>
-            <Link
-              href="/register"
-              className="rounded-full px-4 py-2 font-semibold text-white transition-opacity hover:opacity-90"
-              style={{ backgroundColor: CORAL }}
-            >
-              Start free
-            </Link>
-          </nav>
-        </div>
-      </header>
+      {/* Header — Moonpig-style: browse nav + Reminders prompt + Basket + Sign in */}
+      <PublicHeader
+        navLinks={[
+          { href: "/#how", label: "How it works" },
+          { href: "/cards", label: "Card library" },
+          { href: "/#plans", label: "Plans" },
+        ]}
+      />
 
       {/* Hero */}
       <section className="bg-gradient-to-b from-sky-50 to-white">

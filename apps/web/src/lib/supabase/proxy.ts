@@ -20,6 +20,9 @@ function isPublicPath(pathname: string): boolean {
     // See docs/adr/0017-public-card-library.md and 0025.
     pathname === "/cards" ||
     pathname.startsWith("/cards/") ||
+    // The guest basket — a one-off visitor fills it and checks out with no
+    // account (POST /guest/cart-checkout). See docs/adr/0025.
+    pathname === "/basket" ||
     // Guest checkout's Stripe return pages — the buyer has no session.
     pathname.startsWith("/gift/")
   );
