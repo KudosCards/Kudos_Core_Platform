@@ -52,19 +52,28 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     },
   );
 
-  // Refresh + validate the session with getUser — the proven @supabase/ssr
-  // pattern. (A previous getClaims()-based optimisation crashed Netlify's
-  // Edge runtime — "edge function invocation failed" — so this is deliberately
-  // the boring, known-good call.) Wrapped so a transient auth failure can
-  // never crash the edge function: navigation gating fails open, and the app
-  // shell still enforces auth server-side (its /accounts/me fetch redirects to
-  // /login when there's no session), so nothing sensitive is exposed.
+  // Read the session with getSession, NOT getUser. getUser() hits Supabase's
+  // Auth server on every request — a blocking network round-trip on every page
+  // navigation, which is the single biggest source of sluggish page-to-page
+  // navigation. getSession() reads (and, when the cookie carries a valid
+  // refresh token, silently refreshes) the session locally, only touching the
+  // network when the access token actually needs refreshing.
+  //
+  // This is safe here because the middleware is only a UX redirect gate, not
+  // the security boundary: the NestJS API cryptographically verifies every
+  // token against Supabase's JWKS on every call, and the authenticated layout's
+  // /accounts/me fetch redirects to /login on a 401. A stale or forged cookie
+  // that slips past this gate therefore renders nothing — the API rejects it
+  // one hop later, before any data is fetched. See docs/adr/0023-navigation-performance.md.
+  //
+  // Wrapped so a transient auth failure can never crash the edge function:
+  // navigation gating fails open, and the app shell re-checks server-side.
   try {
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
 
-    if (!user && !isPublicPath(request.nextUrl.pathname)) {
+    if (!session && !isPublicPath(request.nextUrl.pathname)) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/login";
       return NextResponse.redirect(redirectUrl);
