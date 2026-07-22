@@ -347,6 +347,31 @@ service).
 This gives the buyer a full lifecycle of branded email: **confirmation** at payment →
 **dispatch** when the card is posted.
 
+**Multi-card guest basket — API landed.** The guest journey grows from a single card to a
+Moonpig-style basket: a visitor can buy and send several personalised cards in one payment, still
+with no account.
+
+- New `POST /guest/cart-checkout` (`@Public()`, same 10/min per-IP throttle as the single-card
+  checkout — one call still mints one account + one Checkout Session whatever the basket size). Body:
+  `{ buyerEmail, items: [{ cardDesignId, document?, recipient…, shipping…, postageClass?,
+  occasionType? }] }`, 1–20 items.
+- Reuses the **same money path**: a new `BatchOrdersService.quickSendMany` builds one draft
+  `BatchOrder` across every card (each becomes an approved one-off occasion), sharing a private
+  `buildQuickSendLine` helper with the single-card `quickSend` so the two can't drift. Pricing, the
+  approved→queued transition, fulfilment and the webhook are all unchanged — a basket is just a
+  batch order with N recipients. The single-card `GuestOrdersService.checkout` now delegates to
+  `checkoutCart` with a one-item basket, so there is one implementation.
+- The **whole basket is validated before any account is minted** (every card design must be a live
+  catalogue template), so a bad basket 404s cleanly with no orphan guest account. The 20-item cap
+  mirrors the free plan's `batchOrderMaxSize` (`GUEST_CART_MAX_ITEMS`), giving a clean 400 rather
+  than a 403 deep in the money path.
+- shared-types: `guestCartItemSchema` + `guestCartCheckoutInputSchema` (+ `GUEST_CART_MAX_ITEMS`).
+- e2e: a 3-card basket makes one order/account with three distinct recipients each at the flat £1.50
+  and a single Checkout Session; an invalid card mints no account; empty and over-cap baskets 400.
+
+The web basket UI (public header with basket + reminders, cart state, `/basket` page) builds on this
+endpoint in a follow-up.
+
 ## Consequences
 
 - One-off buyers convert with **zero signup friction**; the money path, webhook, and fulfilment are
