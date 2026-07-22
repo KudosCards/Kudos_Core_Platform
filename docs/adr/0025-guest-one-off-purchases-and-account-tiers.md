@@ -1,6 +1,6 @@
 # ADR 0025 — Guest one-off purchases + three-tier account model
 
-Status: **proposed** (design doc for approval — no implementation until signed off)
+Status: **accepted** (owner approved the shape and resolved the open questions — see below)
 Date: 2026-07-22
 
 ## Context
@@ -141,18 +141,23 @@ flow doesn't depend on it.
 6. **Personal-account polish**: an `individual` signup path and "add your first birthday"
    onboarding distinct from the business `/get-started`.
 
-## Open questions for the owner (need answers before phases 4–5)
+## Resolved decisions (owner)
 
-1. **Transactional email provider for reminders + receipts.** None is wired. Options: **Brevo
-   transactional** (reuse the existing Brevo dependency/account), Resend, or Postmark. Which — and
-   do you have/what account should I use? (Supabase's built-in auth emails are for auth only, not
-   suitable for reminders.)
-2. **Content moderation** of guest-supplied photos/messages we print — hands-off, or an ops
-   hold/approve step before print?
-3. **VAT/receipt** for consumer one-off sales — is Stripe's emailed receipt enough, or do you need
-   a formal VAT invoice to the buyer?
-4. **Claim-link security** — happy with a signed single-use token tied to the Stripe session, or do
-   you have a preference?
+1. **Transactional email provider: Brevo.** We reuse the existing Brevo account/integration — Brevo
+   already ships as a dependency for CRM contact sync, so reminders (and any guest receipt beyond
+   Stripe's) go through Brevo's transactional email API. No new vendor. Isolated to the reminders
+   phase; the sending client is mockable in tests the same way the Brevo *source* client already is.
+2. **Content moderation: hands-off.** No ops hold/approve step on guest-supplied photos/messages;
+   we rely on Stripe payment + terms of service. (The fulfilment queue already supports a hold
+   state, so a moderation step can be added later if abuse materialises — but it is out of scope
+   now.)
+3. **Receipt: Stripe's emailed receipt is sufficient for guests.** No formal VAT invoice for one-off
+   guest purchases. A proper VAT invoice is a **business-subscription** feature — if a buyer needs
+   invoices, that's a reason to sign up for a business account. So invoicing is not part of the
+   guest flow.
+4. **Claim-link security: signed single-use token tied to the Stripe session.** Approved. The claim
+   link carries a signed, single-use token bound to the Stripe checkout session / order; the API
+   verifies the token *and* Supabase's email confirmation before attaching a membership.
 
 ## Consequences
 
