@@ -9,6 +9,7 @@ import type { App } from "supertest/types";
 import request from "supertest";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
+import { PrismaService } from "../src/prisma/prisma.service";
 
 describe("Accounts (e2e)", () => {
   let app: INestApplication<App>;
@@ -59,6 +60,38 @@ describe("Accounts (e2e)", () => {
 
     const me = accountSchema.parse(meResponse.body);
     expect(me.id).toBe(signedUp.id);
+  });
+
+  it("never exposes the guest claim token via /accounts/me", async () => {
+    const token = await mintToken(randomUUID());
+    const signupResponse = await request(app.getHttpServer())
+      .post("/accounts")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ type: "individual", name: "Claim Secret Test" })
+      .expect(201);
+    const accountId = (signupResponse.body as { id: string }).id;
+
+    // Simulate a claimable account by setting a token directly, then confirm the
+    // API response body carries no trace of it (nor its expiry). The token is
+    // unique per run so it can't collide with other accounts under the unique
+    // constraint in the shared test DB.
+    const secretToken = `claim-${randomUUID()}`;
+    const prisma = app.get(PrismaService);
+    await prisma.account.update({
+      where: { id: accountId },
+      data: { claimToken: secretToken, claimTokenExpiresAt: new Date() },
+    });
+
+    const meResponse = await request(app.getHttpServer())
+      .get("/accounts/me")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    const body = meResponse.body as Record<string, unknown>;
+    expect(body.claimToken).toBeUndefined();
+    expect(body.claim_token).toBeUndefined();
+    expect(body.claimTokenExpiresAt).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain(secretToken);
   });
 
   it("rejects a second signup for the same user", async () => {

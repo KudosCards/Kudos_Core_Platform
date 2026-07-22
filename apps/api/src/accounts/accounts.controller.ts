@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { Account, PlanEntitlement } from "@prisma/client";
-import { AccountsService } from "./accounts.service";
+import { AccountsService, type SafeAccount } from "./accounts.service";
 import { DashboardService, type DashboardSummary } from "./dashboard.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { CreateAccountDto } from "./dto/create-account.dto";
@@ -28,7 +28,9 @@ export class AccountsController {
 
   @UseGuards(MembershipGuard)
   @Get("me")
-  getCurrentAccount(@CurrentMembership() membership: CurrentMembershipContext): Promise<Account> {
+  getCurrentAccount(
+    @CurrentMembership() membership: CurrentMembershipContext,
+  ): Promise<SafeAccount> {
     return this.accountsService.findById(membership.accountId);
   }
 
