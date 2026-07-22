@@ -5,9 +5,10 @@ import { AuditModule } from "../audit/audit.module";
 import { EntitlementsModule } from "../entitlements/entitlements.module";
 import { BillingModule } from "../billing/billing.module";
 import { MessagesModule } from "../messages/messages.module";
+import { RecipientsModule } from "../recipients/recipients.module";
 
 @Module({
-  imports: [AuditModule, EntitlementsModule, BillingModule, MessagesModule],
+  imports: [AuditModule, EntitlementsModule, BillingModule, MessagesModule, RecipientsModule],
   controllers: [BatchOrdersController],
   providers: [BatchOrdersService],
   exports: [BatchOrdersService],

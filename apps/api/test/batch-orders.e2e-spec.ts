@@ -162,6 +162,83 @@ describe("Batch orders (e2e)", () => {
     expect(occasion.status).toBe("queued");
   });
 
+  describe("quick-send (guided first order)", () => {
+    function quickSendBody(savedDesignId: string) {
+      return {
+        savedDesignId,
+        firstName: "Jamie",
+        lastName: "Pupil",
+        shippingAddressLine1: "1 Test Street",
+        shippingAddressCity: "London",
+        shippingAddressPostcode: "SW1A 1AA",
+        postageClass: "second_class",
+      };
+    }
+
+    it("turns a saved design + recipient into a ready-to-pay draft order in one call", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+
+      const response = await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send(quickSendBody(savedDesignId))
+        .expect(201);
+      const order = batchOrderSchema.parse(response.body);
+
+      // One 2nd-class card: £1.50 card + £0.91 stamp = £2.41.
+      expect(order.status).toBe("draft");
+      expect(order.subtotalMinor).toBe(150);
+      expect(order.postageMinor).toBe(91);
+      expect(order.totalMinor).toBe(241);
+      expect(order.orderRecipients).toHaveLength(1);
+      expect(order.orderRecipients[0]?.savedDesignId).toBe(savedDesignId);
+
+      // It created exactly one recipient and one (now queued) occasion.
+      expect(await prisma.recipient.count({ where: { accountId } })).toBe(1);
+      const occasion = await prisma.occasion.findFirstOrThrow({ where: { accountId } });
+      expect(occasion).toMatchObject({ status: "queued", source: "one_off_campaign" });
+
+      // …and the returned draft checks out through the normal Stripe flow.
+      const checkout = await request(app.getHttpServer())
+        .post(`/batch-orders/${order.id}/checkout`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+      expect(checkout.body).toEqual({
+        checkoutUrl: expect.stringMatching(/^https:\/\/checkout\.stripe\.test\/pay\/cs_test_/),
+      });
+      expect(checkoutSessionsCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it("404s when the design belongs to another account (no order or recipient created)", async () => {
+      const accountA = await signUp();
+      const accountB = await signUp();
+      const savedDesignId = await createSavedDesign(accountA.token);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${accountB.token}`)
+        .send(quickSendBody(savedDesignId))
+        .expect(404);
+
+      // The foreign caller's account is left untouched — no stray recipient.
+      expect(await prisma.recipient.count({ where: { accountId: accountB.accountId } })).toBe(0);
+    });
+
+    it("rejects an invalid postcode before creating anything", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ ...quickSendBody(savedDesignId), shippingAddressPostcode: "NOPE" })
+        .expect(400);
+
+      expect(await prisma.recipient.count({ where: { accountId } })).toBe(0);
+    });
+  });
+
   it("rejects an occasion that isn't approved", async () => {
     const { token } = await signUp();
     const recipientId = await createRecipient(token);
