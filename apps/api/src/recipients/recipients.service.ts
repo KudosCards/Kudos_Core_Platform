@@ -83,7 +83,7 @@ export class RecipientsService {
 
   async create(
     accountId: string,
-    actorUserId: string,
+    actorUserId: string | null,
     dto: CreateRecipientDto,
   ): Promise<Recipient> {
     let recipient: Recipient;
@@ -103,13 +103,18 @@ export class RecipientsService {
       throw this.mapWriteError(error);
     }
 
-    await this.audit.record({
-      accountId,
-      actorUserId,
-      action: "create",
-      targetType: "Recipient",
-      targetId: recipient.id,
-    });
+    // Guest one-off purchases create a recipient with no acting user; there's
+    // no one to attribute the audit entry to (actor_user_id is NOT NULL), so we
+    // skip it — the recipient row itself is the record. See docs/adr/0025.
+    if (actorUserId) {
+      await this.audit.record({
+        accountId,
+        actorUserId,
+        action: "create",
+        targetType: "Recipient",
+        targetId: recipient.id,
+      });
+    }
 
     // The recipient's birthday becomes their first calendar event the moment
     // they're added — no waiting for the nightly scheduler. See

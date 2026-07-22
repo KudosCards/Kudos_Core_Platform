@@ -173,6 +173,25 @@ flow doesn't depend on it.
   `GET /accounts/me`) uses an explicit `select` of the safe columns, so the token is never fetched
   into a response object. An e2e test asserts the endpoint body carries no trace of it.
 
+**Phase 2 (API guest checkout) — landed.** A `@Public()` `POST /guest/checkout` (in a new `guest`
+module) lets an unauthenticated visitor buy and send one card.
+
+- **The money path is reused, not copied.** The shared `recipients.create`, `batchOrders.quickSend`,
+  `batchOrders.create`, and `batchOrders.checkout` now accept `actorUserId: string | null`. A guest
+  passes `null` → `BatchOrder.createdByUserId` is null and the audit writes are skipped (the audit
+  actor column is NOT NULL, and a guest has no user to attribute; the order/account rows are the
+  record). Pricing, the approved→queued transition, and cap checks are identical to the account
+  path — `GuestOrdersService` just mints a guest account (`individual`, `free` plan → flat £1.50,
+  no discount), saves the personalised design under it, then calls the same `quickSend` + `checkout`.
+- **Create-only and self-scoping.** The DTO carries **no `accountId`** — the endpoint always mints a
+  fresh guest account server-side, so a public caller can never aim an order at an existing account.
+  `checkout` gained an optional `customerEmail` to prefill the buyer's email into the Stripe session.
+- **Rate-limited** at 10/min per IP (ThrottlerGuard), mirroring the public message-page route.
+- **The webhook is unchanged.** `checkout.session.completed` fulfils by `batchOrderId` alone and
+  never touches `createdByUserId` or a membership, so a guest order fulfils exactly like any other.
+- e2e tests cover the happy path (guest account minted with no membership, `createdByUserId` null,
+  flat £1.50, buyer email handed to Stripe), per-purchase account isolation, and input validation.
+
 ## Consequences
 
 - One-off buyers convert with **zero signup friction**; the money path, webhook, and fulfilment are

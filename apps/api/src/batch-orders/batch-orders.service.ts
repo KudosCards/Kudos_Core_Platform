@@ -52,7 +52,7 @@ export class BatchOrdersService {
    */
   async quickSend(
     accountId: string,
-    actorUserId: string,
+    actorUserId: string | null,
     dto: QuickSendDto,
   ): Promise<BatchOrder> {
     const savedDesign = await this.prisma.savedDesign.findFirst({
@@ -139,7 +139,7 @@ export class BatchOrdersService {
 
   async create(
     accountId: string,
-    actorUserId: string,
+    actorUserId: string | null,
     dto: CreateBatchOrderDto,
   ): Promise<BatchOrder> {
     const occasionIds = dto.lines.map((line) => line.occasionId);
@@ -227,6 +227,7 @@ export class BatchOrdersService {
       const order = await tx.batchOrder.create({
         data: {
           accountId,
+          // Null for guest one-off purchases — no acting user. See docs/adr/0025.
           createdByUserId: actorUserId,
           status: "draft",
           subtotalMinor,
@@ -245,14 +246,18 @@ export class BatchOrdersService {
       });
     });
 
-    await this.audit.record({
-      accountId,
-      actorUserId,
-      action: "create",
-      targetType: "BatchOrder",
-      targetId: batchOrder.id,
-      metadata: { lineCount: dto.lines.length, totalMinor: batchOrder.totalMinor },
-    });
+    // Guest orders have no acting user to attribute (see docs/adr/0025); the
+    // BatchOrder row is the record. Account orders always audit.
+    if (actorUserId) {
+      await this.audit.record({
+        accountId,
+        actorUserId,
+        action: "create",
+        targetType: "BatchOrder",
+        targetId: batchOrder.id,
+        metadata: { lineCount: dto.lines.length, totalMinor: batchOrder.totalMinor },
+      });
+    }
     return batchOrder;
   }
 
@@ -310,7 +315,12 @@ export class BatchOrdersService {
     return order;
   }
 
-  async checkout(accountId: string, actorUserId: string, id: string): Promise<CheckoutResult> {
+  async checkout(
+    accountId: string,
+    actorUserId: string | null,
+    id: string,
+    options?: { customerEmail?: string },
+  ): Promise<CheckoutResult> {
     const existing = await this.prisma.batchOrder.findFirst({
       where: { id, accountId },
       include: ORDER_RECIPIENTS_INCLUDE,
@@ -354,6 +364,9 @@ export class BatchOrdersService {
             quantity: 1,
           },
         ],
+        // Prefill the buyer's email for guest checkout (Stripe also uses it for
+        // the receipt). Account holders leave it unset — Stripe collects it.
+        ...(options?.customerEmail && { customer_email: options.customerEmail }),
         success_url: `${webAppUrl}/batch-orders/success?batchOrderId=${existing.id}`,
         cancel_url: `${webAppUrl}/batch-orders/cancelled?batchOrderId=${existing.id}`,
         metadata: { batchOrderId: existing.id, accountId },
@@ -378,14 +391,16 @@ export class BatchOrdersService {
       },
     });
 
-    await this.audit.record({
-      accountId,
-      actorUserId,
-      action: "checkout",
-      targetType: "BatchOrder",
-      targetId: id,
-      metadata: { stripeCheckoutSessionId: session.id },
-    });
+    if (actorUserId) {
+      await this.audit.record({
+        accountId,
+        actorUserId,
+        action: "checkout",
+        targetType: "BatchOrder",
+        targetId: id,
+        metadata: { stripeCheckoutSessionId: session.id },
+      });
+    }
 
     if (!session.url) {
       throw new ConflictException("Stripe did not return a checkout URL");

@@ -24,6 +24,7 @@ import { CatalogModule } from "./catalog/catalog.module";
 import { WalletModule } from "./wallet/wallet.module";
 import { AutoSendModule } from "./auto-send/auto-send.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
+import { GuestModule } from "./guest/guest.module";
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { IntegrationsModule } from "./integrations/integrations.module";
     WalletModule,
     AutoSendModule,
     IntegrationsModule,
+    GuestModule,
   ],
 })
 export class AppModule {}
