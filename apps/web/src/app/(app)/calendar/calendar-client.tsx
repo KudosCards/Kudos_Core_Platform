@@ -2,7 +2,7 @@
 
 import type { Occasion } from "@kudos/shared-types";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
@@ -88,7 +88,22 @@ export function CalendarClient({
   const today = new Date(todayIso);
   const todayKey = ymdUTC(today);
 
-  const [view, setView] = useState<CalendarView>("month");
+  // The month/week grids need ~560px to be legible (they scroll horizontally on
+  // a phone); the list view is the mobile-friendly one. Default to list on
+  // narrow screens, but let an explicit pick override that. Read via
+  // useSyncExternalStore so the server + first client render agree on "month"
+  // (no hydration mismatch), then it corrects to "list" on a phone after mount.
+  const isNarrow = useSyncExternalStore(
+    (onChange) => {
+      const mql = window.matchMedia("(max-width: 640px)");
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia("(max-width: 640px)").matches,
+    () => false,
+  );
+  const [viewOverride, setView] = useState<CalendarView | null>(null);
+  const view: CalendarView = viewOverride ?? (isNarrow ? "list" : "month");
   const [anchor, setAnchor] = useState<Date>(today);
   const [showDispatch, setShowDispatch] = useState(false);
   const [typeFilter, setTypeFilter] = useState<string>("all");
