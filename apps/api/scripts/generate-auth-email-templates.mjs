@@ -87,6 +87,9 @@ for (const t of templates) {
     heading: t.heading,
     bodyHtml: t.bodyHtml,
     cta: t.cta,
+    // Auth links must work even if the button doesn't render — always offer the
+    // raw link as a fallback.
+    showLinkFallback: true,
   });
   writeFileSync(join(outDir, t.file), `${html}\n`, "utf8");
   console.log(`wrote docs/email-templates/${t.file}  (subject: ${t.subject})`);

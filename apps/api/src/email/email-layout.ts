@@ -35,6 +35,12 @@ export interface BrandedEmailOptions {
   bodyHtml: string;
   /** Optional primary call-to-action rendered as the branded button. */
   cta?: { url: string; label: string };
+  /**
+   * When true, a plain "button not working? paste this link" fallback is shown
+   * under the CTA. Use for links that must work even if the button doesn't
+   * render (auth: confirm, magic link, password reset).
+   */
+  showLinkFallback?: boolean;
   /** Optional small print above the standard footer (e.g. an opt-out note). */
   footerNote?: string;
 }
@@ -56,10 +62,17 @@ export function emailButton(url: string, label: string): string {
 
 /** Wrap body content in the full branded HTML document. */
 export function renderBrandedEmail(options: BrandedEmailOptions): string {
-  const { webAppUrl, preheader, heading, bodyHtml, cta, footerNote } = options;
+  const { webAppUrl, preheader, heading, bodyHtml, cta, showLinkFallback, footerNote } = options;
   const logoUrl = `${webAppUrl}/marketing/logo.png`;
   const year = new Date().getUTCFullYear();
   const ctaHtml = cta ? emailButton(cta.url, cta.label) : "";
+  const linkFallbackHtml =
+    cta && showLinkFallback
+      ? `<p style="margin:4px 0 0;font-family:${FONT_STACK};font-size:12px;line-height:18px;color:${BRAND.muted}">
+           Button not working? Copy and paste this link into your browser:<br>
+           <a href="${cta.url}" style="color:${BRAND.accent};word-break:break-all">${cta.url}</a>
+         </p>`
+      : "";
   const footerNoteHtml = footerNote
     ? `<p style="margin:0 0 12px;font-size:12px;line-height:18px;color:${BRAND.muted}">${footerNote}</p>`
     : "";
@@ -99,6 +112,7 @@ export function renderBrandedEmail(options: BrandedEmailOptions): string {
                 ${bodyHtml}
               </div>
               ${ctaHtml}
+              ${linkFallbackHtml}
             </td>
           </tr>
           <tr>

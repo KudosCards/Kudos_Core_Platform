@@ -315,6 +315,24 @@ layout so the whole product speaks the same visual language.
 - Tests assert both transactional emails carry the brand shell (footer + accent), so a future
   refactor can't silently un-brand them.
 
+**Order confirmation for account holders — landed.** Previously only *guests* were emailed after a
+paid order (the claim receipt); a signed-in account holder got nothing. The post-fulfilment send now
+branches on whether the account is still a guest:
+
+- **Guest** (has a claim token) → the existing claim receipt.
+- **Account holder** (contact email, no claim token) → a branded order confirmation showing the
+  order ref (`ORD-####`), card count and total paid, with a **View your order** CTA linking to
+  `/orders/:id`. Opt into a Brevo template via `BREVO_ORDER_CONFIRMATION_TEMPLATE_ID`
+  (params: `orderNumber`, `cardCount`, `total`, `orderUrl`).
+
+Both still fire only on the first webhook delivery (`fulfilled === true`) and are best-effort. e2e
+covers all three: an account holder gets exactly one confirmation (not the claim email), a guest
+gets the claim receipt (not the confirmation), and neither re-sends on redelivery.
+
+**Auth-email link fallback — landed.** The generated Supabase templates now render a plain
+"button not working? paste this link" fallback under the CTA, so confirm/magic-link/reset still work
+in clients that strip the button. `renderBrandedEmail` gained a `showLinkFallback` flag for this.
+
 ## Consequences
 
 - One-off buyers convert with **zero signup friction**; the money path, webhook, and fulfilment are
