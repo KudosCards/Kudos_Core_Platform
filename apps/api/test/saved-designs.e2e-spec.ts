@@ -17,10 +17,35 @@ const cardDesignSchema = z.object({
 const savedDesignSchema = z.object({
   id: z.string().uuid(),
   accountId: z.string().uuid(),
-  cardDesignId: z.string().uuid(),
+  cardDesignId: z.string().uuid().nullable(),
   name: z.string(),
   document: z.object({ version: z.literal(1), pages: z.array(z.unknown()) }),
 });
+
+/** A minimal valid custom-artwork document: one full-bleed image on the front. */
+const artworkDocument = {
+  version: 1,
+  pages: [
+    {
+      name: "front",
+      elements: [
+        {
+          kind: "image",
+          id: randomUUID(),
+          assetUrl: "https://cdn.example.com/artwork.png",
+          x: 0,
+          y: 0,
+          width: 450,
+          height: 600,
+          rotation: 0,
+        },
+      ],
+    },
+    { name: "inside-left", elements: [] },
+    { name: "inside-right", elements: [] },
+    { name: "back", elements: [] },
+  ],
+};
 
 describe("Saved designs (e2e)", () => {
   let app: INestApplication<App>;
@@ -199,5 +224,49 @@ describe("Saved designs (e2e)", () => {
       .delete(`/saved-designs/${recreated.id}`)
       .set("Authorization", `Bearer ${token}`)
       .expect(409);
+  });
+
+  it("rejects custom artwork (no template) on the free plan", async () => {
+    const { token } = await signUp();
+    // New accounts default to the free plan, which lacks customArtworkEnabled.
+    await request(app.getHttpServer())
+      .post("/saved-designs")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "My own artwork", document: artworkDocument })
+      .expect(403);
+  });
+
+  it("rejects a custom design with no template and no document", async () => {
+    const { token, accountId } = await signUp();
+    // Upgrade so we get past the entitlement gate and hit the document check.
+    await prisma.account.update({ where: { id: accountId }, data: { planId: "pro" } });
+    await request(app.getHttpServer())
+      .post("/saved-designs")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "No document" })
+      .expect(400);
+  });
+
+  it("creates a custom design from uploaded artwork on a plan that allows it", async () => {
+    const { token, accountId } = await signUp();
+    await prisma.account.update({ where: { id: accountId }, data: { planId: "pro" } });
+
+    const createResponse = await request(app.getHttpServer())
+      .post("/saved-designs")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "My own artwork", document: artworkDocument })
+      .expect(201);
+    const created = savedDesignSchema.parse(createResponse.body);
+
+    expect(created.name).toBe("My own artwork");
+    expect(created.cardDesignId).toBeNull();
+
+    // It shows up in the account's saved designs like any other.
+    const listResponse = await request(app.getHttpServer())
+      .get("/saved-designs")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const designs = z.array(savedDesignSchema).parse(listResponse.body);
+    expect(designs.some((d) => d.id === created.id && d.cardDesignId === null)).toBe(true);
   });
 });

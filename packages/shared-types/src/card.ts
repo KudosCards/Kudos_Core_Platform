@@ -84,7 +84,8 @@ export type CardDesign = z.infer<typeof cardDesignSchema>;
 export const savedDesignSchema = z.object({
   id: z.string().uuid(),
   accountId: z.string().uuid(),
-  cardDesignId: z.string().uuid(),
+  /** Null for a member's own uploaded artwork (no catalog template behind it). */
+  cardDesignId: z.string().uuid().nullable(),
   name: z.string(),
   document: designDocumentSchema,
   createdAt: z.coerce.date(),

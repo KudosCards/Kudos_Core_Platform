@@ -2,9 +2,13 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { IsObject, IsOptional, IsString, IsUUID, Length } from "class-validator";
 
 export class CreateSavedDesignDto {
-  @ApiProperty({ description: "The CardDesign template this is based on" })
+  @ApiPropertyOptional({
+    description:
+      "The CardDesign template this is based on. Omit to save a custom design from your own uploaded artwork (requires the customArtworkEnabled entitlement and a document).",
+  })
+  @IsOptional()
   @IsUUID()
-  cardDesignId!: string;
+  cardDesignId?: string;
 
   @ApiProperty()
   @IsString()
@@ -13,7 +17,7 @@ export class CreateSavedDesignDto {
 
   @ApiPropertyOptional({
     description:
-      "DesignDocument JSON (see @kudos/shared-types). Omit to start from the template's document unedited.",
+      "DesignDocument JSON (see @kudos/shared-types). Omit to start from the template's document unedited; required when no cardDesignId is given.",
   })
   @IsOptional()
   @IsObject()

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -8,6 +9,7 @@ import { Prisma, type SavedDesign } from "@prisma/client";
 import { designDocumentSchema } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { CardDesignsService } from "../card-designs/card-designs.service";
+import { EntitlementsService } from "../entitlements/entitlements.service";
 import type { CreateSavedDesignDto } from "./dto/create-saved-design.dto";
 import type { UpdateSavedDesignDto } from "./dto/update-saved-design.dto";
 
@@ -23,16 +25,43 @@ export class SavedDesignsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cardDesigns: CardDesignsService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   async create(accountId: string, dto: CreateSavedDesignDto): Promise<SavedDesign> {
-    const template = await this.cardDesigns.findOne(dto.cardDesignId);
-    const document = dto.document ? this.parseDocument(dto.document) : template.document;
+    // Two ways to make a saved design:
+    //  1. From a catalog template — copy its document (or an edited variant).
+    //  2. From the member's own uploaded artwork — no template, so a document
+    //     is required, and the plan must carry the customArtworkEnabled gate.
+    if (dto.cardDesignId) {
+      const template = await this.cardDesigns.findOne(dto.cardDesignId);
+      const document = dto.document ? this.parseDocument(dto.document) : template.document;
+      return this.prisma.savedDesign.create({
+        data: {
+          accountId,
+          cardDesignId: template.id,
+          name: dto.name,
+          document: document as Prisma.InputJsonValue,
+        },
+      });
+    }
 
+    if (!dto.document) {
+      throw new BadRequestException(
+        "A document is required when creating a design without a template",
+      );
+    }
+    const entitlement = await this.entitlements.getForAccount(accountId);
+    if (!entitlement.customArtworkEnabled) {
+      throw new ForbiddenException(
+        "Uploading your own artwork is available on the Pro and Centre plans",
+      );
+    }
+    const document = this.parseDocument(dto.document);
     return this.prisma.savedDesign.create({
       data: {
         accountId,
-        cardDesignId: template.id,
+        cardDesignId: null,
         name: dto.name,
         document: document as Prisma.InputJsonValue,
       },
