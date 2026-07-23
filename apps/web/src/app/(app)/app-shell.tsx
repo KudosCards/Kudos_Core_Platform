@@ -6,6 +6,7 @@ import { Icons } from "@/components/icons";
 import { Logo } from "@/components/logo";
 import { SidebarNav } from "./sidebar-nav";
 import { LogoutButton } from "./logout-button";
+import { NotificationBell } from "./notification-bell";
 
 /**
  * The authenticated app shell. On desktop it's a fixed left sidebar; on
@@ -61,7 +62,7 @@ export function AppShell({
         <div className="flex items-center gap-1.5 text-xs text-muted">
           <span className="truncate">{planLabel}</span>
           <span aria-hidden>·</span>
-          <Link href="/billing" className="text-accent hover:underline">
+          <Link href="/settings" className="text-accent hover:underline">
             manage
           </Link>
         </div>
@@ -118,16 +119,24 @@ export function AppShell({
           <Link href="/dashboard" aria-label="Kudos Cards home">
             <Logo className="h-8 w-auto" priority />
           </Link>
-          <Link href="/batch-orders" className="btn-accent px-3 py-1.5 text-xs">
-            Order
-          </Link>
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <Link href="/batch-orders" className="btn-accent px-3 py-1.5 text-xs">
+              Order
+            </Link>
+          </div>
         </header>
 
         {/* Desktop top bar */}
         <header className="hidden items-center justify-end gap-4 border-b border-border bg-surface px-8 py-3.5 lg:flex">
-          <span className="text-sm text-muted">
+          <Link
+            href="/wallet"
+            className="text-sm text-muted hover:text-foreground"
+            title="Wallet balance"
+          >
             Wallet: <span className="font-semibold text-foreground">{walletLabel}</span>
-          </span>
+          </Link>
+          <NotificationBell />
           <Link href="/batch-orders" className="btn-accent">
             Create an order <span aria-hidden>→</span>
           </Link>

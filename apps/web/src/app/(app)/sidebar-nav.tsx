@@ -31,18 +31,15 @@ const GROUPS: NavGroup[] = [
     title: "Grow relationships",
     items: [
       { label: "Recipients", href: "/recipients", icon: "recipients" },
-      { label: "Integrations", href: "/integrations", icon: "integrations" },
       { label: "Designs", href: "/designs", icon: "designs" },
       { label: "Messages", href: "/messages", icon: "messages" },
     ],
   },
   {
+    // Team, Integrations, Wallet & Billing all now live under Settings, so the
+    // sidebar stays lean. See docs/adr/0030-settings-and-notification-centre.md.
     title: "Account",
-    items: [
-      { label: "Team", href: "/team", icon: "team" },
-      { label: "Wallet", href: "/wallet", icon: "wallet" },
-      { label: "Billing", href: "/billing", icon: "billing" },
-    ],
+    items: [{ label: "Settings", href: "/settings", icon: "settings" }],
   },
 ];
 
