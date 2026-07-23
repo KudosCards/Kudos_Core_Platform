@@ -284,7 +284,8 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
           {selectedElement?.kind === "text" && (
             <>
               <label className="flex flex-col gap-1 text-xs text-foreground/60">
-                Text (supports {"{name}"})
+                Text — merge tokens {"{name}"}, {"{firstName}"}, {"{lastName}"}, {"{fullName}"} fill
+                in each recipient&apos;s name when sent
                 <textarea
                   value={selectedElement.text}
                   onChange={(e) => updateElement({ ...selectedElement, text: e.target.value })}

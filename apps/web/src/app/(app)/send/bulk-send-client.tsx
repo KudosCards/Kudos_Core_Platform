@@ -1,11 +1,21 @@
 "use client";
 
 import type { BatchOrder, Recipient, SavedDesign } from "@kudos/shared-types";
-import { ukPostcodeRegex } from "@kudos/shared-types";
+import { applyMergeTokens, hasMergeTokens, ukPostcodeRegex } from "@kudos/shared-types";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+
+// Client-only (Konva touches canvas APIs) — renders a card exactly as it prints.
+const CardFacePreview = dynamic(
+  () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
+  { ssr: false },
+);
+
+/** How many personalised previews to render at once before summarising the rest. */
+const MAX_PREVIEWS = 8;
 
 /** Card price and postage in pence, for the on-screen estimate. The server is
  * authoritative — Stripe shows the exact total and applies any plan discount —
@@ -53,6 +63,14 @@ export function BulkSendClient({
 
   const sendable = useMemo(() => recipients.filter(hasMailableAddress), [recipients]);
   const needsAddress = useMemo(() => recipients.filter((r) => !hasMailableAddress(r)), [recipients]);
+
+  const selectedDesign = useMemo(
+    () => designs.find((d) => d.id === selectedDesignId),
+    [designs, selectedDesignId],
+  );
+  // Whether the chosen design carries a {name}-style token, so each card comes
+  // out personalised. Drives the preview copy below.
+  const personalises = selectedDesign ? hasMergeTokens(selectedDesign.document) : false;
 
   const perCard = CARD_MINOR + (POSTAGE_MINOR[postageClass] ?? 0);
   const estimate = perCard * sendable.length;
@@ -137,8 +155,8 @@ export function BulkSendClient({
                           : "border-border hover:bg-foreground/[0.03]"
                       }`}
                     >
-                      <span className="flex aspect-[3/4] w-full items-center justify-center rounded-md bg-foreground/5 text-xs text-muted">
-                        Card
+                      <span className="flex w-full justify-center overflow-hidden rounded-md bg-foreground/5">
+                        <CardFacePreview document={design.document} width={120} />
                       </span>
                       <span className="truncate text-sm font-medium">{design.name}</span>
                     </button>
@@ -147,6 +165,48 @@ export function BulkSendClient({
               </div>
             )}
           </section>
+
+          {/* Personalisation preview — one card per recipient, with the {name}
+              token resolved to each person, so the sender sees every card. */}
+          {selectedDesign && sendable.length > 0 && (
+            <section className="card flex flex-col gap-3 p-6">
+              <div className="flex flex-col gap-1">
+                <h2 className="font-semibold">Personalised for each recipient</h2>
+                <p className="text-sm text-muted">
+                  {personalises ? (
+                    <>Each card is printed with that person&apos;s name.</>
+                  ) : (
+                    <>
+                      This design has no <code className="rounded bg-foreground/10 px-1">{"{name}"}</code>{" "}
+                      token yet — add one in the{" "}
+                      <Link href={`/designs/${selectedDesign.id}/edit`} className="text-accent hover:underline">
+                        editor
+                      </Link>{" "}
+                      to include each recipient&apos;s name.
+                    </>
+                  )}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                {sendable.slice(0, MAX_PREVIEWS).map((recipient) => (
+                  <div key={recipient.id} className="flex flex-col items-center gap-1.5">
+                    <CardFacePreview
+                      document={applyMergeTokens(selectedDesign.document, recipient)}
+                      width={150}
+                    />
+                    <span className="truncate text-xs text-muted">
+                      {recipient.firstName} {recipient.lastName}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {sendable.length > MAX_PREVIEWS && (
+                <p className="text-xs text-muted">
+                  …and {sendable.length - MAX_PREVIEWS} more, each with their own name.
+                </p>
+              )}
+            </section>
+          )}
 
           {/* 2 — who it's going to */}
           <section className="card flex flex-col gap-3 p-6">
