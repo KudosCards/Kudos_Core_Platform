@@ -126,6 +126,18 @@ describe("Team / invites (e2e)", () => {
     );
     expect(team.members).toHaveLength(2);
     expect(team.invites).toHaveLength(0);
+
+    // The existing owner got a persisted "someone joined" inbox notification;
+    // the joiner did not (we notify before adding their membership). See ADR 0034.
+    const ownerNotes = await prisma.notification.findMany({
+      where: { userId: owner.userId, kind: "invite_accepted" },
+    });
+    expect(ownerNotes).toHaveLength(1);
+    expect(ownerNotes[0]?.title).toContain("staff@centre.test");
+    const joinerNotes = await prisma.notification.count({
+      where: { userId: staffUserId, kind: "invite_accepted" },
+    });
+    expect(joinerNotes).toBe(0);
   });
 
   it("rejects accepting with a different email than the invite", async () => {

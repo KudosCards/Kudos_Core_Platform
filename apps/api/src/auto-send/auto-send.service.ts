@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { WalletService } from "../wallet/wallet.service";
+import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.constants";
 import { runSerializable } from "../common/run-serializable";
 
@@ -44,6 +45,7 @@ export class AutoSendService {
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
     private readonly wallet: WalletService,
+    private readonly inbox: NotificationInboxService,
   ) {}
 
   /** Runs after the 6am birthday scheduler so newly-scheduled occasions aren't
@@ -71,6 +73,7 @@ export class AutoSendService {
       try {
         await this.autoSendOne(occasion);
         result.sent += 1;
+        await this.notifyAutoSent(occasion);
       } catch (error) {
         const reason = error instanceof Error ? error.message : "Unknown error";
         result.skipped.push({ occasionId: occasion.id, reason });
@@ -89,6 +92,30 @@ export class AutoSendService {
       `Auto-send: ${result.sent}/${result.due} sent, ${result.skipped.length} skipped`,
     );
     return result;
+  }
+
+  /** Tell the team a card went out on its own — an auto-send is an action no
+   * human triggered, so it's exactly the kind of "it happened" event the inbox
+   * exists for. Best-effort and idempotent on the occasion id, so it never
+   * turns a successful send into a run failure. See docs/adr/0034. */
+  private async notifyAutoSent(occasion: OccasionWithRecipient): Promise<void> {
+    try {
+      const name = occasion.recipient
+        ? `${occasion.recipient.firstName} ${occasion.recipient.lastName}`
+        : (occasion.title ?? "a recipient");
+      const label = occasion.title ?? occasion.type;
+      await this.inbox.notifyAccount(occasion.accountId, {
+        kind: "auto_send",
+        title: `A card was sent to ${name}`,
+        body: `Their ${label} card was ordered and posted automatically.`,
+        href: "/orders",
+        entityType: "Occasion",
+        entityId: occasion.id,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Auto-send notification for occasion ${occasion.id} failed: ${reason}`);
+    }
   }
 
   /**
