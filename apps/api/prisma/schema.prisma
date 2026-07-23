@@ -61,10 +61,43 @@ model Account {
   apiKeys        AccountApiKey[]
   crmConnections CrmConnection[]
   recipientLists RecipientList[]
+  notifications  Notification[]
 
   // Super-admin subscribers list is ordered newest-first.
   @@index([createdAt])
   @@map("accounts")
+}
+
+/// A persisted, per-user record of something that already happened in the
+/// account and is worth telling a member about after the fact — an order paid,
+/// an auto-send fired, a colleague joined. This is deliberately distinct from
+/// the *computed* notification feed (notifications.service.ts, ADR 0030), which
+/// derives live "action needed" items from current state and carries no
+/// read/unread. An account-wide event fans out one row per active member, so
+/// read state (readAt) is per-user. entityType/entityId let a producer stay
+/// idempotent under retries (skip if a row for this kind+entity already exists).
+/// userId is the Supabase Auth user id — not a Prisma FK, same as Membership.
+/// See docs/adr/0034-notification-inbox.md.
+model Notification {
+  id         String    @id @default(uuid())
+  accountId  String    @map("account_id")
+  userId     String    @map("user_id")
+  kind       String
+  title      String
+  body       String
+  href       String?
+  entityType String?   @map("entity_type")
+  entityId   String?   @map("entity_id")
+  readAt     DateTime? @map("read_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  // The unread badge + the member's inbox list, both newest-first per user.
+  @@index([userId, createdAt])
+  // Idempotency lookup: has this account already been notified about this event?
+  @@index([accountId, kind, entityId])
+  @@map("notifications")
 }
 
 /// A customer's connection to an external CRM (Brevo, …) that recipients are

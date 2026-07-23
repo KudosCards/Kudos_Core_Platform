@@ -18,6 +18,7 @@ import { generateInviteToken, INVITE_TTL_DAYS } from "../common/generate-invite-
 import type { EnvConfig } from "../config/env.schema";
 import type { AuthenticatedUser } from "../auth/types";
 import { SAFE_ACCOUNT_SELECT, type SafeAccount } from "../accounts/accounts.service";
+import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import type { CreateInviteDto } from "./dto/create-invite.dto";
 
 export interface TeamMember {
@@ -62,6 +63,7 @@ export class TeamService {
     private readonly audit: AuditService,
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
+    private readonly inbox: NotificationInboxService,
   ) {}
 
   /** The team panel: members, pending invites, and whether the plan allows
@@ -292,6 +294,22 @@ export class TeamService {
           "You already belong to a Kudos account — log in to that one to switch",
         );
       }
+
+      // Notify the *existing* team before adding the new member, so the fan-out
+      // reaches the people who were already here — not the joiner themselves.
+      // Same transaction, idempotent on the invite id. See docs/adr/0034.
+      await this.inbox.notifyAccount(
+        invite.accountId,
+        {
+          kind: "invite_accepted",
+          title: `${email} joined your team`,
+          body: `They're now a ${invite.role} on your account.`,
+          href: "/team",
+          entityType: "Invite",
+          entityId: invite.id,
+        },
+        tx,
+      );
 
       await tx.membership.create({
         data: { accountId: invite.accountId, userId: user.id, role: invite.role, email },

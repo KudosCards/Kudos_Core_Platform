@@ -27,7 +27,11 @@ export class MembershipGuard implements CanActivate {
       throw new ForbiddenException("No account membership found for this user");
     }
 
-    request.membership = { accountId: membership.accountId, role: membership.role };
+    request.membership = {
+      accountId: membership.accountId,
+      role: membership.role,
+      userId: membership.userId,
+    };
     return true;
   }
 }

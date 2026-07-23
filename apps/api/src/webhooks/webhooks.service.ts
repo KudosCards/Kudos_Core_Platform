@@ -8,6 +8,7 @@ import { WalletService } from "../wallet/wallet.service";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { BRAND, renderBrandedEmail } from "../email/email-layout";
+import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import type { EnvConfig } from "../config/env.schema";
 import { mapStripeSubscriptionStatus } from "./subscription-status.util";
 
@@ -28,6 +29,7 @@ export class WebhooksService {
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
+    private readonly inbox: NotificationInboxService,
   ) {}
 
   /** Verifies the signature first — nothing below this line trusts the
@@ -132,6 +134,38 @@ export class WebhooksService {
     // same information is on the success page).
     if (fulfilled) {
       await this.maybeSendOrderEmail(batchOrderId);
+      await this.notifyOrderPaid(batchOrderId);
+    }
+  }
+
+  /** Drop a persisted inbox note to the whole team that a paid order is now in
+   * production. Best-effort — the payment + fulfilment already committed, so a
+   * notification failure must never surface as a webhook error (Stripe would
+   * retry and re-fulfil). Idempotent on the order id, so a redelivery is a
+   * no-op even if this somehow runs twice. See docs/adr/0034-notification-inbox.md. */
+  private async notifyOrderPaid(batchOrderId: string): Promise<void> {
+    try {
+      const order = await this.prisma.batchOrder.findUnique({
+        where: { id: batchOrderId },
+        select: {
+          accountId: true,
+          orderNumber: true,
+          _count: { select: { orderRecipients: true } },
+        },
+      });
+      if (!order) return;
+      const cards = order._count.orderRecipients;
+      await this.inbox.notifyAccount(order.accountId, {
+        kind: "order_paid",
+        title: `Order ORD-${order.orderNumber} is paid`,
+        body: `${cards} card${cards === 1 ? "" : "s"} are now in production.`,
+        href: `/orders/${batchOrderId}`,
+        entityType: "BatchOrder",
+        entityId: batchOrderId,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Order-paid notification for ${batchOrderId} failed: ${reason}`);
     }
   }
 

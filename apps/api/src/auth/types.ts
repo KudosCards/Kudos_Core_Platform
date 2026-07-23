@@ -10,6 +10,9 @@ export interface AuthenticatedUser {
 export interface CurrentMembershipContext {
   accountId: string;
   role: MembershipRole;
+  /** The acting Supabase Auth user id — needed for per-user state (e.g. the
+   * notification inbox's read/unread, which is scoped to the individual). */
+  userId: string;
 }
 
 /** Populated by PlatformAdminGuard for internal ops (print/post) staff. */
