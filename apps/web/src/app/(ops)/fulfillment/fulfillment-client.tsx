@@ -2,9 +2,28 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
+import type { DesignDocument } from "@kudos/shared-types";
+import { applyMergeTokens } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { Modal } from "@/components/modal";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
+
+const CardFacePreview = dynamic(
+  () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
+  { ssr: false },
+);
+
+/** Single-card detail (GET /fulfillment/jobs/:id) — carries the design document
+ * and recipient needed to render the personalised card the operator prints. */
+interface FulfillmentJobDetail {
+  id: string;
+  orderRecipient: {
+    recipient: { firstName: string; lastName: string };
+    savedDesign: { name: string; document: DesignDocument };
+  };
+}
 
 export type FulfillmentStatus =
   "pending" | "in_progress" | "printed" | "posted" | "delivered" | "failed";
@@ -108,6 +127,23 @@ export function FulfillmentClient({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkPending, setBulkPending] = useState(false);
   const [exportPending, setExportPending] = useState(false);
+  const [preview, setPreview] = useState<FulfillmentJobDetail | null>(null);
+  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
+
+  async function openPreview(jobId: string) {
+    setError(null);
+    setPreviewLoadingId(jobId);
+    try {
+      // Audited single-card read — pulls the design document + recipient so we
+      // can render the card exactly as it prints, name merged in.
+      const detail = await clientApiFetch<FulfillmentJobDetail>(`/fulfillment/jobs/${jobId}`);
+      setPreview(detail);
+    } catch (previewError) {
+      setError(previewError instanceof ApiError ? previewError.message : "Could not load the card");
+    } finally {
+      setPreviewLoadingId(null);
+    }
+  }
 
   function removeJob(id: string) {
     setJobs((current) => current.filter((j) => j.id !== id));
@@ -287,20 +323,52 @@ export function FulfillmentClient({
                   </div>
                 </div>
 
-                {step && (
+                <div className="flex shrink-0 items-center gap-2 self-start">
                   <button
                     type="button"
-                    disabled={pendingId === job.id}
-                    onClick={() => void advance(job)}
-                    className="shrink-0 self-start rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+                    disabled={previewLoadingId === job.id}
+                    onClick={() => void openPreview(job.id)}
+                    className="rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
                   >
-                    {pendingId === job.id ? "…" : step.label}
+                    {previewLoadingId === job.id ? "…" : "Preview card"}
                   </button>
-                )}
+                  {step && (
+                    <button
+                      type="button"
+                      disabled={pendingId === job.id}
+                      onClick={() => void advance(job)}
+                      className="rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+                    >
+                      {pendingId === job.id ? "…" : step.label}
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {preview && (
+        <Modal
+          open
+          onClose={() => setPreview(null)}
+          title={`${preview.orderRecipient.recipient.firstName} ${preview.orderRecipient.recipient.lastName}`}
+        >
+          <div className="flex flex-col items-center gap-3">
+            <p className="text-sm text-foreground/60">
+              {preview.orderRecipient.savedDesign.name} — printed exactly as shown, with this
+              recipient&apos;s name merged in.
+            </p>
+            <CardFacePreview
+              document={applyMergeTokens(
+                preview.orderRecipient.savedDesign.document,
+                preview.orderRecipient.recipient,
+              )}
+              width={300}
+            />
+          </div>
+        </Modal>
       )}
     </div>
   );
