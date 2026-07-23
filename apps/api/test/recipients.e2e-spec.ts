@@ -200,6 +200,31 @@ describe("Recipients (e2e)", () => {
     });
   });
 
+  it("persists custom fields on create and merges them on update", async () => {
+    const { token } = await signUp();
+    const created = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/recipients")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ firstName: "Field", lastName: "Test", customFields: { teacher: "Mrs Patel" } })
+          .expect(201)
+      ).body,
+    );
+    expect(created.customFields).toEqual({ teacher: "Mrs Patel" });
+
+    const updated = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .patch(`/recipients/${created.id}`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({ customFields: { teacher: "Mr Okafor", house: "Blue" } })
+          .expect(200)
+      ).body,
+    );
+    expect(updated.customFields).toEqual({ teacher: "Mr Okafor", house: "Blue" });
+  });
+
   it("archives a recipient via DELETE and restores it via PATCH status", async () => {
     const { token } = await signUp();
     const created = recipientSchema.parse(

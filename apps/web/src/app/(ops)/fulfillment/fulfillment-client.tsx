@@ -21,9 +21,22 @@ const CardFacePreview = dynamic(
 interface FulfillmentJobDetail {
   id: string;
   orderRecipient: {
-    recipient: { firstName: string; lastName: string };
+    recipient: {
+      firstName: string;
+      lastName: string;
+      customFields: Record<string, string> | null;
+    };
+    occasion: { type: string; title: string | null; occasionDate: string } | null;
     savedDesign: { name: string; document: DesignDocument };
   };
+}
+
+/** Human occasion label for {occasion}: custom title wins, else the type
+ * title-cased (e.g. "birthday" → "Birthday"). */
+function occasionLabelFor(occasion: { type: string; title: string | null } | null): string | null {
+  if (!occasion) return null;
+  if (occasion.title) return occasion.title;
+  return occasion.type.charAt(0).toUpperCase() + occasion.type.slice(1);
 }
 
 export type FulfillmentStatus =
@@ -391,10 +404,13 @@ export function FulfillmentClient({
               recipient&apos;s name merged in.
             </p>
             <CardFacePreview
-              document={applyMergeTokens(
-                preview.orderRecipient.savedDesign.document,
-                preview.orderRecipient.recipient,
-              )}
+              document={applyMergeTokens(preview.orderRecipient.savedDesign.document, {
+                firstName: preview.orderRecipient.recipient.firstName,
+                lastName: preview.orderRecipient.recipient.lastName,
+                occasion: occasionLabelFor(preview.orderRecipient.occasion),
+                occasionDate: preview.orderRecipient.occasion?.occasionDate ?? null,
+                customFields: preview.orderRecipient.recipient.customFields,
+              })}
               width={300}
             />
           </div>

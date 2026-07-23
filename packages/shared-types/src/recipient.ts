@@ -43,6 +43,8 @@ export const recipientSchema = z.object({
     .nullable(),
   addressCountry: z.string().nullable(),
   tags: z.array(z.string()).default([]),
+  /** Arbitrary key→value fields usable as {key} merge tokens on a card. */
+  customFields: z.record(z.string()).nullable(),
   status: recipientStatusSchema,
   /** Where the recipient came from: "manual", "csv", "api", or a CRM id. */
   source: z.string(),
@@ -64,6 +66,7 @@ export const createRecipientInputSchema = recipientSchema
     addressCity: true,
     addressPostcode: true,
     tags: true,
+    customFields: true,
   })
   .partial({
     dateOfBirth: true,
@@ -73,6 +76,7 @@ export const createRecipientInputSchema = recipientSchema
     addressCity: true,
     addressPostcode: true,
     tags: true,
+    customFields: true,
   });
 export type CreateRecipientInput = z.infer<typeof createRecipientInputSchema>;
 

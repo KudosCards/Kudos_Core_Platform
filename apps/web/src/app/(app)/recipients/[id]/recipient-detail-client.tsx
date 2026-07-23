@@ -66,6 +66,13 @@ export function RecipientDetailClient({
   // Event editing (one row at a time).
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
+  // Custom fields — arbitrary key→value pairs that become {key} merge tokens on
+  // a card. Edited as an ordered list of rows, saved as a whole map.
+  const [fieldRows, setFieldRows] = useState<{ key: string; value: string }[]>(() =>
+    Object.entries(recipient.customFields ?? {}).map(([key, value]) => ({ key, value })),
+  );
+  const [savingFields, setSavingFields] = useState(false);
+
   const isArchived = recipient.status === "archived";
 
   function sortEvents(list: Occasion[]): Occasion[] {
@@ -119,6 +126,30 @@ export function RecipientDetailClient({
       setError(archiveError instanceof ApiError ? archiveError.message : "Could not update the recipient");
     } finally {
       setArchiving(false);
+    }
+  }
+
+  async function handleSaveFields() {
+    setError(null);
+    // Collapse the rows into a map, dropping blank keys and de-duplicating on the
+    // last-wins key (case preserved, as designers reference it verbatim).
+    const map: Record<string, string> = {};
+    for (const { key, value } of fieldRows) {
+      const trimmed = key.trim();
+      if (trimmed) map[trimmed] = value;
+    }
+    setSavingFields(true);
+    try {
+      const updated = await clientApiFetch<Recipient>(`/recipients/${recipient.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ customFields: map }),
+      });
+      setRecipient(updated);
+      setFieldRows(Object.entries(updated.customFields ?? {}).map(([key, value]) => ({ key, value })));
+    } catch (saveError) {
+      setError(saveError instanceof ApiError ? saveError.message : "Could not save the card fields");
+    } finally {
+      setSavingFields(false);
     }
   }
 
@@ -424,6 +455,76 @@ export function RecipientDetailClient({
             {adding ? "Adding…" : "Add event"}
           </button>
         </form>
+      </section>
+
+      <section className="card flex flex-col gap-4 p-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold">Card fields</h2>
+          <p className="text-sm text-muted">
+            Extra details you can drop into a card design as a merge token. A field named{" "}
+            <code className="rounded bg-foreground/10 px-1">teacher</code> becomes{" "}
+            <code className="rounded bg-foreground/10 px-1">{"{teacher}"}</code>, personalised per
+            recipient when the card is sent.
+          </p>
+        </div>
+
+        {fieldRows.length === 0 ? (
+          <p className="text-sm text-muted">No custom fields yet.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {fieldRows.map((row, index) => (
+              <li key={index} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  aria-label="Field name"
+                  value={row.key}
+                  placeholder="Field name (e.g. teacher)"
+                  onChange={(e) =>
+                    setFieldRows((rows) =>
+                      rows.map((r, i) => (i === index ? { ...r, key: e.target.value } : r)),
+                    )
+                  }
+                  className={`${inputClass} flex-1`}
+                />
+                <input
+                  aria-label="Field value"
+                  value={row.value}
+                  placeholder="Value (e.g. Mrs Patel)"
+                  onChange={(e) =>
+                    setFieldRows((rows) =>
+                      rows.map((r, i) => (i === index ? { ...r, value: e.target.value } : r)),
+                    )
+                  }
+                  className={`${inputClass} flex-[2]`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setFieldRows((rows) => rows.filter((_, i) => i !== index))}
+                  className="rounded-md border border-border px-2.5 py-2 text-xs text-accent hover:bg-accent-soft"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+          <button
+            type="button"
+            onClick={() => setFieldRows((rows) => [...rows, { key: "", value: "" }])}
+            className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-foreground/[0.03]"
+          >
+            Add field
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleSaveFields()}
+            disabled={savingFields}
+            className="btn-accent"
+          >
+            {savingFields ? "Saving…" : "Save fields"}
+          </button>
+        </div>
       </section>
     </div>
   );

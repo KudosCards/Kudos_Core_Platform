@@ -1,6 +1,15 @@
 import { ApiPropertyOptional, ApiProperty } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsArray, IsDate, IsEmail, IsOptional, IsString, Length, Matches } from "class-validator";
+import {
+  IsArray,
+  IsDate,
+  IsEmail,
+  IsObject,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+} from "class-validator";
 import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
 
 export class CreateRecipientDto {
@@ -54,4 +63,11 @@ export class CreateRecipientDto {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+
+  @ApiPropertyOptional({
+    description: "Key→value custom fields usable as {key} merge tokens on a card",
+  })
+  @IsOptional()
+  @IsObject()
+  customFields?: Record<string, string>;
 }
