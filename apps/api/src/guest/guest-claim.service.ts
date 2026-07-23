@@ -70,7 +70,7 @@ export class GuestClaimService {
       }
 
       await tx.membership.create({
-        data: { accountId: account.id, userId: user.id, role: "owner" },
+        data: { accountId: account.id, userId: user.id, role: "owner", email },
       });
       return tx.account.update({
         where: { id: account.id },

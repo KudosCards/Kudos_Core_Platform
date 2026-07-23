@@ -51,6 +51,7 @@ model Account {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   memberships   Membership[]
+  invites       Invite[]
   recipients    Recipient[]
   savedDesigns  SavedDesign[]
   batchOrders   BatchOrder[]
@@ -131,6 +132,10 @@ model Membership {
   accountId String         @map("account_id")
   userId    String         @map("user_id")
   role      MembershipRole
+  /// The member's email, captured when the membership is created (from the
+  /// signing-up user for the owner, from the invite for invited members) so the
+  /// team-management UI can show who's who. Nullable for legacy rows. See ADR 0028.
+  email     String?
   createdAt DateTime       @default(now()) @map("created_at")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -138,6 +143,39 @@ model Membership {
   @@unique([accountId, userId])
   @@index([userId])
   @@map("memberships")
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  revoked
+}
+
+/// A pending invitation for someone to join an account's team. Gated to plans
+/// with teamSeatsEnabled (Centre). The `token` is a secret — whoever holds it
+/// can join the account as the invited role — so it is never returned by the
+/// API (only emailed to the invitee). See docs/adr/0028-multi-user-teams.md.
+model Invite {
+  id              String       @id @default(uuid())
+  accountId       String       @map("account_id")
+  /// Invitee email, lowercased. The accepting user's verified JWT email must
+  /// match this, so a forwarded link can't be redeemed by someone else.
+  email           String
+  role            MembershipRole
+  token           String       @unique
+  status          InviteStatus @default(pending)
+  invitedByUserId String?      @map("invited_by_user_id")
+  expiresAt       DateTime     @map("expires_at")
+  acceptedAt      DateTime?    @map("accepted_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  // One live invite per email per account — re-inviting replaces the old row.
+  @@unique([accountId, email])
+  @@index([accountId])
+  @@map("invites")
 }
 
 // ---------------------------------------------------------------------------
@@ -541,6 +579,9 @@ model PlanEntitlement {
   /// Whether the plan may upload its own artwork as a custom card design
   /// (rather than only personalising catalog templates). See docs/adr/0026.
   customArtworkEnabled Boolean @default(false) @map("custom_artwork_enabled")
+  /// Whether the plan may invite additional team members (multi-user org).
+  /// Centre-tier only today. See docs/adr/0028-multi-user-teams.md.
+  teamSeatsEnabled     Boolean @default(false) @map("team_seats_enabled")
   /// Null for the free plan, which has no Stripe subscription object at all.
   stripePriceId       String? @map("stripe_price_id")
 

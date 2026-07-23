@@ -24,7 +24,10 @@ function isPublicPath(pathname: string): boolean {
     // account (POST /guest/cart-checkout). See docs/adr/0025.
     pathname === "/basket" ||
     // Guest checkout's Stripe return pages — the buyer has no session.
-    pathname.startsWith("/gift/")
+    pathname.startsWith("/gift/") ||
+    // Team invite acceptance — an invited colleague may not have a login yet,
+    // so the accept page authenticates them itself. See docs/adr/0028.
+    pathname.startsWith("/invite/")
   );
 }
 

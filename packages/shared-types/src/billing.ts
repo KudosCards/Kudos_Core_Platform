@@ -45,6 +45,8 @@ export const planEntitlementSchema = z.object({
   autoSendEnabled: z.boolean(),
   /** Whether the plan may upload its own artwork as a custom card design. */
   customArtworkEnabled: z.boolean(),
+  /** Whether the plan may invite additional team members (Centre-tier today). */
+  teamSeatsEnabled: z.boolean(),
   /** Null for the free plan, which has no Stripe subscription object at all. */
   stripePriceId: z.string().nullable(),
 });
