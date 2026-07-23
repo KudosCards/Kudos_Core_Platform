@@ -19,6 +19,7 @@ import type { EnvConfig } from "../config/env.schema";
 import type { AuthenticatedUser } from "../auth/types";
 import { SAFE_ACCOUNT_SELECT, type SafeAccount } from "../accounts/accounts.service";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
+import { CENTRE_SEAT_PRICE_MINOR } from "../billing/billing.constants";
 import type { CreateInviteDto } from "./dto/create-invite.dto";
 
 export interface TeamMember {
@@ -32,10 +33,23 @@ export interface TeamMember {
 /** An invite without its secret token — the token is only ever emailed. */
 export type SafeInvite = Pick<Invite, "id" | "email" | "role" | "status" | "expiresAt" | "createdAt">;
 
+/** The account's seat position for the team panel's usage meter. */
+export interface TeamSeats {
+  included: number;
+  extra: number;
+  /** included + extra — the hard cap inviting is blocked past. */
+  limit: number;
+  /** Active members + pending invites. */
+  used: number;
+  /** Per-extra-seat price in pence, for the "add a seat" copy. */
+  seatPriceMinor: number;
+}
+
 export interface TeamView {
   members: TeamMember[];
   invites: SafeInvite[];
   teamSeatsEnabled: boolean;
+  seats: TeamSeats;
   yourRole: MembershipRole;
 }
 
@@ -69,7 +83,7 @@ export class TeamService {
   /** The team panel: members, pending invites, and whether the plan allows
    * inviting more (so the UI can gate the form). Any member may view it. */
   async getTeam(accountId: string, viewerUserId: string, viewerRole: MembershipRole): Promise<TeamView> {
-    const [memberships, invites, entitlement] = await Promise.all([
+    const [memberships, invites, entitlement, account] = await Promise.all([
       this.prisma.membership.findMany({ where: { accountId }, orderBy: { createdAt: "asc" } }),
       this.prisma.invite.findMany({
         where: { accountId, status: "pending" },
@@ -77,6 +91,10 @@ export class TeamService {
         select: SAFE_INVITE_SELECT,
       }),
       this.entitlements.getForAccount(accountId),
+      this.prisma.account.findUniqueOrThrow({
+        where: { id: accountId },
+        select: { extraSeats: true },
+      }),
     ]);
 
     return {
@@ -89,6 +107,14 @@ export class TeamService {
       })),
       invites,
       teamSeatsEnabled: entitlement.teamSeatsEnabled,
+      seats: {
+        included: entitlement.includedSeats,
+        extra: account.extraSeats,
+        limit: entitlement.includedSeats + account.extraSeats,
+        // A pending invite occupies a seat until it's accepted or revoked.
+        used: memberships.length + invites.length,
+        seatPriceMinor: CENTRE_SEAT_PRICE_MINOR,
+      },
       yourRole: viewerRole,
     };
   }
@@ -115,6 +141,28 @@ export class TeamService {
     });
     if (existingMember) {
       throw new ConflictException("That person is already on your team");
+    }
+
+    // Seat hard-block: refuse a new invite once members + pending invites fill
+    // the paid seat count. Re-inviting an already-pending email is a resend, not
+    // a new seat, so it's exempt. They must add a seat (£5/mo) to invite more.
+    // See docs/adr/0035-seat-based-billing.md.
+    const existingInvite = await this.prisma.invite.findUnique({
+      where: { accountId_email: { accountId, email } },
+      select: { status: true },
+    });
+    const isResend = existingInvite?.status === "pending";
+    if (!isResend) {
+      const [memberCount, pendingInviteCount] = await Promise.all([
+        this.prisma.membership.count({ where: { accountId } }),
+        this.prisma.invite.count({ where: { accountId, status: "pending" } }),
+      ]);
+      const limit = entitlement.includedSeats + (await this.accountExtraSeats(accountId));
+      if (memberCount + pendingInviteCount >= limit) {
+        throw new ForbiddenException(
+          `You've used all ${limit} of your seats. Add a seat to invite more people.`,
+        );
+      }
     }
 
     const token = generateInviteToken();
@@ -156,6 +204,14 @@ export class TeamService {
     });
 
     return invite;
+  }
+
+  private async accountExtraSeats(accountId: string): Promise<number> {
+    const account = await this.prisma.account.findUniqueOrThrow({
+      where: { id: accountId },
+      select: { extraSeats: true },
+    });
+    return account.extraSeats;
   }
 
   async revokeInvite(accountId: string, actorRole: MembershipRole, inviteId: string): Promise<void> {

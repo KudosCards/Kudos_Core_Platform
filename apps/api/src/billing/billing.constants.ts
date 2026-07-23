@@ -9,6 +9,14 @@ import type { Prisma, PostageClass } from "@prisma/client";
 export const CARD_PRICE_MINOR = 150;
 
 /**
+ * An extra Centre team seat: £5.00/month, **VAT-inclusive**, charged per seat
+ * beyond the 3 the Centre plan includes. Display-only here — Stripe is the
+ * source of truth for what's actually billed (this must match the recurring
+ * Price behind STRIPE_CENTRE_SEAT_PRICE_ID). See docs/adr/0035-seat-based-billing.md.
+ */
+export const CENTRE_SEAT_PRICE_MINOR = 500;
+
+/**
  * A postage stamp per card, added on top of the (VAT-inclusive) card price.
  * Royal Mail stamps are VAT-exempt, so there is no VAT to add on postage.
  * One stamp per card: 5 cards = 5 stamps.

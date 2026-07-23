@@ -9,6 +9,8 @@ export const accountSchema = z.object({
   planId: z.string().nullable(),
   /** Whether upcoming-birthday reminder emails are on for this account (opt-out). */
   reminderEmailsEnabled: z.boolean(),
+  /** Paid team seats beyond the plan's included allowance (Centre includes 3). */
+  extraSeats: z.number().int().nonnegative(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });
@@ -65,12 +67,26 @@ export const inviteSchema = z.object({
 });
 export type Invite = z.infer<typeof inviteSchema>;
 
-/** GET /team — the account's members, pending invites, and whether the plan
- * allows adding more (so the UI can gate the invite form). */
+/** The account's seat position, for the team panel's usage meter and the
+ * add/remove-seat controls. limit = included + extra; inviting past it is
+ * hard-blocked. See docs/adr/0035-seat-based-billing.md. */
+export const teamSeatsSchema = z.object({
+  included: z.number().int().nonnegative(),
+  extra: z.number().int().nonnegative(),
+  limit: z.number().int().nonnegative(),
+  used: z.number().int().nonnegative(),
+  /** Per-extra-seat price in pence, for the "add a seat" copy. */
+  seatPriceMinor: z.number().int().nonnegative(),
+});
+export type TeamSeats = z.infer<typeof teamSeatsSchema>;
+
+/** GET /team — the account's members, pending invites, seat usage, and whether
+ * the plan allows adding more (so the UI can gate the invite form). */
 export const teamSchema = z.object({
   members: z.array(teamMemberSchema),
   invites: z.array(inviteSchema),
   teamSeatsEnabled: z.boolean(),
+  seats: teamSeatsSchema,
   /** The viewer's own role, so the UI can show/hide management controls. */
   yourRole: membershipRoleSchema,
 });

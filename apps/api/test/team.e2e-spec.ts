@@ -15,6 +15,13 @@ const teamSchema = z.object({
   ),
   invites: z.array(z.object({ id: z.string().uuid(), email: z.string(), role: z.string(), status: z.string() })),
   teamSeatsEnabled: z.boolean(),
+  seats: z.object({
+    included: z.number(),
+    extra: z.number(),
+    limit: z.number(),
+    used: z.number(),
+    seatPriceMinor: z.number(),
+  }),
   yourRole: z.string(),
 });
 
@@ -84,6 +91,48 @@ describe("Team / invites (e2e)", () => {
       .send({ email: "staff@centre.test", role: "staff" })
       .expect(403);
     expect(sendTransactional).not.toHaveBeenCalled();
+  });
+
+  it("hard-blocks inviting past the paid seat count, and adding a seat unblocks it", async () => {
+    const owner = await signUpOwner({ centre: true });
+    // Centre includes 3 seats. Owner is 1; two pending invites fill the other 2.
+    for (const email of ["one@centre.test", "two@centre.test"]) {
+      await request(app.getHttpServer())
+        .post("/team/invites")
+        .set("Authorization", `Bearer ${owner.token}`)
+        .send({ email, role: "staff" })
+        .expect(201);
+    }
+
+    // A 3rd new invite would be a 4th seat — hard-blocked.
+    await request(app.getHttpServer())
+      .post("/team/invites")
+      .set("Authorization", `Bearer ${owner.token}`)
+      .send({ email: "three@centre.test", role: "staff" })
+      .expect(403);
+
+    // Re-inviting an already-pending email is a resend, not a new seat — allowed.
+    await request(app.getHttpServer())
+      .post("/team/invites")
+      .set("Authorization", `Bearer ${owner.token}`)
+      .send({ email: "one@centre.test", role: "admin" })
+      .expect(201);
+
+    // Buying a seat raises the limit (simulating the Stripe seat change landing).
+    await prisma.account.update({ where: { id: owner.accountId }, data: { extraSeats: 1 } });
+    await request(app.getHttpServer())
+      .post("/team/invites")
+      .set("Authorization", `Bearer ${owner.token}`)
+      .send({ email: "three@centre.test", role: "staff" })
+      .expect(201);
+  });
+
+  it("reports seat usage in the team view", async () => {
+    const owner = await signUpOwner({ centre: true });
+    const team = teamSchema.parse(
+      (await request(app.getHttpServer()).get("/team").set("Authorization", `Bearer ${owner.token}`).expect(200)).body,
+    );
+    expect(team.seats).toMatchObject({ included: 3, extra: 0, limit: 3, used: 1, seatPriceMinor: 500 });
   });
 
   it("invites, emails a link, and lets the invitee accept and join", async () => {
