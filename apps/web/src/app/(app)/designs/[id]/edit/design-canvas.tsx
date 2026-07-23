@@ -9,6 +9,9 @@ import { qrDataUrl } from "@/lib/qr";
 export const CANVAS_WIDTH = 450;
 export const CANVAS_HEIGHT = 600;
 
+/** Right-edge padding for text, so a wrapped line doesn't touch the card edge. */
+const TEXT_RIGHT_PADDING = 16;
+
 /** Renders a placeholder QR in the editor. The real per-recipient link is
  * substituted at send time, so here we just encode a sample /r/ URL to show
  * what it will look like and where it sits. */
@@ -127,6 +130,13 @@ export function DesignCanvas({
                 text={element.text}
                 x={element.x}
                 y={element.y}
+                // Bound the text to the card width so pasted/bulk multi-line
+                // text WORD-WRAPS within the card instead of running off the
+                // right edge. Explicit "\n" line breaks are still honoured — so
+                // both hard breaks and long paragraphs lay out correctly.
+                width={Math.max(40, CANVAS_WIDTH - element.x - TEXT_RIGHT_PADDING)}
+                wrap="word"
+                lineHeight={1.3}
                 fontFamily={element.fontFamily}
                 fontSize={element.fontSize}
                 fill={element.color}
