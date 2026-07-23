@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -234,9 +235,9 @@ export function BatchOrdersClient({
       <p className="text-sm text-muted">
         Wallet balance:{" "}
         <span className="font-semibold text-foreground">{formatGbp(walletBalanceMinor)}</span> ·{" "}
-        <a href="/wallet" className="text-accent hover:underline">
+        <Link href="/wallet" className="text-accent hover:underline">
           Top up
-        </a>
+        </Link>
       </p>
 
       {unfinishedOrders.length > 0 && (
@@ -300,9 +301,9 @@ export function BatchOrdersClient({
       {initialOccasions.length === 0 ? (
         <div className="card p-8 text-center text-sm text-muted">
           Nothing is approved and ready yet — visit{" "}
-          <a href="/approvals" className="text-accent hover:underline">
+          <Link href="/approvals" className="text-accent hover:underline">
             Approvals
-          </a>{" "}
+          </Link>{" "}
           to approve some occasions first.
         </div>
       ) : (

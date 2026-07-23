@@ -1,6 +1,7 @@
 "use client";
 
 import type { Occasion, SavedDesign } from "@kudos/shared-types";
+import Link from "next/link";
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -196,9 +197,9 @@ export function ApprovalsClient({
       {savedDesigns.length === 0 && (
         <p className="text-sm text-muted">
           You don&apos;t have any saved designs yet — visit{" "}
-          <a href="/designs" className="text-accent hover:underline">
+          <Link href="/designs" className="text-accent hover:underline">
             Designs
-          </a>{" "}
+          </Link>{" "}
           to create one before approving occasions.
         </p>
       )}

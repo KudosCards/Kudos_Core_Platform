@@ -32,10 +32,33 @@
   --font-mono: var(--font-geist-mono);
 }
 
+html {
+  /* Stop iOS/Safari from re-scaling text when the device rotates. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  /* Long unbroken strings (emails, URLs, claim tokens) break instead of forcing
+     a horizontal scrollbar on narrow screens. */
+  overflow-wrap: break-word;
+  /* No grey flash on tap — nav/buttons already have their own hover/active. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS Safari zooms the whole viewport when you focus an input whose font is
+   under 16px. Our inputs are text-sm (14px) for density on desktop, so on small
+   screens bump them to 16px to kill the zoom — the one-line highest-impact
+   mobile fix. Desktop keeps the denser look. */
+@media (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 /* ---- Shared building blocks, so every page speaks the same visual language ---- */
