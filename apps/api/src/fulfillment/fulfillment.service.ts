@@ -57,6 +57,10 @@ const DETAIL_SELECT = {
       shippingAddressLine1: true,
       shippingAddressLine2: true,
       shippingAddressCountry: true,
+      // customFields + occasion title let the card's {field}/{occasion} tokens
+      // resolve in the personalised render (preview + print run).
+      recipient: { select: { firstName: true, lastName: true, customFields: true } },
+      occasion: { select: { type: true, title: true, occasionDate: true, dispatchDate: true } },
       savedDesign: { select: { id: true, name: true, document: true } },
     },
   },
@@ -72,6 +76,10 @@ export interface PrintRunCard {
   jobId: string;
   recipientFirstName: string;
   recipientLastName: string;
+  recipientCustomFields: Prisma.JsonValue;
+  occasionType: string | null;
+  occasionTitle: string | null;
+  occasionDate: Date | null;
   savedDesignName: string;
   document: Prisma.JsonValue;
 }
@@ -314,6 +322,10 @@ export class FulfillmentService {
         jobId: job.id,
         recipientFirstName: job.orderRecipient.recipient.firstName,
         recipientLastName: job.orderRecipient.recipient.lastName,
+        recipientCustomFields: job.orderRecipient.recipient.customFields,
+        occasionType: job.orderRecipient.occasion?.type ?? null,
+        occasionTitle: job.orderRecipient.occasion?.title ?? null,
+        occasionDate: job.orderRecipient.occasion?.occasionDate ?? null,
         savedDesignName: job.orderRecipient.savedDesign.name,
         document: job.orderRecipient.savedDesign.document,
       }));

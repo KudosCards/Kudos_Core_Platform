@@ -202,6 +202,9 @@ model Recipient {
   addressPostcode String?       @map("address_postcode")
   addressCountry String?        @default("GB") @map("address_country")
   tags          String[]        @default([])
+  /// Arbitrary per-recipient key→value fields, usable as {key} merge tokens on
+  /// a card (e.g. {teacher}, {class}). See docs/adr/0033-richer-merge-tokens.md.
+  customFields  Json?           @map("custom_fields")
   status        RecipientStatus @default(active)
   /// Where this recipient came from: "manual", "csv", "api", or a CRM id
   /// ("brevo", "hubspot", …). See docs/adr/0015-crm-integrations.md.

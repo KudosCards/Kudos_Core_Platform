@@ -15,8 +15,20 @@ export interface PrintRunCard {
   jobId: string;
   recipientFirstName: string;
   recipientLastName: string;
+  recipientCustomFields: Record<string, string> | null;
+  occasionType: string | null;
+  occasionTitle: string | null;
+  occasionDate: string | null;
   savedDesignName: string;
   document: DesignDocument;
+}
+
+/** Human occasion label for {occasion}: a custom title wins, else the type
+ * (e.g. "birthday") title-cased. */
+function occasionLabel(card: PrintRunCard): string | null {
+  if (card.occasionTitle) return card.occasionTitle;
+  if (!card.occasionType) return null;
+  return card.occasionType.charAt(0).toUpperCase() + card.occasionType.slice(1);
 }
 
 /**
@@ -83,6 +95,9 @@ export function PrintRunOverlay({
               document={applyMergeTokens(card.document, {
                 firstName: card.recipientFirstName,
                 lastName: card.recipientLastName,
+                occasion: occasionLabel(card),
+                occasionDate: card.occasionDate,
+                customFields: card.recipientCustomFields,
               })}
               width={360}
             />

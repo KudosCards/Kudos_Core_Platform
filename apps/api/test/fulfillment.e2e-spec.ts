@@ -28,6 +28,7 @@ function buildStripeEventPayload(type: string, dataObject: Record<string, unknow
 interface PaidOrder {
   batchOrderId: string;
   occasionId: string;
+  recipientId: string;
   orderRecipientId: string;
   jobId: string;
 }
@@ -143,7 +144,13 @@ describe("Fulfillment (e2e)", () => {
     const job = await prisma.fulfillmentJob.findFirstOrThrow({
       where: { orderRecipientId: orderRecipient.id },
     });
-    return { batchOrderId, occasionId, orderRecipientId: orderRecipient.id, jobId: job.id };
+    return {
+      batchOrderId,
+      occasionId,
+      recipientId,
+      orderRecipientId: orderRecipient.id,
+      jobId: job.id,
+    };
   }
 
   it("refuses a non-platform-admin (a normal customer) with 403", async () => {
@@ -242,6 +249,10 @@ describe("Fulfillment (e2e)", () => {
     const cards = response.body as {
       jobId: string;
       recipientFirstName: string;
+      recipientCustomFields: Record<string, string> | null;
+      occasionType: string | null;
+      occasionTitle: string | null;
+      occasionDate: string | null;
       savedDesignName: string;
       document: { version: number; pages: unknown[] };
     }[];
@@ -249,6 +260,9 @@ describe("Fulfillment (e2e)", () => {
     expect(cards[0]!.recipientFirstName).toBe("Ada");
     expect(cards[0]!.document.version).toBe(1);
     expect(Array.isArray(cards[0]!.document.pages)).toBe(true);
+    // The occasion context that {occasion}/{occasionDate} tokens resolve from.
+    expect(cards[0]!.occasionType).toBe("birthday");
+    expect(cards[0]!.occasionDate).not.toBeNull();
 
     const auditRows = await prisma.auditLogEntry.findMany({
       where: {
@@ -257,6 +271,27 @@ describe("Fulfillment (e2e)", () => {
       },
     });
     expect(auditRows).toHaveLength(2);
+  });
+
+  it("includes the recipient's custom fields in a print run for {field} tokens", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+    const order = await createPaidOrder(token);
+
+    // Custom fields are read live off the recipient at print time.
+    await request(app.getHttpServer())
+      .patch(`/recipients/${order.recipientId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ customFields: { teacher: "Mrs Patel" } })
+      .expect(200);
+
+    const response = await request(app.getHttpServer())
+      .post("/fulfillment/print-run")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .send({ jobIds: [order.jobId] })
+      .expect(201);
+    const cards = response.body as { recipientCustomFields: Record<string, string> | null }[];
+    expect(cards[0]!.recipientCustomFields).toEqual({ teacher: "Mrs Patel" });
   });
 
   it("refuses the print run to a non-platform-admin", async () => {

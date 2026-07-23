@@ -22,6 +22,31 @@ describe("merge tokens", () => {
     it("leaves unknown tokens untouched", () => {
       expect(applyMergeText("Order {code} for {name}", recipient)).toBe("Order {code} for Ada");
     });
+
+    it("resolves {occasion} and {occasionDate}/{date} from the context", () => {
+      const ctx = { ...recipient, occasion: "Graduation", occasionDate: "2026-07-25" };
+      expect(applyMergeText("Congratulations on your {occasion}", ctx)).toBe(
+        "Congratulations on your Graduation",
+      );
+      expect(applyMergeText("on {occasionDate}", ctx)).toBe("on 25 Jul 2026");
+      expect(applyMergeText("on {date}", ctx)).toBe("on 25 Jul 2026");
+    });
+
+    it("leaves occasion tokens untouched when there's no occasion in context", () => {
+      expect(applyMergeText("For your {occasion}", recipient)).toBe("For your {occasion}");
+      expect(applyMergeText("On {occasionDate}", recipient)).toBe("On {occasionDate}");
+    });
+
+    it("resolves custom fields case-insensitively, with built-ins winning", () => {
+      const ctx = {
+        ...recipient,
+        customFields: { teacher: "Mrs Patel", firstName: "SHOULD-NOT-WIN" },
+      };
+      expect(applyMergeText("From {teacher}", ctx)).toBe("From Mrs Patel");
+      expect(applyMergeText("From {TEACHER}", ctx)).toBe("From Mrs Patel");
+      // Built-in {firstName} wins over a custom field of the same name.
+      expect(applyMergeText("Hi {firstName}", ctx)).toBe("Hi Ada");
+    });
   });
 
   describe("applyMergeTokens", () => {
