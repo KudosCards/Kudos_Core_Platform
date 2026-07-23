@@ -388,29 +388,40 @@ export function RecipientsClient({
         )}
       </section>
 
-      {selected.size > 0 && lists.length > 0 && (
+      {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm">
           <span className="text-muted">{selected.size} selected</span>
-          <select
-            value={addToListId}
-            onChange={(e) => setAddToListId(e.target.value)}
-            className={inputClass}
+          <Link
+            href={`/send?recipients=${[...selected].join(",")}`}
+            className="btn-accent"
           >
-            <option value="">Add to list…</option>
-            {lists.map((list) => (
-              <option key={list.id} value={list.id}>
-                {list.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            disabled={!addToListId || listBusy}
-            onClick={() => void addSelectedToList()}
-            className="btn-accent disabled:opacity-40"
-          >
-            {listBusy ? "Adding…" : "Add"}
-          </button>
+            Send a card →
+          </Link>
+          {lists.length > 0 && (
+            <>
+              <span className="text-border">|</span>
+              <select
+                value={addToListId}
+                onChange={(e) => setAddToListId(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Add to list…</option>
+                {lists.map((list) => (
+                  <option key={list.id} value={list.id}>
+                    {list.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={!addToListId || listBusy}
+                onClick={() => void addSelectedToList()}
+                className="rounded-full border border-border px-4 py-2 font-medium hover:bg-foreground/[0.03] disabled:opacity-40"
+              >
+                {listBusy ? "Adding…" : "Add"}
+              </button>
+            </>
+          )}
         </div>
       )}
 

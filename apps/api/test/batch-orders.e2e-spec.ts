@@ -536,4 +536,123 @@ describe("Batch orders (e2e)", () => {
     // reach Stripe at all — not just lose the race after also calling it.
     expect(checkoutSessionsCreate).toHaveBeenCalledTimes(1);
   });
+
+  describe("bulk-send (one design → many existing contacts)", () => {
+    async function createRecipientWithAddress(
+      token: string,
+      overrides: Record<string, unknown> = {},
+    ): Promise<string> {
+      const response = await request(app.getHttpServer())
+        .post("/recipients")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          firstName: "Alex",
+          lastName: `Contact ${randomUUID().slice(0, 8)}`,
+          addressLine1: "1 Test Street",
+          addressCity: "London",
+          addressPostcode: "SW1A 1AA",
+          ...overrides,
+        })
+        .expect(201);
+      return (response.body as { id: string }).id;
+    }
+
+    it("turns one design + several contacts into a single ready-to-pay order", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const recipientIds = [
+        await createRecipientWithAddress(token),
+        await createRecipientWithAddress(token),
+        await createRecipientWithAddress(token),
+      ];
+
+      const response = await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds, postageClass: "second_class" })
+        .expect(201);
+      const order = batchOrderSchema.parse(response.body);
+
+      // Three 2nd-class cards: 3 × (£1.50 + £0.91) = £7.23.
+      expect(order.status).toBe("draft");
+      expect(order.subtotalMinor).toBe(450);
+      expect(order.postageMinor).toBe(273);
+      expect(order.totalMinor).toBe(723);
+      expect(order.orderRecipients).toHaveLength(3);
+
+      // Every line reuses the ONE design and is addressed from its contact.
+      expect(order.orderRecipients.every((r) => r.savedDesignId === savedDesignId)).toBe(true);
+      expect(new Set(order.orderRecipients.map((r) => r.recipientId))).toEqual(new Set(recipientIds));
+      expect(order.orderRecipients.every((r) => r.shippingAddressPostcode === "SW1A 1AA")).toBe(true);
+
+      // One approved-then-queued one-off occasion was created per contact.
+      const occasions = await prisma.occasion.findMany({ where: { accountId } });
+      expect(occasions).toHaveLength(3);
+      expect(occasions.every((o) => o.status === "queued" && o.source === "one_off_campaign")).toBe(
+        true,
+      );
+
+      // …and it checks out through the normal Stripe flow.
+      await request(app.getHttpServer())
+        .post(`/batch-orders/${order.id}/checkout`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+    });
+
+    it("blocks the send and names contacts missing a postal address (no order created)", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const withAddress = await createRecipientWithAddress(token);
+      // A contact with no address at all.
+      const noAddress = await createRecipient(token);
+
+      const response = await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [withAddress, noAddress], postageClass: "second_class" })
+        .expect(400);
+      expect((response.body as { message: string }).message).toContain("Sam Recipient");
+
+      // Nothing was created — no order, and no stray occasions.
+      expect(await prisma.batchOrder.count({ where: { accountId } })).toBe(0);
+      expect(await prisma.occasion.count({ where: { accountId } })).toBe(0);
+    });
+
+    it("404s when a contact belongs to another account (nothing created)", async () => {
+      const accountA = await signUp();
+      const accountB = await signUp();
+      const savedDesignId = await createSavedDesign(accountA.token);
+      const mine = await createRecipientWithAddress(accountA.token);
+      const theirs = await createRecipientWithAddress(accountB.token);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${accountA.token}`)
+        .send({ savedDesignId, recipientIds: [mine, theirs], postageClass: "second_class" })
+        .expect(404);
+
+      expect(await prisma.batchOrder.count({ where: { accountId: accountA.accountId } })).toBe(0);
+      expect(await prisma.occasion.count({ where: { accountId: accountA.accountId } })).toBe(0);
+    });
+
+    it("enforces the plan's per-order cap", async () => {
+      const { token, accountId } = await signUp();
+      // Free plan allows 20 cards per order; ask for 21.
+      const savedDesignId = await createSavedDesign(token);
+      const recipientIds: string[] = [];
+      for (let i = 0; i < 21; i += 1) {
+        recipientIds.push(await createRecipientWithAddress(token));
+      }
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds, postageClass: "second_class" })
+        .expect(403);
+
+      // The cap check fires inside create(), after the occasions are made, so a
+      // rejected bulk send leaves no draft order behind.
+      expect(await prisma.batchOrder.count({ where: { accountId } })).toBe(0);
+    });
+  });
 });
