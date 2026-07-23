@@ -16,6 +16,7 @@ export const SAFE_ACCOUNT_SELECT = {
   planId: true,
   contactEmail: true,
   reminderEmailsEnabled: true,
+  extraSeats: true,
   createdAt: true,
   updatedAt: true,
 } as const;

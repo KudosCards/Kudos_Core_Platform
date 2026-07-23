@@ -18,6 +18,15 @@ export const envSchema = z.object({
 
   STRIPE_SECRET_KEY: z.string().min(1),
   STRIPE_WEBHOOK_SECRET: z.string().min(1),
+  // The recurring Stripe Price id (£5/mo incl. VAT) for an extra Centre team
+  // seat beyond the 3 included. Optional at boot: the app runs without it, and
+  // "add a seat" returns a clean "not configured" until it's set. Treat blank
+  // as unset. See docs/adr/0035-seat-based-billing.md.
+  STRIPE_CENTRE_SEAT_PRICE_ID: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
 
   WEB_APP_URL: z.string().url(),
 

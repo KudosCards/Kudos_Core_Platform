@@ -47,6 +47,11 @@ model Account {
   /// Whether we email this account upcoming-birthday reminders. Opt-out (default
   /// on); the reminder cron skips accounts with this false. See docs/adr/0025.
   reminderEmailsEnabled Boolean @default(true) @map("reminder_emails_enabled")
+  /// Paid team seats beyond the plan's included allowance (Centre includes 3).
+  /// The seat limit = PlanEntitlement.includedSeats + extraSeats; inviting past
+  /// it is hard-blocked until a seat is added. Kept in sync with the Stripe
+  /// subscription's per-seat item quantity. See docs/adr/0035-seat-based-billing.md.
+  extraSeats       Int      @default(0) @map("extra_seats")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
@@ -618,6 +623,9 @@ model PlanEntitlement {
   /// Whether the plan may invite additional team members (multi-user org).
   /// Centre-tier only today. See docs/adr/0028-multi-user-teams.md.
   teamSeatsEnabled     Boolean @default(false) @map("team_seats_enabled")
+  /// Team seats included in the plan's base price before per-seat charges kick
+  /// in (Centre includes 3; single-user plans 1). See docs/adr/0035-seat-based-billing.md.
+  includedSeats        Int     @default(1) @map("included_seats")
   /// Null for the free plan, which has no Stripe subscription object at all.
   stripePriceId       String? @map("stripe_price_id")
 

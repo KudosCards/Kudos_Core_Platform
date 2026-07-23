@@ -15,6 +15,10 @@ const ROLE_LABEL: Record<string, string> = {
 const inputClass =
   "rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground focus:border-foreground/30 focus:outline-none";
 
+function gbp(minor: number): string {
+  return `£${(minor / 100).toFixed(2)}`;
+}
+
 export function TeamClient({ initialTeam }: { initialTeam: Team }) {
   const [team, setTeam] = useState(initialTeam);
   const [inviteRole, setInviteRole] = useState<"admin" | "staff">("staff");
@@ -23,6 +27,11 @@ export function TeamClient({ initialTeam }: { initialTeam: Team }) {
 
   const canManage = team.yourRole === "owner" || team.yourRole === "admin";
   const isOwner = team.yourRole === "owner";
+
+  const { seats } = team;
+  const atLimit = seats.used >= seats.limit;
+  // A seat can only be removed if it's a paid extra and isn't currently in use.
+  const canRemoveSeat = seats.extra > 0 && seats.limit - 1 >= seats.used;
 
   async function refresh() {
     try {
@@ -63,6 +72,15 @@ export function TeamClient({ initialTeam }: { initialTeam: Team }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  function setSeats(extraSeats: number) {
+    return act(() =>
+      clientApiFetch("/subscriptions/seats", {
+        method: "POST",
+        body: JSON.stringify({ extraSeats }),
+      }),
+    );
   }
 
   function revokeInvite(id: string) {
@@ -121,11 +139,68 @@ export function TeamClient({ initialTeam }: { initialTeam: Team }) {
         <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
       )}
 
+      {/* Seat usage meter — shown to everyone on a seat-enabled plan. */}
+      {team.teamSeatsEnabled && (
+        <section className="card flex flex-col gap-3 p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-semibold">Seats</h2>
+              <p className="text-sm text-muted">
+                Using {seats.used} of {seats.limit} seat{seats.limit === 1 ? "" : "s"}
+                {seats.extra > 0
+                  ? ` · ${seats.included} included + ${seats.extra} extra`
+                  : ` · ${seats.included} included`}
+                .
+              </p>
+            </div>
+            {canManage && (
+              <div className="flex items-center gap-2">
+                {canRemoveSeat && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void setSeats(seats.extra - 1)}
+                    className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-foreground/[0.03] disabled:opacity-40"
+                  >
+                    Remove a seat
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void setSeats(seats.extra + 1)}
+                  className="btn-accent disabled:opacity-50"
+                >
+                  Add a seat ({gbp(seats.seatPriceMinor)}/mo)
+                </button>
+              </div>
+            )}
+          </div>
+          {/* Usage bar */}
+          <div className="h-2 w-full overflow-hidden rounded-full bg-foreground/[0.06]">
+            <div
+              className={`h-full rounded-full ${atLimit ? "bg-accent" : "bg-emerald-500"}`}
+              style={{ width: `${Math.min(100, Math.round((seats.used / seats.limit) * 100))}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted">
+            The Centre plan includes {seats.included} seats. Extra seats are{" "}
+            {gbp(seats.seatPriceMinor)}/month each, incl. VAT.
+          </p>
+        </section>
+      )}
+
       {/* Invite form / upgrade prompt */}
       {canManage &&
         (team.teamSeatsEnabled ? (
           <section className="card flex flex-col gap-3 p-6">
             <h2 className="font-semibold">Invite a teammate</h2>
+            {atLimit && (
+              <div className="rounded-lg bg-accent-soft px-4 py-3 text-sm text-accent">
+                You&apos;ve used all {seats.limit} of your seats. Add a seat above to invite more
+                people.
+              </div>
+            )}
             <form onSubmit={(e) => void invite(e)} className="flex flex-wrap items-end gap-3">
               <label className="flex flex-1 flex-col gap-1 text-sm text-muted">
                 Email address
@@ -148,7 +223,11 @@ export function TeamClient({ initialTeam }: { initialTeam: Team }) {
                   <option value="admin">Admin</option>
                 </select>
               </label>
-              <button type="submit" disabled={busy} className="btn-accent disabled:opacity-50">
+              <button
+                type="submit"
+                disabled={busy || atLimit}
+                className="btn-accent disabled:opacity-50"
+              >
                 {busy ? "Sending…" : "Send invite"}
               </button>
             </form>

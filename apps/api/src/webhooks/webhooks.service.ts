@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import Stripe from "stripe";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { BatchOrdersService } from "../batch-orders/batch-orders.service";
@@ -363,6 +364,28 @@ export class WebhooksService {
     }
     const currentPeriodEnd = new Date(currentPeriodEndSeconds * 1000);
 
+    // Keep the local extra-seat count aligned with the subscription's per-seat
+    // line item, so a change made via proration, the Stripe dashboard, or a
+    // cancellation reconciles here too (the invite hard-block reads this).
+    const seatPriceId = this.config.get("STRIPE_CENTRE_SEAT_PRICE_ID", { infer: true });
+    const seatQuantity = seatPriceId
+      ? (subscription.items.data.find((item) => item.price.id === seatPriceId)?.quantity ?? 0)
+      : null;
+    const canceled = status === "canceled";
+    const accountData: Prisma.AccountUpdateInput = {
+      // A cancelled subscription drops the account back to the free plan; any
+      // other status (including past_due) keeps the paid plan's entitlements
+      // active for a grace period rather than cutting access off on the first
+      // failed payment.
+      planId: canceled ? "free" : planId,
+    };
+    if (canceled) {
+      // Back on free: no paid seats remain.
+      accountData.extraSeats = 0;
+    } else if (seatQuantity !== null) {
+      accountData.extraSeats = seatQuantity;
+    }
+
     await this.prisma.$transaction([
       this.prisma.subscription.upsert({
         where: { stripeSubscriptionId: subscription.id },
@@ -375,14 +398,7 @@ export class WebhooksService {
         },
         update: { planId, status, currentPeriodEnd },
       }),
-      // A cancelled subscription drops the account back to the free plan;
-      // any other status (including past_due) keeps the paid plan's
-      // entitlements active for a grace period rather than cutting access
-      // off on the first failed payment.
-      this.prisma.account.update({
-        where: { id: accountId },
-        data: { planId: status === "canceled" ? "free" : planId },
-      }),
+      this.prisma.account.update({ where: { id: accountId }, data: accountData }),
     ]);
 
     await this.audit.record({
