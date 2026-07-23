@@ -228,6 +228,47 @@ describe("Fulfillment (e2e)", () => {
       .expect(403);
   });
 
+  it("returns personalised card designs for a print run, audited per card", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+    const orderA = await createPaidOrder(token);
+    const orderB = await createPaidOrder(token);
+
+    const response = await request(app.getHttpServer())
+      .post("/fulfillment/print-run")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .send({ jobIds: [orderA.jobId, orderB.jobId] })
+      .expect(201);
+    const cards = response.body as {
+      jobId: string;
+      recipientFirstName: string;
+      savedDesignName: string;
+      document: { version: number; pages: unknown[] };
+    }[];
+    expect(cards).toHaveLength(2);
+    expect(cards[0]!.recipientFirstName).toBe("Ada");
+    expect(cards[0]!.document.version).toBe(1);
+    expect(Array.isArray(cards[0]!.document.pages)).toBe(true);
+
+    const auditRows = await prisma.auditLogEntry.findMany({
+      where: {
+        action: "fulfillment_print_run",
+        targetId: { in: [orderA.jobId, orderB.jobId] },
+      },
+    });
+    expect(auditRows).toHaveLength(2);
+  });
+
+  it("refuses the print run to a non-platform-admin", async () => {
+    const { token } = await signUp();
+    const order = await createPaidOrder(token);
+    await request(app.getHttpServer())
+      .post("/fulfillment/print-run")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ jobIds: [order.jobId] })
+      .expect(403);
+  });
+
   it("runs a job through the full lifecycle and propagates each step", async () => {
     const opsToken = await createOpsAdmin();
     const { token } = await signUp();

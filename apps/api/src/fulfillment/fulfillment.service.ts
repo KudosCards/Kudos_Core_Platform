@@ -65,6 +65,17 @@ const DETAIL_SELECT = {
 export type FulfillmentQueueJob = Prisma.FulfillmentJobGetPayload<{ select: typeof QUEUE_SELECT }>;
 export type FulfillmentJob = Prisma.FulfillmentJobGetPayload<{ select: typeof DETAIL_SELECT }>;
 
+/** One personalised card in a print run — the design + who it's for. The
+ * `document` is a design JSON (Prisma.JsonValue); the web types it as a
+ * DesignDocument and merges the recipient's name into it before printing. */
+export interface PrintRunCard {
+  jobId: string;
+  recipientFirstName: string;
+  recipientLastName: string;
+  savedDesignName: string;
+  document: Prisma.JsonValue;
+}
+
 /** One card's dispatch label, returned by the audited export. */
 export interface ExportedAddress {
   jobId: string;
@@ -269,6 +280,43 @@ export class FulfillmentService {
           postageClass: r.postageClass,
         };
       });
+    });
+  }
+
+  /**
+   * The personalised card faces for a print run — each selected job's design
+   * document plus the recipient it prints for, so the operator can produce one
+   * PDF of the whole run with names already merged. Audited per card in the same
+   * transaction as the read, exactly like the address export (this reveals the
+   * recipient's name against a specific card). See docs/adr/0032.
+   */
+  async printRun(actorUserId: string, dto: ExportAddressesDto): Promise<PrintRunCard[]> {
+    return this.prisma.$transaction(async (tx) => {
+      const jobs = await tx.fulfillmentJob.findMany({
+        where: { id: { in: dto.jobIds } },
+        select: DETAIL_SELECT,
+      });
+
+      for (const job of jobs) {
+        await this.audit.record(
+          {
+            accountId: job.orderRecipient.batchOrder.accountId,
+            actorUserId,
+            action: "fulfillment_print_run",
+            targetType: "FulfillmentJob",
+            targetId: job.id,
+          },
+          tx,
+        );
+      }
+
+      return jobs.map((job) => ({
+        jobId: job.id,
+        recipientFirstName: job.orderRecipient.recipient.firstName,
+        recipientLastName: job.orderRecipient.recipient.lastName,
+        savedDesignName: job.orderRecipient.savedDesign.name,
+        document: job.orderRecipient.savedDesign.document,
+      }));
     });
   }
 

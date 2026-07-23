@@ -10,6 +10,7 @@ import {
   type FulfillmentQueueJob,
   type BulkTransitionSummary,
   type ExportedAddress,
+  type PrintRunCard,
 } from "./fulfillment.service";
 import { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { TransitionFulfillmentDto } from "./dto/transition-fulfillment.dto";
@@ -62,6 +63,16 @@ export class FulfillmentController {
     @Body() dto: ExportAddressesDto,
   ): Promise<ExportedAddress[]> {
     return this.fulfillmentService.exportAddresses(admin.userId, dto);
+  }
+
+  /** Pull the personalised card faces for a print run — the audited path to
+   * produce one PDF of the whole run, names already merged in. */
+  @Post("print-run")
+  printRun(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body() dto: ExportAddressesDto,
+  ): Promise<PrintRunCard[]> {
+    return this.fulfillmentService.printRun(admin.userId, dto);
   }
 
   @Post("jobs/:id/claim")
