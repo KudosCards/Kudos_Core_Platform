@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma } from "@prisma/client";
+import { Prisma, type OccasionType, type PostageClass } from "@prisma/client";
 import Stripe from "stripe";
 import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
@@ -21,13 +21,25 @@ import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.c
 import { MessagesService } from "../messages/messages.service";
 import { RecipientsService } from "../recipients/recipients.service";
 import { computeDispatchDate } from "../occasions/occasion-scheduling.constants";
+import { UK_POSTCODE_REGEX } from "../common/uk-postcode";
 import type { CreateBatchOrderDto, CreateBatchOrderLineDto } from "./dto/create-batch-order.dto";
 import type { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
 import type { QuickSendDto } from "./dto/quick-send.dto";
+import type { BulkSendDto } from "./dto/bulk-send.dto";
 
 const ORDER_RECIPIENTS_INCLUDE = { orderRecipients: true } as const;
 
 export type BatchOrder = Prisma.BatchOrderGetPayload<{ include: typeof ORDER_RECIPIENTS_INCLUDE }>;
+
+/** A card can only be posted to a contact with a complete, valid UK address. */
+function hasMailableAddress(recipient: Prisma.RecipientGetPayload<object>): boolean {
+  return (
+    !!recipient.addressLine1?.trim() &&
+    !!recipient.addressCity?.trim() &&
+    !!recipient.addressPostcode &&
+    UK_POSTCODE_REGEX.test(recipient.addressPostcode)
+  );
+}
 
 @Injectable()
 export class BatchOrdersService {
@@ -133,6 +145,104 @@ export class BatchOrdersService {
       shippingAddressPostcode: dto.shippingAddressPostcode,
       dispatchOption: "asap",
       postageClass: dto.postageClass,
+    };
+  }
+
+  /**
+   * Bulk send: post ONE saved design to a set of existing contacts in a single
+   * order (one payment). Each contact's name and postal address come straight
+   * off their stored Recipient record — nothing is re-keyed. Every contact
+   * becomes an approved one-off occasion carrying the design, then they're all
+   * checked out together via the same create(). Reuses the plan's per-order cap
+   * and the money path. See docs/adr/0027-bulk-send-to-contacts.md.
+   */
+  async bulkSend(
+    accountId: string,
+    actorUserId: string | null,
+    dto: BulkSendDto,
+  ): Promise<BatchOrder> {
+    // Check the plan's per-order cap up front — before creating any occasions —
+    // so an over-cap bulk send fails cleanly instead of leaving orphaned
+    // approved occasions behind (create() re-checks it as the real guard).
+    const entitlement = await this.entitlements.getForAccount(accountId);
+    if (dto.recipientIds.length > entitlement.batchOrderMaxSize) {
+      throw new ForbiddenException(
+        `This plan allows up to ${entitlement.batchOrderMaxSize} cards per order`,
+      );
+    }
+
+    const savedDesign = await this.prisma.savedDesign.findFirst({
+      where: { id: dto.savedDesignId, accountId },
+    });
+    if (!savedDesign) {
+      throw new NotFoundException("Design not found");
+    }
+
+    // Fetch every selected contact, scoped to the account. A short count means
+    // one or more ids don't belong here — fail rather than silently drop them.
+    const recipients = await this.prisma.recipient.findMany({
+      where: { id: { in: dto.recipientIds }, accountId },
+    });
+    if (recipients.length !== dto.recipientIds.length) {
+      throw new NotFoundException("One or more contacts were not found on this account");
+    }
+
+    // A card can only be posted to a complete, valid UK address. Rather than
+    // silently skip contacts that lack one, surface exactly who needs fixing so
+    // the sender can add an address (or deselect them) before paying.
+    const missingAddress = recipients.filter((r) => !hasMailableAddress(r));
+    if (missingAddress.length > 0) {
+      const names = missingAddress.map((r) => `${r.firstName} ${r.lastName}`).join(", ");
+      throw new BadRequestException(
+        `These contacts need a full UK postal address before you can send to them: ${names}`,
+      );
+    }
+
+    // Preserve the caller's selection order (findMany doesn't guarantee it).
+    const byId = new Map(recipients.map((r) => [r.id, r]));
+    const lines: CreateBatchOrderLineDto[] = [];
+    for (const id of dto.recipientIds) {
+      lines.push(
+        await this.buildBulkSendLine(accountId, byId.get(id)!, savedDesign.id, dto.postageClass, dto.occasionType),
+      );
+    }
+    return this.create(accountId, actorUserId, { lines });
+  }
+
+  /** Create the approved one-off occasion for one existing contact in a bulk
+   * send, returning the order line addressed from that contact's own record. */
+  private async buildBulkSendLine(
+    accountId: string,
+    recipient: Prisma.RecipientGetPayload<object>,
+    savedDesignId: string,
+    postageClass: PostageClass,
+    occasionType: OccasionType | undefined,
+  ): Promise<CreateBatchOrderLineDto> {
+    const occasionDate = new Date();
+    const occasion = await this.prisma.occasion.create({
+      data: {
+        accountId,
+        recipientId: recipient.id,
+        type: occasionType ?? "bespoke_campaign",
+        source: "one_off_campaign",
+        occasionDate,
+        dispatchDate: computeDispatchDate(occasionDate),
+        status: "approved",
+        savedDesignId,
+        dispatchOption: "asap",
+        postageClass,
+      },
+    });
+
+    return {
+      occasionId: occasion.id,
+      // Non-null asserted: hasMailableAddress() above guaranteed these are set.
+      shippingAddressLine1: recipient.addressLine1!,
+      shippingAddressLine2: recipient.addressLine2 ?? undefined,
+      shippingAddressCity: recipient.addressCity!,
+      shippingAddressPostcode: recipient.addressPostcode!,
+      dispatchOption: "asap",
+      postageClass,
     };
   }
 

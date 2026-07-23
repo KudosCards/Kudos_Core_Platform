@@ -111,6 +111,21 @@ export const quickSendInputSchema = z.object({
 });
 export type QuickSendInput = z.infer<typeof quickSendInputSchema>;
 
+/**
+ * Matches BulkSendDto — send one saved design to many existing contacts in a
+ * single order. recipientIds reference stored Recipient records; the server
+ * pulls each contact's name and address off their record (nothing re-keyed) and
+ * returns a ready-to-pay BatchOrder, then checked out via
+ * POST /batch-orders/:id/checkout. See docs/adr/0027-bulk-send-to-contacts.md.
+ */
+export const bulkSendInputSchema = z.object({
+  savedDesignId: z.string().uuid(),
+  recipientIds: z.array(z.string().uuid()).min(1).max(200),
+  postageClass: postageClassSchema,
+  occasionType: occasionTypeSchema.optional(),
+});
+export type BulkSendInput = z.infer<typeof bulkSendInputSchema>;
+
 /** A card's QR-linked digital message page. */
 export const messagePageSchema = z.object({
   id: z.string().uuid(),

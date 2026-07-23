@@ -20,6 +20,7 @@ const GROUPS: NavGroup[] = [
   {
     title: "Send cards",
     items: [
+      { label: "Bulk send", href: "/send", icon: "send" },
       { label: "Calendar", href: "/calendar", icon: "calendar" },
       { label: "Approvals", href: "/approvals", icon: "approvals" },
       { label: "Checkout", href: "/batch-orders", icon: "checkout" },

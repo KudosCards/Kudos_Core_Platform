@@ -19,6 +19,7 @@ import { BatchOrdersService, type BatchOrder } from "./batch-orders.service";
 import { CreateBatchOrderDto } from "./dto/create-batch-order.dto";
 import { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
 import { QuickSendDto } from "./dto/quick-send.dto";
+import { BulkSendDto } from "./dto/bulk-send.dto";
 
 @ApiTags("batch-orders")
 @ApiBearerAuth()
@@ -45,6 +46,18 @@ export class BatchOrdersController {
     @Body() dto: QuickSendDto,
   ): Promise<BatchOrder> {
     return this.batchOrdersService.quickSend(membership.accountId, user.id, dto);
+  }
+
+  /** Bulk send: one saved design → many existing contacts → one ready-to-pay
+   * draft order, addressed automatically from each contact's record. The caller
+   * then checks it out via POST /batch-orders/:id/checkout. */
+  @Post("bulk-send")
+  bulkSend(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: BulkSendDto,
+  ): Promise<BatchOrder> {
+    return this.batchOrdersService.bulkSend(membership.accountId, user.id, dto);
   }
 
   @Get()
