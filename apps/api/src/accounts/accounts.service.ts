@@ -37,7 +37,7 @@ export class AccountsService {
         data: { type: dto.type, name: dto.name, planId: "free", contactEmail: email },
       });
       await tx.membership.create({
-        data: { accountId: account.id, userId, role: "owner" },
+        data: { accountId: account.id, userId, role: "owner", email },
       });
       return account;
     });
