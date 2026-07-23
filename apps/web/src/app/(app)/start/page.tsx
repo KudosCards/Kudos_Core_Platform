@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { CardDesign, SavedDesign } from "@kudos/shared-types";
@@ -66,9 +67,9 @@ export default function StartPage() {
       {error ? (
         <>
           <p className="text-sm font-medium text-accent">{error}</p>
-          <a href="/designs" className="btn-accent">
+          <Link href="/designs" className="btn-accent">
             Go to designs
-          </a>
+          </Link>
         </>
       ) : (
         <>
