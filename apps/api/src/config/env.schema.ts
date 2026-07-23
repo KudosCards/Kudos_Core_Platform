@@ -91,41 +91,23 @@ export const envSchema = z.object({
     .or(z.literal("").transform(() => undefined)),
   // The sender emails come from. Must be a VERIFIED sender in the Brevo account.
   // Optional when every email uses a Brevo template (the template carries its own
-  // sender); required for the built-in HTML fallbacks.
-  EMAIL_FROM_ADDRESS: z
-    .string()
-    .email()
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
-  EMAIL_FROM_NAME: z.string().min(1).default("Kudos Cards"),
+  // sender); required for the built-in HTML fallbacks. `.trim()` tolerates stray
+  // whitespace pasted into the dashboard; `.catch(undefined)` means a BLANK or
+  // MALFORMED value degrades to "unset" (email disabled) rather than throwing —
+  // a peripheral email-config typo must never crash the whole API on boot.
+  EMAIL_FROM_ADDRESS: z.string().trim().email().optional().catch(undefined),
+  // Falls back to the default on a missing OR blank/invalid value (never throws).
+  EMAIL_FROM_NAME: z.string().trim().min(1).catch("Kudos Cards").default("Kudos Cards"),
   // Optional Brevo transactional template IDs. Set one to design that email in
   // the Brevo dashboard instead of using our built-in HTML; unset = HTML
   // fallback. The template receives the params documented in each email's
-  // send site (see reminders.service.ts / webhooks.service.ts).
-  BREVO_REMINDER_TEMPLATE_ID: z.coerce
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
-  BREVO_GUEST_RECEIPT_TEMPLATE_ID: z.coerce
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
-  BREVO_ORDER_CONFIRMATION_TEMPLATE_ID: z.coerce
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
-  BREVO_DISPATCH_TEMPLATE_ID: z.coerce
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
+  // send site (see reminders.service.ts / webhooks.service.ts). `.catch(undefined)`
+  // so a blank OR non-numeric value degrades to "no template" rather than
+  // crashing the whole API on boot.
+  BREVO_REMINDER_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  BREVO_GUEST_RECEIPT_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  BREVO_ORDER_CONFIRMATION_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  BREVO_DISPATCH_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
