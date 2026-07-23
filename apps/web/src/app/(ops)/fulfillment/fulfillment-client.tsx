@@ -8,6 +8,7 @@ import { applyMergeTokens } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { Modal } from "@/components/modal";
+import { PrintRunOverlay, type PrintRunCard } from "./print-run-overlay";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
 
 const CardFacePreview = dynamic(
@@ -129,6 +130,27 @@ export function FulfillmentClient({
   const [exportPending, setExportPending] = useState(false);
   const [preview, setPreview] = useState<FulfillmentJobDetail | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
+  const [printCards, setPrintCards] = useState<PrintRunCard[] | null>(null);
+  const [printPending, setPrintPending] = useState(false);
+
+  async function printRun() {
+    if (selected.size === 0) return;
+    setError(null);
+    setPrintPending(true);
+    try {
+      // Audited pull of the selected cards' designs + recipients, then a
+      // browser print → Save-as-PDF of the whole run, names already merged.
+      const cards = await clientApiFetch<PrintRunCard[]>("/fulfillment/print-run", {
+        method: "POST",
+        body: JSON.stringify({ jobIds: [...selected] }),
+      });
+      setPrintCards(cards);
+    } catch (printError) {
+      setError(printError instanceof ApiError ? printError.message : "Could not build the print run");
+    } finally {
+      setPrintPending(false);
+    }
+  }
 
   async function openPreview(jobId: string) {
     setError(null);
@@ -270,6 +292,14 @@ export function FulfillmentClient({
           >
             {exportPending ? "Exporting…" : `Export addresses (${selected.size})`}
           </button>
+          <button
+            type="button"
+            disabled={printPending || selected.size === 0}
+            onClick={() => void printRun()}
+            className="rounded-full border border-black/20 px-4 py-1.5 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+          >
+            {printPending ? "Preparing…" : `Print sheet (${selected.size})`}
+          </button>
           {bulkStep && (
             <button
               type="button"
@@ -369,6 +399,10 @@ export function FulfillmentClient({
             />
           </div>
         </Modal>
+      )}
+
+      {printCards && (
+        <PrintRunOverlay cards={printCards} onClose={() => setPrintCards(null)} />
       )}
     </div>
   );

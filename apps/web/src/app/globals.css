@@ -129,3 +129,15 @@ textarea:focus-visible {
   outline-offset: 1px;
   border-color: var(--accent);
 }
+
+/* Print run (ops) — when the print overlay is open, print only the sheet of
+   personalised cards, not the app around it. See docs/adr/0032. */
+@media print {
+  body[data-printing] > *:not([data-print-run]) {
+    display: none !important;
+  }
+  [data-print-run] {
+    position: static !important;
+    overflow: visible !important;
+  }
+}
