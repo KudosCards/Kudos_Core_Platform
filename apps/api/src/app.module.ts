@@ -28,6 +28,7 @@ import { GuestModule } from "./guest/guest.module";
 import { EmailModule } from "./email/email.module";
 import { RemindersModule } from "./reminders/reminders.module";
 import { TeamModule } from "./team/team.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { TeamModule } from "./team/team.module";
     EmailModule,
     RemindersModule,
     TeamModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}
