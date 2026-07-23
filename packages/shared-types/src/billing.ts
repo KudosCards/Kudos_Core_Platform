@@ -43,6 +43,8 @@ export const planEntitlementSchema = z.object({
   // either shape rather than assuming the JS-side representation.
   cardDiscountPercent: z.coerce.number().min(0).max(100),
   autoSendEnabled: z.boolean(),
+  /** Whether the plan may upload its own artwork as a custom card design. */
+  customArtworkEnabled: z.boolean(),
   /** Null for the free plan, which has no Stripe subscription object at all. */
   stripePriceId: z.string().nullable(),
 });

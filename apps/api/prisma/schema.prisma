@@ -330,16 +330,18 @@ model CardDesign {
 
 /// A personalised instance of a CardDesign, saved to an account's "My Designs".
 model SavedDesign {
-  id           String   @id @default(uuid())
-  accountId    String   @map("account_id")
-  cardDesignId String   @map("card_design_id")
+  id        String @id @default(uuid())
+  accountId String @map("account_id")
+  /// Null for a member's own uploaded artwork, which starts from a blank
+  /// document rather than a catalog template. See docs/adr/0026.
+  cardDesignId String?  @map("card_design_id")
   name         String
   document     Json
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  cardDesign      CardDesign       @relation(fields: [cardDesignId], references: [id])
+  cardDesign      CardDesign?      @relation(fields: [cardDesignId], references: [id])
   orderRecipients OrderRecipient[]
   occasions       Occasion[]
 
@@ -536,6 +538,9 @@ model PlanEntitlement {
   batchOrderMaxSize    Int     @default(20) @map("batch_order_max_size")
   cardDiscountPercent  Decimal @default(0) @db.Decimal(5, 2) @map("card_discount_percent")
   autoSendEnabled      Boolean @default(false) @map("auto_send_enabled")
+  /// Whether the plan may upload its own artwork as a custom card design
+  /// (rather than only personalising catalog templates). See docs/adr/0026.
+  customArtworkEnabled Boolean @default(false) @map("custom_artwork_enabled")
   /// Null for the free plan, which has no Stripe subscription object at all.
   stripePriceId       String? @map("stripe_price_id")
 
