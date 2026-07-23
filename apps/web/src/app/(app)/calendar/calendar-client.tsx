@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
+import { OccasionModal } from "./occasion-modal";
 import {
   addDaysUTC,
   fetchRange,
@@ -21,18 +22,6 @@ import {
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const VIEWS: CalendarView[] = ["month", "week", "list"];
-
-/** Where a click on an occasion should take the operator. */
-function occasionHref(occasion: Occasion): string | null {
-  if (occasion.status === "pending_approval") return "/approvals";
-  if (occasion.status === "approved") return "/batch-orders";
-  // A scheduled event isn't actionable yet — send the user to the recipient so
-  // they can prepare a card or manage the event.
-  if (occasion.status === "scheduled" && occasion.recipientId) {
-    return `/recipients/${occasion.recipientId}`;
-  }
-  return null;
-}
 
 function occasionLabel(occasion: Occasion): string {
   if (occasion.recipient) {
@@ -58,23 +47,23 @@ function periodLabel(view: CalendarView, anchor: Date): string {
   return anchor.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
-function OccasionPill({ occasion }: { occasion: Occasion }) {
+function OccasionPill({
+  occasion,
+  onOpen,
+}: {
+  occasion: Occasion;
+  onOpen: (occasion: Occasion) => void;
+}) {
   const color = OCCASION_TYPE_COLORS[occasion.type] ?? OCCASION_TYPE_COLORS.bespoke_campaign;
-  const href = occasionHref(occasion);
-  const inner = (
-    <span
-      className={`block truncate rounded border px-1.5 py-0.5 text-xs ${color}`}
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(occasion)}
+      className={`block w-full truncate rounded border px-1.5 py-0.5 text-left text-xs hover:opacity-80 ${color}`}
       title={`${occasionLabel(occasion)} · ${occasionKind(occasion)}`}
     >
       {occasionLabel(occasion)}
-    </span>
-  );
-  return href ? (
-    <Link href={href} className="block hover:opacity-80">
-      {inner}
-    </Link>
-  ) : (
-    inner
+    </button>
   );
 }
 
@@ -110,6 +99,14 @@ export function CalendarClient({
   const [occasions, setOccasions] = useState<Occasion[]>(initialOccasions);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The occasion whose pop-up is open (null = closed).
+  const [selected, setSelected] = useState<Occasion | null>(null);
+
+  // Reflect an inline edit from the pop-up back into the calendar immediately.
+  const applyUpdate = useCallback((updated: Occasion) => {
+    setOccasions((current) => current.map((o) => (o.id === updated.id ? updated : o)));
+    setSelected(updated);
+  }, []);
 
   const load = useCallback(async () => {
     const { start, end } = fetchRange(view, anchor);
@@ -242,9 +239,17 @@ export function CalendarClient({
       )}
 
       {view === "list" ? (
-        <ListView anchor={anchor} byDay={byDay} todayKey={todayKey} />
+        <ListView anchor={anchor} byDay={byDay} todayKey={todayKey} onOpen={setSelected} />
       ) : (
-        <GridView view={view} anchor={anchor} byDay={byDay} todayKey={todayKey} />
+        <GridView view={view} anchor={anchor} byDay={byDay} todayKey={todayKey} onOpen={setSelected} />
+      )}
+
+      {selected && (
+        <OccasionModal
+          occasion={selected}
+          onClose={() => setSelected(null)}
+          onUpdated={applyUpdate}
+        />
       )}
     </div>
   );
@@ -255,11 +260,13 @@ function GridView({
   anchor,
   byDay,
   todayKey,
+  onOpen,
 }: {
   view: CalendarView;
   anchor: Date;
   byDay: Map<string, Occasion[]>;
   todayKey: string;
+  onOpen: (occasion: Occasion) => void;
 }) {
   const { start } = view === "week" ? weekRange(anchor) : monthGridRange(anchor);
   const dayCount = view === "week" ? 7 : 42;
@@ -301,7 +308,7 @@ function GridView({
                 {day.getUTCDate()}
               </span>
               {shown.map((occasion) => (
-                <OccasionPill key={occasion.id} occasion={occasion} />
+                <OccasionPill key={occasion.id} occasion={occasion} onOpen={onOpen} />
               ))}
               {extra > 0 && <span className="px-1 text-xs text-muted">+{extra} more</span>}
             </div>
@@ -317,10 +324,12 @@ function ListView({
   anchor,
   byDay,
   todayKey,
+  onOpen,
 }: {
   anchor: Date;
   byDay: Map<string, Occasion[]>;
   todayKey: string;
+  onOpen: (occasion: Occasion) => void;
 }) {
   const days = [...byDay.keys()].sort();
   if (days.length === 0) {
@@ -348,7 +357,7 @@ function ListView({
             <div className="flex flex-1 flex-wrap gap-1.5">
               {(byDay.get(key) ?? []).map((occasion) => (
                 <div key={occasion.id} className="max-w-48">
-                  <OccasionPill occasion={occasion} />
+                  <OccasionPill occasion={occasion} onOpen={onOpen} />
                 </div>
               ))}
             </div>
