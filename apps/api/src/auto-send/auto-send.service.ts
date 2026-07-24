@@ -130,6 +130,12 @@ export class AutoSendService {
     if (!occasion.recipient) {
       throw new Error("Occasion has no recipient");
     }
+    // A card to this contact was returned and the address isn't re-verified yet —
+    // hold their automatic sends until the return case is resolved, so we don't
+    // fire another card at a known-bad address. See docs/adr/0039-returned-to-sender.md.
+    if (occasion.recipient.addressVerificationRequired) {
+      throw new Error("Contact needs address verification after a returned card");
+    }
     if (!occasion.savedDesignId) {
       throw new Error("Occasion has no approved design");
     }

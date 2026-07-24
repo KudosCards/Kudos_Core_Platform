@@ -40,7 +40,7 @@ function occasionLabelFor(occasion: { type: string; title: string | null } | nul
 }
 
 export type FulfillmentStatus =
-  "pending" | "in_progress" | "printed" | "posted" | "delivered" | "failed";
+  "pending" | "in_progress" | "printed" | "posted" | "delivered" | "returned_to_sender" | "failed";
 
 /**
  * The queue view deliberately has NO street address — only city + postcode,
@@ -88,7 +88,17 @@ const STATUS_TABS: FulfillmentStatus[] = [
   "printed",
   "posted",
   "delivered",
+  "returned_to_sender",
   "failed",
+];
+
+/** RTS reasons offered when marking a posted/delivered card returned. */
+const RETURN_REASONS: { value: string; label: string }[] = [
+  { value: "moved", label: "Recipient has moved" },
+  { value: "incomplete_address", label: "Address incomplete" },
+  { value: "incorrect_address", label: "Address incorrect" },
+  { value: "undeliverable", label: "Delivery not possible" },
+  { value: "other", label: "Other" },
 ];
 
 const POSTAGE_LABELS: Record<string, string> = {
@@ -145,6 +155,7 @@ export function FulfillmentClient({
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
   const [printCards, setPrintCards] = useState<PrintRunCard[] | null>(null);
   const [printPending, setPrintPending] = useState(false);
+  const [returningId, setReturningId] = useState<string | null>(null);
 
   async function printRun() {
     if (selected.size === 0) return;
@@ -222,6 +233,25 @@ export function FulfillmentClient({
     }
   }
 
+  /** Mark a posted/delivered card Returned to Sender — opens a recovery case and
+   * flags the contact. The job leaves the current (posted/delivered) view. */
+  async function markReturned(jobId: string, reason: string) {
+    setError(null);
+    setPendingId(jobId);
+    try {
+      await clientApiFetch("/admin/returns", {
+        method: "POST",
+        body: JSON.stringify({ fulfillmentJobId: jobId, reason }),
+      });
+      setReturningId(null);
+      removeJob(jobId);
+    } catch (returnError) {
+      setError(returnError instanceof ApiError ? returnError.message : "Could not mark returned");
+    } finally {
+      setPendingId(null);
+    }
+  }
+
   const bulkStep = NEXT_STEP[status];
 
   async function bulkAdvance() {
@@ -283,7 +313,7 @@ export function FulfillmentClient({
                 : "border border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
             }`}
           >
-            <span>{tab.replace("_", " ")}</span>
+            <span>{tab.replaceAll("_", " ")}</span>
             <span
               className={`tabular-nums ${tab === status ? "text-white/80" : "text-foreground/50"}`}
             >
@@ -385,6 +415,51 @@ export function FulfillmentClient({
                       {pendingId === job.id ? "…" : step.label}
                     </button>
                   )}
+                  {(job.status === "posted" || job.status === "delivered") &&
+                    (returningId === job.id ? (
+                      <div className="flex items-center gap-1">
+                        <select
+                          aria-label="Return reason"
+                          defaultValue="moved"
+                          id={`rts-reason-${job.id}`}
+                          className="rounded-full border border-black/20 px-3 py-1.5 text-sm dark:border-white/20"
+                        >
+                          {RETURN_REASONS.map((r) => (
+                            <option key={r.value} value={r.value}>
+                              {r.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={pendingId === job.id}
+                          onClick={() => {
+                            const select = document.getElementById(
+                              `rts-reason-${job.id}`,
+                            ) as HTMLSelectElement | null;
+                            void markReturned(job.id, select?.value ?? "other");
+                          }}
+                          className="rounded-full border border-amber-400 bg-amber-50 px-4 py-1.5 text-sm text-amber-900 hover:bg-amber-100 disabled:opacity-40"
+                        >
+                          {pendingId === job.id ? "…" : "Confirm return"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReturningId(null)}
+                          className="rounded-full border border-black/20 px-3 py-1.5 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setReturningId(job.id)}
+                        className="rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
+                      >
+                        Returned to sender
+                      </button>
+                    ))}
                 </div>
               </div>
             );

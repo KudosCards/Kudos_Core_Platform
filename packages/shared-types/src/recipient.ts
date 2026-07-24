@@ -46,6 +46,10 @@ export const recipientSchema = z.object({
   /** Arbitrary key→value fields usable as {key} merge tokens on a card. */
   customFields: z.record(z.string()).nullable(),
   status: recipientStatusSchema,
+  /** True when a card to this contact was Returned to Sender and the address
+   * hasn't been re-verified: automatic sends are paused and checkout warns.
+   * See docs/adr/0039-returned-to-sender.md. */
+  addressVerificationRequired: z.boolean(),
   /** Where the recipient came from: "manual", "csv", "api", or a CRM id. */
   source: z.string(),
   /** Stable id of the contact in its source system; null for manual/CSV. */

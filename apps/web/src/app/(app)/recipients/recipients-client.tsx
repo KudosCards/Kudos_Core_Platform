@@ -463,6 +463,14 @@ export function RecipientsClient({
                       <Link href={`/recipients/${recipient.id}`} className="hover:text-accent hover:underline">
                         {recipient.firstName} {recipient.lastName}
                       </Link>
+                      {recipient.addressVerificationRequired && (
+                        <span
+                          title="A card was returned — address needs updating"
+                          className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 align-middle"
+                        >
+                          ⚠️ Address returned
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-muted">
                       {recipient.dateOfBirth

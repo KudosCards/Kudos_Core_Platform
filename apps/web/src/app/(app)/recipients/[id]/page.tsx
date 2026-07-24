@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import type { Occasion, Recipient } from "@kudos/shared-types";
+import type { Occasion, Recipient, ReturnCase } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { ApiError } from "@/lib/api";
 import { RecipientDetailClient } from "./recipient-detail-client";
@@ -37,5 +37,16 @@ export default async function RecipientDetailPage({
     `/occasions?recipientId=${id}&perPage=100`,
   );
 
-  return <RecipientDetailClient recipient={recipient} initialEvents={events?.items ?? []} />;
+  // Any Returned-to-Sender cases for this contact, so the recovery panel can
+  // show the alert + Update-Address flow. Account-scoped; filtered to this one.
+  const allReturns = (await serverApiFetch<ReturnCase[]>("/returns")) ?? [];
+  const returnCases = allReturns.filter((c) => c.recipientId === id);
+
+  return (
+    <RecipientDetailClient
+      recipient={recipient}
+      initialEvents={events?.items ?? []}
+      initialReturnCases={returnCases}
+    />
+  );
 }

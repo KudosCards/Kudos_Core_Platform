@@ -167,6 +167,7 @@ export class FulfillmentService {
       printed: 0,
       posted: 0,
       delivered: 0,
+      returned_to_sender: 0,
       failed: 0,
     };
     for (const row of grouped) {

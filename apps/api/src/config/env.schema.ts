@@ -143,6 +143,8 @@ export const envSchema = z.object({
   BREVO_GUEST_RECEIPT_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
   BREVO_ORDER_CONFIRMATION_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
   BREVO_DISPATCH_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  // Returned-to-Sender "please update the address" email (see ADR 0039).
+  BREVO_RTS_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
