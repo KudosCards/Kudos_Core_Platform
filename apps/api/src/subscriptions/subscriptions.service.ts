@@ -16,6 +16,7 @@ import { CENTRE_SEAT_PRICE_MINOR } from "../billing/billing.constants";
 import type { EnvConfig } from "../config/env.schema";
 import type { CheckoutResult } from "../common/checkout-result";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
+import { SeatBillingService } from "../billing/seat-billing.service";
 import type { CreateSubscriptionCheckoutDto } from "./dto/create-subscription-checkout.dto";
 
 /** The account's seat position after a change — enough for the UI to render the
@@ -39,6 +40,7 @@ export class SubscriptionsService {
     private readonly entitlements: EntitlementsService,
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
+    private readonly seatBilling: SeatBillingService,
   ) {}
 
   async createCheckout(
@@ -161,7 +163,7 @@ export class SubscriptionsService {
       throw new ForbiddenException("Team seats are available on the Centre plan");
     }
 
-    const seatPriceId = this.config.get("STRIPE_CENTRE_SEAT_PRICE_ID", { infer: true });
+    const seatPriceId = await this.seatBilling.resolveSeatPriceId();
     if (!seatPriceId) {
       throw new ConflictException("Seat billing is not configured yet");
     }

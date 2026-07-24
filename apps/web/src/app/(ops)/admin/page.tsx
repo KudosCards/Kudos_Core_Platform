@@ -1,6 +1,7 @@
 import { serverApiFetch } from "@/lib/api.server";
 import { formatGbp } from "@/lib/orders";
 import { planLabel } from "@/lib/admin";
+import { SeatBillingSetup } from "./seat-billing-setup";
 
 interface AdminOverview {
   accounts: { total: number; organisations: number; individuals: number };
@@ -125,6 +126,9 @@ export default async function AdminOverviewPage() {
           tone={overview.atRiskCount > 0 ? "accent" : undefined}
         />
       </div>
+
+      {/* Billing setup — turn on the £5/mo extra-seat add-on from here. */}
+      <SeatBillingSetup />
 
       {/* Revenue chart + plans */}
       <div className="grid gap-4 lg:grid-cols-3">

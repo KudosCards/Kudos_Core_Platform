@@ -7,6 +7,7 @@ import { AuditService } from "../audit/audit.service";
 import { BatchOrdersService } from "../batch-orders/batch-orders.service";
 import { WalletService } from "../wallet/wallet.service";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
+import { SeatBillingService } from "../billing/seat-billing.service";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { BRAND, renderBrandedEmail } from "../email/email-layout";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
@@ -31,6 +32,7 @@ export class WebhooksService {
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
     private readonly inbox: NotificationInboxService,
+    private readonly seatBilling: SeatBillingService,
   ) {}
 
   /** Verifies the signature first — nothing below this line trusts the
@@ -367,7 +369,7 @@ export class WebhooksService {
     // Keep the local extra-seat count aligned with the subscription's per-seat
     // line item, so a change made via proration, the Stripe dashboard, or a
     // cancellation reconciles here too (the invite hard-block reads this).
-    const seatPriceId = this.config.get("STRIPE_CENTRE_SEAT_PRICE_ID", { infer: true });
+    const seatPriceId = await this.seatBilling.resolveSeatPriceId();
     const seatQuantity = seatPriceId
       ? (subscription.items.data.find((item) => item.price.id === seatPriceId)?.quantity ?? 0)
       : null;

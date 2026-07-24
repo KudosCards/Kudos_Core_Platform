@@ -676,6 +676,19 @@ model PlatformAdmin {
   @@map("platform_admins")
 }
 
+/// A small key→value store for platform-level runtime config the app can write
+/// itself — things that would otherwise need a redeploy to change. Today it
+/// holds the Stripe extra-seat Price id created by the in-app provisioning
+/// action (so seats activate with no env var / redeploy). An env var of the
+/// same name still takes precedence. See docs/adr/0037-in-app-price-provisioning.md.
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
+}
+
 // ---------------------------------------------------------------------------
 // Compliance
 // ---------------------------------------------------------------------------
