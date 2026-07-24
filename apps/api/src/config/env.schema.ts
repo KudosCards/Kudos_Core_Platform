@@ -43,6 +43,16 @@ export const envSchema = z.object({
     .min(1)
     .optional()
     .or(z.literal("").transform(() => undefined)),
+  // Optional override for the Stripe billing-portal configuration id. Unset is
+  // the norm: BillingPortalService creates a configuration over the API on first
+  // use and stores it, so the portal works with no dashboard step. Set this only
+  // to pin a specific dashboard-built configuration. Treat blank as unset. See
+  // docs/adr/0038-billing-portal.md.
+  STRIPE_BILLING_PORTAL_CONFIG_ID: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
 
   WEB_APP_URL: z.string().url(),
 

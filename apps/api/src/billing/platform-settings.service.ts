@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
  * can't drift on the string. */
 export const PLATFORM_SETTING_KEYS = {
   centreSeatPriceId: "stripe_centre_seat_price_id",
+  billingPortalConfigId: "stripe_billing_portal_config_id",
 } as const;
 
 /**

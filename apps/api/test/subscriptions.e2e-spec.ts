@@ -25,16 +25,24 @@ describe("Subscriptions (e2e)", () => {
   let customersCreate: jest.Mock;
   let subscriptionsRetrieve: jest.Mock;
   let subscriptionsUpdate: jest.Mock;
+  let portalConfigCreate: jest.Mock;
+  let portalSessionCreate: jest.Mock;
 
   beforeAll(async () => {
     checkoutSessionsCreate = jest.fn();
     customersCreate = jest.fn();
     subscriptionsRetrieve = jest.fn();
     subscriptionsUpdate = jest.fn();
+    portalConfigCreate = jest.fn();
+    portalSessionCreate = jest.fn();
     const mockStripe = {
       checkout: { sessions: { create: checkoutSessionsCreate } },
       customers: { create: customersCreate },
       subscriptions: { retrieve: subscriptionsRetrieve, update: subscriptionsUpdate },
+      billingPortal: {
+        configurations: { create: portalConfigCreate },
+        sessions: { create: portalSessionCreate },
+      },
     } as unknown as Stripe;
 
     app = await createTestApp([{ provide: STRIPE_CLIENT, useValue: mockStripe }]);
@@ -59,6 +67,18 @@ describe("Subscriptions (e2e)", () => {
     subscriptionsRetrieve.mockReset();
     subscriptionsUpdate.mockReset();
     subscriptionsUpdate.mockResolvedValue({});
+    portalConfigCreate.mockReset();
+    portalConfigCreate.mockImplementation(() =>
+      Promise.resolve({ id: `bpc_test_${randomUUID()}` }),
+    );
+    portalSessionCreate.mockReset();
+    portalSessionCreate.mockImplementation(() => {
+      const id = randomUUID();
+      return Promise.resolve({
+        id: `bps_test_${id}`,
+        url: `https://billing.stripe.test/session/${id}`,
+      });
+    });
   });
 
   /** A Centre account with an active subscription — the precondition for seat
@@ -335,6 +355,71 @@ describe("Subscriptions (e2e)", () => {
         used: 1,
         seatPriceMinor: 500,
       });
+    });
+  });
+
+  describe("billing portal", () => {
+    beforeEach(async () => {
+      // The portal configuration id is stored platform-wide on first use; clear
+      // it so each test deterministically exercises the create-and-store path.
+      await prisma.platformSetting.deleteMany({
+        where: { key: "stripe_billing_portal_config_id" },
+      });
+    });
+
+    it("opens a portal session, provisioning the configuration once and reusing it", async () => {
+      const { token, accountId } = await signUp();
+
+      const first = await request(app.getHttpServer())
+        .post("/subscriptions/portal")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+      expect(first.body).toEqual({
+        url: expect.stringMatching(/^https:\/\/billing\.stripe\.test\//),
+      });
+
+      // A Stripe Customer was created for the account, a portal configuration
+      // was provisioned over the API, and its id was persisted platform-wide.
+      expect(customersCreate).toHaveBeenCalledTimes(1);
+      expect(portalConfigCreate).toHaveBeenCalledTimes(1);
+      const stored = await prisma.platformSetting.findUnique({
+        where: { key: "stripe_billing_portal_config_id" },
+      });
+      expect(stored?.value).toMatch(/^bpc_test_/);
+
+      // The session targets that customer + configuration and returns to /billing.
+      const account = await prisma.account.findUniqueOrThrow({ where: { id: accountId } });
+      const [sessionArgs] = portalSessionCreate.mock.calls[0] as [
+        Stripe.BillingPortal.SessionCreateParams,
+      ];
+      expect(sessionArgs.customer).toBe(account.stripeCustomerId);
+      expect(sessionArgs.configuration).toBe(stored?.value);
+      expect(sessionArgs.return_url).toMatch(/\/billing$/);
+
+      // Opening it again reuses the stored config and the same Customer.
+      await request(app.getHttpServer())
+        .post("/subscriptions/portal")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+      expect(portalConfigCreate).toHaveBeenCalledTimes(1);
+      expect(customersCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it("records an audit entry when the portal is opened", async () => {
+      const { token, accountId } = await signUp();
+      await request(app.getHttpServer())
+        .post("/subscriptions/portal")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+      const entry = await prisma.auditLogEntry.findFirst({
+        where: { accountId, action: "billing_portal_opened" },
+      });
+      expect(entry).not.toBeNull();
+    });
+
+    it("requires authentication", async () => {
+      await request(app.getHttpServer()).post("/subscriptions/portal").expect(401);
+      expect(portalSessionCreate).not.toHaveBeenCalled();
     });
   });
 });
