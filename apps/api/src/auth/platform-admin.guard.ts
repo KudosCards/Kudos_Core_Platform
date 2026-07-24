@@ -24,7 +24,7 @@ export class PlatformAdminGuard implements CanActivate {
       throw new ForbiddenException("Platform operator access required");
     }
 
-    request.platformAdmin = { userId };
+    request.platformAdmin = { userId, role: admin.role === "super_admin" ? "super_admin" : "ops" };
     return true;
   }
 }

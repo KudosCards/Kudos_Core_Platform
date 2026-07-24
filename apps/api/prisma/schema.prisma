@@ -742,16 +742,37 @@ model ReturnCase {
   @@map("return_cases")
 }
 
-/// A Kudos Cards internal operator (print/post staff), distinct from a tuition
-/// centre's Membership. Presence here grants cross-account access to the
-/// fulfillment queue via PlatformAdminGuard — see docs/adr/0010. userId is the
-/// Supabase auth user id, same source as Membership.userId.
+/// A Kudos Cards internal operator, distinct from a tuition centre's Membership.
+/// Presence here grants cross-account access to the ops surfaces via
+/// PlatformAdminGuard — see docs/adr/0010 and docs/adr/0040-admin-auth.md.
+/// userId is the Supabase auth user id, same source as Membership.userId.
 model PlatformAdmin {
   id        String   @id @default(uuid())
   userId    String   @unique @map("user_id")
+  /// "super_admin" (manages the operator team + platform settings) or "ops"
+  /// (works dashboards + fulfillment/returns queues). See ADR 0040.
+  role      String   @default("ops")
+  /// The operator's email, captured on first admin sign-in, for the team UI.
+  email     String?
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("platform_admins")
+}
+
+/// An email allow-listed by a super admin to become an operator. When a user
+/// signs in at the admin login with a matching *verified* Supabase email, they
+/// are provisioned as a PlatformAdmin (role copied from here) and this row is
+/// consumed. Mirrors the team-invite trust model without an email round-trip.
+/// See docs/adr/0040-admin-auth.md.
+model PlatformAdminInvite {
+  id              String   @id @default(uuid())
+  /// Lowercased email; unique so an address is invited at most once.
+  email           String   @unique
+  role            String   @default("ops")
+  invitedByUserId String   @map("invited_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("platform_admin_invites")
 }
 
 /// A small key→value store for platform-level runtime config the app can write

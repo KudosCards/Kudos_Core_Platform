@@ -15,9 +15,14 @@ export interface CurrentMembershipContext {
   userId: string;
 }
 
-/** Populated by PlatformAdminGuard for internal ops (print/post) staff. */
+/** A Kudos operator's role: "super_admin" manages the operator team + platform
+ * settings; "ops" works the dashboards and fulfillment/returns queues. */
+export type PlatformAdminRole = "super_admin" | "ops";
+
+/** Populated by PlatformAdminGuard for internal Kudos operators. */
 export interface PlatformAdminContext {
   userId: string;
+  role: PlatformAdminRole;
 }
 
 /** Populated by ApiKeyGuard for the inbound integrations endpoint. */
