@@ -20,7 +20,9 @@ import type { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
 import type { ApproveOccasionDto } from "./dto/approve-occasion.dto";
 
 /** Just enough of the recipient to show a human-readable name in the UI. */
-const RECIPIENT_SELECT = { select: { firstName: true, lastName: true } } as const;
+const RECIPIENT_SELECT = {
+  select: { firstName: true, lastName: true, addressVerificationRequired: true },
+} as const;
 
 export type Occasion = Prisma.OccasionGetPayload<{
   include: { recipient: typeof RECIPIENT_SELECT };

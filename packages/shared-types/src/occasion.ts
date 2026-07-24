@@ -33,7 +33,16 @@ export const occasionSchema = z
     updatedAt: z.coerce.date(),
     // OccasionsService always nests the recipient's display name — every
     // real response includes this, not just occasions with a recipientId.
-    recipient: z.object({ firstName: z.string(), lastName: z.string() }).nullable(),
+    recipient: z
+      .object({
+        firstName: z.string(),
+        lastName: z.string(),
+        /** True when a card to this contact was returned and the address hasn't
+         * been re-verified — checkout warns before sending again. Optional so
+         * occasion endpoints that don't select it still parse. See ADR 0039. */
+        addressVerificationRequired: z.boolean().optional(),
+      })
+      .nullable(),
   })
   .refine((o) => o.source !== "recurring_per_recipient" || o.recipientId !== null, {
     message: "recurring_per_recipient occasions must have a recipientId",
