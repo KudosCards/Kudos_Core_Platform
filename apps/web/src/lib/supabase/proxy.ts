@@ -8,7 +8,7 @@ interface CookieToSet {
   options?: CookieOptionsWithName;
 }
 
-const PUBLIC_PATHS = ["/", "/login", "/register"];
+const PUBLIC_PATHS = ["/", "/login", "/register", "/admin-login"];
 
 function isPublicPath(pathname: string): boolean {
   return (
