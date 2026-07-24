@@ -13,6 +13,7 @@ import { BatchOrdersService } from "../batch-orders/batch-orders.service";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { renderBrandedEmail, escapeHtml } from "../email/email-layout";
+import { generateRtsToken } from "../common/generate-rts-token";
 import type { EnvConfig } from "../config/env.schema";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
@@ -28,6 +29,10 @@ const BIRTHDAY_PASSED_DAYS_KEY = "rts_birthday_passed_days";
 const BIRTHDAY_PASSED_DAYS_DEFAULT = 7;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** Audit actor for actions taken via the no-login email link — no human user id
+ * is available, so this mirrors the SYSTEM_ACTOR convention used elsewhere. */
+const PUBLIC_RTS_ACTOR = "public:rts-link";
 
 /** Statuses a card can be marked returned *from* — it must actually have been
  * sent. A pending/printed card hasn't left us; a returned/cancelled one is done. */
@@ -198,6 +203,8 @@ export class ReturnsService {
           reason: dto.reason,
           status: "awaiting_address",
           markedByUserId: actorUserId,
+          // The secret that authorises the self-serve email link (no login).
+          publicToken: generateRtsToken(),
         },
       });
 
@@ -212,12 +219,12 @@ export class ReturnsService {
         },
         tx,
       );
-      return { caseId: created.id, accountId };
+      return { caseId: created.id, accountId, publicToken: created.publicToken };
     });
 
     const view = await this.loadView(caseId.caseId);
     // Best-effort, post-commit: tell the customer their card came back.
-    await this.notifyReturned(view, caseId.accountId);
+    await this.notifyReturned(view, caseId.accountId, caseId.publicToken);
     return view;
   }
 
@@ -413,6 +420,52 @@ export class ReturnsService {
       );
     });
     return this.getForAccount(accountId, id);
+  }
+
+  // -------------------------------------------------------------------------
+  // Public self-serve (email link, no login) — token-gated. Each method
+  // resolves the token to (accountId, caseId) then delegates to the
+  // account-scoped method above, so the whole recovery flow — including the
+  // one-free-recovery guard and birthday logic — is shared, not duplicated.
+  // See docs/adr/0039-returned-to-sender.md.
+  // -------------------------------------------------------------------------
+
+  async getByToken(token: string): Promise<ReturnCaseView> {
+    const { accountId, id } = await this.resolveToken(token);
+    return this.getForAccount(accountId, id);
+  }
+
+  async updateAddressByToken(token: string, dto: RecoveryAddressDto): Promise<ReturnCaseView> {
+    const { accountId, id } = await this.resolveToken(token);
+    return this.updateAddress(accountId, PUBLIC_RTS_ACTOR, id, dto);
+  }
+
+  async resendByToken(token: string): Promise<ReturnCaseView> {
+    const { accountId, id } = await this.resolveToken(token);
+    return this.resendToRecipient(accountId, PUBLIC_RTS_ACTOR, id);
+  }
+
+  async sendToBusinessByToken(token: string, dto: RecoveryAddressDto): Promise<ReturnCaseView> {
+    const { accountId, id } = await this.resolveToken(token);
+    return this.sendToBusiness(accountId, PUBLIC_RTS_ACTOR, id, dto);
+  }
+
+  async archiveByToken(token: string): Promise<ReturnCaseView> {
+    const { accountId, id } = await this.resolveToken(token);
+    return this.archive(accountId, PUBLIC_RTS_ACTOR, id);
+  }
+
+  /** Resolve the email-link token to its case. A bad/expired token is a 404 —
+   * the same response as an unknown case, so nothing is leaked about validity. */
+  private async resolveToken(token: string): Promise<{ accountId: string; id: string }> {
+    const found = await this.prisma.returnCase.findFirst({
+      where: { publicToken: token },
+      select: { id: true, accountId: true },
+    });
+    if (!found) {
+      throw new NotFoundException("This link is invalid or has expired");
+    }
+    return found;
   }
 
   // -------------------------------------------------------------------------
@@ -615,9 +668,17 @@ export class ReturnsService {
   // Notifications (best-effort — never fail the workflow they observe)
   // -------------------------------------------------------------------------
 
-  private async notifyReturned(view: ReturnCaseView, accountId: string): Promise<void> {
+  private async notifyReturned(
+    view: ReturnCaseView,
+    accountId: string,
+    publicToken: string | null,
+  ): Promise<void> {
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
-    const contactUrl = `${webAppUrl}/recipients/${view.recipientId}`;
+    // The email link is the self-serve, no-login recovery page (token-gated).
+    // Fall back to the in-app contact record if a token somehow isn't set.
+    const contactUrl = publicToken
+      ? `${webAppUrl}/rts/${publicToken}`
+      : `${webAppUrl}/recipients/${view.recipientId}`;
     try {
       await this.inbox.notifyAccount(accountId, {
         kind: "card_returned",

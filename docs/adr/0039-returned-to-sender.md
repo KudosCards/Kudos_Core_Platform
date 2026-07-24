@@ -80,7 +80,7 @@ the list (data minimisation, consistent with the fulfillment queue).
   and the hard part (auto-send pause) is the real protection. Manual checkout warns; a hard block can
   be a later PlatformSetting.
 - **Customer self-updates the address straight from the email link (no login)** — the brief's "future
-  enhancement" (section 8); deferred. The emailed CTA lands on the in-app contact record for now.
+  enhancement" (section 8). **Now built** (see the update below).
 
 ## Consequences
 
@@ -90,3 +90,24 @@ the list (data minimisation, consistent with the fulfillment queue).
   QR-paged, and queued exactly like any other — no separate fulfilment code path to keep in sync.
 - New env var `BREVO_RTS_TEMPLATE_ID` (optional) themes the notification email in Brevo; unset uses the
   built-in branded HTML.
+
+## Update (2026-07-24) — self-serve recovery from the email link
+
+The RTS email's "Update address" button now lands on a **public, no-login recovery page**
+(`/rts/:token`) instead of the in-app contact record, delivering the brief's section-8 flow: the
+customer opens the link → updates the address → chooses resend / hand-deliver / archive → the job
+enters the print queue, all without signing in.
+
+- **Auth is the token, nothing else.** `ReturnCase.publicToken` is a 40-char nanoid secret generated
+  when the case opens, carried only in the emailed link (never returned by the account-scoped API) —
+  the same credential model as invite / guest-claim links. The public API (`@Public()`, throttled
+  20/min) resolves the token to `(accountId, caseId)` and **delegates to the exact same
+  ReturnsService methods** the authenticated `/returns` endpoints use, so the one-free-recovery guard,
+  birthday logic, flag-clearing, and £0 settle path are shared, not duplicated. A bad token is a 404 —
+  indistinguishable from an unknown case, leaking nothing.
+- **Minimal PII on the public page.** The page shows the recipient's name (already in the email) and
+  the return reason, but **no stored address** — the update form starts blank and the customer types
+  the corrected address. Actions via the link are audited under a `public:rts-link` actor.
+- **Trade-off:** the token doesn't expire and isn't single-use, but the money paths are still safe —
+  the free recovery is claimed with a status-guarded update (one £0 card, ever), and a resolved case
+  refuses further actions. Revisiting the link after recovery just shows the "done" state.

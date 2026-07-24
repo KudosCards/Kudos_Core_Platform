@@ -723,6 +723,10 @@ model ReturnCase {
   recoveryOrderId  String?          @map("recovery_order_id")
   /// The ops operator (PlatformAdmin userId) who marked the card returned.
   markedByUserId   String           @map("marked_by_user_id")
+  /// Secret token in the customer's RTS email link — lets them update the
+  /// address and recover the card without logging in. Never returned by the
+  /// account-scoped API; only embedded in the email. See ADR 0039.
+  publicToken      String?          @unique @map("public_token")
   returnedAt       DateTime         @default(now()) @map("returned_at")
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
