@@ -17,7 +17,7 @@ import { CurrentPlatformAdmin } from "../auth/current-platform-admin.decorator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser, PlatformAdminContext } from "../auth/types";
 import { AdminTeamService, type AdminIdentity, type AdminTeam } from "./admin-team.service";
-import { InviteAdminDto, SetAdminRoleDto } from "./dto/admin-team.dto";
+import { InviteAdminDto, ResendAdminInviteDto, SetAdminRoleDto } from "./dto/admin-team.dto";
 
 /**
  * Operator identity & team management. `/admin/access` provisions a newly
@@ -59,6 +59,16 @@ export class AdminTeamController {
     @Body() dto: InviteAdminDto,
   ): Promise<AdminTeam> {
     await this.adminTeam.invite(admin.userId, dto.email, dto.role);
+    return this.adminTeam.listTeam(admin.userId);
+  }
+
+  @Post("team/invites/resend")
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
+  async resendInvite(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body() dto: ResendAdminInviteDto,
+  ): Promise<AdminTeam> {
+    await this.adminTeam.resendInvite(dto.email);
     return this.adminTeam.listTeam(admin.userId);
   }
 
