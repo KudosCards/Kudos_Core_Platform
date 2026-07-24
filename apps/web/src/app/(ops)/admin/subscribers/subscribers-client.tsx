@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatGbp, formatOrderDate } from "@/lib/orders";
 import {
@@ -21,6 +22,7 @@ export interface AdminSubscriberRow {
   orderCount: number;
   cardsSent: number;
   totalSpentMinor: number;
+  recipientCount: number;
   hasStripeCustomer: boolean;
 }
 
@@ -31,7 +33,17 @@ const PLAN_OPTIONS = Object.entries(PLAN_LABELS); // [["free","Free"], ...]
 const HEALTH_OPTIONS: Exclude<AccountHealth, "none">[] = ["active", "at_risk", "churned"];
 
 function toCsv(rows: AdminSubscriberRow[]): string {
-  const header = ["Account", "Type", "Plan", "Status", "Joined", "Orders", "Cards sent", "Spent (£)"];
+  const header = [
+    "Account",
+    "Type",
+    "Plan",
+    "Status",
+    "Joined",
+    "Contacts",
+    "Orders",
+    "Cards sent",
+    "Spent (£)",
+  ];
   const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const lines = rows.map((r) =>
     [
@@ -40,6 +52,7 @@ function toCsv(rows: AdminSubscriberRow[]): string {
       planLabel(r.plan),
       r.health === "none" ? "" : HEALTH_LABELS[r.health],
       formatOrderDate(r.createdAt),
+      String(r.recipientCount),
       String(r.orderCount),
       String(r.cardsSent),
       (r.totalSpentMinor / 100).toFixed(2),
@@ -103,10 +116,11 @@ export function AdminSubscribersClient({
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Subscribers</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Customers</h1>
           <p className="text-sm text-muted">
             Every account on the platform · {total.toLocaleString("en-GB")} total,{" "}
-            {filtered.length.toLocaleString("en-GB")} shown.
+            {filtered.length.toLocaleString("en-GB")} shown. Select a customer to see their
+            engagement.
           </p>
         </div>
         <button type="button" onClick={exportCsv} className="btn-secondary text-sm">
@@ -147,7 +161,7 @@ export function AdminSubscribersClient({
         {filtered.length === 0 ? (
           <p className="p-6 text-sm text-muted">No accounts match your filters.</p>
         ) : (
-          <table className="w-full min-w-[820px] text-sm">
+          <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs tracking-wide text-muted uppercase">
                 <th className="w-10 px-4 py-3">
@@ -157,6 +171,7 @@ export function AdminSubscribersClient({
                 <th className="px-4 py-3 font-medium">Plan</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Joined</th>
+                <th className="px-4 py-3 text-right font-medium">Contacts</th>
                 <th className="px-4 py-3 text-right font-medium">Orders</th>
                 <th className="px-4 py-3 text-right font-medium">Cards sent</th>
                 <th className="px-4 py-3 text-right font-medium">Spent</th>
@@ -174,10 +189,10 @@ export function AdminSubscribersClient({
                     />
                   </td>
                   <td className="px-4 py-3.5">
-                    <div className="flex flex-col">
-                      <span className="font-medium">{row.name}</span>
+                    <Link href={`/admin/subscribers/${row.id}`} className="flex flex-col group">
+                      <span className="font-medium group-hover:text-accent">{row.name}</span>
                       <span className="text-xs text-muted capitalize">{row.type}</span>
-                    </div>
+                    </Link>
                   </td>
                   <td className="px-4 py-3.5">{planLabel(row.plan)}</td>
                   <td className="px-4 py-3.5">
@@ -191,6 +206,9 @@ export function AdminSubscribersClient({
                   </td>
                   <td className="px-4 py-3.5 whitespace-nowrap text-muted">
                     {formatOrderDate(row.createdAt)}
+                  </td>
+                  <td className="px-4 py-3.5 text-right tabular-nums text-muted">
+                    {row.recipientCount}
                   </td>
                   <td className="px-4 py-3.5 text-right tabular-nums text-muted">{row.orderCount}</td>
                   <td className="px-4 py-3.5 text-right tabular-nums text-muted">{row.cardsSent}</td>

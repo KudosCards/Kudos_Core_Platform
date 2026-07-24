@@ -6,19 +6,19 @@ import { parsePage, parsePerPage } from "../common/pagination";
 
 /** Order statuses that count as real revenue (a draft is a cart; a cancelled or
  * pending-payment order never collected money). */
-const PAID_STATUSES: BatchOrderStatus[] = [
+export const PAID_STATUSES: BatchOrderStatus[] = [
   BatchOrderStatus.paid,
   BatchOrderStatus.fulfilling,
   BatchOrderStatus.completed,
 ];
 
-const ACTIVE_SUB_STATUSES: SubscriptionStatus[] = [
+export const ACTIVE_SUB_STATUSES: SubscriptionStatus[] = [
   SubscriptionStatus.active,
   SubscriptionStatus.trialing,
 ];
 
 /** A subscription in one of these states, with no active one, means "churned". */
-const CHURNED_SUB_STATUSES: SubscriptionStatus[] = [
+export const CHURNED_SUB_STATUSES: SubscriptionStatus[] = [
   SubscriptionStatus.canceled,
   SubscriptionStatus.past_due,
 ];
@@ -26,7 +26,7 @@ const CHURNED_SUB_STATUSES: SubscriptionStatus[] = [
 const DAY_MS = 24 * 60 * 60 * 1000;
 const THIRTY_DAYS_MS = 30 * DAY_MS;
 /** An account with no active subscription and no activity for this long is "at risk". */
-const AT_RISK_MS = THIRTY_DAYS_MS;
+export const AT_RISK_MS = THIRTY_DAYS_MS;
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -73,6 +73,7 @@ export interface AdminSubscriberRow {
   orderCount: number;
   cardsSent: number;
   totalSpentMinor: number;
+  recipientCount: number;
   hasStripeCustomer: boolean;
 }
 
@@ -290,7 +291,7 @@ export class AdminService {
     });
     const ids = accounts.map((a) => a.id);
 
-    const [orders, subs] = await Promise.all([
+    const [orders, subs, recipientCounts] = await Promise.all([
       ids.length === 0
         ? []
         : this.prisma.batchOrder.findMany({
@@ -308,7 +309,18 @@ export class AdminService {
             where: { accountId: { in: ids } },
             select: { accountId: true, status: true },
           }),
+      // Contacts on file — a headline engagement signal, so it earns a list column.
+      ids.length === 0
+        ? []
+        : this.prisma.recipient.groupBy({
+            by: ["accountId"],
+            where: { accountId: { in: ids } },
+            _count: true,
+          }),
     ]);
+    const recipientCountByAccount = new Map(
+      recipientCounts.map((r) => [r.accountId, r._count]),
+    );
 
     const stats = new Map<
       string,
@@ -355,6 +367,7 @@ export class AdminService {
         orderCount: stat?.orderCount ?? 0,
         cardsSent: stat?.cardsSent ?? 0,
         totalSpentMinor: stat?.totalSpentMinor ?? 0,
+        recipientCount: recipientCountByAccount.get(account.id) ?? 0,
         hasStripeCustomer: account.stripeCustomerId !== null,
       };
     });
@@ -374,7 +387,11 @@ export class AdminService {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function accountHealth(input: { active: boolean; churned: boolean; idleMs: number }): AccountHealth {
+export function accountHealth(input: {
+  active: boolean;
+  churned: boolean;
+  idleMs: number;
+}): AccountHealth {
   if (input.active) return "active";
   if (input.churned) return "churned";
   if (input.idleMs >= AT_RISK_MS) return "at_risk";

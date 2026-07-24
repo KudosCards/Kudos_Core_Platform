@@ -15,3 +15,4 @@ export * from "./notifications";
 export * from "./merge";
 export * from "./returns";
 export * from "./admin";
+export * from "./admin-customer";
