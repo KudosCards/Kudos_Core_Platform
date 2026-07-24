@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { BillingModule } from "../billing/billing.module";
 import { AdminController } from "./admin.controller";
 import { AdminService } from "./admin.service";
+import { AdminCustomerService } from "./admin-customer.service";
 import { AdminTeamController } from "./admin-team.controller";
 import { AdminTeamService } from "./admin-team.service";
 
@@ -12,6 +13,6 @@ import { AdminTeamService } from "./admin-team.service";
 @Module({
   imports: [BillingModule],
   controllers: [AdminController, AdminTeamController],
-  providers: [AdminService, AdminTeamService],
+  providers: [AdminService, AdminCustomerService, AdminTeamService],
 })
 export class AdminModule {}

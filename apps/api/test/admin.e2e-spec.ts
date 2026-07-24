@@ -58,6 +58,7 @@ const subscriberRowSchema = z.object({
   orderCount: z.number(),
   cardsSent: z.number(),
   totalSpentMinor: z.number(),
+  recipientCount: z.number(),
   hasStripeCustomer: z.boolean(),
 });
 

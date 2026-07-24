@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import type { Customer360 } from "@kudos/shared-types";
 import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import type { Paginated } from "../common/paginated";
 import { SeatBillingService, type SeatPriceStatus } from "../billing/seat-billing.service";
@@ -9,6 +10,7 @@ import {
   type AdminOrderRow,
   type AdminSubscriberRow,
 } from "./admin.service";
+import { AdminCustomerService } from "./admin-customer.service";
 import { ListAdminOrdersQueryDto } from "./dto/list-orders-query.dto";
 import { ListSubscribersQueryDto } from "./dto/list-subscribers-query.dto";
 
@@ -24,6 +26,7 @@ import { ListSubscribersQueryDto } from "./dto/list-subscribers-query.dto";
 export class AdminController {
   constructor(
     private readonly adminService: AdminService,
+    private readonly adminCustomer: AdminCustomerService,
     private readonly seatBilling: SeatBillingService,
   ) {}
 
@@ -40,6 +43,13 @@ export class AdminController {
   @Get("subscribers")
   subscribers(@Query() query: ListSubscribersQueryDto): Promise<Paginated<AdminSubscriberRow>> {
     return this.adminService.listSubscribers(query);
+  }
+
+  /** Full "Customer 360" for one account — profile + engagement across contacts,
+   * occasions, integrations, wallet, team, orders and returns. */
+  @Get("customers/:id")
+  customer(@Param("id", ParseUUIDPipe) id: string): Promise<Customer360> {
+    return this.adminCustomer.getCustomer(id);
   }
 
   /** Whether the £5/mo extra-seat Stripe Price is set up, and where its id
