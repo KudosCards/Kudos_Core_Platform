@@ -16,7 +16,19 @@ export function AdminTeamClient({ initialTeam }: { initialTeam: AdminTeam }) {
   const [team, setTeam] = useState<AdminTeam>(initialTeam);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
   const isSuper = team.yourRole === "super_admin";
+
+  function resend(email: string) {
+    setSentTo(null);
+    void mutate("/admin/team/invites/resend", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }).then(() => {
+      setSentTo(email);
+      window.setTimeout(() => setSentTo((current) => (current === email ? null : current)), 3000);
+    });
+  }
 
   async function mutate(path: string, init: RequestInit): Promise<void> {
     setError(null);
@@ -144,7 +156,8 @@ export function AdminTeamClient({ initialTeam }: { initialTeam: AdminTeam }) {
             </button>
           </form>
           <p className="text-xs text-foreground/50">
-            They&apos;ll get access the next time they sign in at the operator login with this email.
+            We&apos;ll email them a link to the operator sign-in. They get access as soon as they
+            sign in with this email.
           </p>
 
           {team.invites.length > 0 && (
@@ -154,23 +167,36 @@ export function AdminTeamClient({ initialTeam }: { initialTeam: AdminTeam }) {
               </h3>
               <ul className="flex flex-col divide-y divide-black/5 rounded-xl border border-black/10 dark:divide-white/5 dark:border-white/10">
                 {team.invites.map((inv) => (
-                  <li key={inv.email} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                    <span>
+                  <li key={inv.email} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
+                    <span className="min-w-0 truncate">
                       {inv.email}{" "}
                       <span className="text-xs text-foreground/40">· {ROLE_LABELS[inv.role]}</span>
                     </span>
-                    <button
-                      type="button"
-                      disabled={pending}
-                      onClick={() =>
-                        void mutate(`/admin/team/invites?email=${encodeURIComponent(inv.email)}`, {
-                          method: "DELETE",
-                        })
-                      }
-                      className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
-                    >
-                      Remove
-                    </button>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {sentTo === inv.email && (
+                        <span className="text-xs font-medium text-[#2f7d54]">Sent ✓</span>
+                      )}
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => resend(inv.email)}
+                        className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                      >
+                        Resend email
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() =>
+                          void mutate(`/admin/team/invites?email=${encodeURIComponent(inv.email)}`, {
+                            method: "DELETE",
+                          })
+                        }
+                        className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>

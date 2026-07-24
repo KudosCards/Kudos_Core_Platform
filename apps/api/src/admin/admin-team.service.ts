@@ -1,11 +1,16 @@
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
+import type { EnvConfig } from "../config/env.schema";
+import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
+import { escapeHtml, renderBrandedEmail } from "../email/email-layout";
 import type { AuthenticatedUser, PlatformAdminRole } from "../auth/types";
 
 export interface AdminIdentity {
@@ -39,7 +44,11 @@ const coerceRole = (role: string): PlatformAdminRole =>
 export class AdminTeamService {
   private readonly logger = new Logger(AdminTeamService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService<EnvConfig, true>,
+    @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
+  ) {}
 
   /**
    * Called right after admin sign-in. If the user is already an operator, return
@@ -121,10 +130,54 @@ export class AdminTeamService {
       create: { email: normalised, role, invitedByUserId: currentUserId },
       update: { role, invitedByUserId: currentUserId },
     });
+    await this.sendInviteEmail(normalised, role);
   }
 
   async removeInvite(email: string): Promise<void> {
     await this.prisma.platformAdminInvite.deleteMany({ where: { email: email.trim().toLowerCase() } });
+  }
+
+  /** Re-send the invite email for a still-pending operator (in case the first
+   * one was lost). 404s if there's no pending invite for that address. */
+  async resendInvite(email: string): Promise<void> {
+    const normalised = email.trim().toLowerCase();
+    const invite = await this.prisma.platformAdminInvite.findUnique({
+      where: { email: normalised },
+    });
+    if (!invite) {
+      throw new NotFoundException("No pending invite for that email");
+    }
+    await this.sendInviteEmail(normalised, coerceRole(invite.role));
+  }
+
+  /** Emails an invited operator a link to the operator sign-in. A failed send is
+   * logged, not thrown — the allow-list row stands and the invite can be re-sent. */
+  private async sendInviteEmail(email: string, role: PlatformAdminRole): Promise<void> {
+    const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
+    const signInUrl = `${webAppUrl}/admin-login`;
+    const roleLabel = role === "super_admin" ? "a super admin" : "an operator";
+    try {
+      await this.email.sendTransactional({
+        to: email,
+        subject: "You've been given access to the Kudos Cards operator dashboard",
+        html: renderBrandedEmail({
+          webAppUrl,
+          preheader: "Your Kudos Cards operator access is ready",
+          heading: "You're a Kudos operator",
+          bodyHtml: `
+            <p>You've been granted access to the Kudos Cards operator dashboard as
+            <strong>${escapeHtml(roleLabel)}</strong>.</p>
+            <p>Sign in at the operator login with <strong>${escapeHtml(email)}</strong> to get
+            started — you'll see orders, customers, the fulfillment queue and more.</p>`,
+          cta: { url: signInUrl, label: "Open the operator sign-in" },
+          showLinkFallback: true,
+          footerNote: "If you weren't expecting this, you can safely ignore this email.",
+        }),
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Operator invite email to ${email} failed: ${reason}`);
+    }
   }
 
   /** Change an operator's role. Refuses to remove the last super admin. */

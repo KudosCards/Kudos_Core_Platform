@@ -44,6 +44,14 @@ mirrors the team-invite trust model (ADR 0028 — the verified JWT email is the 
 an email round-trip: internal staff already have logins, and this avoids standing up admin-invite
 email infrastructure. A super admin can change roles or revoke operators, and remove pending invites.
 
+**Invite email (added post-ADR).** Allow-listing an operator now also emails them a
+branded link to the operator sign-in (`/admin-login`) via the shared `EMAIL_CLIENT`, so
+they don't have to be told out-of-band to go and sign in. A super admin can **resend** that
+email for any still-pending invite (`POST /admin/team/invites/resend`) in case the first was
+lost. A failed send is logged, not thrown — the allow-list row is the source of truth, so the
+invite still works and can be re-sent. No token is involved: the email is a convenience
+pointer, and access is still gated by the verified-email match at sign-in.
+
 ### Guardrails
 
 - **At least one super admin always remains** — demoting or revoking the last one is a 409.

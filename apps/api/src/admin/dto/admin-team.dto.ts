@@ -17,3 +17,8 @@ export class SetAdminRoleDto {
   @IsIn(PLATFORM_ADMIN_ROLES)
   role!: (typeof PLATFORM_ADMIN_ROLES)[number];
 }
+
+export class ResendAdminInviteDto {
+  @IsEmail()
+  email!: string;
+}

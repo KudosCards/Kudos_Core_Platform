@@ -3,8 +3,11 @@ import type { INestApplication } from "@nestjs/common";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { EMAIL_CLIENT } from "../src/email/email.client";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
+
+const emailMock = { sendTransactional: jest.fn().mockResolvedValue(undefined) };
 
 interface AdminTeamBody {
   admins: Array<{ userId: string; email: string | null; role: string; isYou: boolean }>;
@@ -17,7 +20,7 @@ describe("Admin team / operator auth (e2e)", () => {
   let prisma: PrismaService;
 
   beforeAll(async () => {
-    app = await createTestApp();
+    app = await createTestApp([{ provide: EMAIL_CLIENT, useValue: emailMock }]);
     prisma = app.get(PrismaService);
   });
 
@@ -30,6 +33,7 @@ describe("Admin team / operator auth (e2e)", () => {
     // on them). Other specs create their own operators as needed.
     await prisma.platformAdminInvite.deleteMany({});
     await prisma.platformAdmin.deleteMany({});
+    emailMock.sendTransactional.mockClear();
   });
 
   async function superAdmin(): Promise<{ token: string; userId: string; email: string }> {
@@ -69,6 +73,11 @@ describe("Admin team / operator auth (e2e)", () => {
       .send({ email: inviteeEmail, role: "ops" })
       .expect(201);
 
+    // The invitee is emailed a link to the operator sign-in.
+    expect(emailMock.sendTransactional).toHaveBeenCalledWith(
+      expect.objectContaining({ to: inviteeEmail }),
+    );
+
     const inviteeUserId = randomUUID();
     const inviteeToken = await mintToken(inviteeUserId, inviteeEmail);
     const access = await request(app.getHttpServer())
@@ -98,6 +107,42 @@ describe("Admin team / operator auth (e2e)", () => {
     await request(app.getHttpServer())
       .post("/admin/access")
       .set("Authorization", `Bearer ${token}`)
+      .expect(403);
+  });
+
+  it("resends the invite email for a pending invite", async () => {
+    const { token: superToken } = await superAdmin();
+    const inviteeEmail = `resend-${randomUUID()}@kudos.test`;
+    await request(app.getHttpServer())
+      .post("/admin/team/invites")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({ email: inviteeEmail, role: "ops" })
+      .expect(201);
+
+    emailMock.sendTransactional.mockClear();
+    await request(app.getHttpServer())
+      .post("/admin/team/invites/resend")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({ email: inviteeEmail })
+      .expect(201);
+    expect(emailMock.sendTransactional).toHaveBeenCalledWith(
+      expect.objectContaining({ to: inviteeEmail }),
+    );
+  });
+
+  it("404s resending a non-existent invite, and blocks ops operators", async () => {
+    const { token: superToken } = await superAdmin();
+    await request(app.getHttpServer())
+      .post("/admin/team/invites/resend")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({ email: "nobody@kudos.test" })
+      .expect(404);
+
+    const ops = await opsAdmin();
+    await request(app.getHttpServer())
+      .post("/admin/team/invites/resend")
+      .set("Authorization", `Bearer ${ops.token}`)
+      .send({ email: "nobody@kudos.test" })
       .expect(403);
   });
 
