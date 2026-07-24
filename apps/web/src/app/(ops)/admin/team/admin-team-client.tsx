@@ -12,7 +12,13 @@ const ROLE_LABELS: Record<PlatformAdminRole, string> = {
 
 const inputClass = "rounded-md border border-black/15 bg-surface px-3 py-2 text-sm dark:border-white/15";
 
-export function AdminTeamClient({ initialTeam }: { initialTeam: AdminTeam }) {
+export function AdminTeamClient({
+  initialTeam,
+  emailConfigured,
+}: {
+  initialTeam: AdminTeam;
+  emailConfigured: boolean;
+}) {
   const [team, setTeam] = useState<AdminTeam>(initialTeam);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -24,20 +30,23 @@ export function AdminTeamClient({ initialTeam }: { initialTeam: AdminTeam }) {
     void mutate("/admin/team/invites/resend", {
       method: "POST",
       body: JSON.stringify({ email }),
-    }).then(() => {
+    }).then((ok) => {
+      if (!ok) return; // mutate already surfaced the error
       setSentTo(email);
       window.setTimeout(() => setSentTo((current) => (current === email ? null : current)), 3000);
     });
   }
 
-  async function mutate(path: string, init: RequestInit): Promise<void> {
+  async function mutate(path: string, init: RequestInit): Promise<boolean> {
     setError(null);
     setPending(true);
     try {
       const updated = await clientApiFetch<AdminTeam>(path, init);
       setTeam(updated);
+      return true;
     } catch (mutateError) {
       setError(mutateError instanceof ApiError ? mutateError.message : "Something went wrong");
+      return false;
     } finally {
       setPending(false);
     }
@@ -68,6 +77,16 @@ export function AdminTeamClient({ initialTeam }: { initialTeam: AdminTeam }) {
 
       {error && (
         <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+      )}
+
+      {!emailConfigured && (
+        <div className="rounded-lg border border-[#a8630a]/30 bg-[#fff4e5] px-4 py-3 text-sm text-[#7a4708]">
+          <p className="font-semibold">Email sending isn&apos;t configured.</p>
+          <p className="mt-0.5">
+            Invited operators won&apos;t receive an email — share the operator sign-in link with them
+            directly. They still get access as soon as they sign in with their invited email.
+          </p>
+        </div>
       )}
 
       {!isSuper && (
@@ -178,7 +197,8 @@ export function AdminTeamClient({ initialTeam }: { initialTeam: AdminTeam }) {
                       )}
                       <button
                         type="button"
-                        disabled={pending}
+                        disabled={pending || !emailConfigured}
+                        title={emailConfigured ? undefined : "Email sending isn't configured"}
                         onClick={() => resend(inv.email)}
                         className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
                       >

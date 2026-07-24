@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -130,7 +131,24 @@ export class AdminTeamService {
       create: { email: normalised, role, invitedByUserId: currentUserId },
       update: { role, invitedByUserId: currentUserId },
     });
-    await this.sendInviteEmail(normalised, role);
+    // The allow-list row is the source of truth — a failed email must NOT fail
+    // the invite (the operator can still sign in, and the email can be resent),
+    // so swallow-and-log here. The explicit "Resend" action surfaces failures.
+    try {
+      await this.sendInviteEmail(normalised, role);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Operator invite email to ${normalised} failed: ${reason}`);
+    }
+  }
+
+  /** Whether transactional email is actually configured (a Brevo key + a sender
+   * for the HTML fallbacks the invites use). When false, invite/resend emails
+   * are silently dropped by the no-op client — surfaced as a banner in the UI. */
+  emailConfigured(): { configured: boolean } {
+    const apiKey = this.config.get("Brevo_API", { infer: true });
+    const fromAddress = this.config.get("EMAIL_FROM_ADDRESS", { infer: true });
+    return { configured: Boolean(apiKey && fromAddress) };
   }
 
   async removeInvite(email: string): Promise<void> {
@@ -147,37 +165,42 @@ export class AdminTeamService {
     if (!invite) {
       throw new NotFoundException("No pending invite for that email");
     }
-    await this.sendInviteEmail(normalised, coerceRole(invite.role));
+    // Unlike invite(), this is an explicit user action — surface a send failure
+    // so the operator knows it didn't go out (rather than a false "Sent").
+    try {
+      await this.sendInviteEmail(normalised, coerceRole(invite.role));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Operator invite resend to ${normalised} failed: ${reason}`);
+      throw new BadGatewayException(
+        "Couldn't send the invite email — check the email configuration.",
+      );
+    }
   }
 
-  /** Emails an invited operator a link to the operator sign-in. A failed send is
-   * logged, not thrown — the allow-list row stands and the invite can be re-sent. */
+  /** Emails an invited operator a link to the operator sign-in. Throws on a hard
+   * failure; callers decide whether to swallow (invite) or surface (resend). */
   private async sendInviteEmail(email: string, role: PlatformAdminRole): Promise<void> {
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
     const signInUrl = `${webAppUrl}/admin-login`;
     const roleLabel = role === "super_admin" ? "a super admin" : "an operator";
-    try {
-      await this.email.sendTransactional({
-        to: email,
-        subject: "You've been given access to the Kudos Cards operator dashboard",
-        html: renderBrandedEmail({
-          webAppUrl,
-          preheader: "Your Kudos Cards operator access is ready",
-          heading: "You're a Kudos operator",
-          bodyHtml: `
-            <p>You've been granted access to the Kudos Cards operator dashboard as
-            <strong>${escapeHtml(roleLabel)}</strong>.</p>
-            <p>Sign in at the operator login with <strong>${escapeHtml(email)}</strong> to get
-            started — you'll see orders, customers, the fulfillment queue and more.</p>`,
-          cta: { url: signInUrl, label: "Open the operator sign-in" },
-          showLinkFallback: true,
-          footerNote: "If you weren't expecting this, you can safely ignore this email.",
-        }),
-      });
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "Unknown error";
-      this.logger.error(`Operator invite email to ${email} failed: ${reason}`);
-    }
+    await this.email.sendTransactional({
+      to: email,
+      subject: "You've been given access to the Kudos Cards operator dashboard",
+      html: renderBrandedEmail({
+        webAppUrl,
+        preheader: "Your Kudos Cards operator access is ready",
+        heading: "You're a Kudos operator",
+        bodyHtml: `
+          <p>You've been granted access to the Kudos Cards operator dashboard as
+          <strong>${escapeHtml(roleLabel)}</strong>.</p>
+          <p>Sign in at the operator login with <strong>${escapeHtml(email)}</strong> to get
+          started — you'll see orders, customers, the fulfillment queue and more.</p>`,
+        cta: { url: signInUrl, label: "Open the operator sign-in" },
+        showLinkFallback: true,
+        footerNote: "If you weren't expecting this, you can safely ignore this email.",
+      }),
+    });
   }
 
   /** Change an operator's role. Refuses to remove the last super admin. */

@@ -146,6 +146,32 @@ describe("Admin team / operator auth (e2e)", () => {
       .expect(403);
   });
 
+  it("surfaces a send failure on resend (502) rather than a false success", async () => {
+    const { token: superToken } = await superAdmin();
+    const email = `fail-${randomUUID()}@kudos.test`;
+    await request(app.getHttpServer())
+      .post("/admin/team/invites")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({ email, role: "ops" })
+      .expect(201);
+
+    emailMock.sendTransactional.mockRejectedValueOnce(new Error("brevo down"));
+    await request(app.getHttpServer())
+      .post("/admin/team/invites/resend")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({ email })
+      .expect(502);
+  });
+
+  it("reports whether transactional email is configured", async () => {
+    const { token } = await opsAdmin();
+    const res = await request(app.getHttpServer())
+      .get("/admin/email-status")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(typeof (res.body as { configured: unknown }).configured).toBe("boolean");
+  });
+
   it("lets an ops operator view the team but not manage it", async () => {
     const { token } = await opsAdmin();
     await request(app.getHttpServer())

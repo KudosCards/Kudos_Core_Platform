@@ -52,6 +52,14 @@ export class AdminTeamController {
     return this.adminTeam.listTeam(admin.userId);
   }
 
+  /** Whether invite emails will actually send (Brevo configured), so the UI can
+   * warn when invited operators won't receive an email. */
+  @Get("email-status")
+  @UseGuards(PlatformAdminGuard)
+  emailStatus(): { configured: boolean } {
+    return this.adminTeam.emailConfigured();
+  }
+
   @Post("team/invites")
   @UseGuards(PlatformAdminGuard, SuperAdminGuard)
   async invite(
