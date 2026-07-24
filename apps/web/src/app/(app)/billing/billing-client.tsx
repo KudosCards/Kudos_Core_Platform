@@ -38,6 +38,7 @@ export function BillingClient({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pendingPlan, setPendingPlan] = useState<string | null>(null);
+  const [openingPortal, setOpeningPortal] = useState(false);
   const [reminders, setReminders] = useState(remindersEnabled);
   const [savingReminders, setSavingReminders] = useState(false);
 
@@ -58,6 +59,22 @@ export function BillingClient({
       );
     } finally {
       setSavingReminders(false);
+    }
+  }
+
+  async function openBillingPortal() {
+    setError(null);
+    setOpeningPortal(true);
+    try {
+      const { url } = await clientApiFetch<{ url: string }>("/subscriptions/portal", {
+        method: "POST",
+      });
+      window.location.assign(url);
+    } catch (portalError) {
+      setError(
+        portalError instanceof ApiError ? portalError.message : "Could not open billing portal",
+      );
+      setOpeningPortal(false);
     }
   }
 
@@ -140,6 +157,24 @@ export function BillingClient({
             </div>
           );
         })}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4">
+        <div>
+          <p className="font-semibold">Invoices &amp; receipts</p>
+          <p className="text-sm text-muted">
+            Download your invoices and receipts, update your payment card, or cancel — all in Stripe&apos;s
+            secure billing portal.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={openingPortal}
+          onClick={() => void openBillingPortal()}
+          className="btn-secondary"
+        >
+          {openingPortal ? "Opening…" : "Manage billing"}
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4">

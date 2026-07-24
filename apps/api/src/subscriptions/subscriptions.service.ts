@@ -17,6 +17,7 @@ import type { EnvConfig } from "../config/env.schema";
 import type { CheckoutResult } from "../common/checkout-result";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { SeatBillingService } from "../billing/seat-billing.service";
+import { StripeCustomerService } from "../billing/stripe-customer.service";
 import type { CreateSubscriptionCheckoutDto } from "./dto/create-subscription-checkout.dto";
 
 /** The account's seat position after a change — enough for the UI to render the
@@ -41,6 +42,7 @@ export class SubscriptionsService {
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
     private readonly seatBilling: SeatBillingService,
+    private readonly customers: StripeCustomerService,
   ) {}
 
   async createCheckout(
@@ -75,12 +77,7 @@ export class SubscriptionsService {
       );
     }
 
-    const account = await this.prisma.account.findUniqueOrThrow({ where: { id: accountId } });
-    const stripeCustomerId = await this.getOrCreateStripeCustomer(
-      account.id,
-      account.name,
-      account.stripeCustomerId,
-    );
+    const stripeCustomerId = await this.customers.getOrCreate(accountId);
 
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
     const session = await this.stripe.checkout.sessions.create({
