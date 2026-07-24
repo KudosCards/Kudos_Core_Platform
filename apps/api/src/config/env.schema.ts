@@ -18,6 +18,22 @@ export const envSchema = z.object({
 
   STRIPE_SECRET_KEY: z.string().min(1),
   STRIPE_WEBHOOK_SECRET: z.string().min(1),
+  // The recurring Stripe Price ids for the paid plans (incl. VAT): Pro £9.97/mo,
+  // Centre £19.97/mo. Resolved at runtime by subscriptions checkout (env wins,
+  // the seeded PlanEntitlement.stripePriceId is the fallback), so setting these
+  // in Railway + redeploy activates subscriptions with no re-seed. Optional at
+  // boot: an unset plan cleanly returns "not configured" rather than crashing.
+  // Treat blank as unset. See docs/adr/0036-payment-go-live.md.
+  STRIPE_PRICE_ID_PRO: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  STRIPE_PRICE_ID_CENTRE: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
   // The recurring Stripe Price id (£5/mo incl. VAT) for an extra Centre team
   // seat beyond the 3 included. Optional at boot: the app runs without it, and
   // "add a seat" returns a clean "not configured" until it's set. Treat blank

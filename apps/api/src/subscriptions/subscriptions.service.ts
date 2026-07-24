@@ -52,7 +52,8 @@ export class SubscriptionsService {
     if (!entitlement) {
       throw new NotFoundException(`Unknown plan "${dto.planId}"`);
     }
-    if (!entitlement.stripePriceId) {
+    const priceId = this.resolvePlanPriceId(dto.planId, entitlement.stripePriceId);
+    if (!priceId) {
       throw new ConflictException(`Plan "${dto.planId}" is not yet configured for checkout`);
     }
 
@@ -83,7 +84,7 @@ export class SubscriptionsService {
     const session = await this.stripe.checkout.sessions.create({
       mode: "subscription",
       customer: stripeCustomerId,
-      line_items: [{ price: entitlement.stripePriceId, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       subscription_data: { metadata: { accountId, planId: dto.planId } },
       success_url: `${webAppUrl}/billing/success`,
       cancel_url: `${webAppUrl}/billing/cancelled`,
@@ -102,6 +103,16 @@ export class SubscriptionsService {
       throw new ConflictException("Stripe did not return a checkout URL");
     }
     return { checkoutUrl: session.url };
+  }
+
+  /** Resolve a paid plan's Stripe Price id: the `STRIPE_PRICE_ID_<PLAN>` env var
+   * wins (so setting it in Railway + redeploy activates the plan with no
+   * re-seed), falling back to the seeded PlanEntitlement.stripePriceId. Returns
+   * null when neither is set — checkout then reports "not configured". See
+   * docs/adr/0036-payment-go-live.md. */
+  private resolvePlanPriceId(planId: "pro" | "centre", seededPriceId: string | null): string | null {
+    const envKey = planId === "pro" ? "STRIPE_PRICE_ID_PRO" : "STRIPE_PRICE_ID_CENTRE";
+    return this.config.get(envKey, { infer: true }) ?? seededPriceId ?? null;
   }
 
   /** Read the account's current seat position (no mutation). Shared by the team

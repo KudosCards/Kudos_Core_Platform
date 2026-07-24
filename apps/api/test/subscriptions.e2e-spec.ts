@@ -13,6 +13,10 @@ import { mintToken } from "./util/test-jwks";
 // it before the app boots so ConfigService picks it up (it's optional in env).
 const SEAT_PRICE_ID = "price_test_seat";
 process.env.STRIPE_CENTRE_SEAT_PRICE_ID = SEAT_PRICE_ID;
+// Centre plan price supplied purely via env (no DB stripePriceId) — proves the
+// runtime env resolution that lets Railway activate a plan without a re-seed.
+const CENTRE_ENV_PRICE_ID = "price_env_centre";
+process.env.STRIPE_PRICE_ID_CENTRE = CENTRE_ENV_PRICE_ID;
 
 describe("Subscriptions (e2e)", () => {
   let app: INestApplication<App>;
@@ -150,6 +154,26 @@ describe("Subscriptions (e2e)", () => {
         data: { stripePriceId: null },
       });
     }
+  });
+
+  it("uses the STRIPE_PRICE_ID_<plan> env var when the plan has no seeded price id", async () => {
+    // The seeded centre entitlement has a NULL stripePriceId here — only the env
+    // var is set — so a successful checkout proves env resolution works alone.
+    const centre = await prisma.planEntitlement.findUniqueOrThrow({ where: { planId: "centre" } });
+    expect(centre.stripePriceId).toBeNull();
+
+    const { token } = await signUp();
+    const response = await request(app.getHttpServer())
+      .post("/subscriptions/checkout")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ planId: "centre" })
+      .expect(201);
+    expect(response.body).toEqual({ checkoutUrl: expect.stringMatching(/^https:\/\//) });
+
+    const [sessionArgs] = checkoutSessionsCreate.mock.calls.at(-1) as [
+      Stripe.Checkout.SessionCreateParams,
+    ];
+    expect(sessionArgs.line_items?.[0]?.price).toBe(CENTRE_ENV_PRICE_ID);
   });
 
   it("rejects starting a second subscription while one is already active", async () => {
