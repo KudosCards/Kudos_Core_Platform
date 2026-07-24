@@ -190,7 +190,7 @@ describe("Auto-send (e2e)", () => {
     const occasion = await prisma.occasion.findUniqueOrThrow({ where: { id: occasionId } });
     expect(occasion.status).toBe("queued");
 
-    // An order was created, paid from the wallet, and priced pro (£1.35) + first
+    // An order was created, paid from the wallet, and priced pro (£2.25) + first
     // class stamp (£1.80) = £3.15.
     const order = await prisma.batchOrder.findFirstOrThrow({
       where: { accountId },
@@ -198,7 +198,7 @@ describe("Auto-send (e2e)", () => {
     });
     expect(order.status).toBe("paid");
     expect(order.paymentMethod).toBe("wallet");
-    expect(order.totalMinor).toBe(135 + 180);
+    expect(order.totalMinor).toBe(225 + 180);
     expect(order.orderRecipients[0]?.status).toBe("queued");
     expect(order.orderRecipients[0]?.shippingAddressPostcode).toBe("SW1A 1AA");
 
@@ -213,7 +213,7 @@ describe("Auto-send (e2e)", () => {
     expect(messagePage).not.toBeNull();
 
     // Wallet debited by exactly the order total.
-    expect(await walletBalance(token)).toBe(1000 - (135 + 180));
+    expect(await walletBalance(token)).toBe(1000 - (225 + 180));
   });
 
   it("skips (and leaves approved) an occasion the wallet can't cover", async () => {

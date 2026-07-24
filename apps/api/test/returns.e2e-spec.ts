@@ -77,7 +77,7 @@ describe("Returns / RTS (e2e)", () => {
         })
       : null;
     const order = await prisma.batchOrder.create({
-      data: { accountId, status: "fulfilling", subtotalMinor: 150, postageMinor: 91, totalMinor: 241 },
+      data: { accountId, status: "fulfilling", subtotalMinor: 250, postageMinor: 91, totalMinor: 341 },
     });
     const orderRecipient = await prisma.orderRecipient.create({
       data: {
@@ -90,7 +90,7 @@ describe("Returns / RTS (e2e)", () => {
         shippingAddressPostcode: "LS1 1AA",
         dispatchOption: "asap",
         postageClass: "second_class",
-        priceMinor: 150,
+        priceMinor: 250,
         postageMinor: 91,
         status: "posted",
       },

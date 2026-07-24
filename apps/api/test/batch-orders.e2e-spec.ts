@@ -149,12 +149,12 @@ describe("Batch orders (e2e)", () => {
     const order = batchOrderSchema.parse(response.body);
 
     expect(order.status).toBe("draft");
-    // One first-class card: £1.50 card + £1.80 stamp = £3.30.
-    expect(order.subtotalMinor).toBe(150);
+    // One first-class card: £2.50 card + £1.80 stamp = £4.30.
+    expect(order.subtotalMinor).toBe(250);
     expect(order.postageMinor).toBe(180);
-    expect(order.totalMinor).toBe(330);
+    expect(order.totalMinor).toBe(430);
     expect(order.orderRecipients).toHaveLength(1);
-    expect(order.orderRecipients[0]?.priceMinor).toBe(150);
+    expect(order.orderRecipients[0]?.priceMinor).toBe(250);
     expect(order.orderRecipients[0]?.postageMinor).toBe(180);
     expect(order.orderRecipients[0]?.status).toBe("approved");
 
@@ -186,11 +186,11 @@ describe("Batch orders (e2e)", () => {
         .expect(201);
       const order = batchOrderSchema.parse(response.body);
 
-      // One 2nd-class card: £1.50 card + £0.91 stamp = £2.41.
+      // One 2nd-class card: £2.50 card + £0.91 stamp = £3.41.
       expect(order.status).toBe("draft");
-      expect(order.subtotalMinor).toBe(150);
+      expect(order.subtotalMinor).toBe(250);
       expect(order.postageMinor).toBe(91);
-      expect(order.totalMinor).toBe(241);
+      expect(order.totalMinor).toBe(341);
       expect(order.orderRecipients).toHaveLength(1);
       expect(order.orderRecipients[0]?.savedDesignId).toBe(savedDesignId);
 
@@ -403,8 +403,8 @@ describe("Batch orders (e2e)", () => {
       Stripe.Checkout.SessionCreateParams,
     ];
     expect(sessionArgs.mode).toBe("payment");
-    // £1.50 card + £1.80 first-class stamp = £3.30 charged.
-    expect(sessionArgs.line_items?.[0]?.price_data?.unit_amount).toBe(330);
+    // £2.50 card + £1.80 first-class stamp = £4.30 charged.
+    expect(sessionArgs.line_items?.[0]?.price_data?.unit_amount).toBe(430);
 
     const stored = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.id } });
     expect(stored.status).toBe("pending_payment");
@@ -573,11 +573,11 @@ describe("Batch orders (e2e)", () => {
         .expect(201);
       const order = batchOrderSchema.parse(response.body);
 
-      // Three 2nd-class cards: 3 × (£1.50 + £0.91) = £7.23.
+      // Three 2nd-class cards: 3 × (£2.50 + £0.91) = £10.23.
       expect(order.status).toBe("draft");
-      expect(order.subtotalMinor).toBe(450);
+      expect(order.subtotalMinor).toBe(750);
       expect(order.postageMinor).toBe(273);
-      expect(order.totalMinor).toBe(723);
+      expect(order.totalMinor).toBe(1023);
       expect(order.orderRecipients).toHaveLength(3);
 
       // Every line reuses the ONE design and is addressed from its contact.

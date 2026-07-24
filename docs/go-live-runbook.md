@@ -94,7 +94,7 @@ returns a clean 409 ("not yet configured") — no crash, just no upgrades.
 > `price_...` ids and re-run the seed (alongside the `STRIPE_SECRET_KEY`/webhook-secret swap in
 > step 5).
 
-> The £1.50/card price is **not** a Stripe Price object — it's `CARD_PRICE_MINOR` in code
+> The £2.50/card price is **not** a Stripe Price object — it's `CARD_PRICE_MINOR` in code
 > (`billing.constants.ts`), charged via a dynamic Checkout line item. Nothing to configure.
 
 ### 2b. Webhook endpoint

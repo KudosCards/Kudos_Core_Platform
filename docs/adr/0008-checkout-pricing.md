@@ -65,3 +65,11 @@ and `totalMinor = subtotalMinor + postageMinor` (what Stripe charges). The earli
   dependency in the web app for this phase.
 - If real pricing ever changes, `CARD_PRICE_MINOR` and the Stripe Price IDs
   (`PlanEntitlement.stripePriceId`) are the two places to update — not scattered constants.
+
+## Update (2026-07-24) — base card price £1.50 → £2.50
+
+The full-price card is now **£2.50, VAT-inclusive** (was £1.50). `CARD_PRICE_MINOR = 250`; the
+plan discount still applies on top — Free £2.50, Pro (10%) £2.25, Centre (15%) £2.125 ≈ the
+advertised "from £2.13". Postage is unchanged (a separate stamp per card: £1.80 first class,
+£0.91 second). This was a one-line constant change plus the marketing copy and the tests that
+assert exact pennies — exactly the "one place to update" this ADR designed for.

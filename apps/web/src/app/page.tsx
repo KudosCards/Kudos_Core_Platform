@@ -91,7 +91,7 @@ const plans = [
     name: "Free",
     price: "£0",
     cadence: "/mo",
-    cardPrice: "£1.50 / card",
+    cardPrice: "£2.50 / card",
     features: ["Up to 50 contacts", "Full card designer", "Manual approve & send", "Community support"],
     highlight: false,
   },
@@ -99,7 +99,7 @@ const plans = [
     name: "Pro",
     price: "£9.97",
     cadence: "/mo",
-    cardPrice: "£1.35 / card (10% off)",
+    cardPrice: "£2.25 / card (10% off)",
     features: [
       "Up to 200 contacts",
       "10% off every card",
@@ -112,7 +112,7 @@ const plans = [
     name: "Centre",
     price: "£19.97",
     cadence: "/mo",
-    cardPrice: "£1.28 / card (15% off)",
+    cardPrice: "£2.13 / card (15% off)",
     features: [
       "Unlimited contacts",
       "15% off every card",
@@ -393,7 +393,7 @@ export default function HomePage() {
               <p className="text-sm text-slate-300">Tutors &amp; centres using Kudos</p>
             </div>
             <div>
-              <p className="text-3xl font-extrabold text-amber-400">£1.50</p>
+              <p className="text-3xl font-extrabold text-amber-400">£2.50</p>
               <p className="text-sm text-slate-300">Cards from, incl. VAT (+ postage)</p>
             </div>
             <div>
