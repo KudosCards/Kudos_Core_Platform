@@ -98,7 +98,7 @@ export class AdminCustomerService {
       this.prisma.walletLedgerEntry.findFirst({
         where: { accountId },
         orderBy: { createdAt: "desc" },
-        select: { balanceAfterMinor: true },
+        select: { balanceAfterMinor: true, createdAt: true },
       }),
       this.prisma.savedDesign.count({ where: { accountId } }),
       this.prisma.messagePage.aggregate({
@@ -162,7 +162,7 @@ export class AdminCustomerService {
         account.createdAt.getTime(),
         recentOrders[0]?.createdAt.getTime() ?? 0,
         lastRecipientUpdate?.updatedAt.getTime() ?? 0,
-        walletEntry ? account.updatedAt.getTime() : 0,
+        walletEntry?.createdAt.getTime() ?? 0,
         ...crmConnections.map((c) => c.lastSyncedAt?.getTime() ?? 0),
         ...apiKeys.map((k) => k.lastUsedAt?.getTime() ?? 0),
       ),

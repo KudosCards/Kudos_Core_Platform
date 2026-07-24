@@ -82,7 +82,7 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
         <Tile label="Message views" value={String(customer.messages.totalViews)} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         {/* Engagement */}
         <Panel title="Engagement">
           <ul className="flex flex-col gap-2">
@@ -97,7 +97,7 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
 
         {/* Contacts */}
         <Panel title="Contacts">
-          <div className="grid grid-cols-3 gap-2 text-sm">
+          <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
             <Stat label="Active" value={customer.contacts.active} />
             <Stat label="Lapsed" value={customer.contacts.lapsed} />
             <Stat label="Archived" value={customer.contacts.archived} />
