@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import { accountSchema } from "@kudos/shared-types";
+import { accountSchema, type ReturnCase } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { PrismaService } from "../src/prisma/prisma.service";
@@ -158,7 +158,7 @@ describe("Returns / RTS (e2e)", () => {
       .set("Authorization", `Bearer ${ops}`)
       .send({ fulfillmentJobId: jobId, reason: "incorrect_address" })
       .expect(201);
-    const caseId = marked.body.id as string;
+    const caseId = (marked.body as ReturnCase).id;
 
     // Customer updates the address → awaiting_resend.
     const updated = await request(app.getHttpServer())
@@ -166,7 +166,7 @@ describe("Returns / RTS (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ addressLine1: "9 New Street", addressCity: "York", addressPostcode: "YO1 9AA" })
       .expect(201);
-    expect(updated.body.status).toBe("awaiting_resend");
+    expect((updated.body as ReturnCase).status).toBe("awaiting_resend");
 
     // Free resend.
     const recovered = await request(app.getHttpServer())
@@ -214,8 +214,9 @@ describe("Returns / RTS (e2e)", () => {
       .set("Authorization", `Bearer ${ops}`)
       .send({ fulfillmentJobId: jobId, reason: "moved" })
       .expect(201);
-    const caseId = marked.body.id as string;
-    expect(marked.body.resend.birthdayPassed).toBe(true);
+    const markedBody = marked.body as ReturnCase;
+    const caseId = markedBody.id;
+    expect(markedBody.resend.birthdayPassed).toBe(true);
 
     await request(app.getHttpServer())
       .post(`/returns/${caseId}/address`)
@@ -250,7 +251,7 @@ describe("Returns / RTS (e2e)", () => {
       .expect(201);
     // Account B can't see or act on account A's case.
     await request(app.getHttpServer())
-      .get(`/returns/${marked.body.id}`)
+      .get(`/returns/${(marked.body as ReturnCase).id}`)
       .set("Authorization", `Bearer ${b.token}`)
       .expect(404);
   });
@@ -269,7 +270,8 @@ describe("Returns / RTS (e2e)", () => {
       .get("/admin/returns?status=open")
       .set("Authorization", `Bearer ${ops}`)
       .expect(200);
-    expect(queue.body.total).toBeGreaterThanOrEqual(1);
-    expect(queue.body.items[0]).toHaveProperty("daysSinceReturn");
+    const queueBody = queue.body as { total: number; items: unknown[] };
+    expect(queueBody.total).toBeGreaterThanOrEqual(1);
+    expect(queueBody.items[0]).toHaveProperty("daysSinceReturn");
   });
 });
