@@ -308,6 +308,26 @@ export function BatchOrdersClient({
         </div>
       ) : (
         <div className="flex flex-col gap-3">
+          {(() => {
+            // Warn (don't block) when a selected contact had a card returned and
+            // the address isn't re-verified — checkout is where the spend happens.
+            const flagged = initialOccasions.filter(
+              (o) => lines[o.id] && o.recipient?.addressVerificationRequired,
+            );
+            if (flagged.length === 0) return null;
+            const names = flagged
+              .map((o) => (o.recipient ? `${o.recipient.firstName} ${o.recipient.lastName}` : "A contact"))
+              .join(", ");
+            return (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="font-semibold">⚠️ Check the address before sending</p>
+                <p className="mt-1">
+                  A card to {names} was recently returned. Update the address on the contact record if
+                  it&apos;s changed — otherwise it may come back again. You can still send now.
+                </p>
+              </div>
+            );
+          })()}
           {initialOccasions.map((occasion) => {
             const selected = lines[occasion.id];
             return (
@@ -331,6 +351,15 @@ export function BatchOrdersClient({
                   <span className="text-sm text-muted">
                     {formatOccasionDate(occasion.occasionDate)}
                   </span>
+                  {occasion.recipient?.addressVerificationRequired && (
+                    <Link
+                      href={`/recipients/${occasion.recipientId}`}
+                      title="A card to this contact was returned — check the address before sending"
+                      className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
+                    >
+                      ⚠️ Address returned
+                    </Link>
+                  )}
                 </label>
 
                 {selected && (
