@@ -274,4 +274,45 @@ describe("Returns / RTS (e2e)", () => {
     expect(queueBody.total).toBeGreaterThanOrEqual(1);
     expect(queueBody.items[0]).toHaveProperty("daysSinceReturn");
   });
+
+  describe("public self-serve email link (no login)", () => {
+    it("recovers a card from the email token — view, update address, free resend", async () => {
+      const ops = await opsToken();
+      const { accountId } = await signUp();
+      const { jobId } = await postedCard(accountId, { occasionDate: new Date() });
+      const marked = await request(app.getHttpServer())
+        .post("/admin/returns")
+        .set("Authorization", `Bearer ${ops}`)
+        .send({ fulfillmentJobId: jobId, reason: "moved" })
+        .expect(201);
+      const { publicToken } = await prisma.returnCase.findUniqueOrThrow({
+        where: { id: (marked.body as ReturnCase).id },
+        select: { publicToken: true },
+      });
+      expect(publicToken).toBeTruthy();
+
+      // Every call below carries NO Authorization header — the token is the
+      // only credential.
+      const view = await request(app.getHttpServer()).get(`/rts/${publicToken}`).expect(200);
+      expect((view.body as ReturnCase).recipientName).toBeTruthy();
+
+      await request(app.getHttpServer())
+        .post(`/rts/${publicToken}/address`)
+        .send({ addressLine1: "9 New Street", addressCity: "York", addressPostcode: "YO1 9AA" })
+        .expect(201);
+
+      const recovered = await request(app.getHttpServer())
+        .post(`/rts/${publicToken}/resend`)
+        .expect(201);
+      expect(recovered.body).toMatchObject({
+        status: "resolved",
+        resolution: "resend_recipient",
+        freeRecoveryUsed: true,
+      });
+    });
+
+    it("rejects an unknown token with 404", async () => {
+      await request(app.getHttpServer()).get("/rts/not-a-real-token").expect(404);
+    });
+  });
 });
