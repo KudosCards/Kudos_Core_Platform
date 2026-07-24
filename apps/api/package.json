@@ -13,6 +13,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "start:deploy": "prisma migrate deploy && node dist/main",
+    "create-stripe-prices": "node scripts/create-stripe-prices.mjs",
     "lint": "eslint \"{src,test}/**/*.ts\" --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "test": "jest",
