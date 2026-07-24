@@ -1,11 +1,12 @@
 "use client";
 
-import type { Occasion, Recipient } from "@kudos/shared-types";
+import type { Occasion, Recipient, ReturnCase } from "@kudos/shared-types";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { OCCASION_TYPE_LABELS, formatOccasionDate } from "@/lib/occasions";
+import { ReturnRecoveryPanel } from "./return-recovery-panel";
 
 /** Types a subscriber can add by hand — birthdays come from the DOB, not here. */
 const EVENT_TYPES = ["achievement", "leaver", "staff_recognition", "seasonal", "bespoke_campaign"] as const;
@@ -48,9 +49,11 @@ const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm
 export function RecipientDetailClient({
   recipient: initialRecipient,
   initialEvents,
+  initialReturnCases,
 }: {
   recipient: Recipient;
   initialEvents: Occasion[];
+  initialReturnCases: ReturnCase[];
 }) {
   const [recipient, setRecipient] = useState<Recipient>(initialRecipient);
   const [events, setEvents] = useState<Occasion[]>(initialEvents);
@@ -274,6 +277,12 @@ export function RecipientDetailClient({
       {error && (
         <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
       )}
+
+      <ReturnRecoveryPanel
+        recipient={recipient}
+        initialCases={initialReturnCases}
+        onRecipientChanged={(patch) => setRecipient((current) => ({ ...current, ...patch }))}
+      />
 
       {editingDetails && (
         <form onSubmit={(event) => void handleSaveDetails(event)} className="card flex flex-col gap-4 p-6">

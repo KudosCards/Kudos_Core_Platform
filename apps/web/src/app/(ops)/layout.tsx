@@ -30,6 +30,7 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
     { href: "/admin/orders", label: "Orders", group: "Overview" },
     { href: "/admin/subscribers", label: "Subscribers", group: "Overview" },
     { href: "/fulfillment", label: "Fulfillment queue", group: "Operations" },
+    { href: "/admin/returns", label: "Returned to sender", group: "Operations" },
     { href: "/catalog", label: "Card catalog", group: "Operations" },
   ];
   const groups = ["Overview", "Operations"];

@@ -4,7 +4,11 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
 
-export type InboxNotificationKind = "order_paid" | "auto_send" | "invite_accepted";
+export type InboxNotificationKind =
+  | "order_paid"
+  | "auto_send"
+  | "invite_accepted"
+  | "card_returned";
 
 /** The shape of an event to persist. `entityType`/`entityId` make a producer
  * idempotent under retries — Stripe redelivers webhooks, crons can double-fire —

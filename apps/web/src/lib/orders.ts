@@ -28,6 +28,7 @@ export const ORDER_RECIPIENT_STATUS_LABELS: Record<OrderRecipientStatus, string>
   printed: "Printed",
   posted: "Posted",
   delivered: "Delivered",
+  returned_to_sender: "Returned to sender",
   cancelled: "Cancelled",
 };
 

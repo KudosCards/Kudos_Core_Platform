@@ -30,43 +30,44 @@ enum MembershipRole {
 }
 
 model Account {
-  id               String   @id @default(uuid())
-  type             AccountType
-  name             String
-  stripeCustomerId String?  @unique @map("stripe_customer_id")
-  planId           String?  @map("plan_id")
+  id                    String      @id @default(uuid())
+  type                  AccountType
+  name                  String
+  stripeCustomerId      String?     @unique @map("stripe_customer_id")
+  planId                String?     @map("plan_id")
   /// Guest one-off buyer's email — captured at Stripe checkout for the receipt
   /// and the account-claim link. Null for accounts created via normal signup
   /// (identity comes from the membership's user). See docs/adr/0025.
-  contactEmail     String?  @map("contact_email")
+  contactEmail          String?     @map("contact_email")
   /// Single-use token that lets a guest claim (attach a login to) the account
   /// they just bought from. Set when a guest order is created, nulled on claim
   /// or expiry. A secret — never returned by the API (findById omits it).
-  claimToken          String?   @unique @map("claim_token")
-  claimTokenExpiresAt DateTime? @map("claim_token_expires_at")
+  claimToken            String?     @unique @map("claim_token")
+  claimTokenExpiresAt   DateTime?   @map("claim_token_expires_at")
   /// Whether we email this account upcoming-birthday reminders. Opt-out (default
   /// on); the reminder cron skips accounts with this false. See docs/adr/0025.
-  reminderEmailsEnabled Boolean @default(true) @map("reminder_emails_enabled")
+  reminderEmailsEnabled Boolean     @default(true) @map("reminder_emails_enabled")
   /// Paid team seats beyond the plan's included allowance (Centre includes 3).
   /// The seat limit = PlanEntitlement.includedSeats + extraSeats; inviting past
   /// it is hard-blocked until a seat is added. Kept in sync with the Stripe
   /// subscription's per-seat item quantity. See docs/adr/0035-seat-based-billing.md.
-  extraSeats       Int      @default(0) @map("extra_seats")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  extraSeats            Int         @default(0) @map("extra_seats")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @updatedAt @map("updated_at")
 
-  memberships   Membership[]
-  invites       Invite[]
-  recipients    Recipient[]
-  savedDesigns  SavedDesign[]
-  batchOrders   BatchOrder[]
-  walletEntries WalletLedgerEntry[]
-  subscriptions Subscription[]
+  memberships    Membership[]
+  invites        Invite[]
+  recipients     Recipient[]
+  savedDesigns   SavedDesign[]
+  batchOrders    BatchOrder[]
+  walletEntries  WalletLedgerEntry[]
+  subscriptions  Subscription[]
   auditLogs      AuditLogEntry[]
   apiKeys        AccountApiKey[]
   crmConnections CrmConnection[]
   recipientLists RecipientList[]
   notifications  Notification[]
+  returnCases    ReturnCase[]
 
   // Super-admin subscribers list is ordered newest-first.
   @@index([createdAt])
@@ -110,12 +111,12 @@ model Notification {
 /// common/crypto.service.ts) — never in plaintext. One connection per provider
 /// per account. See docs/adr/0015-crm-integrations.md.
 model CrmConnection {
-  id       String @id @default(uuid())
+  id        String @id @default(uuid())
   accountId String @map("account_id")
   /// The CRM: "brevo" (API key) or "hubspot" (OAuth) today; more later.
-  provider String
+  provider  String
   /// How this connection authenticates: "api_key" (Brevo) or "oauth" (HubSpot).
-  authType String @default("api_key") @map("auth_type")
+  authType  String @default("api_key") @map("auth_type")
 
   /// AES-256-GCM-encrypted API key — set for api_key providers (Brevo), null for OAuth.
   encryptedApiKey String? @map("encrypted_api_key")
@@ -130,12 +131,12 @@ model CrmConnection {
   externalAccountId     String?   @map("external_account_id")
 
   /// Optional per-connection field mapping (CRM attribute name → our field).
-  fieldMapping    Json?     @map("field_mapping")
-  syncEnabled     Boolean   @default(true) @map("sync_enabled")
-  lastSyncedAt    DateTime? @map("last_synced_at")
-  lastSyncStatus  String?   @map("last_sync_status")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  fieldMapping   Json?     @map("field_mapping")
+  syncEnabled    Boolean   @default(true) @map("sync_enabled")
+  lastSyncedAt   DateTime? @map("last_synced_at")
+  lastSyncStatus String?   @map("last_sync_status")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -194,19 +195,19 @@ enum InviteStatus {
 /// can join the account as the invited role — so it is never returned by the
 /// API (only emailed to the invitee). See docs/adr/0028-multi-user-teams.md.
 model Invite {
-  id              String       @id @default(uuid())
-  accountId       String       @map("account_id")
+  id              String         @id @default(uuid())
+  accountId       String         @map("account_id")
   /// Invitee email, lowercased. The accepting user's verified JWT email must
   /// match this, so a forwarded link can't be redeemed by someone else.
   email           String
   role            MembershipRole
-  token           String       @unique
-  status          InviteStatus @default(pending)
-  invitedByUserId String?      @map("invited_by_user_id")
-  expiresAt       DateTime     @map("expires_at")
-  acceptedAt      DateTime?    @map("accepted_at")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
+  token           String         @unique
+  status          InviteStatus   @default(pending)
+  invitedByUserId String?        @map("invited_by_user_id")
+  expiresAt       DateTime       @map("expires_at")
+  acceptedAt      DateTime?      @map("accepted_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -227,36 +228,43 @@ enum RecipientStatus {
 }
 
 model Recipient {
-  id            String          @id @default(uuid())
-  accountId     String          @map("account_id")
-  firstName     String          @map("first_name")
-  lastName      String          @map("last_name")
+  id                          String          @id @default(uuid())
+  accountId                   String          @map("account_id")
+  firstName                   String          @map("first_name")
+  lastName                    String          @map("last_name")
   /// Nullable: not every occasion needs a DOB on file.
-  dateOfBirth   DateTime?       @map("date_of_birth") @db.Date
-  email         String?
-  addressLine1  String?         @map("address_line1")
-  addressLine2  String?         @map("address_line2")
-  addressCity   String?         @map("address_city")
-  addressPostcode String?       @map("address_postcode")
-  addressCountry String?        @default("GB") @map("address_country")
-  tags          String[]        @default([])
+  dateOfBirth                 DateTime?       @map("date_of_birth") @db.Date
+  email                       String?
+  addressLine1                String?         @map("address_line1")
+  addressLine2                String?         @map("address_line2")
+  addressCity                 String?         @map("address_city")
+  addressPostcode             String?         @map("address_postcode")
+  addressCountry              String?         @default("GB") @map("address_country")
+  tags                        String[]        @default([])
   /// Arbitrary per-recipient key→value fields, usable as {key} merge tokens on
   /// a card (e.g. {teacher}, {class}). See docs/adr/0033-richer-merge-tokens.md.
-  customFields  Json?           @map("custom_fields")
-  status        RecipientStatus @default(active)
+  customFields                Json?           @map("custom_fields")
+  status                      RecipientStatus @default(active)
+  /// True once a card to this contact was Returned to Sender (RTS) and the
+  /// address hasn't been re-verified. While set: automatic/scheduled sends to
+  /// this contact are paused, and manual checkout shows a warning. Cleared when
+  /// the open return case is resolved (address updated + recovery chosen) or
+  /// archived. See docs/adr/0039-returned-to-sender.md.
+  addressVerificationRequired Boolean         @default(false) @map("address_verification_required")
   /// Where this recipient came from: "manual", "csv", "api", or a CRM id
   /// ("brevo", "hubspot", …). See docs/adr/0015-crm-integrations.md.
-  source        String          @default("manual")
+  source                      String          @default("manual")
   /// The stable id of this contact in its source system (a CRM record id, or
   /// the caller's own id for the inbound API). Null for manual/CSV recipients.
-  externalId    String?         @map("external_id")
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
+  externalId                  String?         @map("external_id")
+  createdAt                   DateTime        @default(now()) @map("created_at")
+  updatedAt                   DateTime        @updatedAt @map("updated_at")
 
-  account   Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  occasions Occasion[]
+  account         Account                   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  occasions       Occasion[]
   orderRecipients OrderRecipient[]
   listMemberships RecipientListMembership[]
+  returnCases     ReturnCase[]
 
   // Mirrors the legacy CSV-import dedupe rule: same name + postcode + DOB = same person.
   @@unique([accountId, firstName, lastName, addressPostcode, dateOfBirth], name: "recipient_dedupe_key")
@@ -333,19 +341,19 @@ enum OccasionStatus {
 }
 
 model Occasion {
-  id           String         @id @default(uuid())
-  accountId    String         @map("account_id")
+  id             String         @id @default(uuid())
+  accountId      String         @map("account_id")
   /// Null for one_off_campaign occasions (e.g. an org-wide "Student of the Month" send).
-  recipientId  String?        @map("recipient_id")
-  type         OccasionType
-  source       OccasionSource
+  recipientId    String?        @map("recipient_id")
+  type           OccasionType
+  source         OccasionSource
   /// Optional human label for a hand-added recipient event ("Graduation", "End
   /// of exams") — lets the calendar show the real name rather than just the
   /// broad `type`. Null for auto-scheduled birthdays and campaign occasions.
-  title        String?
-  occasionDate DateTime       @map("occasion_date") @db.Date
-  dispatchDate DateTime?      @map("dispatch_date") @db.Date
-  status       OccasionStatus @default(scheduled)
+  title          String?
+  occasionDate   DateTime       @map("occasion_date") @db.Date
+  dispatchDate   DateTime?      @map("dispatch_date") @db.Date
+  status         OccasionStatus @default(scheduled)
   /// How this occasion is sent once approved. `asap` (default) means a human
   /// checks it out manually; `auto_send` means the auto-send cron creates the
   /// order, pays it from the wallet, and posts it timed to the dispatchDate —
@@ -354,22 +362,22 @@ model Occasion {
   /// Postage class chosen at approval for auto_send occasions; drives both the
   /// stamp cost and the dispatchDate lead time. Ignored for `asap` occasions
   /// (postage is chosen per line at manual checkout).
-  postageClass  PostageClass   @default(second_class) @map("postage_class")
+  postageClass   PostageClass   @default(second_class) @map("postage_class")
   /// Set when an admin approves the occasion (see docs/adr/0006-phase-2-scope.md). Copied
   /// into OrderRecipient.savedDesignId by Phase 3's checkout flow — the design choice
   /// travels with the occasion instead of being re-selected at checkout.
-  savedDesignId String?       @map("saved_design_id")
+  savedDesignId  String?        @map("saved_design_id")
   /// When a birthday-reminder email covering this occasion was sent, so the
   /// daily reminder cron never emails the same upcoming occasion twice. Null
   /// until reminded. See docs/adr/0025.
-  reminderSentAt DateTime?    @map("reminder_sent_at")
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
+  reminderSentAt DateTime?      @map("reminder_sent_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
 
-  recipient       Recipient?        @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  recipient       Recipient?       @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   // Restrict, not the nullable-relation default of SetNull — an approved occasion
   // silently losing its design would be a worse state than blocking the delete.
-  savedDesign     SavedDesign?      @relation(fields: [savedDesignId], references: [id], onDelete: Restrict)
+  savedDesign     SavedDesign?     @relation(fields: [savedDesignId], references: [id], onDelete: Restrict)
   orderRecipients OrderRecipient[]
 
   // Prevents the scheduler from double-creating the same occasion instance on retry.
@@ -409,8 +417,8 @@ model CardDesign {
 
 /// A personalised instance of a CardDesign, saved to an account's "My Designs".
 model SavedDesign {
-  id        String @id @default(uuid())
-  accountId String @map("account_id")
+  id           String   @id @default(uuid())
+  accountId    String   @map("account_id")
   /// Null for a member's own uploaded artwork, which starts from a blank
   /// document rather than a catalog template. See docs/adr/0026.
   cardDesignId String?  @map("card_design_id")
@@ -450,25 +458,25 @@ enum PaymentMethod {
 /// Deliberately one order with many recipient lines, not one cart line per
 /// recipient — see docs/adr/0002-batch-order-model.md.
 model BatchOrder {
-  id                     String           @id @default(uuid())
+  id                    String           @id @default(uuid())
   /// Human-friendly sequential order number (rendered as ORD-1035). Separate
   /// from the uuid id so ops/customers have a short reference. Sequence starts
   /// at 1000 (see the migration) so the first orders read ORD-1000+.
-  orderNumber            Int              @unique @default(autoincrement()) @map("order_number")
-  accountId              String           @map("account_id")
+  orderNumber           Int              @unique @default(autoincrement()) @map("order_number")
+  accountId             String           @map("account_id")
   /// The user who placed the order. Null for guest one-off purchases, which are
   /// created by an unauthenticated visitor against a fresh guest account with no
   /// membership. See docs/adr/0025.
-  createdByUserId        String?          @map("created_by_user_id")
-  status                 BatchOrderStatus @default(draft)
-  currency               String           @default("GBP")
-  subtotalMinor          Int              @default(0) @map("subtotal_minor")
-  postageMinor           Int              @default(0) @map("postage_minor")
-  totalMinor             Int              @default(0) @map("total_minor")
-  paymentMethod          PaymentMethod?   @map("payment_method")
-  stripePaymentIntentId  String?          @unique @map("stripe_payment_intent_id")
-  createdAt              DateTime         @default(now()) @map("created_at")
-  updatedAt              DateTime         @updatedAt @map("updated_at")
+  createdByUserId       String?          @map("created_by_user_id")
+  status                BatchOrderStatus @default(draft)
+  currency              String           @default("GBP")
+  subtotalMinor         Int              @default(0) @map("subtotal_minor")
+  postageMinor          Int              @default(0) @map("postage_minor")
+  totalMinor            Int              @default(0) @map("total_minor")
+  paymentMethod         PaymentMethod?   @map("payment_method")
+  stripePaymentIntentId String?          @unique @map("stripe_payment_intent_id")
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
 
   account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   orderRecipients OrderRecipient[]
@@ -498,38 +506,40 @@ enum OrderRecipientStatus {
   printed
   posted
   delivered
+  returned_to_sender
   cancelled
 }
 
 /// One recipient's line within a BatchOrder. This is the fix for the legacy
 /// system's N-identical-cart-lines checkout friction.
 model OrderRecipient {
-  id              String                @id @default(uuid())
-  batchOrderId    String                @map("batch_order_id")
-  recipientId     String                @map("recipient_id")
-  occasionId      String?               @map("occasion_id")
-  savedDesignId   String                @map("saved_design_id")
-  shippingAddressLine1    String        @map("shipping_address_line1")
-  shippingAddressLine2    String?       @map("shipping_address_line2")
-  shippingAddressCity     String        @map("shipping_address_city")
-  shippingAddressPostcode String        @map("shipping_address_postcode")
-  shippingAddressCountry  String        @default("GB") @map("shipping_address_country")
-  dispatchOption  DispatchOption
-  postageClass    PostageClass
+  id                      String               @id @default(uuid())
+  batchOrderId            String               @map("batch_order_id")
+  recipientId             String               @map("recipient_id")
+  occasionId              String?              @map("occasion_id")
+  savedDesignId           String               @map("saved_design_id")
+  shippingAddressLine1    String               @map("shipping_address_line1")
+  shippingAddressLine2    String?              @map("shipping_address_line2")
+  shippingAddressCity     String               @map("shipping_address_city")
+  shippingAddressPostcode String               @map("shipping_address_postcode")
+  shippingAddressCountry  String               @default("GB") @map("shipping_address_country")
+  dispatchOption          DispatchOption
+  postageClass            PostageClass
   /// Card price (VAT-inclusive, after the plan discount) for this one card.
-  priceMinor      Int                   @map("price_minor")
+  priceMinor              Int                  @map("price_minor")
   /// The stamp cost for this one card (per-card postage, VAT-exempt).
-  postageMinor    Int                   @default(0) @map("postage_minor")
-  status          OrderRecipientStatus  @default(pending_approval)
-  createdAt       DateTime              @default(now()) @map("created_at")
-  updatedAt       DateTime              @updatedAt @map("updated_at")
+  postageMinor            Int                  @default(0) @map("postage_minor")
+  status                  OrderRecipientStatus @default(pending_approval)
+  createdAt               DateTime             @default(now()) @map("created_at")
+  updatedAt               DateTime             @updatedAt @map("updated_at")
 
-  batchOrder  BatchOrder      @relation(fields: [batchOrderId], references: [id], onDelete: Cascade)
-  recipient   Recipient       @relation(fields: [recipientId], references: [id])
-  occasion    Occasion?       @relation(fields: [occasionId], references: [id])
-  savedDesign SavedDesign     @relation(fields: [savedDesignId], references: [id])
-  messagePage MessagePage?
+  batchOrder     BatchOrder      @relation(fields: [batchOrderId], references: [id], onDelete: Cascade)
+  recipient      Recipient       @relation(fields: [recipientId], references: [id])
+  occasion       Occasion?       @relation(fields: [occasionId], references: [id])
+  savedDesign    SavedDesign     @relation(fields: [savedDesignId], references: [id])
+  messagePage    MessagePage?
   fulfillmentJob FulfillmentJob?
+  returnCase     ReturnCase?
 
   @@index([batchOrderId])
   @@index([recipientId])
@@ -594,13 +604,13 @@ enum WalletEntryType {
 /// Append-only. Never UPDATE or DELETE a row — corrections are new entries
 /// (type=adjustment), so the ledger is always a reliable audit trail.
 model WalletLedgerEntry {
-  id               String          @id @default(uuid())
-  accountId        String          @map("account_id")
-  type             WalletEntryType
-  amountMinor      Int             @map("amount_minor")
-  balanceAfterMinor Int            @map("balance_after_minor")
-  reference        String?
-  createdAt        DateTime        @default(now()) @map("created_at")
+  id                String          @id @default(uuid())
+  accountId         String          @map("account_id")
+  type              WalletEntryType
+  amountMinor       Int             @map("amount_minor")
+  balanceAfterMinor Int             @map("balance_after_minor")
+  reference         String?
+  createdAt         DateTime        @default(now()) @map("created_at")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -612,10 +622,10 @@ model WalletLedgerEntry {
 /// than scattered ad-hoc checks (e.g. the legacy "you can add 12 more
 /// contacts" banner and the Pro-only auto-send gate).
 model PlanEntitlement {
-  planId              String  @id @map("plan_id")
-  recipientCap        Int?    @map("recipient_cap") // null = unlimited
+  planId               String  @id @map("plan_id")
+  recipientCap         Int?    @map("recipient_cap") // null = unlimited
   batchOrderMaxSize    Int     @default(20) @map("batch_order_max_size")
-  cardDiscountPercent  Decimal @default(0) @db.Decimal(5, 2) @map("card_discount_percent")
+  cardDiscountPercent  Decimal @default(0) @map("card_discount_percent") @db.Decimal(5, 2)
   autoSendEnabled      Boolean @default(false) @map("auto_send_enabled")
   /// Whether the plan may upload its own artwork as a custom card design
   /// (rather than only personalising catalog templates). See docs/adr/0026.
@@ -627,7 +637,7 @@ model PlanEntitlement {
   /// in (Centre includes 3; single-user plans 1). See docs/adr/0035-seat-based-billing.md.
   includedSeats        Int     @default(1) @map("included_seats")
   /// Null for the free plan, which has no Stripe subscription object at all.
-  stripePriceId       String? @map("stripe_price_id")
+  stripePriceId        String? @map("stripe_price_id")
 
   @@map("plan_entitlements")
 }
@@ -643,6 +653,7 @@ enum FulfillmentJobStatus {
   printed
   posted
   delivered
+  returned_to_sender
   failed
 }
 
@@ -662,6 +673,69 @@ model FulfillmentJob {
 
   @@index([status])
   @@map("fulfillment_jobs")
+}
+
+// ---------------------------------------------------------------------------
+// Returned to Sender (RTS) — service recovery for cards Royal Mail sends back.
+// See docs/adr/0039-returned-to-sender.md.
+// ---------------------------------------------------------------------------
+
+/// Why Royal Mail returned a card. Chosen by the ops operator who marks the RTS.
+enum ReturnReason {
+  moved
+  incomplete_address
+  incorrect_address
+  undeliverable
+  other
+}
+
+/// The stage of a return case's recovery workflow:
+/// awaiting_address → (customer updates the contact's address) → awaiting_resend
+/// → (customer resends / hand-delivers / archives) → resolved | archived.
+enum ReturnCaseStatus {
+  awaiting_address
+  awaiting_resend
+  resolved
+  archived
+}
+
+/// One returned card and its recovery. Created when ops marks a card Returned to
+/// Sender; drives the customer's Update-Address → resend/hand-deliver flow, the
+/// contact's address-verification flag, and the ops RTS queue. The Kudos Promise
+/// gives exactly one **free** (£0) recovery per case (freeRecoveryUsed); further
+/// resends need a fresh paid order. See docs/adr/0039-returned-to-sender.md.
+model ReturnCase {
+  id               String           @id @default(uuid())
+  accountId        String           @map("account_id")
+  /// The card that came back. One case per returned card.
+  orderRecipientId String           @unique @map("order_recipient_id")
+  recipientId      String           @map("recipient_id")
+  reason           ReturnReason
+  status           ReturnCaseStatus @default(awaiting_address)
+  /// The one Kudos Promise free recovery — set true once used (resend or hand-deliver).
+  freeRecoveryUsed Boolean          @default(false) @map("free_recovery_used")
+  /// When the customer updated the contact's address after the return.
+  addressUpdatedAt DateTime?        @map("address_updated_at")
+  resolvedAt       DateTime?        @map("resolved_at")
+  /// How it closed: "resend_recipient" | "send_business" | "archived".
+  resolution       String?
+  /// The free recovery BatchOrder created for the resend/hand-deliver, if any.
+  recoveryOrderId  String?          @map("recovery_order_id")
+  /// The ops operator (PlatformAdmin userId) who marked the card returned.
+  markedByUserId   String           @map("marked_by_user_id")
+  returnedAt       DateTime         @default(now()) @map("returned_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  orderRecipient OrderRecipient @relation(fields: [orderRecipientId], references: [id], onDelete: Cascade)
+  recipient      Recipient      @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  // Customer's open-cases lookup (contact alerts) and the ops queue's status filter.
+  @@index([accountId, status])
+  // Ops RTS queue: open cases first, oldest return first ("days since return").
+  @@index([status, returnedAt])
+  @@map("return_cases")
 }
 
 /// A Kudos Cards internal operator (print/post staff), distinct from a tuition

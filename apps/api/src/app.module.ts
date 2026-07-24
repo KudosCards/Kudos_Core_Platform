@@ -29,6 +29,7 @@ import { EmailModule } from "./email/email.module";
 import { RemindersModule } from "./reminders/reminders.module";
 import { TeamModule } from "./team/team.module";
 import { NotificationsModule } from "./notifications/notifications.module";
+import { ReturnsModule } from "./returns/returns.module";
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
     RemindersModule,
     TeamModule,
     NotificationsModule,
+    ReturnsModule,
   ],
 })
 export class AppModule {}

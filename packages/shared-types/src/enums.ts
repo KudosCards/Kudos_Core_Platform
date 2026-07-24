@@ -54,6 +54,7 @@ export const orderRecipientStatusSchema = z.enum([
   "printed",
   "posted",
   "delivered",
+  "returned_to_sender",
   "cancelled",
 ]);
 export type OrderRecipientStatus = z.infer<typeof orderRecipientStatusSchema>;
@@ -89,6 +90,26 @@ export const fulfillmentJobStatusSchema = z.enum([
   "printed",
   "posted",
   "delivered",
+  "returned_to_sender",
   "failed",
 ]);
 export type FulfillmentJobStatus = z.infer<typeof fulfillmentJobStatusSchema>;
+
+/** Why Royal Mail returned a card (RTS). Mirrors the ReturnReason Prisma enum. */
+export const returnReasonSchema = z.enum([
+  "moved",
+  "incomplete_address",
+  "incorrect_address",
+  "undeliverable",
+  "other",
+]);
+export type ReturnReason = z.infer<typeof returnReasonSchema>;
+
+/** The stage of a return case's recovery workflow. Mirrors ReturnCaseStatus. */
+export const returnCaseStatusSchema = z.enum([
+  "awaiting_address",
+  "awaiting_resend",
+  "resolved",
+  "archived",
+]);
+export type ReturnCaseStatus = z.infer<typeof returnCaseStatusSchema>;
