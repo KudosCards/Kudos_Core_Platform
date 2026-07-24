@@ -50,7 +50,7 @@ export default async function GuestSendPage({ params }: { params: Promise<{ id: 
             <div className="text-center">
               <p className="font-semibold">{card.name}</p>
               <p className="text-sm text-slate-500">
-                We print it and post a real card — £1.50, all in.
+                We print it and post a real card — £2.50, all in.
               </p>
             </div>
           </div>

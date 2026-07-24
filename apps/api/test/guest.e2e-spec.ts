@@ -80,10 +80,10 @@ describe("Guest checkout (e2e)", () => {
     const membershipCount = await prisma.membership.count({ where: { accountId: account.id } });
     expect(membershipCount).toBe(0);
 
-    // Exactly one card, priced at the flat £1.50 (no plan discount for guests).
+    // Exactly one card, priced at the flat £2.50 (no plan discount for guests).
     const lines = await prisma.orderRecipient.findMany({ where: { batchOrderId: order.id } });
     expect(lines).toHaveLength(1);
-    expect(lines[0]?.priceMinor).toBe(150);
+    expect(lines[0]?.priceMinor).toBe(250);
 
     // The buyer's email was handed to Stripe for prefill + receipt.
     const calls = checkoutSessionsCreate.mock.calls as Array<[{ customer_email?: string }]>;
@@ -142,10 +142,10 @@ describe("Guest checkout (e2e)", () => {
     expect(account.contactEmail).toBe(buyerEmail);
     expect(await prisma.membership.count({ where: { accountId: account.id } })).toBe(0);
 
-    // Three distinct recipients, each a flat £1.50 card → £4.50 order.
+    // Three distinct recipients, each a flat £2.50 card → £7.50 order.
     const lines = await prisma.orderRecipient.findMany({ where: { batchOrderId: order.id } });
     expect(lines).toHaveLength(3);
-    expect(lines.every((line) => line.priceMinor === 150)).toBe(true);
+    expect(lines.every((line) => line.priceMinor === 250)).toBe(true);
     const recipients = await prisma.recipient.findMany({ where: { accountId: account.id } });
     expect(recipients.map((r) => r.firstName).sort()).toEqual(["Ava", "Mia", "Tom"]);
 

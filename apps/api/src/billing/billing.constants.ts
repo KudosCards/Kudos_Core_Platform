@@ -1,12 +1,12 @@
 import type { Prisma, PostageClass } from "@prisma/client";
 
 /**
- * Base card price: £1.50, **VAT-inclusive**. The plan's cardDiscountPercent is
- * applied on top (Free 0% → £1.50, Pro 10% → £1.35, Centre 15% → £1.275 ≈ the
- * "from £1.28" Centre price). Postage is charged **separately, per card** — see
+ * Base card price: £2.50, **VAT-inclusive**. The plan's cardDiscountPercent is
+ * applied on top (Free 0% → £2.50, Pro 10% → £2.25, Centre 15% → £2.125 ≈ the
+ * "from £2.13" Centre price). Postage is charged **separately, per card** — see
  * POSTAGE_MINOR — not baked into this. See docs/adr/0008-checkout-pricing.md.
  */
-export const CARD_PRICE_MINOR = 150;
+export const CARD_PRICE_MINOR = 250;
 
 /**
  * An extra Centre team seat: £5.00/month, **VAT-inclusive**, charged per seat

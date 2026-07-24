@@ -62,7 +62,7 @@ export class GuestOrdersService {
 
     // Mint a fresh guest account — ALWAYS server-side. The DTO carries no
     // accountId, so a public caller can never aim an order at someone else's
-    // account. `free` plan → no card discount → the flat £1.50 price. The claim
+    // account. `free` plan → no card discount → the flat £2.50 price. The claim
     // token is the credential that later lets the buyer attach a login.
     const expiresAt = new Date();
     expiresAt.setUTCDate(expiresAt.getUTCDate() + CLAIM_TOKEN_TTL_DAYS);

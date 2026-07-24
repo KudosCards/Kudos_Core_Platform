@@ -103,10 +103,10 @@ export function GuestSendClient({
         className="mt-1 rounded-full px-6 py-3 text-center font-semibold text-white transition-opacity hover:opacity-90"
         style={{ backgroundColor: CORAL }}
       >
-        Add to basket — £1.50
+        Add to basket — £2.50
       </button>
       <p className="text-center text-xs text-slate-500">
-        No account needed. £1.50 a card includes VAT &amp; UK postage. Pay securely at the basket.
+        No account needed. £2.50 a card includes VAT &amp; UK postage. Pay securely at the basket.
       </p>
     </form>
   );

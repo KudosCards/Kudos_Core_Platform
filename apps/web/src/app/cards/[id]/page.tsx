@@ -55,7 +55,7 @@ export default async function CardPreviewPage({ params }: { params: Promise<{ id
                 <span className="text-emerald-500">✓</span> Personalised with each recipient&apos;s name
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-500">✓</span> Printed &amp; posted for you — from £1.50 a card
+                <span className="text-emerald-500">✓</span> Printed &amp; posted for you — from £2.50 a card
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-emerald-500">✓</span> Add a QR video message inside
