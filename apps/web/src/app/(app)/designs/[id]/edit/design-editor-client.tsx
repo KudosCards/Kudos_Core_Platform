@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 const DesignCanvas = dynamic(() => import("./design-canvas").then((mod) => mod.DesignCanvas), {
   ssr: false,
   loading: () => (
-    <div className="flex h-[600px] w-[450px] items-center justify-center rounded-md border border-black/10 text-sm text-foreground/50 dark:border-white/10">
+    <div className="flex aspect-[3/4] w-full max-w-[450px] items-center justify-center rounded-md border border-black/10 text-sm text-foreground/50 dark:border-white/10">
       Loading canvas…
     </div>
   ),
@@ -185,7 +185,7 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="flex gap-2 border-b border-black/10 pb-2 dark:border-white/10">
+      <div className="flex flex-wrap gap-2 border-b border-black/10 pb-2 dark:border-white/10">
         {PAGE_NAMES.map((pageName) => (
           <button
             key={pageName}
@@ -194,7 +194,7 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
               setActivePage(pageName);
               setSelectedElementId(null);
             }}
-            className={`rounded-full px-3 py-1.5 text-sm ${
+            className={`rounded-full px-4 py-2 text-sm ${
               activePage === pageName
                 ? "bg-foreground text-background"
                 : "text-foreground/60 hover:bg-black/5 dark:hover:bg-white/5"
@@ -206,12 +206,12 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
       </div>
 
       <div className="flex flex-wrap gap-6">
-        <div className="flex flex-col gap-3">
-          <div className="flex gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={addTextElement}
-              className="rounded-full border border-black/20 px-3 py-1.5 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
+              className="rounded-full border border-black/20 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
             >
               Add text
             </button>
@@ -219,14 +219,14 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
               type="button"
               disabled={uploading}
               onClick={() => fileInputRef.current?.click()}
-              className="rounded-full border border-black/20 px-3 py-1.5 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/5"
+              className="rounded-full border border-black/20 px-4 py-2 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/5"
             >
               {uploading ? "Uploading…" : "Add image"}
             </button>
             <button
               type="button"
               onClick={addQrElement}
-              className="rounded-full border border-black/20 px-3 py-1.5 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
+              className="rounded-full border border-black/20 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
             >
               Add video QR
             </button>
@@ -262,18 +262,16 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
             </label>
           )}
 
-          {/* The card is a fixed print size, so the canvas is a fixed-width
-              surface; keep it from breaking the page on a phone by scrolling it
-              inside its own box. (Full touch editing is a desktop experience.) */}
-          <div className="max-w-full overflow-x-auto">
-            <DesignCanvas
-              page={page}
-              selectedElementId={selectedElementId}
-              onSelect={setSelectedElementId}
-              onElementChange={updateElement}
-              onDeselect={() => setSelectedElementId(null)}
-            />
-          </div>
+          {/* The canvas scales itself to fit the container (see DesignCanvas),
+              so the whole card shows and elements stay draggable on a phone —
+              no horizontal scroll. */}
+          <DesignCanvas
+            page={page}
+            selectedElementId={selectedElementId}
+            onSelect={setSelectedElementId}
+            onElementChange={updateElement}
+            onDeselect={() => setSelectedElementId(null)}
+          />
         </div>
 
         <aside className="flex w-full flex-col gap-3 rounded-lg border border-black/10 p-4 sm:w-64 dark:border-white/10">
@@ -379,32 +377,58 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
             <>
               <p className="text-xs text-foreground/60">
                 A QR code linking to each recipient&apos;s video message. Set the video in the
-                &ldquo;Video link&rdquo; box, and position it inside the card.
+                &ldquo;Video link&rdquo; box above, drag it on the card to position it, and size it
+                here.
               </p>
-              <label className="flex flex-col gap-1 text-xs text-foreground/60">
-                Size
-                <input
-                  type="number"
-                  min={40}
-                  max={300}
-                  value={selectedElement.size}
-                  onChange={(e) =>
-                    updateElement({ ...selectedElement, size: Number(e.target.value) || 40 })
-                  }
-                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-foreground/60">
-                Rotation (degrees)
-                <input
-                  type="number"
-                  value={selectedElement.rotation}
-                  onChange={(e) =>
-                    updateElement({ ...selectedElement, rotation: Number(e.target.value) || 0 })
-                  }
-                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
-                />
-              </label>
+              <div className="flex flex-col gap-1.5 text-xs text-foreground/60">
+                <span>Size</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label="Make smaller"
+                    onClick={() =>
+                      updateElement({ ...selectedElement, size: Math.max(40, selectedElement.size - 10) })
+                    }
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-black/15 text-xl hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={40}
+                    max={300}
+                    value={selectedElement.size}
+                    onChange={(e) =>
+                      updateElement({
+                        ...selectedElement,
+                        size: Math.min(300, Math.max(40, Number(e.target.value) || 40)),
+                      })
+                    }
+                    className="h-11 w-16 rounded-md border border-black/10 px-2 text-center text-sm dark:border-white/10"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Make larger"
+                    onClick={() =>
+                      updateElement({ ...selectedElement, size: Math.min(300, selectedElement.size + 10) })
+                    }
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-black/15 text-xl hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  updateElement({ ...selectedElement, rotation: (selectedElement.rotation + 90) % 360 })
+                }
+                className="flex h-11 items-center justify-center gap-2 rounded-md border border-black/15 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+              >
+                Rotate 90°
+                <span className="text-foreground/50">{selectedElement.rotation}°</span>
+              </button>
             </>
           )}
 
@@ -412,7 +436,7 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
             <button
               type="button"
               onClick={deleteSelected}
-              className="mt-2 rounded-full border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+              className="mt-2 rounded-full border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
             >
               Delete
             </button>
