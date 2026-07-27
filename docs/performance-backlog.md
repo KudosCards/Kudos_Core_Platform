@@ -49,8 +49,9 @@ pgbouncer pooling documented, no heavy date/animation libs.
   per-account list queries — `batch_orders [account_id, created_at]`, `recipients
   [account_id, created_at]`, `occasions [account_id, occasion_date]` — each eliminating a
   sort (proven via EXPLAIN). No N+1s to fix (lists use batched `include`). Keep-warm left
-  as an external `/health` pinger (a code cron can't wake a slept Railway service). Also
-  flagged a pre-existing `saved_designs` FK drift for a separate migration.
+  as an external `/health` pinger (a code cron can't wake a slept Railway service). The
+  pre-existing `saved_designs` FK drift flagged here was since reconciled to `SetNull`
+  (ADR 0048).
 - **Phase 6 — Bundle audit. ✅ Done (ADR 0047).** Audited the Turbopack chunks directly
   (`@next/bundle-analyzer` is webpack-only). Heavy client components already code-split —
   every `react-konva` consumer is behind `next/dynamic({ssr:false})`, so the 304KB Konva

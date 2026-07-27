@@ -434,7 +434,14 @@ model SavedDesign {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  cardDesign      CardDesign?      @relation(fields: [cardDesignId], references: [id])
+  // SetNull (Prisma's default for an optional relation, now explicit): a saved
+  // design carries its own full `document`, so it survives fine if the origin
+  // catalog template is removed — the link just clears. Deliberately unlike the
+  // Occasion→SavedDesign relation, which is Restrict because an occasion without
+  // its design is a broken state. This makes explicit what the schema always
+  // implied; the init migration created the FK as RESTRICT, so a migration
+  // reconciles the DB. See docs/adr/0048-saved-designs-fk.md.
+  cardDesign      CardDesign?      @relation(fields: [cardDesignId], references: [id], onDelete: SetNull)
   orderRecipients OrderRecipient[]
   occasions       Occasion[]
 
