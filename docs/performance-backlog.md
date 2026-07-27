@@ -41,13 +41,22 @@ pgbouncer pooling documented, no heavy date/animation libs.
   per visit. `publicApiFetch` gained an opt-in `revalidate` so the per-token public pages
   (invite/gift/rts) stay `no-store`. On-demand revalidation from the catalog sync is the
   follow-up if the ≤1h lag ever matters.
-- **Phase 4 — Images (1 PR).** Add `images.remotePatterns` for Supabase/Airtable hosts,
-  correct `sizes`, Supabase image transforms for thumbnails.
-- **Phase 5 — API/DB depth (1–2 PRs).** Profile top endpoints from Phase 0, add missing
-  composite indexes (extend the admin-overview treatment to recipients/orders lists), fix
-  N+1s, add a keep-warm ping for cold starts.
-- **Phase 6 — Bundle audit (½ day).** `@next/bundle-analyzer`; confirm heavy client
-  components stay code-split; defer non-critical JS.
+- **Phase 4 — Images. ✅ Done (ADR 0045).** Added `images.remotePatterns` for the Supabase
+  Storage host; dropped `unoptimized` and added real `sizes` on all five `thumbnailUrl`
+  images so catalog art is resized + format-negotiated. (Thumbnails are already Supabase
+  public URLs; Airtable images are copied there by the sync, so no Airtable host needed.)
+- **Phase 5 — API/DB depth. ✅ Done (ADR 0046).** Added composite indexes for the hot
+  per-account list queries — `batch_orders [account_id, created_at]`, `recipients
+  [account_id, created_at]`, `occasions [account_id, occasion_date]` — each eliminating a
+  sort (proven via EXPLAIN). No N+1s to fix (lists use batched `include`). Keep-warm left
+  as an external `/health` pinger (a code cron can't wake a slept Railway service). Also
+  flagged a pre-existing `saved_designs` FK drift for a separate migration.
+- **Phase 6 — Bundle audit. ✅ Done (ADR 0047).** Audited the Turbopack chunks directly
+  (`@next/bundle-analyzer` is webpack-only). Heavy client components already code-split —
+  every `react-konva` consumer is behind `next/dynamic({ssr:false})`, so the 304KB Konva
+  chunk is lazy-only. Nothing else heavy is eager (rest of first-load is React/Next runtime
+  + Supabase auth). Added `pnpm analyze:bundle` as a Turbopack-compatible size report +
+  code-split regression guard. No JS to defer.
 
 Expected outcome: Phases 0–2 alone should meaningfully cut TTFB and time-to-first-paint on
 every authed page; 3–4 target public/marketing speed; 5–6 are depth.

@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import Image from "next/image";
+import { isOptimizableThumbnail } from "@/lib/card-image";
 import Link from "next/link";
 import type { GuestCartCheckoutInput, GuestCheckoutResult } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
@@ -86,7 +87,14 @@ export function BasketClient() {
             className="flex gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
           >
             <div className="relative aspect-[3/4] h-24 shrink-0 overflow-hidden rounded-lg bg-slate-50 ring-1 ring-slate-100">
-              <Image src={item.thumbnailUrl} alt={item.cardName} fill unoptimized className="object-cover" />
+              <Image
+                src={item.thumbnailUrl}
+                alt={item.cardName}
+                fill
+                sizes="72px"
+                unoptimized={!isOptimizableThumbnail(item.thumbnailUrl)}
+                className="object-cover"
+              />
             </div>
             <div className="flex flex-1 flex-col">
               <p className="font-semibold text-slate-900">{item.cardName}</p>

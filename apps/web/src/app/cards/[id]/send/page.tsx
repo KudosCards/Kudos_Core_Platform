@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
+import { isOptimizableThumbnail } from "@/lib/card-image";
 import { CardsHeader } from "../../cards-header";
 import { GuestSendClient } from "./guest-send-client";
 
@@ -61,7 +62,8 @@ export default async function GuestSendPage({ params }: { params: Promise<{ id: 
                 src={card.thumbnailUrl}
                 alt={card.name}
                 fill
-                unoptimized
+                sizes="(min-width: 768px) 320px, 100vw"
+                unoptimized={!isOptimizableThumbnail(card.thumbnailUrl)}
                 className="object-cover"
               />
             </div>
