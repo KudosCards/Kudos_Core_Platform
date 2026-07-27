@@ -51,8 +51,12 @@ pgbouncer pooling documented, no heavy date/animation libs.
   sort (proven via EXPLAIN). No N+1s to fix (lists use batched `include`). Keep-warm left
   as an external `/health` pinger (a code cron can't wake a slept Railway service). Also
   flagged a pre-existing `saved_designs` FK drift for a separate migration.
-- **Phase 6 — Bundle audit (½ day).** `@next/bundle-analyzer`; confirm heavy client
-  components stay code-split; defer non-critical JS.
+- **Phase 6 — Bundle audit. ✅ Done (ADR 0047).** Audited the Turbopack chunks directly
+  (`@next/bundle-analyzer` is webpack-only). Heavy client components already code-split —
+  every `react-konva` consumer is behind `next/dynamic({ssr:false})`, so the 304KB Konva
+  chunk is lazy-only. Nothing else heavy is eager (rest of first-load is React/Next runtime
+  + Supabase auth). Added `pnpm analyze:bundle` as a Turbopack-compatible size report +
+  code-split regression guard. No JS to defer.
 
 Expected outcome: Phases 0–2 alone should meaningfully cut TTFB and time-to-first-paint on
 every authed page; 3–4 target public/marketing speed; 5–6 are depth.
