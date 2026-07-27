@@ -182,59 +182,54 @@ export class AdminTeamService {
     }
   }
 
-  /** Emails an invited operator. For a **new** operator (no Supabase account yet)
-   * we mint a one-time set-password link so they can create a login and sign in;
-   * for someone who **already** has a Kudos login we just point them at the
-   * operator sign-in. Throws on a hard failure; callers decide whether to
-   * swallow (invite) or surface (resend). See docs/adr/0051. */
+  /** Emails an invited operator a one-time link to set their password and land in
+   * the ops app. A **new** operator gets an `invite` link (which also creates
+   * their auth user); an operator whose email **already exists** in Supabase gets
+   * a `recovery` link instead — an existing user may have been created by an
+   * earlier invite and never set a password, so pointing them at "sign in" would
+   * dead-end. Both land on /admin-set-password → /admin/access. Throws on a hard
+   * failure; callers decide whether to swallow (invite) or surface (resend). See
+   * docs/adr/0051. */
   private async sendInviteEmail(email: string, role: PlatformAdminRole): Promise<void> {
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
     const roleLabel = role === "super_admin" ? "a super admin" : "an operator";
+    const redirectTo = `${webAppUrl}/admin-set-password`;
 
-    // Creates the auth user + a set-password link. `actionLink` is null when the
-    // email already has a Kudos account (they set a password when they signed up).
-    const { actionLink } = await generateAuthLink(this.supabaseAdmin, {
+    // New user → `invite` (also creates the auth user). If Supabase reports the
+    // email already exists, `actionLink` is null; fall back to a `recovery` link,
+    // which works for an existing user and still lets them set a password.
+    let { actionLink } = await generateAuthLink(this.supabaseAdmin, {
       type: "invite",
       email,
-      redirectTo: `${webAppUrl}/admin-set-password`,
+      redirectTo,
     });
-
-    const grantedLine = `<p>You've been granted access to the Kudos Cards operator dashboard as
-      <strong>${escapeHtml(roleLabel)}</strong>.</p>`;
-
-    if (actionLink) {
-      await this.email.sendTransactional({
-        to: email,
-        subject: "Set your password for the Kudos Cards operator dashboard",
-        html: renderBrandedEmail({
-          webAppUrl,
-          preheader: "Set your password to access the Kudos Cards operator dashboard",
-          heading: "Set your operator password",
-          bodyHtml: `
-            ${grantedLine}
-            <p>Set a password for <strong>${escapeHtml(email)}</strong> to finish setting up your
-            login — then you'll see orders, customers, the fulfillment queue and more.</p>`,
-          cta: { url: actionLink, label: "Set your password" },
-          showLinkFallback: true,
-          footerNote: "If you weren't expecting this, you can safely ignore this email.",
-        }),
-      });
-      return;
+    if (!actionLink) {
+      ({ actionLink } = await generateAuthLink(this.supabaseAdmin, {
+        type: "recovery",
+        email,
+        redirectTo,
+      }));
+    }
+    if (!actionLink) {
+      // Neither link could be minted (no such user for recovery, yet invite said
+      // it exists — shouldn't happen). Surface it so callers can log/resend
+      // rather than silently sending nothing.
+      throw new Error(`Could not mint a set-password link for ${email}`);
     }
 
-    // Existing Kudos account — no password to set; just point them at the sign-in.
     await this.email.sendTransactional({
       to: email,
-      subject: "You've been given access to the Kudos Cards operator dashboard",
+      subject: "Set your password for the Kudos Cards operator dashboard",
       html: renderBrandedEmail({
         webAppUrl,
-        preheader: "Your Kudos Cards operator access is ready",
-        heading: "You're a Kudos operator",
+        preheader: "Set your password to access the Kudos Cards operator dashboard",
+        heading: "Set your operator password",
         bodyHtml: `
-          ${grantedLine}
-          <p>Sign in at the operator login with <strong>${escapeHtml(email)}</strong> to get
-          started — you'll see orders, customers, the fulfillment queue and more.</p>`,
-        cta: { url: `${webAppUrl}/admin-login`, label: "Open the operator sign-in" },
+          <p>You've been granted access to the Kudos Cards operator dashboard as
+          <strong>${escapeHtml(roleLabel)}</strong>.</p>
+          <p>Set a password for <strong>${escapeHtml(email)}</strong> to finish setting up your
+          login — then you'll see orders, customers, the fulfillment queue and more.</p>`,
+        cta: { url: actionLink, label: "Set your password" },
         showLinkFallback: true,
         footerNote: "If you weren't expecting this, you can safely ignore this email.",
       }),

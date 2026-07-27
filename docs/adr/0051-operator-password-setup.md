@@ -45,10 +45,16 @@ throwing — for the one benign case per link type (see below).
 `generateLink({ type: 'invite', … redirectTo: /admin-set-password })`, which
 **creates the auth user** and returns a one-time link, and email that link via
 the branded template ("Set your password"). If the email is **already
-registered** (they have a Kudos login), `generateLink` reports it and we fall
-back to the previous "you're an operator, sign in" email — no password to set.
-The allow-list row is unchanged and is still consumed at `/admin/access` time,
-so the existing provisioning flow runs after the operator sets a password.
+registered**, `generateLink` reports it and we fall back to a
+`generateLink({ type: 'recovery', … })` link — which works for an existing user
+and still lets them set a password — and email **that** set-password link. Both
+link types land on `/admin-set-password`, so the operator always gets a working
+"set your password" path regardless of whether they already existed. (An earlier
+revision emailed a bare "go and sign in" pointer for existing emails; that
+dead-ended a user who existed in Supabase but had **no password** — e.g. one
+created by an earlier invite that was never completed — so it was replaced with
+the recovery-link fallback.) The allow-list row is unchanged and is still
+consumed at `/admin/access` time, so provisioning runs after the password is set.
 
 Swallow-on-`invite` / surface-on-`resend` semantics are preserved: a failed
 mint/send doesn't fail the allow-list write (the row is the source of truth, and
