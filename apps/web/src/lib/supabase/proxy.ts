@@ -8,7 +8,18 @@ interface CookieToSet {
   options?: CookieOptionsWithName;
 }
 
-const PUBLIC_PATHS = ["/", "/login", "/register", "/admin-login"];
+const PUBLIC_PATHS = [
+  "/",
+  "/login",
+  "/register",
+  "/admin-login",
+  // Password flows: the user arrives via a Supabase email link with the session
+  // in the URL fragment (not yet a cookie), so these must not bounce to /login
+  // before the client can establish the session. See docs/adr/0051.
+  "/forgot-password",
+  "/reset-password",
+  "/admin-set-password",
+];
 
 function isPublicPath(pathname: string): boolean {
   return (

@@ -10,6 +10,11 @@ export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Set after a successful password reset (redirected here as ?reset=1). Read on
+  // the client to avoid a Suspense boundary for useSearchParams.
+  const [justReset] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("reset"),
+  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,8 +43,15 @@ export default function LoginPage() {
   return (
     <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
       <h1 className="text-xl font-bold tracking-tight">Log in</h1>
+      {justReset && !error && (
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          Your password has been reset — log in with your new password.
+        </p>
+      )}
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
       <label className="flex flex-col gap-1 text-sm">
         Email
@@ -62,12 +74,17 @@ export default function LoginPage() {
       <button type="submit" disabled={submitting} className="btn-accent">
         {submitting ? "Logging in…" : "Log in"}
       </button>
-      <p className="text-sm text-muted">
-        Don&apos;t have an account?{" "}
-        <Link href="/register" className="text-accent hover:underline">
-          Register
+      <div className="flex flex-col gap-1 text-sm">
+        <Link href="/forgot-password" className="text-accent hover:underline">
+          Forgot your password?
         </Link>
-      </p>
+        <p className="text-muted">
+          Don&apos;t have an account?{" "}
+          <Link href="/register" className="text-accent hover:underline">
+            Register
+          </Link>
+        </p>
+      </div>
     </form>
   );
 }

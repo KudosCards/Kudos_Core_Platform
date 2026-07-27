@@ -129,6 +129,9 @@ export default function AdminLoginPage() {
           <button type="submit" disabled={submitting || checkingSession} className="btn-accent">
             {submitting ? "Signing in…" : "Sign in"}
           </button>
+          <a href="/forgot-password" className="text-center text-xs text-muted hover:text-foreground">
+            Forgot your password?
+          </a>
         </form>
       )}
     </div>

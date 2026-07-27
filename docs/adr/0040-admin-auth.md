@@ -52,6 +52,13 @@ lost. A failed send is logged, not thrown — the allow-list row is the source o
 invite still works and can be re-sent. No token is involved: the email is a convenience
 pointer, and access is still gated by the verified-email match at sign-in.
 
+> **Superseded by ADR 0051.** The "email is just a convenience pointer / internal
+> staff already have logins" assumption above left a **net-new** operator (no
+> Supabase account) with no way to obtain a password. ADR 0051 changes the invite
+> to actually create the Supabase auth user and email a one-time **set-password**
+> link (`/admin-set-password`), and adds a platform-wide forgot/reset-password
+> flow. The allow-list + verified-email provisioning gate here is unchanged.
+
 ### Guardrails
 
 - **At least one super admin always remains** — demoting or revoking the last one is a 409.
