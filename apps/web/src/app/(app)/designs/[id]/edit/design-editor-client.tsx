@@ -56,6 +56,7 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
   const [activePage, setActivePage] = useState<DesignPage["name"]>("front");
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -68,9 +69,9 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
   );
   const isDirty = JSON.stringify({ name, document: document_ }) !== savedSnapshot;
 
-  // Guard a full-page navigation / refresh / "Send this card" while there are
-  // unsaved edits (the in-app "Back to designs" link is guarded separately, as
-  // SPA navigation doesn't fire beforeunload).
+  // Guard a full-page navigation / refresh while there are unsaved edits (the
+  // in-app "Back to designs" link is guarded separately, as SPA navigation
+  // doesn't fire beforeunload; "Send this card" saves first, so it won't warn).
   useEffect(() => {
     if (!isDirty) return;
     const handler = (event: BeforeUnloadEvent) => {
@@ -159,20 +160,41 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
     }
   }
 
+  /** Persist the current name + document, updating the saved snapshot so the
+   * editor is no longer "dirty". Throws on failure so callers can react. */
+  async function persist() {
+    await clientApiFetch<SavedDesign>(`/saved-designs/${savedDesign.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name, document: document_ }),
+    });
+    setSavedSnapshot(JSON.stringify({ name, document: document_ }));
+    setSavedAt(new Date());
+  }
+
   async function handleSave() {
     setError(null);
     setSaving(true);
     try {
-      await clientApiFetch<SavedDesign>(`/saved-designs/${savedDesign.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name, document: document_ }),
-      });
-      setSavedSnapshot(JSON.stringify({ name, document: document_ }));
-      setSavedAt(new Date());
+      await persist();
     } catch (saveError) {
       setError(saveError instanceof ApiError ? saveError.message : "Could not save");
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** Save any unsaved edits first, then go to the send flow — so the card that's
+   * sent is always what's on screen, not the last-saved version. */
+  async function handleSendThisCard() {
+    setError(null);
+    setSending(true);
+    try {
+      if (isDirty) await persist();
+      // Full navigation so the send page re-reads the freshly-saved design.
+      window.location.assign(`/designs/${savedDesign.id}/send`);
+    } catch (sendError) {
+      setError(sendError instanceof ApiError ? sendError.message : "Could not save before sending");
+      setSending(false);
     }
   }
 
@@ -207,18 +229,20 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
             ) : null}
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || sending}
               onClick={() => void handleSave()}
               className="rounded-full border border-black/15 px-5 py-2 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5"
             >
               {saving ? "Saving…" : "Save"}
             </button>
-            <a
-              href={`/designs/${savedDesign.id}/send`}
-              className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent-hover"
+            <button
+              type="button"
+              disabled={saving || sending}
+              onClick={() => void handleSendThisCard()}
+              className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
             >
-              Send this card →
-            </a>
+              {sending ? "Saving…" : "Send this card →"}
+            </button>
           </div>
         </div>
       </div>
