@@ -110,7 +110,7 @@ export function BulkSendClient({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 pb-24 lg:pb-0">
       <div className="flex flex-col gap-1">
         <Link href="/recipients" className="text-sm text-muted hover:text-foreground">
           ← Back to recipients
@@ -247,7 +247,7 @@ export function BulkSendClient({
                     <button
                       type="button"
                       onClick={() => removeRecipient(recipient.id)}
-                      className="shrink-0 rounded-md border border-border px-2 py-1 text-xs hover:bg-foreground/[0.03]"
+                      className="shrink-0 rounded-md border border-border px-3 py-2 text-xs hover:bg-foreground/[0.03]"
                     >
                       Remove
                     </button>
@@ -263,17 +263,25 @@ export function BulkSendClient({
           <h2 className="font-semibold">Order summary</h2>
 
           <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-medium">Postage</legend>
+            <legend className="mb-1 text-sm font-medium">Postage</legend>
             {(["second_class", "first_class"] as const).map((option) => (
-              <label key={option} className="flex items-center gap-2 text-sm">
+              <label
+                key={option}
+                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm transition-colors ${
+                  postageClass === option
+                    ? "border-accent bg-accent-soft"
+                    : "border-border hover:bg-foreground/[0.03]"
+                }`}
+              >
                 <input
                   type="radio"
                   name="postage"
                   checked={postageClass === option}
                   onChange={() => setPostageClass(option)}
+                  className="size-4 accent-accent"
                 />
-                <span>{POSTAGE_LABEL[option]}</span>
-                <span className="text-muted">{gbp(POSTAGE_MINOR[option] ?? 0)}</span>
+                <span className="flex-1">{POSTAGE_LABEL[option]}</span>
+                <span className="font-medium text-muted">{gbp(POSTAGE_MINOR[option] ?? 0)}</span>
               </label>
             ))}
           </fieldset>
@@ -296,17 +304,41 @@ export function BulkSendClient({
             shown on the secure payment page.
           </p>
 
+          {/* Desktop keeps the CTA in the summary column; on mobile it moves to
+              the sticky bar below so the total + Pay are always in reach. */}
           <button
             type="button"
             disabled={busy || !selectedDesignId || sendable.length === 0}
             onClick={() => void handleSend()}
-            className="btn-accent w-full disabled:opacity-50"
+            className="btn-accent hidden w-full disabled:opacity-50 lg:block"
           >
             {busy
               ? "Taking you to payment…"
               : `Pay & send ${sendable.length} card${sendable.length === 1 ? "" : "s"} →`}
           </button>
           <p className="text-center text-xs text-muted">Secure payment powered by Stripe</p>
+        </div>
+      </div>
+
+      {/* Sticky mobile checkout bar — total + count always visible, one tap to
+          pay, instead of scrolling past the design picker and contact list.
+          Respects the iPhone home-indicator safe area. */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+          <div className="flex flex-col leading-tight">
+            <span className="text-xs text-muted">
+              {sendable.length} card{sendable.length === 1 ? "" : "s"} · estimated
+            </span>
+            <span className="text-lg font-semibold">{gbp(estimate)}</span>
+          </div>
+          <button
+            type="button"
+            disabled={busy || !selectedDesignId || sendable.length === 0}
+            onClick={() => void handleSend()}
+            className="btn-accent flex-1 whitespace-nowrap disabled:opacity-50"
+          >
+            {busy ? "Taking you to payment…" : "Pay & send →"}
+          </button>
         </div>
       </div>
     </div>

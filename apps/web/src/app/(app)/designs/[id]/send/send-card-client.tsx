@@ -65,10 +65,13 @@ export function SendCardClient({ designId, designName }: { designId: string; des
     }
   }
 
-  const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
+  // text-base on mobile (16px) stops iOS Safari zooming in when a field is
+  // focused; text-sm keeps it tidy on desktop. py-2.5 gives a comfier tap target.
+  const inputClass =
+    "rounded-md border border-border bg-surface px-3 py-2.5 text-base sm:text-sm";
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 pb-24 lg:pb-0">
       <div className="flex flex-col gap-1">
         <Link href={`/designs/${designId}/edit`} className="text-sm text-muted hover:text-foreground">
           ← Back to editing
@@ -83,48 +86,94 @@ export function SendCardClient({ designId, designName }: { designId: string; des
         <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
       )}
 
-      <form onSubmit={(event) => void handleSubmit(event)} className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+      <form
+        id="send-card-form"
+        onSubmit={(event) => void handleSubmit(event)}
+        className="grid gap-6 lg:grid-cols-[1.4fr_1fr]"
+      >
         <div className="card flex flex-col gap-4 p-6">
           <h2 className="font-semibold">Who&apos;s this card for?</h2>
+          {/* autoComplete lets the phone one-tap-autofill a saved address; the
+              per-field capitalisation gives the right mobile keyboard/case. */}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">First name</span>
-              <input name="firstName" required className={inputClass} />
+              <input
+                name="firstName"
+                required
+                autoComplete="given-name"
+                autoCapitalize="words"
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Last name</span>
-              <input name="lastName" required className={inputClass} />
+              <input
+                name="lastName"
+                required
+                autoComplete="family-name"
+                autoCapitalize="words"
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm sm:col-span-2">
               <span className="text-muted">Address line 1</span>
-              <input name="shippingAddressLine1" required className={inputClass} />
+              <input
+                name="shippingAddressLine1"
+                required
+                autoComplete="address-line1"
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm sm:col-span-2">
               <span className="text-muted">Address line 2 (optional)</span>
-              <input name="shippingAddressLine2" className={inputClass} />
+              <input
+                name="shippingAddressLine2"
+                autoComplete="address-line2"
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Town / city</span>
-              <input name="shippingAddressCity" required className={inputClass} />
+              <input
+                name="shippingAddressCity"
+                required
+                autoComplete="address-level2"
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Postcode</span>
-              <input name="shippingAddressPostcode" required className={inputClass} />
+              <input
+                name="shippingAddressPostcode"
+                required
+                autoComplete="postal-code"
+                autoCapitalize="characters"
+                className={inputClass}
+              />
             </label>
           </div>
 
           <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-medium">Postage</legend>
+            <legend className="mb-1 text-sm font-medium">Postage</legend>
             {(["second_class", "first_class"] as const).map((option) => (
-              <label key={option} className="flex items-center gap-2 text-sm">
+              <label
+                key={option}
+                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm transition-colors ${
+                  postageClass === option
+                    ? "border-accent bg-accent-soft"
+                    : "border-border hover:bg-foreground/[0.03]"
+                }`}
+              >
                 <input
                   type="radio"
                   name="postage"
                   checked={postageClass === option}
                   onChange={() => setPostageClass(option)}
+                  className="size-4 accent-accent"
                 />
-                <span>{POSTAGE_LABEL[option]}</span>
-                <span className="text-muted">{gbp(POSTAGE_MINOR[option] ?? 0)}</span>
+                <span className="flex-1">{POSTAGE_LABEL[option]}</span>
+                <span className="font-medium text-muted">{gbp(POSTAGE_MINOR[option] ?? 0)}</span>
               </label>
             ))}
           </fieldset>
@@ -150,12 +199,34 @@ export function SendCardClient({ designId, designName }: { designId: string; des
             Card price includes VAT. Any plan discount and the exact total are shown on the secure
             payment page.
           </p>
-          <button type="submit" disabled={busy} className="btn-accent w-full">
+          {/* Desktop keeps the CTA in the summary column; on mobile it moves to
+              the sticky bar below so the total + Pay are always in reach. */}
+          <button type="submit" disabled={busy} className="btn-accent hidden w-full lg:block">
             {busy ? "Taking you to payment…" : "Pay & send →"}
           </button>
           <p className="text-center text-xs text-muted">Secure payment powered by Stripe</p>
         </div>
       </form>
+
+      {/* Sticky mobile checkout bar — total always visible, one-tap to pay,
+          instead of scrolling past the whole form. Pays via the form id, and
+          respects the iPhone home-indicator safe area. */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
+          <div className="flex flex-col leading-tight">
+            <span className="text-xs text-muted">Estimated total</span>
+            <span className="text-lg font-semibold">{gbp(estimate)}</span>
+          </div>
+          <button
+            type="submit"
+            form="send-card-form"
+            disabled={busy}
+            className="btn-accent flex-1 whitespace-nowrap"
+          >
+            {busy ? "Taking you to payment…" : "Pay & send →"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
