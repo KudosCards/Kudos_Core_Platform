@@ -10,6 +10,7 @@ interface CatalogSyncSummary {
   updated: number;
   deactivated: number;
   imagesCopied: number;
+  skippedNoImage: { externalId: string; sku: string | null; title: string }[];
   errors: { externalId: string; sku: string | null; reason: string }[];
 }
 
@@ -38,7 +39,8 @@ export function CatalogClient({ configured }: { configured: boolean }) {
         <h1 className="text-2xl font-semibold">Card catalog</h1>
         <p className="text-foreground/60">
           Pull the latest card designs from Airtable into the platform. Only cards marked{" "}
-          <span className="font-medium">Active</span> are imported; retired cards are hidden
+          <span className="font-medium">Active</span> <span className="font-medium">with artwork
+          attached</span> are imported; retired cards — and any without an image — are hidden
           automatically.
         </p>
       </div>
@@ -72,8 +74,22 @@ export function CatalogClient({ configured }: { configured: boolean }) {
             <li>Updated: {summary.updated}</li>
             <li>Deactivated: {summary.deactivated}</li>
             <li>Images copied: {summary.imagesCopied}</li>
+            <li>No image (skipped): {summary.skippedNoImage.length}</li>
             <li>Errors: {summary.errors.length}</li>
           </ul>
+          {summary.skippedNoImage.length > 0 && (
+            <div className="flex flex-col gap-1 border-t border-black/10 pt-2 dark:border-white/10">
+              <p className="font-medium text-amber-600">
+                Not shown — no artwork attached in Airtable:
+              </p>
+              {summary.skippedNoImage.map((c) => (
+                <p key={c.externalId} className="text-xs text-foreground/60">
+                  {c.title}
+                  {c.sku ? ` (${c.sku})` : ""}
+                </p>
+              ))}
+            </div>
+          )}
           {summary.errors.length > 0 && (
             <div className="flex flex-col gap-1 border-t border-black/10 pt-2 dark:border-white/10">
               <p className="font-medium text-red-600">Cards that didn&apos;t import:</p>

@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { CardDesign, Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { DESIGN_ASSET_STORAGE_CLIENT } from "../storage/design-asset-storage.provider";
 import {
@@ -23,6 +23,9 @@ export interface CatalogSyncSummary {
   updated: number;
   deactivated: number;
   imagesCopied: number;
+  /** Records skipped because they have no artwork attached in Airtable — these
+   * are deliberately not imported into the library (see resolveArtwork removal). */
+  skippedNoImage: { externalId: string; sku: string | null; title: string }[];
   /** Per-card failures that didn't abort the whole run (e.g. one bad image). */
   errors: { externalId: string; sku: string | null; reason: string }[];
 }
@@ -100,6 +103,7 @@ export class CatalogSyncService {
       updated: 0,
       deactivated: 0,
       imagesCopied: 0,
+      skippedNoImage: [],
       errors: [],
     };
 
@@ -112,13 +116,36 @@ export class CatalogSyncService {
     // card resolves (single-threaded, so no locking needed).
     await mapWithConcurrency(records, IMAGE_COPY_CONCURRENCY, async (record) => {
       try {
-        const copied = await this.resolveArtwork(record, byExternalId.get(record.externalId));
+        const prior = byExternalId.get(record.externalId);
+
+        // Only cards with real artwork belong in the library. A record with no
+        // image attached in Airtable is never imported: a brand-new one is
+        // skipped entirely, and one that previously had art is deactivated so it
+        // drops out of the library (its row is kept for FK integrity). This
+        // replaces the old "placeholder thumbnail" fallback that let an art-less
+        // card show a grey box. See docs/adr/0011.
+        if (!record.frontImage) {
+          if (prior?.isActive) {
+            await this.prisma.cardDesign.update({
+              where: { externalId: record.externalId },
+              data: { isActive: false },
+            });
+          }
+          summary.skippedNoImage.push({
+            externalId: record.externalId,
+            sku: record.sku,
+            title: record.title,
+          });
+          return;
+        }
+
+        const imageUrl = await this.copyImage(record.externalId, record.frontImage);
         const data = {
           category: record.category,
           name: record.title,
           sku: record.sku,
-          thumbnailUrl: copied.thumbnailUrl,
-          document: buildCardDocument(copied.documentImageUrl, record.insideMessage) as Prisma.InputJsonValue,
+          thumbnailUrl: imageUrl,
+          document: buildCardDocument(imageUrl, record.insideMessage) as Prisma.InputJsonValue,
           isActive: true,
         };
 
@@ -128,10 +155,8 @@ export class CatalogSyncService {
           update: data,
         });
 
-        if (copied.copiedNow) {
-          summary.imagesCopied += 1;
-        }
-        if (byExternalId.has(record.externalId)) {
+        summary.imagesCopied += 1;
+        if (prior) {
           summary.updated += 1;
         } else {
           summary.created += 1;
@@ -148,6 +173,7 @@ export class CatalogSyncService {
     this.logger.log(
       `Catalog sync: fetched ${summary.fetched}, created ${summary.created}, ` +
         `updated ${summary.updated}, deactivated ${summary.deactivated}, ` +
+        `skipped-no-image ${summary.skippedNoImage.length}, ` +
         `images copied ${summary.imagesCopied}, errors ${summary.errors.length}`,
     );
     return summary;
@@ -167,32 +193,6 @@ export class CatalogSyncService {
     if (config) {
       await ensureBucketConfigured(this.storage, config, this.logger);
     }
-  }
-
-  /**
-   * Resolves the artwork URL to persist. Copies the current Airtable attachment
-   * into our storage when present; on failure (or no attachment) falls back to
-   * the design's existing thumbnail so a transient image glitch doesn't blank a
-   * card that already had art.
-   */
-  private async resolveArtwork(
-    record: CatalogCardRecord,
-    prior: CardDesign | undefined,
-  ): Promise<{ thumbnailUrl: string; documentImageUrl: string | null; copiedNow: boolean }> {
-    if (record.frontImage) {
-      const url = await this.copyImage(record.externalId, record.frontImage);
-      return { thumbnailUrl: url, documentImageUrl: url, copiedNow: true };
-    }
-    if (prior) {
-      return { thumbnailUrl: prior.thumbnailUrl, documentImageUrl: prior.thumbnailUrl, copiedNow: false };
-    }
-    // No artwork anywhere yet — a placeholder keeps thumbnailUrl non-null and
-    // signals "art missing" without embedding a broken image into the document.
-    return {
-      thumbnailUrl: placeholderThumbnail(record.title),
-      documentImageUrl: null,
-      copiedNow: false,
-    };
   }
 
   /** Downloads the Airtable attachment and re-uploads it to our storage under a
@@ -249,11 +249,6 @@ function extensionFor(filename: string | null, contentType: string): string {
     return fromName;
   }
   return CONTENT_TYPE_EXTENSIONS[contentType.toLowerCase()] ?? "png";
-}
-
-function placeholderThumbnail(title: string): string {
-  const label = encodeURIComponent(title.slice(0, 30));
-  return `https://placehold.co/450x600/e5e7eb/374151?text=${label}`;
 }
 
 /**
