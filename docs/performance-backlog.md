@@ -1,0 +1,53 @@
+# Performance Backlog
+
+Status: **Phase 0 + Phase 1 shipped 2026-07-27** (see ADR 0042). Phases 2–6 remain.
+
+This is a phased plan to cut page load latency across the platform, grounded in the
+current codebase.
+
+## Findings (what's actually driving latency)
+
+| # | Finding | Where | Impact |
+|---|---------|-------|--------|
+| 1 | No response compression on the API (`helmet` + CORS set, but no `compression()`). `perPage=100` JSON lists ship uncompressed. | `apps/api` `configure-app.ts` | High, trivial |
+| 2 | Auth+API waterfall: the `(app)` layout awaits `account` + `summary`, and only then does the page start its own fetch. Every authed page = two sequential server phases. | `(app)/layout.tsx` | High |
+| 3 | Session re-resolved on every call, no dedup — each `serverApiFetch` recreates the Supabase server client + `getSession()`. No React `cache()`. | `api.server.ts` | Medium |
+| 4 | No streaming/Suspense — pages block on all data before sending HTML. 18 `loading.tsx` help nav, but each route still waits on its slowest fetch. | all pages | High (perceived) |
+| 5 | Over-fetching — 6 pages load `perPage=100`, 4 load `perPage=50` up front. | various | Medium |
+| 6 | Images unoptimized — `next/image` used but no `images.remotePatterns` in `next.config`, so remote Supabase/Airtable card art isn't served through the optimizer. | `/cards`, designer | Medium (public) |
+| 7 | `cache: "no-store"` on every fetch — correct for per-user data, needlessly dynamic for public catalog data. | `api.ts` | Medium (public) |
+
+Already good (leave alone): router `staleTimes` tuned (30s), Konva dynamically imported,
+pgbouncer pooling documented, no heavy date/animation libs.
+
+## Phases
+
+- **Phase 0 — Measurement. ✅ Done (ADR 0042).** `Server-Timing` header on every API
+  response + opt-in `apiFetch` timing (`API_TIMING=1`). DB env confirmed on Railway.
+  Still to do during a live measurement pass: capture Lighthouse + TTFB for the 6
+  heaviest pages with the new signals.
+- **Phase 1 — Cross-cutting quick wins. ✅ Done (ADR 0042).** Added `compression()`;
+  wrapped session resolution in React `cache()`; trimmed recipients first load
+  (`perPage` 100→30). Broader payload trimming on the unpaginated lists is folded into
+  Phase 5 (needs "load more" UI, not just a smaller number).
+- **Phase 2 — Stream page content. ✅ Partially done (ADR 0043).** Page-level `<Suspense>`
+  on dashboard + orders: static chrome paints in the first flush, data streams. The riskier
+  half — Suspense-slotting the `(app)`/`(ops)` shells to kill the layout auth→page waterfall
+  — is **deferred** (touches the auth path + mobile drawer for a modest post-Phase-1 win).
+  Applying the split to more pages needs their client components decomposed first; gate that
+  on Phase 0 profiling.
+- **Phase 3 — Public pages → CDN/ISR. ✅ Done (ADR 0044).** `/cards`, `/cards/[id]`, and
+  `/cards/[id]/send` are now ISR (hourly revalidate) — served from cache/CDN, no live DB hit
+  per visit. `publicApiFetch` gained an opt-in `revalidate` so the per-token public pages
+  (invite/gift/rts) stay `no-store`. On-demand revalidation from the catalog sync is the
+  follow-up if the ≤1h lag ever matters.
+- **Phase 4 — Images (1 PR).** Add `images.remotePatterns` for Supabase/Airtable hosts,
+  correct `sizes`, Supabase image transforms for thumbnails.
+- **Phase 5 — API/DB depth (1–2 PRs).** Profile top endpoints from Phase 0, add missing
+  composite indexes (extend the admin-overview treatment to recipients/orders lists), fix
+  N+1s, add a keep-warm ping for cold starts.
+- **Phase 6 — Bundle audit (½ day).** `@next/bundle-analyzer`; confirm heavy client
+  components stay code-split; defer non-critical JS.
+
+Expected outcome: Phases 0–2 alone should meaningfully cut TTFB and time-to-first-paint on
+every authed page; 3–4 target public/marketing speed; 5–6 are depth.

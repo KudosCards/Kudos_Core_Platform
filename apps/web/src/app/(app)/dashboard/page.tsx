@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import type { Account, DashboardSummary } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { formatGbp } from "@/lib/orders";
+import { Skeleton } from "@/components/skeleton";
 import { GetStartedChecklist } from "./get-started-checklist";
 
 interface StatCard {
@@ -11,7 +13,35 @@ interface StatCard {
   hint?: string;
 }
 
-export default async function DashboardPage() {
+/**
+ * The page shell is a plain (non-async) component so it returns immediately:
+ * the static "next steps" card paints in the first flush while the data-backed
+ * overview (account greeting + stat tiles) streams into its Suspense boundary.
+ * On a hard load that means real content on screen sooner than blocking the
+ * whole route on the summary query. See docs/adr/0043-streaming.md.
+ */
+export default function DashboardPage() {
+  return (
+    <div className="flex flex-col gap-6">
+      <Suspense fallback={<DashboardOverviewSkeleton />}>
+        <DashboardOverview />
+      </Suspense>
+
+      <div className="card p-5">
+        <p className="font-semibold">Get cards out the door</p>
+        <p className="mt-1 text-sm text-muted">
+          Approve upcoming occasions, then either{" "}
+          <Link href="/batch-orders" className="text-accent hover:underline">
+            check out
+          </Link>{" "}
+          to pay, or turn on auto-send at approval to have us order, pay, and post them for you.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+async function DashboardOverview() {
   // Degrade gracefully on a transient failure rather than hitting Next's error
   // boundary — every field below is rendered optionally.
   const [account, summary] = await Promise.all([
@@ -61,7 +91,7 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-6">
+    <>
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Welcome, {account?.name}</h1>
         <p className="text-muted">Here&apos;s what&apos;s happening with your recognition programme.</p>
@@ -105,17 +135,24 @@ export default async function DashboardPage() {
           </Link>
         ))}
       </div>
+    </>
+  );
+}
 
-      <div className="card p-5">
-        <p className="font-semibold">Get cards out the door</p>
-        <p className="mt-1 text-sm text-muted">
-          Approve upcoming occasions, then either{" "}
-          <Link href="/batch-orders" className="text-accent hover:underline">
-            check out
-          </Link>{" "}
-          to pay, or turn on auto-send at approval to have us order, pay, and post them for you.
-        </p>
+/** Greeting + 6-tile stat grid silhouette, shown while the overview streams. */
+function DashboardOverviewSkeleton() {
+  return (
+    <>
+      <Skeleton className="h-9 w-64" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="card flex flex-col gap-2 p-5">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-9 w-20" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        ))}
       </div>
-    </div>
+    </>
   );
 }

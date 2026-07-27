@@ -7,7 +7,10 @@ import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { ConnectCrmCallout } from "@/components/connect-crm-callout";
 
-export const PER_PAGE = 100;
+// First-load page size for the recipients table. Kept modest so the initial
+// SSR payload + DOM stays light above the fold; the prev/next controls (and the
+// list filter) page through the rest, so nothing is hidden. See ADR 0042.
+export const PER_PAGE = 30;
 
 /** Friendly labels for where a recipient came from (see the integrations spine). */
 const SOURCE_LABELS: Record<string, string> = {

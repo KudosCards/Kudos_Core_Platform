@@ -2,16 +2,37 @@ import { env } from "./env";
 import { ApiError } from "./api";
 
 /**
+ * ISR window for the public card catalog. The catalog is identical for every
+ * visitor and only changes on a catalog sync (nightly / ops-triggered), so an
+ * hour of CDN caching is safe and takes a live DB hit off every marketing-page
+ * visit. Keep the segment-level `export const revalidate` on the /cards pages in
+ * sync with this value. See docs/adr/0044-public-catalog-isr.md.
+ */
+export const CATALOG_REVALIDATE_SECONDS = 3600;
+
+/**
  * Unauthenticated GET against the API, for the public card library
  * ("browse before you sign up"). Only the `@Public()` catalog routes
  * (`/card-designs`) are reachable this way — everything else 401s. Server- and
  * client-safe (no next/headers, no Supabase session). Returns null on any
  * failure so a public marketing page degrades to an empty grid rather than
  * throwing. See docs/adr/0017-public-card-library.md.
+ *
+ * By default the request is uncached (`no-store`) — correct for the per-token
+ * reads (invites, guest claims, RTS) that also use this helper. Pass a
+ * `revalidate` window to opt a read into Next's Data Cache instead; only the
+ * public catalog does this (see CATALOG_REVALIDATE_SECONDS).
  */
-export async function publicApiFetch<T>(path: string): Promise<T | null> {
+export async function publicApiFetch<T>(
+  path: string,
+  options?: { revalidate?: number },
+): Promise<T | null> {
   try {
-    const response = await fetch(`${env.NEXT_PUBLIC_API_URL}${path}`, { cache: "no-store" });
+    const response = await fetch(`${env.NEXT_PUBLIC_API_URL}${path}`, {
+      ...(options?.revalidate !== undefined
+        ? { next: { revalidate: options.revalidate } }
+        : { cache: "no-store" }),
+    });
     if (!response.ok) {
       return null;
     }
