@@ -61,3 +61,23 @@ pgbouncer pooling documented, no heavy date/animation libs.
 
 Expected outcome: Phases 0–2 alone should meaningfully cut TTFB and time-to-first-paint on
 every authed page; 3–4 target public/marketing speed; 5–6 are depth.
+
+## Deferred (not started — revisit if the symptom appears)
+
+- **Keep-warm pinger for API cold starts.** After an idle period, the first request to the
+  Railway API can be slow — a full container boot if the service sleeps/scales-to-zero, or
+  just Prisma/pgBouncer connection re-warmup if it doesn't. Bursty B2B traffic (overnight/
+  weekend gaps) means a real user — often the first of the day, or a prospect signing in —
+  is the one who eats it. Public `/cards` is CDN/ISR so it's unaffected; the authed app and
+  API calls are what a cold start slows.
+  - Fix is **infrastructure, not code**: an *external* uptime pinger (UptimeRobot /
+    BetterStack / a Railway or GitHub scheduled job / a Cloudflare worker) hitting the
+    existing `/health` URL every few minutes. A code-level `@Cron` can't do it — if the
+    service is asleep, its own cron is asleep too. Bonus: the pinger doubles as uptime
+    monitoring/alerting.
+  - **Only worth it if the symptom is real.** If the Railway service is always-on (paid
+    services generally don't scale to zero by default), keep-warm buys little and you'd be
+    paying for full-time uptime to avoid it. Decide by checking whether app-sleeping is
+    enabled and watching first-request latency after a quiet stretch (the Phase 0
+    `Server-Timing` header helps: a cold boot shows a big total time with a normal
+    `app;dur`, since the cost is before the handler runs).
