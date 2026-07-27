@@ -2,7 +2,8 @@
 
 import type { DesignDocument, DesignElement, DesignPage, SavedDesign } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
-import { useRef, useState } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { createClient } from "@/lib/supabase/client";
@@ -55,10 +56,31 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
   const [activePage, setActivePage] = useState<DesignPage["name"]>("front");
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // A snapshot of what's currently persisted, so we can tell whether there are
+  // unsaved edits and warn before leaving the editor. Updated on every save.
+  const [savedSnapshot, setSavedSnapshot] = useState(() =>
+    JSON.stringify({ name: savedDesign.name, document: savedDesign.document }),
+  );
+  const isDirty = JSON.stringify({ name, document: document_ }) !== savedSnapshot;
+
+  // Guard a full-page navigation / refresh while there are unsaved edits (the
+  // in-app "Back to designs" link is guarded separately, as SPA navigation
+  // doesn't fire beforeunload; "Send this card" saves first, so it won't warn).
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   const page = document_.pages.find((p) => p.name === activePage) ?? document_.pages[0]!;
   const selectedElement = page.elements.find((el) => el.id === selectedElementId) ?? null;
@@ -138,15 +160,22 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
     }
   }
 
+  /** Persist the current name + document, updating the saved snapshot so the
+   * editor is no longer "dirty". Throws on failure so callers can react. */
+  async function persist() {
+    await clientApiFetch<SavedDesign>(`/saved-designs/${savedDesign.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name, document: document_ }),
+    });
+    setSavedSnapshot(JSON.stringify({ name, document: document_ }));
+    setSavedAt(new Date());
+  }
+
   async function handleSave() {
     setError(null);
     setSaving(true);
     try {
-      await clientApiFetch<SavedDesign>(`/saved-designs/${savedDesign.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name, document: document_ }),
-      });
-      setSavedAt(new Date());
+      await persist();
     } catch (saveError) {
       setError(saveError instanceof ApiError ? saveError.message : "Could not save");
     } finally {
@@ -154,32 +183,67 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
     }
   }
 
+  /** Save any unsaved edits first, then go to the send flow — so the card that's
+   * sent is always what's on screen, not the last-saved version. */
+  async function handleSendThisCard() {
+    setError(null);
+    setSending(true);
+    try {
+      if (isDirty) await persist();
+      // Full navigation so the send page re-reads the freshly-saved design.
+      window.location.assign(`/designs/${savedDesign.id}/send`);
+    } catch (sendError) {
+      setError(sendError instanceof ApiError ? sendError.message : "Could not save before sending");
+      setSending(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="min-w-0 flex-1 rounded-md border border-black/10 px-3 py-2 text-lg font-semibold dark:border-white/10"
-        />
-        <div className="flex items-center gap-3">
-          {savedAt && (
-            <span className="text-xs text-foreground/50">Saved {savedAt.toLocaleTimeString()}</span>
-          )}
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => void handleSave()}
-            className="rounded-full border border-black/15 px-5 py-2 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-          <a
-            href={`/designs/${savedDesign.id}/send`}
-            className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent-hover"
-          >
-            Send this card →
-          </a>
+      <div className="flex flex-col gap-3">
+        {/* Back to the library. Guard the SPA navigation when there are unsaved
+            edits — beforeunload only covers full-page navigations. */}
+        <Link
+          href="/designs"
+          onClick={(event) => {
+            if (isDirty && !window.confirm("You have unsaved changes. Leave without saving?")) {
+              event.preventDefault();
+            }
+          }}
+          className="w-fit text-sm text-muted hover:text-foreground"
+        >
+          ← Back to designs
+        </Link>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            aria-label="Design name"
+            className="min-w-0 flex-1 rounded-md border border-black/10 px-3 py-2 text-lg font-semibold dark:border-white/10"
+          />
+          <div className="flex items-center gap-3">
+            {isDirty ? (
+              <span className="text-xs text-foreground/50">Unsaved changes</span>
+            ) : savedAt ? (
+              <span className="text-xs text-foreground/50">Saved {savedAt.toLocaleTimeString()}</span>
+            ) : null}
+            <button
+              type="button"
+              disabled={saving || sending}
+              onClick={() => void handleSave()}
+              className="rounded-full border border-black/15 px-5 py-2 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              disabled={saving || sending}
+              onClick={() => void handleSendThisCard()}
+              className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {sending ? "Saving…" : "Send this card →"}
+            </button>
+          </div>
         </div>
       </div>
 
