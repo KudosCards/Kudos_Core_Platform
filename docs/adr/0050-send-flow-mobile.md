@@ -1,4 +1,4 @@
-# ADR 0050: Send-card flow — mobile pass
+# ADR 0050: Send flows — mobile pass
 
 Status: Accepted
 Date: 2026-07-27
@@ -44,5 +44,19 @@ A focused mobile pass on this flow.
   checkout handoff runs underneath.
 - Verified: web lint/typecheck/build green. As a responsive/checkout change, the
   real proof is on a device — check via the deploy preview's mobile QR.
-- The bulk-send flow (`/send`) is a separate surface and was left as-is; the same
-  treatment (autofill, sticky CTA) could be applied there next if wanted.
+
+## Bulk send (`/send`) — same treatment
+
+The bulk-send flow (pick one design → send to every mailable contact) had the
+same shape problem: on mobile the "Pay & send N cards" CTA + total sat at the
+bottom, below the design picker, personalisation previews, and contact list. It
+got the matching changes:
+
+- **Sticky mobile checkout bar** with the live total + card count and an
+  always-in-reach "Pay & send" button (`lg:hidden`; desktop keeps the CTA in the
+  summary column), safe-area aware, with bottom padding on the container.
+- **Tappable postage rows** (same as the guided flow).
+- **Bigger "Remove" targets** on the contact rows.
+
+No address-form changes here — bulk send addresses come from the contact records,
+so there are no inputs to autofill. Same `bulk-send` + Stripe handoff underneath.
