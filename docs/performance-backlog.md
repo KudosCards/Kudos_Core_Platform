@@ -30,9 +30,12 @@ pgbouncer pooling documented, no heavy date/animation libs.
   wrapped session resolution in React `cache()`; trimmed recipients first load
   (`perPage` 100→30). Broader payload trimming on the unpaginated lists is folded into
   Phase 5 (needs "load more" UI, not just a smaller number).
-- **Phase 2 — Kill the waterfall + stream (1–2 PRs).** Render shells immediately, stream
-  page content via `<Suspense>` with existing skeletons; move layout `summary` fetch into
-  a Suspense boundary so it never blocks the page.
+- **Phase 2 — Stream page content. ✅ Partially done (ADR 0043).** Page-level `<Suspense>`
+  on dashboard + orders: static chrome paints in the first flush, data streams. The riskier
+  half — Suspense-slotting the `(app)`/`(ops)` shells to kill the layout auth→page waterfall
+  — is **deferred** (touches the auth path + mobile drawer for a modest post-Phase-1 win).
+  Applying the split to more pages needs their client components decomposed first; gate that
+  on Phase 0 profiling.
 - **Phase 3 — Public pages → CDN/ISR (1 PR).** Make `/cards` and `/cards/[id]` reads
   cacheable (`revalidate`) so they serve from cache/CDN, not a live DB hit per visit.
 - **Phase 4 — Images (1 PR).** Add `images.remotePatterns` for Supabase/Airtable hosts,
