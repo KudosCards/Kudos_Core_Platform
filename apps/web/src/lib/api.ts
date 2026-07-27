@@ -1,5 +1,14 @@
 import { env } from "./env";
 
+/**
+ * Opt-in upstream-call timing. Off unless `API_TIMING=1` is set in the server
+ * environment; the flag is never a NEXT_PUBLIC var, so it stays `undefined` in
+ * the browser bundle and this is effectively server-only. Flip it on in the web
+ * host to log how long each API round-trip takes during a measurement pass, off
+ * the rest of the time. See docs/adr/0042-performance.md.
+ */
+const API_TIMING = typeof process !== "undefined" && process.env.API_TIMING === "1";
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -22,6 +31,7 @@ export async function apiFetch<T>(
   accessToken: string,
   init: RequestInit = {},
 ): Promise<T> {
+  const startedAt = API_TIMING ? Date.now() : 0;
   const response = await fetch(`${env.NEXT_PUBLIC_API_URL}${path}`, {
     ...init,
     headers: {
@@ -33,6 +43,14 @@ export async function apiFetch<T>(
     },
     cache: "no-store",
   });
+
+  if (API_TIMING) {
+    const method = init.method ?? "GET";
+    console.log(
+      `[api-timing] ${method} ${path} ${response.status} ${Date.now() - startedAt}ms` +
+        ` server=${response.headers.get("server-timing") ?? "n/a"}`,
+    );
+  }
 
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);

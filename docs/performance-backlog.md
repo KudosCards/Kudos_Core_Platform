@@ -1,10 +1,9 @@
 # Performance Backlog
 
-Status: **Parked 2026-07-25**, to pick up 2026-07-26. Priority for 25 Jul is fixing
-the Brevo email connection; this roadmap is the next block of work after that.
+Status: **Phase 0 + Phase 1 shipped 2026-07-27** (see ADR 0042). Phases 2–6 remain.
 
 This is a phased plan to cut page load latency across the platform, grounded in the
-current codebase. Recommended starting point: **Phase 0 + Phase 1** as one focused PR.
+current codebase.
 
 ## Findings (what's actually driving latency)
 
@@ -23,12 +22,14 @@ pgbouncer pooling documented, no heavy date/animation libs.
 
 ## Phases
 
-- **Phase 0 — Measurement (½ day).** Timing header/log in `apiFetch` + Server-Timing;
-  capture Lighthouse + TTFB for the 6 heaviest pages; confirm prod `DATABASE_URL` has
-  `pgbouncer=true&connection_limit=10`. _(DB env confirmed 2026-07-25: `DATABASE_URL` +
-  `DIRECT_URL` both set on Railway; schema wires `directUrl`.)_
-- **Phase 1 — Cross-cutting quick wins (1 PR, ~1 day).** Add `compression()`; wrap session
-  resolution in React `cache()`; trim first-load payloads (`perPage` 100→24/30 above fold).
+- **Phase 0 — Measurement. ✅ Done (ADR 0042).** `Server-Timing` header on every API
+  response + opt-in `apiFetch` timing (`API_TIMING=1`). DB env confirmed on Railway.
+  Still to do during a live measurement pass: capture Lighthouse + TTFB for the 6
+  heaviest pages with the new signals.
+- **Phase 1 — Cross-cutting quick wins. ✅ Done (ADR 0042).** Added `compression()`;
+  wrapped session resolution in React `cache()`; trimmed recipients first load
+  (`perPage` 100→30). Broader payload trimming on the unpaginated lists is folded into
+  Phase 5 (needs "load more" UI, not just a smaller number).
 - **Phase 2 — Kill the waterfall + stream (1–2 PRs).** Render shells immediately, stream
   page content via `<Suspense>` with existing skeletons; move layout `summary` fetch into
   a Suspense boundary so it never blocks the page.
