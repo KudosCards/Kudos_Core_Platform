@@ -3,9 +3,23 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
-import { publicApiFetch } from "@/lib/api.public";
+import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CardsHeader } from "../../cards-header";
 import { GuestSendClient } from "./guest-send-client";
+
+// ISR: the server render is pure catalog data (the guest form is client-side),
+// so cache it like the other /cards pages. Keep in sync with
+// CATALOG_REVALIDATE_SECONDS. See docs/adr/0044-public-catalog-isr.md.
+export const revalidate = 3600;
+
+// Prerender the send-entry shell for every catalog card (build-safe: null → no
+// params if the API is unreachable at build; dynamicParams renders the rest).
+export async function generateStaticParams(): Promise<{ id: string }[]> {
+  const templates = await publicApiFetch<CardDesign[]>("/card-designs", {
+    revalidate: CATALOG_REVALIDATE_SECONDS,
+  });
+  return (templates ?? []).map((card) => ({ id: card.id }));
+}
 
 export async function generateMetadata({
   params,
@@ -13,7 +27,9 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`);
+  const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`, {
+    revalidate: CATALOG_REVALIDATE_SECONDS,
+  });
   return { title: card ? `Send ${card.name} — Kudos Cards` : "Send a card — Kudos Cards" };
 }
 
@@ -24,7 +40,9 @@ export async function generateMetadata({
  */
 export default async function GuestSendPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`);
+  const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`, {
+    revalidate: CATALOG_REVALIDATE_SECONDS,
+  });
   if (!card) {
     notFound();
   }

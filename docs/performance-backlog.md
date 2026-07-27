@@ -36,8 +36,11 @@ pgbouncer pooling documented, no heavy date/animation libs.
   — is **deferred** (touches the auth path + mobile drawer for a modest post-Phase-1 win).
   Applying the split to more pages needs their client components decomposed first; gate that
   on Phase 0 profiling.
-- **Phase 3 — Public pages → CDN/ISR (1 PR).** Make `/cards` and `/cards/[id]` reads
-  cacheable (`revalidate`) so they serve from cache/CDN, not a live DB hit per visit.
+- **Phase 3 — Public pages → CDN/ISR. ✅ Done (ADR 0044).** `/cards`, `/cards/[id]`, and
+  `/cards/[id]/send` are now ISR (hourly revalidate) — served from cache/CDN, no live DB hit
+  per visit. `publicApiFetch` gained an opt-in `revalidate` so the per-token public pages
+  (invite/gift/rts) stay `no-store`. On-demand revalidation from the catalog sync is the
+  follow-up if the ≤1h lag ever matters.
 - **Phase 4 — Images (1 PR).** Add `images.remotePatterns` for Supabase/Airtable hosts,
   correct `sizes`, Supabase image transforms for thumbnails.
 - **Phase 5 — API/DB depth (1–2 PRs).** Profile top endpoints from Phase 0, add missing

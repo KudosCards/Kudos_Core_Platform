@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { CardDesign } from "@kudos/shared-types";
-import { publicApiFetch } from "@/lib/api.public";
+import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CardsHeader } from "./cards-header";
 import { CardsGalleryClient } from "./cards-gallery-client";
 
@@ -9,8 +9,16 @@ export const metadata: Metadata = {
   description: "Browse our range of card designs. Pick one, personalise it, and we print and post it for you.",
 };
 
+// ISR: the catalog is the same for everyone, so serve this from the CDN and
+// regenerate hourly instead of hitting the DB per visit. Keep in sync with
+// CATALOG_REVALIDATE_SECONDS. See docs/adr/0044-public-catalog-isr.md.
+export const revalidate = 3600;
+
 export default async function CardsPage() {
-  const templates = (await publicApiFetch<CardDesign[]>("/card-designs")) ?? [];
+  const templates =
+    (await publicApiFetch<CardDesign[]>("/card-designs", {
+      revalidate: CATALOG_REVALIDATE_SECONDS,
+    })) ?? [];
 
   return (
     <div className="min-h-screen bg-white text-slate-900">

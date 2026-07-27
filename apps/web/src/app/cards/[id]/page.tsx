@@ -3,9 +3,25 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
-import { publicApiFetch } from "@/lib/api.public";
+import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CardsHeader } from "../cards-header";
 import { PersonaliseButton } from "./personalise-button";
+
+// ISR: catalog data is the same for every visitor; unknown ids render on-demand
+// then cache, and each is regenerated hourly. Keep in sync with
+// CATALOG_REVALIDATE_SECONDS. See docs/adr/0044-public-catalog-isr.md.
+export const revalidate = 3600;
+
+// Prerender every catalog card at build so the previews serve fully static from
+// the CDN. Build-safe: publicApiFetch returns null (→ no params) if the API is
+// unreachable at build time, and dynamicParams (default) still renders any
+// not-yet-prerendered id on demand.
+export async function generateStaticParams(): Promise<{ id: string }[]> {
+  const templates = await publicApiFetch<CardDesign[]>("/card-designs", {
+    revalidate: CATALOG_REVALIDATE_SECONDS,
+  });
+  return (templates ?? []).map((card) => ({ id: card.id }));
+}
 
 function formatCategory(category: string): string {
   return category.charAt(0).toUpperCase() + category.slice(1);
@@ -17,7 +33,9 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`);
+  const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`, {
+    revalidate: CATALOG_REVALIDATE_SECONDS,
+  });
   return {
     title: card ? `${card.name} — Kudos Cards` : "Card — Kudos Cards",
   };
@@ -25,7 +43,9 @@ export async function generateMetadata({
 
 export default async function CardPreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`);
+  const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`, {
+    revalidate: CATALOG_REVALIDATE_SECONDS,
+  });
   if (!card) {
     notFound();
   }
