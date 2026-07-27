@@ -124,14 +124,20 @@ describe("Admin team / operator auth (e2e)", () => {
     expect(body.invites).toHaveLength(0);
   });
 
-  it("falls back to a plain sign-in email when the invitee already has a login", async () => {
+  it("sends a recovery set-password link when the invitee already exists in Supabase", async () => {
     const { token: superToken } = await superAdmin();
     const existingEmail = `existing-${randomUUID()}@kudos.test`;
-    // Supabase reports the email is already registered → no set-password link.
-    generateLinkMock.mockResolvedValueOnce({
-      data: null,
-      error: { code: "email_exists", message: "A user with this email already exists" },
-    });
+    // invite → email_exists (no link), then recovery → a set-password link. An
+    // existing user may have no password yet, so they still need to set one.
+    generateLinkMock
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: "email_exists", message: "A user with this email already exists" },
+      })
+      .mockResolvedValueOnce({
+        data: { properties: { action_link: "https://supabase.test/auth/v1/verify?token=rec" } },
+        error: null,
+      });
 
     await request(app.getHttpServer())
       .post("/admin/team/invites")
@@ -139,13 +145,15 @@ describe("Admin team / operator auth (e2e)", () => {
       .send({ email: existingEmail, role: "ops" })
       .expect(201);
 
-    // Still emailed (they can sign in), but pointed at the operator sign-in, not
-    // a set-password link.
+    // Second call is a recovery link, and the email carries a set-password link
+    // (not a bare "go sign in" pointer).
+    expect(generateLinkMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "recovery", email: existingEmail }),
+    );
     const calls = emailMock.sendTransactional.mock.calls as Array<[{ to: string; html: string }]>;
     const call = calls.at(-1)?.[0];
     expect(call?.to).toBe(existingEmail);
-    expect(call?.html).toContain("/admin-login");
-    expect(call?.html).not.toContain("/admin-set-password");
+    expect(call?.html).toContain("https://supabase.test/auth/v1/verify?token=rec");
   });
 
   it("does not provision an uninvited user", async () => {
