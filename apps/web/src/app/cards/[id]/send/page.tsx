@@ -61,7 +61,7 @@ export default async function GuestSendPage({ params }: { params: Promise<{ id: 
                 src={card.thumbnailUrl}
                 alt={card.name}
                 fill
-                unoptimized
+                sizes="(min-width: 768px) 320px, 100vw"
                 className="object-cover"
               />
             </div>

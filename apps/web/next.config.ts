@@ -1,7 +1,29 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
+// Card artwork (thumbnails) lives in a public Supabase Storage bucket. Allow the
+// Next image optimizer to fetch + resize it by whitelisting that host; falls back
+// to a Supabase wildcard if the env var isn't present at build (so a build never
+// breaks over image config). Scoped to public storage objects only.
+// See docs/adr/0045-image-optimization.md.
+const supabaseImageHostname = (() => {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname;
+  } catch {
+    return "*.supabase.co";
+  }
+})();
+
 const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: supabaseImageHostname,
+        pathname: "/storage/v1/object/public/**",
+      },
+    ],
+  },
   experimental: {
     // Keep visited pages warm in the client-side Router Cache so bouncing
     // between recently-seen pages is instant (served from cache, no server

@@ -59,7 +59,13 @@ export default async function CardPreviewPage({ params }: { params: Promise<{ id
         </Link>
         <div className="mt-6 grid items-start gap-10 md:grid-cols-2">
           <div className="relative mx-auto aspect-[3/4] w-full max-w-sm overflow-hidden rounded-2xl bg-slate-50 shadow-2xl ring-1 ring-slate-100">
-            <Image src={card.thumbnailUrl} alt={card.name} fill unoptimized className="object-cover" />
+            <Image
+              src={card.thumbnailUrl}
+              alt={card.name}
+              fill
+              sizes="(min-width: 768px) 384px, 100vw"
+              className="object-cover"
+            />
           </div>
           <div className="flex flex-col gap-5">
             <span className="w-fit rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">

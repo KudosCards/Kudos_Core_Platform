@@ -41,8 +41,10 @@ pgbouncer pooling documented, no heavy date/animation libs.
   per visit. `publicApiFetch` gained an opt-in `revalidate` so the per-token public pages
   (invite/gift/rts) stay `no-store`. On-demand revalidation from the catalog sync is the
   follow-up if the ≤1h lag ever matters.
-- **Phase 4 — Images (1 PR).** Add `images.remotePatterns` for Supabase/Airtable hosts,
-  correct `sizes`, Supabase image transforms for thumbnails.
+- **Phase 4 — Images. ✅ Done (ADR 0045).** Added `images.remotePatterns` for the Supabase
+  Storage host; dropped `unoptimized` and added real `sizes` on all five `thumbnailUrl`
+  images so catalog art is resized + format-negotiated. (Thumbnails are already Supabase
+  public URLs; Airtable images are copied there by the sync, so no Airtable host needed.)
 - **Phase 5 — API/DB depth (1–2 PRs).** Profile top endpoints from Phase 0, add missing
   composite indexes (extend the admin-overview treatment to recipients/orders lists), fix
   N+1s, add a keep-warm ping for cold starts.
