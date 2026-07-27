@@ -1,54 +1,56 @@
-import type { Recipient, SavedDesign } from "@kudos/shared-types";
-import Link from "next/link";
+import type { Recipient, RecipientListSummary, SavedDesign } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { BulkSendClient } from "./bulk-send-client";
+import type { Paginated } from "./recipient-picker";
 
 /**
- * Bulk send: post one saved design to a set of existing contacts in a single
- * order. Contacts arrive as a `?recipients=id,id` list (from the Recipients
- * page's multi-select). Each contact's name and address are pulled from their
- * stored record — nothing is re-keyed. See docs/adr/0027-bulk-send-to-contacts.md.
+ * Bulk send: the start-here composer for posting one design to a group of
+ * contacts in a single order. Contacts can be chosen right here, and any that
+ * arrive pre-selected from the Recipients page (`?recipients=id,id`) — or a
+ * design being round-tripped back from the editor (`?design=`) — seed the
+ * initial state. See docs/adr/0027-bulk-send-to-contacts.md.
  */
+const PICKER_PER_PAGE = 20;
+
 export default async function SendPage({
   searchParams,
 }: {
-  searchParams: Promise<{ recipients?: string }>;
+  searchParams: Promise<{ recipients?: string; design?: string }>;
 }) {
-  const { recipients: recipientsParam } = await searchParams;
-  const ids = (recipientsParam ?? "")
+  const { recipients: recipientsParam, design: designParam } = await searchParams;
+  const preIds = (recipientsParam ?? "")
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean);
 
-  if (ids.length === 0) {
-    return (
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-        <h1 className="text-3xl font-bold tracking-tight">Bulk send</h1>
-        <div className="card flex flex-col items-start gap-3 p-8 text-sm text-muted">
-          <p>Send the same card to a whole group in one go.</p>
-          <p>
-            Head to your{" "}
-            <Link href="/recipients" className="text-accent hover:underline">
-              Recipients
-            </Link>{" "}
-            page, tick the contacts you want to send to, then choose{" "}
-            <span className="font-medium text-foreground">Send a card</span>.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Fetch the selected contacts (in parallel) plus the account's saved designs.
-  // serverApiFetch returns null on error, so any id that no longer resolves is
-  // simply dropped from the list the sender sees.
-  const [designs, ...recipientResults] = await Promise.all([
+  // Designs + lists + the first page of contacts for the picker, plus any
+  // pre-selected contacts (fetched individually so they show even if they're
+  // not on the first page). serverApiFetch returns null on error, so a dropped
+  // id simply isn't pre-selected.
+  const [designs, lists, recipientsPage, ...preResults] = await Promise.all([
     serverApiFetch<SavedDesign[]>("/saved-designs"),
-    ...ids.map((id) => serverApiFetch<Recipient>(`/recipients/${id}`)),
+    serverApiFetch<RecipientListSummary[]>("/recipient-lists"),
+    serverApiFetch<Paginated<Recipient>>(
+      `/recipients?page=1&perPage=${PICKER_PER_PAGE}&status=active`,
+    ),
+    ...preIds.map((id) => serverApiFetch<Recipient>(`/recipients/${id}`)),
   ]);
-  const recipients = recipientResults.filter((r): r is Recipient => r !== null);
+  const initialSelected = preResults.filter((r): r is Recipient => r !== null);
+
+  const emptyPage: Paginated<Recipient> = {
+    items: [],
+    total: 0,
+    page: 1,
+    perPage: PICKER_PER_PAGE,
+  };
 
   return (
-    <BulkSendClient recipients={recipients} designs={designs ?? []} />
+    <BulkSendClient
+      initialSelected={initialSelected}
+      initialRecipientsPage={recipientsPage ?? emptyPage}
+      designs={designs ?? []}
+      lists={lists ?? []}
+      initialDesignId={designParam ?? ""}
+    />
   );
 }

@@ -50,7 +50,16 @@ function newQrElement(): Extract<DesignElement, { kind: "qr" }> {
   };
 }
 
-export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }) {
+export function DesignEditorClient({
+  savedDesign,
+  returnTo,
+}: {
+  savedDesign: SavedDesign;
+  returnTo?: string;
+}) {
+  // Only honour an in-app bulk-send return target — never an arbitrary URL
+  // (guards against an open redirect via the ?returnTo param).
+  const bulkReturnTo = returnTo && returnTo.startsWith("/send") ? returnTo : null;
   const [name, setName] = useState(savedDesign.name);
   const [document_, setDocument] = useState<DesignDocument>(savedDesign.document);
   const [activePage, setActivePage] = useState<DesignPage["name"]>("front");
@@ -198,13 +207,32 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
     }
   }
 
+  /** Save any unsaved edits, then return to the bulk-send composer that sent us
+   * here — so a mid-bulk design edit doesn't lose the recipient selection. */
+  async function handleReturnToBulk() {
+    if (!bulkReturnTo) return;
+    setError(null);
+    setSending(true);
+    try {
+      if (isDirty) await persist();
+      window.location.assign(bulkReturnTo);
+    } catch (returnError) {
+      setError(
+        returnError instanceof ApiError ? returnError.message : "Could not save your changes",
+      );
+      setSending(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
-        {/* Back to the library. Guard the SPA navigation when there are unsaved
-            edits — beforeunload only covers full-page navigations. */}
+        {/* Back link. When we arrived from bulk send, it returns there (keeping
+            the recipient selection); otherwise back to the library. Guard the
+            SPA navigation when there are unsaved edits — beforeunload only covers
+            full-page navigations. */}
         <Link
-          href="/designs"
+          href={bulkReturnTo ?? "/designs"}
           onClick={(event) => {
             if (isDirty && !window.confirm("You have unsaved changes. Leave without saving?")) {
               event.preventDefault();
@@ -212,7 +240,7 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
           }}
           className="w-fit text-sm text-muted hover:text-foreground"
         >
-          ← Back to designs
+          {bulkReturnTo ? "← Back to bulk send" : "← Back to designs"}
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <input
@@ -225,7 +253,9 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
             {isDirty ? (
               <span className="text-xs text-foreground/50">Unsaved changes</span>
             ) : savedAt ? (
-              <span className="text-xs text-foreground/50">Saved {savedAt.toLocaleTimeString()}</span>
+              <span className="text-xs text-foreground/50">
+                Saved {savedAt.toLocaleTimeString()}
+              </span>
             ) : null}
             <button
               type="button"
@@ -235,14 +265,25 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
             >
               {saving ? "Saving…" : "Save"}
             </button>
-            <button
-              type="button"
-              disabled={saving || sending}
-              onClick={() => void handleSendThisCard()}
-              className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-            >
-              {sending ? "Saving…" : "Send this card →"}
-            </button>
+            {bulkReturnTo ? (
+              <button
+                type="button"
+                disabled={saving || sending}
+                onClick={() => void handleReturnToBulk()}
+                className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {sending ? "Saving…" : "Done → back to bulk send"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={saving || sending}
+                onClick={() => void handleSendThisCard()}
+                className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {sending ? "Saving…" : "Send this card →"}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -347,8 +388,8 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
             <>
               <label className="flex flex-col gap-1 text-xs text-foreground/60">
                 Text — merge tokens fill in per recipient when sent: {"{name}"}, {"{firstName}"},{" "}
-                {"{lastName}"}, {"{fullName}"} for the name; {"{occasion}"} and {"{occasionDate}"} for
-                the event; and any custom field as {"{fieldName}"} (e.g. {"{teacher}"}).
+                {"{lastName}"}, {"{fullName}"} for the name; {"{occasion}"} and {"{occasionDate}"}{" "}
+                for the event; and any custom field as {"{fieldName}"} (e.g. {"{teacher}"}).
                 <textarea
                   value={selectedElement.text}
                   onChange={(e) => updateElement({ ...selectedElement, text: e.target.value })}
@@ -451,7 +492,10 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
                     type="button"
                     aria-label="Make smaller"
                     onClick={() =>
-                      updateElement({ ...selectedElement, size: Math.max(40, selectedElement.size - 10) })
+                      updateElement({
+                        ...selectedElement,
+                        size: Math.max(40, selectedElement.size - 10),
+                      })
                     }
                     className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-black/15 text-xl hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
                   >
@@ -475,7 +519,10 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
                     type="button"
                     aria-label="Make larger"
                     onClick={() =>
-                      updateElement({ ...selectedElement, size: Math.min(300, selectedElement.size + 10) })
+                      updateElement({
+                        ...selectedElement,
+                        size: Math.min(300, selectedElement.size + 10),
+                      })
                     }
                     className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-black/15 text-xl hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
                   >
@@ -486,7 +533,10 @@ export function DesignEditorClient({ savedDesign }: { savedDesign: SavedDesign }
               <button
                 type="button"
                 onClick={() =>
-                  updateElement({ ...selectedElement, rotation: (selectedElement.rotation + 90) % 360 })
+                  updateElement({
+                    ...selectedElement,
+                    rotation: (selectedElement.rotation + 90) % 360,
+                  })
                 }
                 className="flex h-11 items-center justify-center gap-2 rounded-md border border-black/15 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
               >

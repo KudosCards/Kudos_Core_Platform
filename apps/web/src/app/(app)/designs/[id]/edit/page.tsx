@@ -4,8 +4,15 @@ import { ApiError } from "@/lib/api";
 import { serverApiFetch } from "@/lib/api.server";
 import { DesignEditorClient } from "./design-editor-client";
 
-export default async function EditDesignPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditDesignPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ returnTo?: string }>;
+}) {
   const { id } = await params;
+  const { returnTo } = await searchParams;
 
   const savedDesign = await serverApiFetch<SavedDesign>(`/saved-designs/${id}`).catch(
     (error: unknown) => {
@@ -19,5 +26,5 @@ export default async function EditDesignPage({ params }: { params: Promise<{ id:
     notFound();
   }
 
-  return <DesignEditorClient savedDesign={savedDesign} />;
+  return <DesignEditorClient savedDesign={savedDesign} returnTo={returnTo} />;
 }

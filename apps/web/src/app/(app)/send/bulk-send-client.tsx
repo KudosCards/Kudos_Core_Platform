@@ -1,12 +1,14 @@
 "use client";
 
-import type { BatchOrder, Recipient, SavedDesign } from "@kudos/shared-types";
+import type { BatchOrder, Recipient, RecipientListSummary, SavedDesign } from "@kudos/shared-types";
 import { applyMergeTokens, hasMergeTokens, ukPostcodeRegex } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { AddressModal } from "@/components/address-modal";
+import { RecipientPicker, type Paginated } from "./recipient-picker";
 
 // Client-only (Konva touches canvas APIs) — renders a card exactly as it prints.
 const CardFacePreview = dynamic(
@@ -48,35 +50,93 @@ function addressSummary(recipient: Recipient): string {
     .join(", ");
 }
 
+/**
+ * Bulk-send composer: pick the contacts, pick a design, fix any missing
+ * addresses inline, then pay — all on one page, no dead-ends. Contacts that
+ * arrive pre-selected (from the Recipients page's multi-select, via
+ * `?recipients=`) seed the selection; everything else is chosen here. Editing a
+ * design hands off to the editor with a `returnTo` back to this exact state.
+ */
 export function BulkSendClient({
-  recipients: initialRecipients,
+  initialSelected,
+  initialRecipientsPage,
   designs,
+  lists,
+  initialDesignId,
 }: {
-  recipients: Recipient[];
+  initialSelected: Recipient[];
+  initialRecipientsPage: Paginated<Recipient>;
   designs: SavedDesign[];
+  lists: RecipientListSummary[];
+  initialDesignId: string;
 }) {
-  const [recipients, setRecipients] = useState(initialRecipients);
-  const [selectedDesignId, setSelectedDesignId] = useState<string>(designs[0]?.id ?? "");
+  // The chosen contacts, keyed by id and holding the full record, so a selected
+  // contact keeps its address/preview even when it's off the current picker page.
+  const [selected, setSelected] = useState<Map<string, Recipient>>(
+    () => new Map(initialSelected.map((r) => [r.id, r])),
+  );
+  const [selectedDesignId, setSelectedDesignId] = useState<string>(
+    initialDesignId || designs[0]?.id || "",
+  );
   const [postageClass, setPostageClass] = useState<"second_class" | "first_class">("second_class");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [addressModalFor, setAddressModalFor] = useState<Recipient | null>(null);
 
-  const sendable = useMemo(() => recipients.filter(hasMailableAddress), [recipients]);
-  const needsAddress = useMemo(() => recipients.filter((r) => !hasMailableAddress(r)), [recipients]);
+  const selectedIds = useMemo(() => new Set(selected.keys()), [selected]);
+  const selectedList = useMemo(() => [...selected.values()], [selected]);
+  const sendable = useMemo(() => selectedList.filter(hasMailableAddress), [selectedList]);
+  const needsAddress = useMemo(
+    () => selectedList.filter((r) => !hasMailableAddress(r)),
+    [selectedList],
+  );
 
   const selectedDesign = useMemo(
     () => designs.find((d) => d.id === selectedDesignId),
     [designs, selectedDesignId],
   );
-  // Whether the chosen design carries a {name}-style token, so each card comes
-  // out personalised. Drives the preview copy below.
   const personalises = selectedDesign ? hasMergeTokens(selectedDesign.document) : false;
 
   const perCard = CARD_MINOR + (POSTAGE_MINOR[postageClass] ?? 0);
   const estimate = perCard * sendable.length;
 
+  function toggleRecipient(recipient: Recipient) {
+    setSelected((current) => {
+      const next = new Map(current);
+      if (next.has(recipient.id)) next.delete(recipient.id);
+      else next.set(recipient.id, recipient);
+      return next;
+    });
+  }
+
   function removeRecipient(id: string) {
-    setRecipients((current) => current.filter((r) => r.id !== id));
+    setSelected((current) => {
+      const next = new Map(current);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  function onAddressSaved(updated: Recipient) {
+    setSelected((current) => {
+      const next = new Map(current);
+      next.set(updated.id, updated);
+      return next;
+    });
+  }
+
+  /** A link back to this composer's current state — used as the editor's
+   * `returnTo` so a design edit round-trips without losing the selection. */
+  function returnToHere(designId: string): string {
+    const ids = selectedList.map((r) => r.id).join(",");
+    const params = new URLSearchParams();
+    if (ids) params.set("recipients", ids);
+    if (designId) params.set("design", designId);
+    return `/send?${params.toString()}`;
+  }
+
+  function editHref(designId: string): string {
+    return `/designs/${designId}/edit?returnTo=${encodeURIComponent(returnToHere(designId))}`;
   }
 
   async function handleSend() {
@@ -109,28 +169,116 @@ export function BulkSendClient({
     }
   }
 
+  const canPay = !busy && !!selectedDesignId && sendable.length > 0;
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 pb-24 lg:pb-0">
       <div className="flex flex-col gap-1">
         <Link href="/recipients" className="text-sm text-muted hover:text-foreground">
-          ← Back to recipients
+          ← Recipients
         </Link>
         <h1 className="text-3xl font-bold tracking-tight">Bulk send</h1>
         <p className="text-muted">
-          Pick one design and we&apos;ll print &amp; post it to every selected contact — each
-          addressed automatically from their record.
+          Send the same card to a whole group in one go — choose who it&apos;s for, pick a design,
+          and we print &amp; post each one, addressed automatically.
         </p>
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
         <div className="flex flex-col gap-6">
-          {/* 1 — choose the design */}
+          {/* 1 — who it's going to */}
+          <section className="card flex flex-col gap-4 p-6">
+            <h2 className="font-semibold">1. Who to send to</h2>
+
+            <RecipientPicker
+              initialPage={initialRecipientsPage}
+              lists={lists}
+              selectedIds={selectedIds}
+              onToggle={toggleRecipient}
+            />
+
+            <div className="flex flex-col gap-3 border-t border-border pt-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">
+                  Selected: {selectedList.length} contact{selectedList.length === 1 ? "" : "s"}
+                </h3>
+                {selectedList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelected(new Map())}
+                    className="text-xs text-muted underline hover:text-foreground"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+
+              {needsAddress.length > 0 && (
+                <div className="rounded-lg bg-accent-soft px-4 py-3 text-sm text-accent">
+                  {needsAddress.length} selected contact{needsAddress.length === 1 ? "" : "s"} still
+                  {needsAddress.length === 1 ? " needs" : " need"} a UK postal address. Add one
+                  below, or remove them — only contacts with an address are sent to.
+                </div>
+              )}
+
+              {selectedList.length === 0 ? (
+                <p className="text-sm text-muted">
+                  No contacts selected yet — tick people above to add them.
+                </p>
+              ) : (
+                <ul className="flex flex-col divide-y divide-border">
+                  {selectedList.map((recipient) => {
+                    const mailable = hasMailableAddress(recipient);
+                    return (
+                      <li
+                        key={recipient.id}
+                        className="flex items-center justify-between gap-3 py-2.5"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {recipient.firstName} {recipient.lastName}
+                          </p>
+                          {mailable ? (
+                            <p className="truncate text-xs text-muted">
+                              {addressSummary(recipient)}
+                            </p>
+                          ) : (
+                            <p className="text-xs font-medium text-accent">No postal address</p>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setAddressModalFor(recipient)}
+                            className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-foreground/[0.03]"
+                          >
+                            {mailable ? "Edit address" : "Add address"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeRecipient(recipient.id)}
+                            className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-foreground/[0.03]"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </section>
+
+          {/* 2 — choose the design */}
           <section className="card flex flex-col gap-3 p-6">
-            <h2 className="font-semibold">1. Choose a design</h2>
+            <h2 className="font-semibold">2. Choose a design</h2>
             {designs.length === 0 ? (
               <p className="text-sm text-muted">
                 You don&apos;t have any saved designs yet.{" "}
@@ -144,22 +292,29 @@ export function BulkSendClient({
                 {designs.map((design) => {
                   const active = design.id === selectedDesignId;
                   return (
-                    <button
-                      key={design.id}
-                      type="button"
-                      onClick={() => setSelectedDesignId(design.id)}
-                      aria-pressed={active}
-                      className={`flex flex-col gap-2 rounded-lg border p-2 text-left transition-colors ${
-                        active
-                          ? "border-accent ring-1 ring-accent"
-                          : "border-border hover:bg-foreground/[0.03]"
-                      }`}
-                    >
-                      <span className="flex w-full justify-center overflow-hidden rounded-md bg-foreground/5">
-                        <CardFacePreview document={design.document} width={120} />
-                      </span>
-                      <span className="truncate text-sm font-medium">{design.name}</span>
-                    </button>
+                    <div key={design.id} className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDesignId(design.id)}
+                        aria-pressed={active}
+                        className={`flex flex-col gap-2 rounded-lg border p-2 text-left transition-colors ${
+                          active
+                            ? "border-accent ring-1 ring-accent"
+                            : "border-border hover:bg-foreground/[0.03]"
+                        }`}
+                      >
+                        <span className="flex w-full justify-center overflow-hidden rounded-md bg-foreground/5">
+                          <CardFacePreview document={design.document} width={120} />
+                        </span>
+                        <span className="truncate text-sm font-medium">{design.name}</span>
+                      </button>
+                      <Link
+                        href={editHref(design.id)}
+                        className="text-center text-xs text-muted hover:text-accent hover:underline"
+                      >
+                        Edit / personalise
+                      </Link>
+                    </div>
                   );
                 })}
               </div>
@@ -177,10 +332,14 @@ export function BulkSendClient({
                     <>Each card is printed with that person&apos;s name.</>
                   ) : (
                     <>
-                      This design has no <code className="rounded bg-foreground/10 px-1">{"{name}"}</code>{" "}
-                      token yet — add one in the{" "}
-                      <Link href={`/designs/${selectedDesign.id}/edit`} className="text-accent hover:underline">
-                        editor
+                      This design has no{" "}
+                      <code className="rounded bg-foreground/10 px-1">{"{name}"}</code> token yet —
+                      add one via{" "}
+                      <Link
+                        href={editHref(selectedDesign.id)}
+                        className="text-accent hover:underline"
+                      >
+                        Edit / personalise
                       </Link>{" "}
                       to include each recipient&apos;s name.
                     </>
@@ -207,59 +366,10 @@ export function BulkSendClient({
               )}
             </section>
           )}
-
-          {/* 2 — who it's going to */}
-          <section className="card flex flex-col gap-3 p-6">
-            <h2 className="font-semibold">
-              2. Sending to {sendable.length} contact{sendable.length === 1 ? "" : "s"}
-            </h2>
-
-            {needsAddress.length > 0 && (
-              <div className="rounded-lg bg-accent-soft px-4 py-3 text-sm text-accent">
-                {needsAddress.length} contact{needsAddress.length === 1 ? " needs" : "s need"} a full
-                UK postal address before they can be sent to. Add an address, or remove them below.
-              </div>
-            )}
-
-            <ul className="flex flex-col divide-y divide-border">
-              {recipients.length === 0 && (
-                <li className="py-3 text-sm text-muted">No contacts selected.</li>
-              )}
-              {recipients.map((recipient) => {
-                const mailable = hasMailableAddress(recipient);
-                return (
-                  <li key={recipient.id} className="flex items-center justify-between gap-3 py-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {recipient.firstName} {recipient.lastName}
-                      </p>
-                      {mailable ? (
-                        <p className="truncate text-xs text-muted">{addressSummary(recipient)}</p>
-                      ) : (
-                        <p className="text-xs font-medium text-accent">
-                          No postal address —{" "}
-                          <Link href={`/recipients/${recipient.id}`} className="underline">
-                            add one
-                          </Link>
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeRecipient(recipient.id)}
-                      className="shrink-0 rounded-md border border-border px-3 py-2 text-xs hover:bg-foreground/[0.03]"
-                    >
-                      Remove
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
         </div>
 
         {/* Order summary + pay */}
-        <div className="card flex h-fit flex-col gap-4 p-6">
+        <div className="card flex h-fit flex-col gap-4 p-6 lg:sticky lg:top-6">
           <h2 className="font-semibold">Order summary</h2>
 
           <fieldset className="flex flex-col gap-2">
@@ -308,7 +418,7 @@ export function BulkSendClient({
               the sticky bar below so the total + Pay are always in reach. */}
           <button
             type="button"
-            disabled={busy || !selectedDesignId || sendable.length === 0}
+            disabled={!canPay}
             onClick={() => void handleSend()}
             className="btn-accent hidden w-full disabled:opacity-50 lg:block"
           >
@@ -321,8 +431,8 @@ export function BulkSendClient({
       </div>
 
       {/* Sticky mobile checkout bar — total + count always visible, one tap to
-          pay, instead of scrolling past the design picker and contact list.
-          Respects the iPhone home-indicator safe area. */}
+          pay, instead of scrolling past the picker and design list. Respects the
+          iPhone home-indicator safe area. */}
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
           <div className="flex flex-col leading-tight">
@@ -333,7 +443,7 @@ export function BulkSendClient({
           </div>
           <button
             type="button"
-            disabled={busy || !selectedDesignId || sendable.length === 0}
+            disabled={!canPay}
             onClick={() => void handleSend()}
             className="btn-accent flex-1 whitespace-nowrap disabled:opacity-50"
           >
@@ -341,6 +451,15 @@ export function BulkSendClient({
           </button>
         </div>
       </div>
+
+      {addressModalFor && (
+        <AddressModal
+          recipient={addressModalFor}
+          open={addressModalFor !== null}
+          onClose={() => setAddressModalFor(null)}
+          onSaved={onAddressSaved}
+        />
+      )}
     </div>
   );
 }
