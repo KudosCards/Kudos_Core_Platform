@@ -45,9 +45,12 @@ pgbouncer pooling documented, no heavy date/animation libs.
   Storage host; dropped `unoptimized` and added real `sizes` on all five `thumbnailUrl`
   images so catalog art is resized + format-negotiated. (Thumbnails are already Supabase
   public URLs; Airtable images are copied there by the sync, so no Airtable host needed.)
-- **Phase 5 — API/DB depth (1–2 PRs).** Profile top endpoints from Phase 0, add missing
-  composite indexes (extend the admin-overview treatment to recipients/orders lists), fix
-  N+1s, add a keep-warm ping for cold starts.
+- **Phase 5 — API/DB depth. ✅ Done (ADR 0046).** Added composite indexes for the hot
+  per-account list queries — `batch_orders [account_id, created_at]`, `recipients
+  [account_id, created_at]`, `occasions [account_id, occasion_date]` — each eliminating a
+  sort (proven via EXPLAIN). No N+1s to fix (lists use batched `include`). Keep-warm left
+  as an external `/health` pinger (a code cron can't wake a slept Railway service). Also
+  flagged a pre-existing `saved_designs` FK drift for a separate migration.
 - **Phase 6 — Bundle audit (½ day).** `@next/bundle-analyzer`; confirm heavy client
   components stay code-split; defer non-critical JS.
 

@@ -273,6 +273,9 @@ model Recipient {
   // recipients, and Postgres treats NULLs as distinct, so they never collide.
   @@unique([accountId, source, externalId], name: "recipient_source_key")
   @@index([accountId, status])
+  // The recipients list: `where accountId order by createdAt desc` (+ paginate).
+  // Without this, Postgres filters by account then sorts every time. See ADR 0046.
+  @@index([accountId, createdAt])
   @@map("recipients")
 }
 
@@ -384,6 +387,9 @@ model Occasion {
   @@unique([recipientId, type, occasionDate], name: "occasion_idempotency_key")
   @@index([accountId, status])
   @@index([dispatchDate])
+  // The calendar: `where accountId and occasionDate between from..to order by
+  // occasionDate` — an account-scoped range scan in sorted order. See ADR 0046.
+  @@index([accountId, occasionDate])
   @@map("occasions")
 }
 
@@ -486,6 +492,10 @@ model BatchOrder {
   // date), and the default "all non-draft, newest first" list.
   @@index([status, createdAt])
   @@index([createdAt])
+  // The customer orders list: `where accountId order by createdAt desc` (+
+  // paginate). The [accountId, status] index doesn't cover the createdAt sort.
+  // See ADR 0046.
+  @@index([accountId, createdAt])
   @@map("batch_orders")
 }
 
