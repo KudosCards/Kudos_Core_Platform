@@ -43,7 +43,10 @@ function card(overrides: Partial<CatalogCardRecord> & { externalId: string }): C
     sku: null,
     title: "Untitled",
     category: "birthday",
-    frontImage: null,
+    // Default to having artwork: a card with no image is deliberately not
+    // imported (see the "skips a card with no image" test), so most tests here
+    // need a real attachment to exercise the create/update/deactivate paths.
+    frontImage: { url: "https://airtable.test/default.png", filename: "default.png", contentType: "image/png" },
     insideMessage: null,
     ...overrides,
   };
@@ -214,6 +217,48 @@ describe("Catalog sync (e2e)", () => {
     expect(await prisma.cardDesign.count({ where: { externalId: null, isActive: true } })).toBe(
       seededActiveBefore,
     );
+  });
+
+  it("skips a card with no image instead of importing a placeholder", async () => {
+    const externalId = `rec${randomUUID().slice(0, 14)}`;
+    const token = await opsToken();
+    activeCards = [card({ externalId, title: "No Art", frontImage: null })];
+
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect(response.body).toMatchObject({ fetched: 1, created: 0, imagesCopied: 0 });
+    expect((response.body as { skippedNoImage: { externalId: string; title: string }[] }).skippedNoImage).toEqual([
+      expect.objectContaining({ externalId, title: "No Art" }),
+    ]);
+    // The card never enters the catalog at all.
+    expect(await prisma.cardDesign.findUnique({ where: { externalId } })).toBeNull();
+  });
+
+  it("deactivates an existing card if its Airtable image is removed", async () => {
+    const externalId = `rec${randomUUID().slice(0, 14)}`;
+    const token = await opsToken();
+
+    activeCards = [card({ externalId, title: "Had Art" })];
+    await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    expect((await prisma.cardDesign.findUnique({ where: { externalId } }))!.isActive).toBe(true);
+
+    // Same card comes back with its image removed → it drops out of the library.
+    activeCards = [card({ externalId, title: "Had Art", frontImage: null })];
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect((response.body as { skippedNoImage: { externalId: string }[] }).skippedNoImage).toEqual([
+      expect.objectContaining({ externalId }),
+    ]);
+    expect((await prisma.cardDesign.findUnique({ where: { externalId } }))!.isActive).toBe(false);
   });
 
   it("surfaces a real Airtable failure as a 502 with the reason (not a generic 500)", async () => {

@@ -38,6 +38,14 @@ the sync downloads each Front Image and re-uploads it to our Supabase `design-as
 stable per-card path (`catalog/<recordId>.<ext>`), and it is that permanent public URL we persist —
 both as the `thumbnailUrl` and as the background `image` element in the editable document.
 
+**A card is only imported if it has artwork.** An earlier version gave a record with no Front Image
+a `placehold.co` placeholder thumbnail, so art-less rows showed up in the public library as a grey
+box with the card's name. That's now removed: a record with no attached image is **not imported** —
+a brand-new one is skipped entirely, and one that previously had art is **deactivated** (its row
+kept for FK integrity) so it drops out of the library. The sync summary reports these under
+`skippedNoImage` and the ops "Refresh catalog" panel lists them by name, so it's obvious which
+Airtable rows still need artwork. The library only ever shows cards with real images.
+
 **The source adapter is injectable and mocked in tests.** `CATALOG_SOURCE` is a token bound to
 `AirtableCatalogSource` via a factory (env-driven), following the exact pattern of `STRIPE_CLIENT` /
 `JWKS_RESOLVER`. This build/CI environment has no network path to Airtable, so every test overrides
