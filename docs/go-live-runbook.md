@@ -47,6 +47,13 @@ public read is what lets a saved design / message video render later):
   `@supabase/ssr` session cookies.
 - No JWT secret to copy anywhere: the API verifies session tokens against the project's JWKS
   endpoint, so it keeps working automatically if Supabase rotates its signing key (ADR 0005).
+- **Redirect URLs (needed for operator set-password + password reset, ADR 0051).** In
+  Authentication → URL Configuration → **Redirect URLs**, add
+  `${WEB_APP_URL}/admin-set-password` and `${WEB_APP_URL}/reset-password` (use the live Netlify
+  URL). The operator-invite and forgot-password emails send Supabase auth links that redirect
+  to these pages; Supabase **rejects** any `redirectTo` not on this allow-list, so without them
+  the invite/reset links dead-end. (Same class of one-time dashboard step as the Stripe/HubSpot
+  redirect URIs.)
 
 ### 1c. Connection strings
 

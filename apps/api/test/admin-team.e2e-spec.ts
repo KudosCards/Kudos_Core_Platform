@@ -4,10 +4,19 @@ import type { App } from "supertest/types";
 import request from "supertest";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { EMAIL_CLIENT } from "../src/email/email.client";
+import { SUPABASE_ADMIN_CLIENT } from "../src/supabase/supabase-admin.provider";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
 const emailMock = { sendTransactional: jest.fn().mockResolvedValue(undefined) };
+
+// Fakes the service-role Supabase admin client so no real Supabase Auth call is
+// made. Default: a fresh invite mints a set-password action link.
+const generateLinkMock = jest.fn().mockResolvedValue({
+  data: { properties: { action_link: "https://supabase.test/auth/v1/verify?token=abc" } },
+  error: null,
+});
+const supabaseAdminMock = { auth: { admin: { generateLink: generateLinkMock } } };
 
 interface AdminTeamBody {
   admins: Array<{ userId: string; email: string | null; role: string; isYou: boolean }>;
@@ -20,7 +29,10 @@ describe("Admin team / operator auth (e2e)", () => {
   let prisma: PrismaService;
 
   beforeAll(async () => {
-    app = await createTestApp([{ provide: EMAIL_CLIENT, useValue: emailMock }]);
+    app = await createTestApp([
+      { provide: EMAIL_CLIENT, useValue: emailMock },
+      { provide: SUPABASE_ADMIN_CLIENT, useValue: supabaseAdminMock },
+    ]);
     prisma = app.get(PrismaService);
   });
 
@@ -34,6 +46,11 @@ describe("Admin team / operator auth (e2e)", () => {
     await prisma.platformAdminInvite.deleteMany({});
     await prisma.platformAdmin.deleteMany({});
     emailMock.sendTransactional.mockClear();
+    generateLinkMock.mockClear();
+    generateLinkMock.mockResolvedValue({
+      data: { properties: { action_link: "https://supabase.test/auth/v1/verify?token=abc" } },
+      error: null,
+    });
   });
 
   async function superAdmin(): Promise<{ token: string; userId: string; email: string }> {
@@ -73,9 +90,16 @@ describe("Admin team / operator auth (e2e)", () => {
       .send({ email: inviteeEmail, role: "ops" })
       .expect(201);
 
-    // The invitee is emailed a link to the operator sign-in.
+    // The invitee's Supabase auth user is created + a set-password link minted,
+    // and they're emailed that link (not just told to go sign in).
+    expect(generateLinkMock).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "invite", email: inviteeEmail }),
+    );
     expect(emailMock.sendTransactional).toHaveBeenCalledWith(
-      expect.objectContaining({ to: inviteeEmail }),
+      expect.objectContaining({
+        to: inviteeEmail,
+        html: expect.stringContaining("https://supabase.test/auth/v1/verify?token=abc"),
+      }),
     );
 
     const inviteeUserId = randomUUID();
@@ -98,6 +122,30 @@ describe("Admin team / operator auth (e2e)", () => {
     const body = team.body as AdminTeamBody;
     expect(body.admins.some((a) => a.email === inviteeEmail)).toBe(true);
     expect(body.invites).toHaveLength(0);
+  });
+
+  it("falls back to a plain sign-in email when the invitee already has a login", async () => {
+    const { token: superToken } = await superAdmin();
+    const existingEmail = `existing-${randomUUID()}@kudos.test`;
+    // Supabase reports the email is already registered → no set-password link.
+    generateLinkMock.mockResolvedValueOnce({
+      data: null,
+      error: { code: "email_exists", message: "A user with this email already exists" },
+    });
+
+    await request(app.getHttpServer())
+      .post("/admin/team/invites")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({ email: existingEmail, role: "ops" })
+      .expect(201);
+
+    // Still emailed (they can sign in), but pointed at the operator sign-in, not
+    // a set-password link.
+    const calls = emailMock.sendTransactional.mock.calls as Array<[{ to: string; html: string }]>;
+    const call = calls.at(-1)?.[0];
+    expect(call?.to).toBe(existingEmail);
+    expect(call?.html).toContain("/admin-login");
+    expect(call?.html).not.toContain("/admin-set-password");
   });
 
   it("does not provision an uninvited user", async () => {

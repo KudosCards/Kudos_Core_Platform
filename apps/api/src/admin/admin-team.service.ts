@@ -8,10 +8,13 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { escapeHtml, renderBrandedEmail } from "../email/email-layout";
+import { SUPABASE_ADMIN_CLIENT } from "../supabase/supabase-admin.provider";
+import { generateAuthLink } from "../supabase/generate-auth-link";
 import type { AuthenticatedUser, PlatformAdminRole } from "../auth/types";
 
 export interface AdminIdentity {
@@ -49,6 +52,7 @@ export class AdminTeamService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
+    @Inject(SUPABASE_ADMIN_CLIENT) private readonly supabaseAdmin: SupabaseClient,
   ) {}
 
   /**
@@ -178,12 +182,47 @@ export class AdminTeamService {
     }
   }
 
-  /** Emails an invited operator a link to the operator sign-in. Throws on a hard
-   * failure; callers decide whether to swallow (invite) or surface (resend). */
+  /** Emails an invited operator. For a **new** operator (no Supabase account yet)
+   * we mint a one-time set-password link so they can create a login and sign in;
+   * for someone who **already** has a Kudos login we just point them at the
+   * operator sign-in. Throws on a hard failure; callers decide whether to
+   * swallow (invite) or surface (resend). See docs/adr/0051. */
   private async sendInviteEmail(email: string, role: PlatformAdminRole): Promise<void> {
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
-    const signInUrl = `${webAppUrl}/admin-login`;
     const roleLabel = role === "super_admin" ? "a super admin" : "an operator";
+
+    // Creates the auth user + a set-password link. `actionLink` is null when the
+    // email already has a Kudos account (they set a password when they signed up).
+    const { actionLink } = await generateAuthLink(this.supabaseAdmin, {
+      type: "invite",
+      email,
+      redirectTo: `${webAppUrl}/admin-set-password`,
+    });
+
+    const grantedLine = `<p>You've been granted access to the Kudos Cards operator dashboard as
+      <strong>${escapeHtml(roleLabel)}</strong>.</p>`;
+
+    if (actionLink) {
+      await this.email.sendTransactional({
+        to: email,
+        subject: "Set your password for the Kudos Cards operator dashboard",
+        html: renderBrandedEmail({
+          webAppUrl,
+          preheader: "Set your password to access the Kudos Cards operator dashboard",
+          heading: "Set your operator password",
+          bodyHtml: `
+            ${grantedLine}
+            <p>Set a password for <strong>${escapeHtml(email)}</strong> to finish setting up your
+            login — then you'll see orders, customers, the fulfillment queue and more.</p>`,
+          cta: { url: actionLink, label: "Set your password" },
+          showLinkFallback: true,
+          footerNote: "If you weren't expecting this, you can safely ignore this email.",
+        }),
+      });
+      return;
+    }
+
+    // Existing Kudos account — no password to set; just point them at the sign-in.
     await this.email.sendTransactional({
       to: email,
       subject: "You've been given access to the Kudos Cards operator dashboard",
@@ -192,11 +231,10 @@ export class AdminTeamService {
         preheader: "Your Kudos Cards operator access is ready",
         heading: "You're a Kudos operator",
         bodyHtml: `
-          <p>You've been granted access to the Kudos Cards operator dashboard as
-          <strong>${escapeHtml(roleLabel)}</strong>.</p>
+          ${grantedLine}
           <p>Sign in at the operator login with <strong>${escapeHtml(email)}</strong> to get
           started — you'll see orders, customers, the fulfillment queue and more.</p>`,
-        cta: { url: signInUrl, label: "Open the operator sign-in" },
+        cta: { url: `${webAppUrl}/admin-login`, label: "Open the operator sign-in" },
         showLinkFallback: true,
         footerNote: "If you weren't expecting this, you can safely ignore this email.",
       }),
