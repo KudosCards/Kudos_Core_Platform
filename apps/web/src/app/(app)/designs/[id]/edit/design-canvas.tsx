@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Stage, Layer, Text, Rect, Image as KonvaImage } from "react-konva";
 import useImage from "use-image";
 import type { DesignElement, DesignPage } from "@kudos/shared-types";
@@ -108,19 +108,51 @@ export function DesignCanvas({
   onElementChange: (element: DesignElement) => void;
   onDeselect: () => void;
 }) {
+  // The card is authored at a fixed 450×600, but on a phone that's wider than
+  // the viewport. Scale the whole Stage down to fit the container so the entire
+  // card is visible and elements can be dragged in place — element coordinates
+  // stay in the 450×600 design space (drag reports layer coords, unaffected by
+  // Stage scale), so nothing downstream changes.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => setScale(Math.min(1, el.clientWidth / CANVAS_WIDTH));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <Stage
-      width={CANVAS_WIDTH}
-      height={CANVAS_HEIGHT}
-      onMouseDown={(e) => {
-        if (e.target === e.target.getStage()) {
-          onDeselect();
-        }
-      }}
-      className="rounded-md border border-black/10 bg-white dark:border-white/10"
-    >
-      <Layer>
-        <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#ffffff" />
+    <div ref={containerRef} className="w-full max-w-[450px] overflow-hidden">
+      <Stage
+        width={CANVAS_WIDTH * scale}
+        height={CANVAS_HEIGHT * scale}
+        scaleX={scale}
+        scaleY={scale}
+        onMouseDown={(e) => {
+          if (e.target === e.target.getStage()) {
+            onDeselect();
+          }
+        }}
+        // touch-none lets Konva own touch gestures on the canvas (reliable
+        // element dragging) instead of the browser scrolling/zooming the page.
+        className="touch-none rounded-md border border-black/10 bg-white dark:border-white/10"
+      >
+        <Layer>
+          <Rect
+            x={0}
+            y={0}
+            width={CANVAS_WIDTH}
+            height={CANVAS_HEIGHT}
+            fill="#ffffff"
+            // The background fills the canvas, so a tap on "empty" space lands
+            // here, not the Stage — deselect from here too (works on touch).
+            onMouseDown={onDeselect}
+            onTap={onDeselect}
+          />
         {page.elements.map((element) => {
           const isSelected = element.id === selectedElementId;
           if (element.kind === "text") {
@@ -170,7 +202,8 @@ export function DesignCanvas({
             />
           );
         })}
-      </Layer>
-    </Stage>
+        </Layer>
+      </Stage>
+    </div>
   );
 }
