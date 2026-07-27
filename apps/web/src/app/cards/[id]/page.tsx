@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
+import { isOptimizableThumbnail } from "@/lib/card-image";
 import { CardsHeader } from "../cards-header";
 import { PersonaliseButton } from "./personalise-button";
 
@@ -64,6 +65,7 @@ export default async function CardPreviewPage({ params }: { params: Promise<{ id
               alt={card.name}
               fill
               sizes="(min-width: 768px) 384px, 100vw"
+              unoptimized={!isOptimizableThumbnail(card.thumbnailUrl)}
               className="object-cover"
             />
           </div>

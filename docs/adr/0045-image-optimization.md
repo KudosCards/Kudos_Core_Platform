@@ -49,3 +49,21 @@ and are unchanged.
 - No API, schema, or data changes; no new dependencies.
 - Verified: web lint/typecheck/build green (build validates the `remotePatterns`
   config and all `next/image` usages).
+
+## Follow-up: the placeholder-host crash (caught on the deploy preview)
+
+Removing `unoptimized` also turns on `next/image`'s host validation: at render
+time it checks each `src` against `remotePatterns` and **throws if it doesn't
+match**, which crashes the whole page. Card artwork isn't always on Supabase —
+cards/seeds with no art get a `placehold.co` placeholder (`placeholderThumbnail`
+in the catalog sync, and `prisma/seed.ts`). Those hosts aren't (and shouldn't be)
+whitelisted, so `/cards` crashed on the deploy preview with "edge function
+invocation failed". The pre-merge preview check is exactly what surfaced it;
+production was never affected (it still had `unoptimized`).
+
+Fix: `isOptimizableThumbnail(src)` (`lib/card-image.ts`) — optimize a thumbnail
+only when it's one of our Supabase public-storage URLs, and render everything
+else `unoptimized` (`unoptimized={!isOptimizableThumbnail(src)}` at all five call
+sites). This is robust to *any* non-Supabase host — placeholders now, plus any
+future/legacy URL — so it can never crash the page again. Real catalog art still
+gets optimized (the actual perf win); placeholders just render as-is.

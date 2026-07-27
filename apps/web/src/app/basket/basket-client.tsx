@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import Image from "next/image";
+import { isOptimizableThumbnail } from "@/lib/card-image";
 import Link from "next/link";
 import type { GuestCartCheckoutInput, GuestCheckoutResult } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
@@ -91,6 +92,7 @@ export function BasketClient() {
                 alt={item.cardName}
                 fill
                 sizes="72px"
+                unoptimized={!isOptimizableThumbnail(item.thumbnailUrl)}
                 className="object-cover"
               />
             </div>
