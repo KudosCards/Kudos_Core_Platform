@@ -9,6 +9,29 @@ import { LogoutButton } from "./logout-button";
 import { NotificationBell } from "./notification-bell";
 
 /**
+ * Header basket: a shopping-cart link to the batch-orders screen that only
+ * appears when the member has unfinished (draft / pending-payment) orders — a
+ * nudge to come back and finish checking out. The badge caps at 9+.
+ */
+function BasketIndicator({ count, onNavigate }: { count: number; onNavigate?: () => void }) {
+  if (count <= 0) return null;
+  return (
+    <Link
+      href="/batch-orders"
+      onClick={onNavigate}
+      aria-label={`Basket: ${count} unfinished ${count === 1 ? "order" : "orders"}`}
+      title={`${count} unfinished ${count === 1 ? "order" : "orders"} — finish checking out`}
+      className="relative rounded-md p-1.5 text-foreground hover:bg-foreground/[0.04]"
+    >
+      <Icons.checkout className="size-5" />
+      <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold leading-4 text-white">
+        {count > 9 ? "9+" : count}
+      </span>
+    </Link>
+  );
+}
+
+/**
  * The authenticated app shell. On desktop it's a fixed left sidebar; on
  * mobile the sidebar collapses behind a hamburger and slides in as an overlay
  * drawer, so the nav never eats a phone screen. The server layout fetches the
@@ -18,12 +41,14 @@ export function AppShell({
   accountName,
   planLabel,
   pendingApprovals,
+  unfinishedOrders,
   walletLabel,
   children,
 }: {
   accountName: string;
   planLabel: string;
   pendingApprovals: number;
+  unfinishedOrders: number;
   walletLabel: string;
   children: ReactNode;
 }) {
@@ -120,6 +145,7 @@ export function AppShell({
             <Logo className="h-8 w-auto" priority />
           </Link>
           <div className="flex items-center gap-1">
+            <BasketIndicator count={unfinishedOrders} />
             <NotificationBell />
             <Link href="/batch-orders" className="btn-accent px-3 py-1.5 text-xs">
               Order
@@ -136,6 +162,7 @@ export function AppShell({
           >
             Wallet: <span className="font-semibold text-foreground">{walletLabel}</span>
           </Link>
+          <BasketIndicator count={unfinishedOrders} />
           <NotificationBell />
           <Link href="/batch-orders" className="btn-accent">
             Create an order <span aria-hidden>→</span>
