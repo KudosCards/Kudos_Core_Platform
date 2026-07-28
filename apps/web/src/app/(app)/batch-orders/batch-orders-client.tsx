@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { suggestFirstClass } from "@kudos/shared-types";
+import type { AccountPricing } from "@kudos/shared-types";
+import { computePricingBreakdown, suggestFirstClass } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { PricingBreakdownCard } from "@/components/pricing-breakdown";
 import { OCCASION_TYPE_LABELS, formatOccasionDate } from "@/lib/occasions";
 import type { OccasionWithRecipient } from "../approvals/approvals-client";
 
@@ -44,12 +46,15 @@ export function BatchOrdersClient({
   initialUnfinishedOrders,
   walletBalanceMinor,
   initialSelectedIds = [],
+  pricing,
 }: {
   initialOccasions: OccasionWithRecipient[];
   initialUnfinishedOrders: UnfinishedBatchOrder[];
   walletBalanceMinor: number;
   /** Occasion ids pre-ticked from the calendar list-view bulk action. */
   initialSelectedIds?: string[];
+  /** The account's live per-card pricing, for the checkout estimate. */
+  pricing: AccountPricing;
 }) {
   const [lines, setLines] = useState<Record<string, LineDraft>>(() =>
     Object.fromEntries(initialSelectedIds.map((id) => [id, { ...EMPTY_LINE }])),
@@ -447,6 +452,25 @@ export function BatchOrdersClient({
           })}
         </div>
       )}
+
+      {selectedIds.length > 0 &&
+        (() => {
+          const postageMinor = selectedIds.reduce(
+            (sum, id) => sum + pricing.postageMinor[lines[id]!.postageClass],
+            0,
+          );
+          const breakdown = computePricingBreakdown({
+            cardCount: selectedIds.length,
+            cardSubtotalInclVatMinor: selectedIds.length * pricing.cardPriceMinor,
+            postageMinor,
+            fullCardPriceMinor: pricing.fullCardPriceMinor,
+          });
+          return (
+            <div className="card max-w-sm p-5">
+              <PricingBreakdownCard breakdown={breakdown} estimate />
+            </div>
+          );
+        })()}
 
       {initialOccasions.length > 0 && (
         <div className="flex flex-wrap gap-3">

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { isOptimizableThumbnail } from "@/lib/card-image";
 import Link from "next/link";
 import type { GuestCartCheckoutInput, GuestCheckoutResult } from "@kudos/shared-types";
+import { POSTAGE_MINOR, computePricingBreakdown } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { publicApiPost } from "@/lib/api.public";
 import { CARD_PRICE_PENCE, removeFromCart, useCart, type CartItem } from "@/lib/cart";
@@ -34,7 +35,14 @@ export function BasketClient() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const total = items.length * CARD_PRICE_PENCE;
+  // Guests pay full price (no plan discount), second-class postage per card —
+  // matching what /guest/cart-checkout charges server-side.
+  const breakdown = computePricingBreakdown({
+    cardCount: items.length,
+    cardSubtotalInclVatMinor: items.length * CARD_PRICE_PENCE,
+    postageMinor: items.length * POSTAGE_MINOR.second_class,
+  });
+  const total = breakdown.totalMinor;
 
   async function handleCheckout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -131,17 +139,24 @@ export function BasketClient() {
         className="flex h-fit flex-col gap-4 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm lg:sticky lg:top-24"
       >
         <h2 className="text-lg font-bold text-slate-900">Order summary</h2>
-        <div className="flex justify-between text-sm text-slate-600">
-          <span>
-            {items.length} {items.length === 1 ? "card" : "cards"} × {formatGBP(CARD_PRICE_PENCE)}
-          </span>
-          <span>{formatGBP(total)}</span>
+        <div className="grid gap-2 text-sm text-slate-600">
+          <div className="flex justify-between">
+            <span>Card subtotal ({items.length} {items.length === 1 ? "card" : "cards"}, ex VAT)</span>
+            <span>{formatGBP(breakdown.cardSubtotalMinor)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>VAT ({breakdown.vatRatePercent}%)</span>
+            <span>{formatGBP(breakdown.vatMinor)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Postage (2nd class, VAT-exempt)</span>
+            <span>{formatGBP(breakdown.postageMinor)}</span>
+          </div>
+          <div className="flex justify-between border-t border-slate-100 pt-3 text-base font-bold text-slate-900">
+            <span>Total</span>
+            <span>{formatGBP(total)}</span>
+          </div>
         </div>
-        <div className="flex justify-between border-t border-slate-100 pt-3 text-base font-bold text-slate-900">
-          <span>Total</span>
-          <span>{formatGBP(total)}</span>
-        </div>
-        <p className="text-xs text-slate-500">Includes VAT &amp; UK postage.</p>
 
         <label className="flex flex-col gap-1 text-sm text-slate-600">
           Your email

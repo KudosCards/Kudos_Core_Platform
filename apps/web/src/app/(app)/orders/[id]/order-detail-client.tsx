@@ -4,8 +4,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
 import type { BatchOrder } from "@kudos/shared-types";
+import { computePricingBreakdown } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { PricingBreakdownCard } from "@/components/pricing-breakdown";
 import {
   ORDER_RECIPIENT_STATUS_LABELS,
   ORDER_STATUS_CLASSES,
@@ -90,18 +92,13 @@ export function OrderDetailClient({
       )}
 
       <div className="card grid gap-2 p-5 text-sm">
-        <div className="flex justify-between">
-          <span className="text-muted">Cards</span>
-          <span>{formatGbp(order.subtotalMinor)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted">Postage</span>
-          <span>{formatGbp(order.postageMinor)}</span>
-        </div>
-        <div className="flex justify-between border-t border-border pt-2 font-semibold">
-          <span>Total</span>
-          <span>{formatGbp(order.totalMinor)}</span>
-        </div>
+        <PricingBreakdownCard
+          breakdown={computePricingBreakdown({
+            cardCount: order.orderRecipients.length,
+            cardSubtotalInclVatMinor: order.subtotalMinor,
+            postageMinor: order.postageMinor,
+          })}
+        />
         {order.paymentMethod && (
           <div className="flex justify-between text-muted">
             <span>Paid with</span>
