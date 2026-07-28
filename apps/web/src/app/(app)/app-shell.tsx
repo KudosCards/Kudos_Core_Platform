@@ -9,24 +9,38 @@ import { LogoutButton } from "./logout-button";
 import { NotificationBell } from "./notification-bell";
 
 /**
- * Header basket: a shopping-cart link to the batch-orders screen that only
- * appears when the member has unfinished (draft / pending-payment) orders — a
- * nudge to come back and finish checking out. The badge caps at 9+.
+ * Header basket: a shopping-cart link to the batch-orders screen, always present
+ * so members have a consistent way back into an unfinished purchase. When there
+ * are unfinished (draft / pending-payment) orders it lights up with an accent
+ * badge (capped at 9+) to nudge them to finish checking out; when there's
+ * nothing waiting it's a quiet, muted icon.
  */
 function BasketIndicator({ count, onNavigate }: { count: number; onNavigate?: () => void }) {
-  if (count <= 0) return null;
+  const hasItems = count > 0;
   return (
     <Link
       href="/batch-orders"
       onClick={onNavigate}
-      aria-label={`Basket: ${count} unfinished ${count === 1 ? "order" : "orders"}`}
-      title={`${count} unfinished ${count === 1 ? "order" : "orders"} — finish checking out`}
-      className="relative rounded-md p-1.5 text-foreground hover:bg-foreground/[0.04]"
+      aria-label={
+        hasItems
+          ? `Basket: ${count} unfinished ${count === 1 ? "order" : "orders"}`
+          : "Basket — no unfinished orders"
+      }
+      title={
+        hasItems
+          ? `${count} unfinished ${count === 1 ? "order" : "orders"} — finish checking out`
+          : "Basket — your unfinished orders appear here"
+      }
+      className={`relative rounded-md p-1.5 hover:bg-foreground/[0.04] ${
+        hasItems ? "text-foreground" : "text-muted hover:text-foreground"
+      }`}
     >
       <Icons.checkout className="size-5" />
-      <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold leading-4 text-white">
-        {count > 9 ? "9+" : count}
-      </span>
+      {hasItems && (
+        <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold leading-4 text-white">
+          {count > 9 ? "9+" : count}
+        </span>
+      )}
     </Link>
   );
 }

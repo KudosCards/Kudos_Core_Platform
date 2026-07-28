@@ -30,11 +30,19 @@ a count that already fits the account summary the shell fetches.
   paid/in-production orders — those aren't something the member still needs to
   act on, so they don't belong in the basket.
 - **The app shell renders a `BasketIndicator`** (shopping-cart icon linking to
-  `/batch-orders`) in both the desktop and mobile headers. It only appears when
-  the count is > 0 — a nudge when there's something to finish, invisible clutter
-  otherwise — with a badge that caps at "9+".
+  `/batch-orders`) in both the desktop and mobile headers. It is **always
+  present**, so members have a consistent, familiar way back into an unfinished
+  purchase. When there are unfinished orders it lights up with an accent badge
+  (capped at "9+") to nudge them to finish; when there's nothing waiting it's a
+  quiet, muted icon that still leads to the batch-orders screen.
 - The count rides on the summary the `(app)` layout already loads, so there's no
-  extra request and it degrades to 0 (hidden) if the summary fetch fails.
+  extra request and it degrades to a muted, unbadged basket if the summary fetch
+  fails.
+
+> An earlier revision only showed the basket when the count was > 0. It was made
+> always-visible so members can rely on it being in the header — an empty basket
+> that's discoverable beats a badge that only appears once it's too late to be
+> noticed.
 
 ## Consequences
 
