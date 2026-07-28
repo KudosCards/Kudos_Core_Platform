@@ -7,6 +7,7 @@ import { Logo } from "@/components/logo";
 import { SidebarNav } from "./sidebar-nav";
 import { LogoutButton } from "./logout-button";
 import { NotificationBell } from "./notification-bell";
+import { TutorialsLink } from "@/components/social-links";
 
 /**
  * Header basket: a shopping-cart link to the batch-orders screen, always present
@@ -105,6 +106,11 @@ export function AppShell({
             manage
           </Link>
         </div>
+        {/* Our how-to videos live on YouTube — surface them where members work. */}
+        <TutorialsLink
+          className="flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-foreground"
+          onClick={() => setDrawerOpen(false)}
+        />
         <div className="pt-1">
           <LogoutButton />
         </div>
