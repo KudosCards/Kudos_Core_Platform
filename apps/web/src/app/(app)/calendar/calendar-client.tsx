@@ -12,8 +12,11 @@ import {
   fetchRange,
   monthGridRange,
   occasionDay,
+  occasionProgress,
   weekRange,
   ymdUTC,
+  OCCASION_SENT_COLOR,
+  OCCASION_SKIPPED_COLOR,
   OCCASION_TYPE_COLORS,
   OCCASION_TYPES,
   type CalendarView,
@@ -54,16 +57,51 @@ function OccasionPill({
   occasion: Occasion;
   onOpen: (occasion: Occasion) => void;
 }) {
-  const color = OCCASION_TYPE_COLORS[occasion.type] ?? OCCASION_TYPE_COLORS.bespoke_campaign;
+  const progress = occasionProgress(occasion.status);
+  const color =
+    progress === "sent"
+      ? OCCASION_SENT_COLOR
+      : progress === "skipped"
+        ? OCCASION_SKIPPED_COLOR
+        : (OCCASION_TYPE_COLORS[occasion.type] ?? OCCASION_TYPE_COLORS.bespoke_campaign);
+  const stateNote =
+    progress === "sent" ? " · Sent" : progress === "skipped" ? " · Skipped" : "";
   return (
     <button
       type="button"
       onClick={() => onOpen(occasion)}
-      className={`block w-full truncate rounded border px-1.5 py-0.5 text-left text-xs hover:opacity-80 ${color}`}
-      title={`${occasionLabel(occasion)} · ${occasionKind(occasion)}`}
+      className={`flex w-full items-center gap-1 truncate rounded border px-1.5 py-0.5 text-left text-xs hover:opacity-80 ${color}`}
+      title={`${occasionLabel(occasion)} · ${occasionKind(occasion)}${stateNote}`}
     >
-      {occasionLabel(occasion)}
+      {progress === "sent" && (
+        <span aria-hidden className="shrink-0 font-bold">
+          ✓
+        </span>
+      )}
+      <span className="truncate">{occasionLabel(occasion)}</span>
     </button>
+  );
+}
+
+/** A small key so the colour/tick states aren't a mystery. */
+function CalendarLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted">
+      <span className="flex items-center gap-1.5">
+        <span className={`inline-block h-3 w-3 rounded-sm border ${OCCASION_SENT_COLOR}`} />
+        <span aria-hidden>✓</span> Sent
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span
+          className={`inline-block h-3 w-3 rounded-sm border ${OCCASION_TYPE_COLORS.birthday}`}
+        />
+        Upcoming (coloured by type)
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className={`inline-block h-3 w-3 rounded-sm border ${OCCASION_SKIPPED_COLOR}`} />
+        Skipped
+      </span>
+    </div>
   );
 }
 
@@ -237,6 +275,8 @@ export function CalendarClient({
       {error && (
         <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
       )}
+
+      <CalendarLegend />
 
       {view === "list" ? (
         <ListView anchor={anchor} byDay={byDay} todayKey={todayKey} onOpen={setSelected} />

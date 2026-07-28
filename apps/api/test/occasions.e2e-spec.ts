@@ -23,6 +23,15 @@ const paginatedOccasionsSchema = z.object({
   total: z.number(),
 });
 
+// The occasion with its nested order link (see ADR 0055) — used to assert the
+// "follow this card's order" wiring.
+const orderLinkedOccasionSchema = occasionSchema.extend({
+  order: z
+    .object({ id: z.string().uuid(), orderNumber: z.number(), status: z.string() })
+    .nullable()
+    .optional(),
+});
+
 describe("Occasions (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
@@ -125,6 +134,67 @@ describe("Occasions (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
     expect(paginatedOccasionsSchema.parse(emptyResponse.body).total).toBe(0);
+  });
+
+  it("nests the linked order onto an occasion once it's been ordered", async () => {
+    const { token, accountId } = await signUp();
+    const recipientId = await createRecipient(token);
+    const savedDesignId = await createSavedDesign(token);
+
+    const created = await request(app.getHttpServer())
+      .post("/occasions")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ type: "achievement", occasionDate: "2026-09-01", recipientId })
+      .expect(201);
+    const occasionId = occasionSchema.parse(created.body).id;
+
+    // Before it's ordered, the order link is null.
+    const before = await request(app.getHttpServer())
+      .get(`/occasions/${occasionId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(orderLinkedOccasionSchema.parse(before.body).order).toBeNull();
+
+    // Seed a paid order line linked to this occasion (bypassing the Stripe
+    // checkout flow — we're only testing the read-side enrichment).
+    const order = await prisma.batchOrder.create({
+      data: { accountId, status: "paid", totalMinor: 150 },
+    });
+    await prisma.orderRecipient.create({
+      data: {
+        batchOrderId: order.id,
+        recipientId,
+        occasionId,
+        savedDesignId,
+        shippingAddressLine1: "1 Test Street",
+        shippingAddressCity: "London",
+        shippingAddressPostcode: "E1 6AN",
+        dispatchOption: "asap",
+        postageClass: "second_class",
+        priceMinor: 150,
+      },
+    });
+
+    // Detail endpoint carries the order link…
+    const after = await request(app.getHttpServer())
+      .get(`/occasions/${occasionId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const detail = orderLinkedOccasionSchema.parse(after.body);
+    expect(detail.order?.id).toBe(order.id);
+    expect(detail.order?.orderNumber).toBe(order.orderNumber);
+    expect(detail.order?.status).toBe("paid");
+
+    // …and so does the list endpoint the calendar/recipient views consume.
+    const listResp = await request(app.getHttpServer())
+      .get(`/occasions?recipientId=${recipientId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const listed = z
+      .object({ items: z.array(orderLinkedOccasionSchema) })
+      .parse(listResp.body)
+      .items.find((item) => item.id === occasionId);
+    expect(listed?.order?.orderNumber).toBe(order.orderNumber);
   });
 
   it("filters occasions by type and date range (for the calendar)", async () => {

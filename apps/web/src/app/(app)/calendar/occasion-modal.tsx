@@ -147,6 +147,20 @@ export function OccasionModal({
               label="Status"
               value={OCCASION_STATUS_LABELS[occasion.status] ?? occasion.status}
             />
+            {occasion.order && (
+              <DetailRow
+                label="Order"
+                value={
+                  <Link
+                    href={`/orders/${occasion.order.id}`}
+                    onClick={onClose}
+                    className="text-accent hover:underline"
+                  >
+                    ORD-{occasion.order.orderNumber} →
+                  </Link>
+                }
+              />
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

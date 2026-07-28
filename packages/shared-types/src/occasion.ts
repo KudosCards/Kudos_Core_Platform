@@ -1,11 +1,25 @@
 import { z } from "zod";
 import {
+  batchOrderStatusSchema,
   dispatchOptionSchema,
   occasionSourceSchema,
   occasionStatusSchema,
   occasionTypeSchema,
   postageClassSchema,
 } from "./enums";
+
+/**
+ * The batch order an occasion was sent on, nested onto the occasion so the
+ * calendar/recipient views can link straight through to it ("follow this
+ * card's order"). Null/absent until the occasion has been checked out into an
+ * order. Derived from OrderRecipient.occasionId server-side. See ADR 0055.
+ */
+export const occasionOrderLinkSchema = z.object({
+  id: z.string().uuid(),
+  orderNumber: z.number().int(),
+  status: batchOrderStatusSchema,
+});
+export type OccasionOrderLink = z.infer<typeof occasionOrderLinkSchema>;
 
 export const occasionSchema = z
   .object({
@@ -43,6 +57,11 @@ export const occasionSchema = z
         addressVerificationRequired: z.boolean().optional(),
       })
       .nullable(),
+    /** The order this occasion was sent on, when it has been checked out — lets
+     * the UI link to its order history. Optional so endpoints that don't select
+     * it still parse; null once ordered-then-cleared is impossible, so absent =
+     * not yet ordered. See ADR 0055. */
+    order: occasionOrderLinkSchema.nullable().optional(),
   })
   .refine((o) => o.source !== "recurring_per_recipient" || o.recipientId !== null, {
     message: "recurring_per_recipient occasions must have a recipientId",

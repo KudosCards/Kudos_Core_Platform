@@ -17,7 +17,7 @@ import { CurrentMembership } from "../auth/current-membership.decorator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser, CurrentMembershipContext } from "../auth/types";
 import type { Paginated } from "../common/paginated";
-import { OccasionsService, type Occasion } from "./occasions.service";
+import { OccasionsService, type Occasion, type OccasionWithOrder } from "./occasions.service";
 import { CreateOccasionDto } from "./dto/create-occasion.dto";
 import { CreateRecipientEventDto } from "./dto/create-recipient-event.dto";
 import { UpdateOccasionEventDto } from "./dto/update-occasion-event.dto";
@@ -56,7 +56,7 @@ export class OccasionsController {
     @CurrentMembership() membership: CurrentMembershipContext,
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: ListOccasionsQueryDto,
-  ): Promise<Paginated<Occasion>> {
+  ): Promise<Paginated<OccasionWithOrder>> {
     return this.occasionsService.list(membership.accountId, user.id, query);
   }
 
@@ -65,7 +65,7 @@ export class OccasionsController {
     @CurrentMembership() membership: CurrentMembershipContext,
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseUUIDPipe) id: string,
-  ): Promise<Occasion> {
+  ): Promise<OccasionWithOrder> {
     return this.occasionsService.findOne(membership.accountId, user.id, id);
   }
 
