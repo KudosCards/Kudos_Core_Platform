@@ -96,6 +96,45 @@ describe("Occasions (e2e)", () => {
     expect(created.status).toBe("pending_approval");
   });
 
+  it("pins a dispatch date via drag, then resets it to the working-day calculation", async () => {
+    const { token } = await signUp();
+    const recipientId = await createRecipient(token);
+    const created = await request(app.getHttpServer())
+      .post("/occasions")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ type: "achievement", occasionDate: "2026-09-30", recipientId })
+      .expect(201);
+    const id = occasionSchema.parse(created.body).id;
+
+    // Pin (drag) the dispatch date to a specific day.
+    const pinned = await request(app.getHttpServer())
+      .patch(`/occasions/${id}/dispatch-date`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ dispatchDate: "2026-09-15" })
+      .expect(200);
+    const pinnedBody = pinned.body as { dispatchDate: string; dispatchDateOverridden: boolean };
+    expect(pinnedBody.dispatchDate.slice(0, 10)).toBe("2026-09-15");
+    expect(pinnedBody.dispatchDateOverridden).toBe(true);
+
+    // A dispatch date after the occasion date is rejected.
+    await request(app.getHttpServer())
+      .patch(`/occasions/${id}/dispatch-date`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ dispatchDate: "2026-10-05" })
+      .expect(400);
+
+    // Reset recomputes to a working day before the occasion and clears the flag.
+    const reset = await request(app.getHttpServer())
+      .patch(`/occasions/${id}/dispatch-date`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ dispatchDate: null })
+      .expect(200);
+    const resetBody = reset.body as { dispatchDate: string; dispatchDateOverridden: boolean };
+    expect(resetBody.dispatchDateOverridden).toBe(false);
+    // 30 Sep 2026 is a Wednesday; 5 working days back (no holidays) is 23 Sep.
+    expect(resetBody.dispatchDate.slice(0, 10)).toBe("2026-09-23");
+  });
+
   it("creates a recipient-linked occasion and rejects a recipient from another account", async () => {
     const { token } = await signUp();
     const recipientId = await createRecipient(token);

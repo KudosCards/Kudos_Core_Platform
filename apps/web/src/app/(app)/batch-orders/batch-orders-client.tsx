@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { suggestFirstClass } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { OCCASION_TYPE_LABELS, formatOccasionDate } from "@/lib/occasions";
@@ -42,12 +43,17 @@ export function BatchOrdersClient({
   initialOccasions,
   initialUnfinishedOrders,
   walletBalanceMinor,
+  initialSelectedIds = [],
 }: {
   initialOccasions: OccasionWithRecipient[];
   initialUnfinishedOrders: UnfinishedBatchOrder[];
   walletBalanceMinor: number;
+  /** Occasion ids pre-ticked from the calendar list-view bulk action. */
+  initialSelectedIds?: string[];
 }) {
-  const [lines, setLines] = useState<Record<string, LineDraft>>({});
+  const [lines, setLines] = useState<Record<string, LineDraft>>(() =>
+    Object.fromEntries(initialSelectedIds.map((id) => [id, { ...EMPTY_LINE }])),
+  );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -420,6 +426,20 @@ export function BatchOrdersClient({
                       <option value="first_class">First class post (+£1.80/card)</option>
                       <option value="second_class">Second class post (+£0.91/card)</option>
                     </select>
+                    {(() => {
+                      const nudge = suggestFirstClass(new Date(occasion.occasionDate));
+                      if (!nudge.suggested || selected.postageClass === "first_class") return null;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => updateLine(occasion.id, { postageClass: "first_class" })}
+                          title={nudge.reason}
+                          className="inline-flex items-center gap-1 self-start rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200 sm:col-span-2"
+                        >
+                          ⚡ {nudge.reason} Use First Class
+                        </button>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

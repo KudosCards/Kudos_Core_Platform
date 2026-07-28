@@ -68,6 +68,7 @@ model Account {
   recipientLists RecipientList[]
   notifications  Notification[]
   returnCases    ReturnCase[]
+  events         Event[]
 
   // Super-admin subscribers list is ordered newest-first.
   @@index([createdAt])
@@ -330,6 +331,10 @@ enum OccasionType {
 enum OccasionSource {
   recurring_per_recipient
   one_off_campaign
+  /// A member of a shared Event — one card, the same design, sent to a curated
+  /// cohort of contacts (End of Year, Results Day, …). Grouped on the calendar
+  /// by the parent Event. See docs/adr/0057-shared-events.md.
+  shared_event
 }
 
 enum OccasionStatus {
@@ -356,6 +361,11 @@ model Occasion {
   title          String?
   occasionDate   DateTime       @map("occasion_date") @db.Date
   dispatchDate   DateTime?      @map("dispatch_date") @db.Date
+  /// True when a human manually placed the dispatch date (dragged it on the
+  /// calendar), so the working-day recompute doesn't silently undo it. Cleared
+  /// when the occasion date changes (the timing baseline moved). See
+  /// docs/adr/0058-drag-dispatch.md.
+  dispatchDateOverridden Boolean @default(false) @map("dispatch_date_overridden")
   status         OccasionStatus @default(scheduled)
   /// How this occasion is sent once approved. `asap` (default) means a human
   /// checks it out manually; `auto_send` means the auto-send cron creates the
@@ -374,6 +384,11 @@ model Occasion {
   /// daily reminder cron never emails the same upcoming occasion twice. Null
   /// until reminded. See docs/adr/0025.
   reminderSentAt DateTime?      @map("reminder_sent_at")
+  /// Set when this occasion is one member of a shared Event (source =
+  /// shared_event). The parent Event owns the title, date, and type; the
+  /// calendar groups all members under one collapsible entry. Null for
+  /// standalone occasions. See docs/adr/0057-shared-events.md.
+  eventId        String?        @map("event_id")
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
@@ -381,6 +396,8 @@ model Occasion {
   // Restrict, not the nullable-relation default of SetNull — an approved occasion
   // silently losing its design would be a worse state than blocking the delete.
   savedDesign     SavedDesign?     @relation(fields: [savedDesignId], references: [id], onDelete: Restrict)
+  // Deleting the parent Event removes its still-scheduled member occasions.
+  event           Event?           @relation(fields: [eventId], references: [id], onDelete: Cascade)
   orderRecipients OrderRecipient[]
 
   // Prevents the scheduler from double-creating the same occasion instance on retry.
@@ -390,7 +407,37 @@ model Occasion {
   // The calendar: `where accountId and occasionDate between from..to order by
   // occasionDate` — an account-scoped range scan in sorted order. See ADR 0046.
   @@index([accountId, occasionDate])
+  // Fetch/group all member occasions of an event.
+  @@index([eventId])
   @@map("occasions")
+}
+
+/// A shared event: one card design sent to a curated cohort of contacts on the
+/// same date (End of Year, Results Day, SATs, a Christmas send). The Event owns
+/// the human title, type, and date; each attached contact is a member Occasion
+/// (source = shared_event) so the whole existing pipeline — calendar, approvals,
+/// checkout, auto-send, order links — works unchanged, while the calendar
+/// collapses the members into one entry. See docs/adr/0057-shared-events.md.
+model Event {
+  id        String       @id @default(uuid())
+  accountId String       @map("account_id")
+  /// Human title shown on the calendar and cards ("End of Year 2026").
+  title     String
+  /// Broad category, reused from occasions for calendar colour + filtering.
+  type      OccasionType
+  /// The date the event falls on; every member occasion inherits it.
+  eventDate DateTime     @map("event_date") @db.Date
+  /// Optional free-text note for the organiser (not printed).
+  notes     String?
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  occasions Occasion[]
+
+  // The calendar range scan, account-scoped and date-ordered.
+  @@index([accountId, eventDate])
+  @@map("events")
 }
 
 // ---------------------------------------------------------------------------

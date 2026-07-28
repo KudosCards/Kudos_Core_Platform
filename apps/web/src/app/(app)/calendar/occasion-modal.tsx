@@ -46,6 +46,22 @@ export function OccasionModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  async function resetDispatch() {
+    setError(null);
+    setSaving(true);
+    try {
+      const updated = await clientApiFetch<Occasion>(`/occasions/${occasion.id}/dispatch-date`, {
+        method: "PATCH",
+        body: JSON.stringify({ dispatchDate: null }),
+      });
+      onUpdated(updated);
+    } catch (resetError) {
+      setError(resetError instanceof ApiError ? resetError.message : "Could not reset the date");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // Only auto-scheduled birthdays are recurring; hand-added events carry a label.
   const canEditTitle = occasion.source !== "recurring_per_recipient";
   const isScheduled = occasion.status === "scheduled";
@@ -141,7 +157,19 @@ export function OccasionModal({
             />
             <DetailRow label="Date" value={formatOccasionDate(occasion.occasionDate)} />
             {occasion.dispatchDate && (
-              <DetailRow label="Dispatch by" value={formatOccasionDate(occasion.dispatchDate)} />
+              <DetailRow
+                label="Dispatch by"
+                value={
+                  <span className="inline-flex items-center gap-2">
+                    {formatOccasionDate(occasion.dispatchDate)}
+                    {occasion.dispatchDateOverridden && (
+                      <span title="Manually placed" aria-hidden>
+                        📌
+                      </span>
+                    )}
+                  </span>
+                }
+              />
             )}
             <DetailRow
               label="Status"
@@ -167,6 +195,16 @@ export function OccasionModal({
             {isScheduled && (
               <button type="button" onClick={() => setEditing(true)} className="btn-accent">
                 Edit event
+              </button>
+            )}
+            {occasion.dispatchDateOverridden && (
+              <button
+                type="button"
+                onClick={() => void resetDispatch()}
+                disabled={saving}
+                className="rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-foreground/[0.03] disabled:opacity-40"
+              >
+                Reset dispatch date
               </button>
             )}
             {actionLink && (

@@ -12,8 +12,13 @@ import { SavedDesignsService } from "../saved-designs/saved-designs.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
-import { POSTAGE_LEAD_DAYS, computeDispatchDate } from "./occasion-scheduling.constants";
+import {
+  DEFAULT_POSTAGE_LEAD_DAYS,
+  POSTAGE_LEAD_DAYS,
+  computeDispatchDate,
+} from "./occasion-scheduling.constants";
 import type { CreateOccasionDto } from "./dto/create-occasion.dto";
+import type { SetDispatchDateDto } from "./dto/set-dispatch-date.dto";
 import type { CreateRecipientEventDto } from "./dto/create-recipient-event.dto";
 import type { UpdateOccasionEventDto } from "./dto/update-occasion-event.dto";
 import type { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
@@ -181,6 +186,8 @@ export class OccasionsService {
       const occasionDate = new Date(dto.occasionDate);
       data.occasionDate = occasionDate;
       data.dispatchDate = computeDispatchDate(occasionDate);
+      // The timing baseline moved, so any manual dispatch placement is cleared.
+      data.dispatchDateOverridden = false;
     }
 
     let count: number;
@@ -323,10 +330,16 @@ export class OccasionsService {
     // gates are enforced up front, not discovered later by the cron: the plan
     // must permit it, and the recipient must have an address we can actually
     // post to. dispatchDate is re-timed to the chosen postage class (the
-    // occasion may have been scheduled with the default 5-day lead).
+    // occasion may have been scheduled with the default 5-day lead) — unless a
+    // human manually placed it on the calendar, which wins.
     if (dispatchOption === "auto_send") {
-      const occasionDate = await this.assertAutoSendAllowed(accountId, id);
-      update.dispatchDate = computeDispatchDate(occasionDate, POSTAGE_LEAD_DAYS[postageClass]);
+      const { occasionDate, dispatchDateOverridden } = await this.assertAutoSendAllowed(
+        accountId,
+        id,
+      );
+      if (!dispatchDateOverridden) {
+        update.dispatchDate = computeDispatchDate(occasionDate, POSTAGE_LEAD_DAYS[postageClass]);
+      }
     }
 
     const occasion = await this.transitionFromPendingApproval(accountId, id, update);
@@ -345,9 +358,13 @@ export class OccasionsService {
   /**
    * Auto-send requires the plan entitlement and a complete recipient address —
    * both checked here before the occasion is approved. Returns the occasionDate
-   * so the caller can re-time the dispatch date to the postage class.
+   * (to re-time the dispatch date to the postage class) and whether the dispatch
+   * date was manually overridden (in which case the caller leaves it alone).
    */
-  private async assertAutoSendAllowed(accountId: string, occasionId: string): Promise<Date> {
+  private async assertAutoSendAllowed(
+    accountId: string,
+    occasionId: string,
+  ): Promise<{ occasionDate: Date; dispatchDateOverridden: boolean }> {
     const entitlement = await this.entitlements.getForAccount(accountId);
     if (!entitlement.autoSendEnabled) {
       throw new ForbiddenException("Auto-send isn't available on your plan — upgrade to enable it");
@@ -369,7 +386,73 @@ export class OccasionsService {
         "This recipient is missing a postal address — add one before enabling auto-send",
       );
     }
-    return occasion.occasionDate;
+    return {
+      occasionDate: occasion.occasionDate,
+      dispatchDateOverridden: occasion.dispatchDateOverridden,
+    };
+  }
+
+  /**
+   * Manually place (drag) a card's dispatch date, or reset it to the working-day
+   * calculation. Only occasions not yet consumed into an order can be re-timed;
+   * a pinned date can't be after the occasion it's for. Sets/clears the override
+   * flag so the working-day recompute (approval, event re-dating) respects it.
+   */
+  async setDispatchDate(
+    accountId: string,
+    actorUserId: string,
+    id: string,
+    dto: SetDispatchDateDto,
+  ): Promise<Occasion> {
+    const occasion = await this.prisma.occasion.findFirst({ where: { id, accountId } });
+    if (!occasion) {
+      throw new NotFoundException("Occasion not found");
+    }
+    const reschedulable = ["scheduled", "pending_approval", "approved"];
+    if (!reschedulable.includes(occasion.status)) {
+      throw new ConflictException(
+        `Occasion is "${occasion.status}" — its dispatch date is fixed once it's on an order`,
+      );
+    }
+
+    let dispatchDate: Date;
+    let overridden: boolean;
+    if (dto.dispatchDate === null) {
+      // Reset to the calculated date — the postage lead for an approved
+      // auto-send, else the default pre-approval lead.
+      const leadDays =
+        occasion.dispatchOption === "auto_send"
+          ? POSTAGE_LEAD_DAYS[occasion.postageClass]
+          : DEFAULT_POSTAGE_LEAD_DAYS;
+      dispatchDate = computeDispatchDate(occasion.occasionDate, leadDays);
+      overridden = false;
+    } else {
+      const target = new Date(dto.dispatchDate);
+      if (target > occasion.occasionDate) {
+        throw new BadRequestException("The dispatch date can't be after the occasion date");
+      }
+      dispatchDate = target;
+      overridden = true;
+    }
+
+    await this.prisma.occasion.update({
+      where: { id },
+      data: { dispatchDate, dispatchDateOverridden: overridden },
+    });
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "set_dispatch_date",
+      targetType: "Occasion",
+      targetId: id,
+      metadata: { dispatchDate: dispatchDate.toISOString().slice(0, 10), overridden },
+    });
+
+    return this.prisma.occasion.findFirstOrThrow({
+      where: { id, accountId },
+      include: { recipient: RECIPIENT_SELECT },
+    });
   }
 
   async skip(accountId: string, actorUserId: string, id: string): Promise<Occasion> {

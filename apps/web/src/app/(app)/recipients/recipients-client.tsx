@@ -2,7 +2,7 @@
 
 import type { Recipient, RecipientListSummary } from "@kudos/shared-types";
 import Link from "next/link";
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { ConnectCrmCallout } from "@/components/connect-crm-callout";
@@ -32,6 +32,39 @@ export interface Paginated<T> {
   perPage: number;
 }
 
+type SortKey = "recent" | "name_asc" | "name_desc" | "dob_asc" | "dob_desc";
+
+/** A clickable column header that cycles asc → desc for its column, showing the
+ * active direction with an arrow. Clicking a different column starts at asc. */
+function SortHeader({
+  label,
+  ascKey,
+  descKey,
+  sort,
+  onSort,
+}: {
+  label: string;
+  ascKey: SortKey;
+  descKey: SortKey;
+  sort: SortKey;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sort === ascKey || sort === descKey;
+  const arrow = sort === ascKey ? "↑" : sort === descKey ? "↓" : "";
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sort === ascKey ? descKey : ascKey)}
+      className={`inline-flex items-center gap-1 hover:text-foreground ${active ? "text-foreground" : ""}`}
+    >
+      {label}
+      <span aria-hidden className="text-xs">
+        {arrow}
+      </span>
+    </button>
+  );
+}
+
 interface ImportSummary {
   created: number;
   updated: number;
@@ -52,6 +85,11 @@ export function RecipientsClient({
   const [recipients, setRecipients] = useState(initialRecipients);
   const [total, setTotal] = useState(initialTotal);
   const [page, setPage] = useState(initialPage);
+  // Server-side search (API `search`) + column sort. Search is debounced so we
+  // don't fire a request per keystroke.
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [sort, setSort] = useState<SortKey>("recent");
   const [error, setError] = useState<string | null>(null);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [paginating, setPaginating] = useState(false);
@@ -77,7 +115,7 @@ export function RecipientsClient({
   }, []);
 
   const reload = useCallback(
-    async (targetPage: number, listId: string | null) => {
+    async (targetPage: number, listId: string | null, searchTerm: string, sortKey: SortKey) => {
       setPaginating(true);
       try {
         const params = new URLSearchParams({
@@ -85,6 +123,8 @@ export function RecipientsClient({
           perPage: String(PER_PAGE),
         });
         if (listId) params.set("listId", listId);
+        if (searchTerm) params.set("search", searchTerm);
+        if (sortKey !== "recent") params.set("sort", sortKey);
         const result = await clientApiFetch<Paginated<Recipient>>(
           `/recipients?${params.toString()}`,
         );
@@ -101,10 +141,39 @@ export function RecipientsClient({
     [],
   );
 
+  // Debounce the search box; a settled term (or a cleared one) reloads page 1.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Re-fetch whenever the settled search term or the sort changes. Skips the
+  // first render (the server already sent page 1 with default search/sort).
+  const firstQueryRun = useRef(true);
+  useEffect(() => {
+    if (firstQueryRun.current) {
+      firstQueryRun.current = false;
+      return;
+    }
+    void reload(1, activeListId, debouncedSearch, sort);
+    // activeListId is intentionally omitted — selectList drives its own reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, sort, reload]);
+
+  function changeSearch(value: string) {
+    setSearch(value);
+    setSelected(new Set());
+  }
+
+  function changeSort(key: SortKey) {
+    setSort(key);
+    setSelected(new Set());
+  }
+
   function selectList(listId: string | null) {
     setActiveListId(listId);
     setSelected(new Set());
-    void reload(1, listId);
+    void reload(1, listId, debouncedSearch, sort);
   }
 
   async function handleAddRecipient(event: FormEvent<HTMLFormElement>) {
@@ -130,9 +199,12 @@ export function RecipientsClient({
       });
       formEl.reset();
       // New recipients sort first (createdAt desc) — jump to page 1, clearing
-      // any list filter so the just-added recipient is actually visible.
+      // the list filter, search, and sort so the just-added recipient is visible.
       setActiveListId(null);
-      await reload(1, null);
+      setSearch("");
+      setDebouncedSearch("");
+      setSort("recent");
+      await reload(1, null, "", "recent");
     } catch (submitError) {
       setError(submitError instanceof ApiError ? submitError.message : "Could not add recipient");
     } finally {
@@ -163,7 +235,10 @@ export function RecipientsClient({
       setImportSummary(summary);
       formEl.reset();
       setActiveListId(null);
-      await reload(1, null);
+      setSearch("");
+      setDebouncedSearch("");
+      setSort("recent");
+      await reload(1, null, "", "recent");
     } catch (importError) {
       setError(importError instanceof ApiError ? importError.message : "Import failed");
     }
@@ -252,6 +327,22 @@ export function RecipientsClient({
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  }
+
+  // Select-all toggles every recipient on the current page. When some but not
+  // all are selected, the first click selects the rest.
+  const allOnPageSelected =
+    recipients.length > 0 && recipients.every((r) => selected.has(r.id));
+  function toggleSelectAll() {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (allOnPageSelected) {
+        recipients.forEach((r) => next.delete(r.id));
+      } else {
+        recipients.forEach((r) => next.add(r.id));
+      }
       return next;
     });
   }
@@ -428,13 +519,51 @@ export function RecipientsClient({
         </div>
       )}
 
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 sm:max-w-xs">
+          <input
+            value={search}
+            onChange={(e) => changeSearch(e.target.value)}
+            placeholder="Search by name…"
+            className={`${inputClass} w-full pr-8`}
+            aria-label="Search recipients by name"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => changeSearch("")}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        {debouncedSearch && (
+          <span className="text-sm text-muted">
+            {total} match{total === 1 ? "" : "es"} for “{debouncedSearch}”
+          </span>
+        )}
+      </div>
+
       <div className="card overflow-x-auto">
         <table className="w-full min-w-[820px] text-left text-sm">
           <thead>
             <tr className="border-b border-border">
-              <th className="w-10 px-5 py-3" />
-              <th className="section-label px-5 py-3">Name</th>
-              <th className="section-label px-5 py-3">Date of birth</th>
+              <th className="w-10 px-5 py-3">
+                <input
+                  type="checkbox"
+                  checked={allOnPageSelected}
+                  onChange={toggleSelectAll}
+                  aria-label="Select all on this page"
+                />
+              </th>
+              <th className="section-label px-5 py-3">
+                <SortHeader label="Name" ascKey="name_asc" descKey="name_desc" sort={sort} onSort={changeSort} />
+              </th>
+              <th className="section-label px-5 py-3">
+                <SortHeader label="Date of birth" ascKey="dob_asc" descKey="dob_desc" sort={sort} onSort={changeSort} />
+              </th>
               <th className="section-label px-5 py-3">Postcode</th>
               <th className="section-label px-5 py-3">Source</th>
               <th className="section-label px-5 py-3">Status</th>
@@ -524,7 +653,7 @@ export function RecipientsClient({
           <button
             type="button"
             disabled={page <= 1 || paginating}
-            onClick={() => void reload(page - 1, activeListId)}
+            onClick={() => void reload(page - 1, activeListId, debouncedSearch, sort)}
             className="btn-secondary"
           >
             Previous
@@ -535,7 +664,7 @@ export function RecipientsClient({
           <button
             type="button"
             disabled={page * PER_PAGE >= total || paginating}
-            onClick={() => void reload(page + 1, activeListId)}
+            onClick={() => void reload(page + 1, activeListId, debouncedSearch, sort)}
             className="btn-secondary"
           >
             Next

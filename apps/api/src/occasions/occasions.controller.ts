@@ -23,6 +23,7 @@ import { CreateRecipientEventDto } from "./dto/create-recipient-event.dto";
 import { UpdateOccasionEventDto } from "./dto/update-occasion-event.dto";
 import { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
 import { ApproveOccasionDto } from "./dto/approve-occasion.dto";
+import { SetDispatchDateDto } from "./dto/set-dispatch-date.dto";
 
 @ApiTags("occasions")
 @ApiBearerAuth()
@@ -97,6 +98,17 @@ export class OccasionsController {
     @Body() dto: UpdateOccasionEventDto,
   ): Promise<Occasion> {
     return this.occasionsService.updateEvent(membership.accountId, user.id, id, dto);
+  }
+
+  /** Manually place (drag) a card's dispatch date, or reset it to calculated. */
+  @Patch(":id/dispatch-date")
+  setDispatchDate(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: SetDispatchDateDto,
+  ): Promise<Occasion> {
+    return this.occasionsService.setDispatchDate(membership.accountId, user.id, id, dto);
   }
 
   /** Pull a scheduled event into the approvals queue so a card can be prepared. */

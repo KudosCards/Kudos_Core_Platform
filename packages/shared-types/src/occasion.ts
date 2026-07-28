@@ -36,6 +36,10 @@ export const occasionSchema = z
     occasionDate: z.coerce.date(),
     /** Computed: occasionDate minus the postage lead time for the chosen dispatch option. */
     dispatchDate: z.coerce.date().nullable(),
+    /** True when a human dragged the dispatch date to a specific day, so the
+     * working-day recompute leaves it alone. Optional so endpoints that don't
+     * select it still parse. See docs/adr/0058-drag-dispatch.md. */
+    dispatchDateOverridden: z.boolean().optional(),
     status: occasionStatusSchema,
     /** Set by POST /occasions/:id/approve; copied into OrderRecipient.savedDesignId at checkout. */
     savedDesignId: z.string().uuid().nullable(),

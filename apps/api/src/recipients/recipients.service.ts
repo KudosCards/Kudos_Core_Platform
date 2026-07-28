@@ -152,6 +152,24 @@ export class RecipientsService {
       }),
     };
 
+    // Column sort for the contacts table; defaults to most-recently-added.
+    // Name sorts on lastName then firstName; a stable createdAt tiebreak keeps
+    // pagination deterministic when a sort key repeats.
+    const orderBy: Prisma.RecipientOrderByWithRelationInput[] = (() => {
+      switch (query.sort) {
+        case "name_asc":
+          return [{ lastName: "asc" }, { firstName: "asc" }, { createdAt: "desc" }];
+        case "name_desc":
+          return [{ lastName: "desc" }, { firstName: "desc" }, { createdAt: "desc" }];
+        case "dob_asc":
+          return [{ dateOfBirth: "asc" }, { createdAt: "desc" }];
+        case "dob_desc":
+          return [{ dateOfBirth: "desc" }, { createdAt: "desc" }];
+        default:
+          return [{ createdAt: "desc" }];
+      }
+    })();
+
     // Two plain queries, not a $transaction: a paginated total needn't be a
     // consistent snapshot with the page, and wrapping a read in an explicit
     // transaction is exactly what misbehaves on a pgBouncer (transaction-mode)
@@ -160,7 +178,7 @@ export class RecipientsService {
       where,
       skip: (page - 1) * perPage,
       take: perPage,
-      orderBy: { createdAt: "desc" },
+      orderBy,
     });
     const total = await this.prisma.recipient.count({ where });
 
