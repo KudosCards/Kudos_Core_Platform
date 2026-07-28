@@ -10,16 +10,19 @@ export default async function OrderDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const order = await serverApiFetch<BatchOrder>(`/batch-orders/${id}`).catch((error: unknown) => {
-    if (error instanceof ApiError && error.status === 404) {
-      notFound();
-    }
-    throw error;
-  });
+  // The order and the wallet balance are independent, so fetch them in one
+  // parallel round-trip rather than two serial ones (see docs/adr/0042). The
+  // order's 404 becomes null → notFound(); the wallet is only wasted then.
+  const [order, wallet] = await Promise.all([
+    serverApiFetch<BatchOrder>(`/batch-orders/${id}`).catch((error: unknown) => {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }),
+    serverApiFetch<WalletSummary>("/wallet").catch(() => null),
+  ]);
   if (!order) {
     notFound();
   }
-  const wallet = await serverApiFetch<WalletSummary>("/wallet").catch(() => null);
 
   return <OrderDetailClient order={order} walletBalanceMinor={wallet?.balanceMinor ?? 0} />;
 }
