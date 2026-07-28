@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
+import { SocialLinks } from "@/components/social-links";
 
 export default function AuthLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
@@ -12,6 +13,7 @@ export default function AuthLayout({ children }: Readonly<{ children: React.Reac
           <p className="text-sm text-muted">Recognition, delivered</p>
         </div>
         <div className="card p-6">{children}</div>
+        <SocialLinks className="mt-6 justify-center text-muted" />
       </div>
     </div>
   );
