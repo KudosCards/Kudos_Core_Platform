@@ -1,4 +1,12 @@
-import { applyMergeText, applyMergeTokens, hasMergeTokens } from "@kudos/shared-types";
+import {
+  applyMergeText,
+  applyMergeTokens,
+  findBracketTokenMistakes,
+  findDesignBracketTokenMistakes,
+  fixBracketTokens,
+  fixDesignBracketTokens,
+  hasMergeTokens,
+} from "@kudos/shared-types";
 import type { DesignDocument } from "@kudos/shared-types";
 
 const recipient = { firstName: "Ada", lastName: "Lovelace" };
@@ -78,6 +86,68 @@ describe("merge tokens", () => {
       expect(
         hasMergeTokens({ version: 1, pages: [{ name: "front", elements: [] }] }),
       ).toBe(false);
+    });
+  });
+
+  describe("bracket-token mistakes", () => {
+    it("finds common [name]-style mistakes and their curly suggestion", () => {
+      expect(findBracketTokenMistakes("To [insert name], happy birthday")).toEqual([
+        { found: "[insert name]", suggestion: "{name}" },
+      ]);
+      expect(findBracketTokenMistakes("Dear [First Name] [Last Name]")).toEqual([
+        { found: "[First Name]", suggestion: "{firstName}" },
+        { found: "[Last Name]", suggestion: "{lastName}" },
+      ]);
+    });
+
+    it("ignores brackets that aren't known token phrases", () => {
+      expect(findBracketTokenMistakes("See [note 4] and [name]")).toEqual([
+        { found: "[name]", suggestion: "{name}" },
+      ]);
+    });
+
+    it("deduplicates repeated identical mistakes", () => {
+      expect(findBracketTokenMistakes("[name] and again [name]")).toEqual([
+        { found: "[name]", suggestion: "{name}" },
+      ]);
+    });
+
+    it("fixBracketTokens rewrites recognised mistakes and leaves others alone", () => {
+      expect(fixBracketTokens("To [insert name] — see [note 4]")).toBe(
+        "To {name} — see [note 4]",
+      );
+    });
+
+    it("finds and fixes bracket mistakes across a whole design's text", () => {
+      const bad: DesignDocument = {
+        version: 1,
+        pages: [
+          {
+            name: "front",
+            elements: [
+              { kind: "text", id: "t1", text: "Dear [name],", x: 0, y: 0, fontFamily: "Inter", fontSize: 24, color: "#000" },
+              { kind: "image", id: "i1", assetUrl: "https://cdn.example.com/a.png", x: 0, y: 0, width: 1, height: 1, rotation: 0 },
+            ],
+          },
+          {
+            name: "inside-left",
+            elements: [
+              { kind: "text", id: "t2", text: "From [the occasion]", x: 0, y: 0, fontFamily: "Inter", fontSize: 24, color: "#000" },
+            ],
+          },
+        ],
+      };
+      expect(findDesignBracketTokenMistakes(bad)).toEqual([
+        { found: "[name]", suggestion: "{name}" },
+        { found: "[the occasion]", suggestion: "{occasion}" },
+      ]);
+      const fixed = fixDesignBracketTokens(bad);
+      expect((fixed.pages[0]!.elements[0] as { text: string }).text).toBe("Dear {name},");
+      expect((fixed.pages[1]!.elements[0] as { text: string }).text).toBe("From {occasion}");
+      expect(fixed.pages[0]!.elements[1]).toEqual(bad.pages[0]!.elements[1]); // image untouched
+      // Original not mutated.
+      expect((bad.pages[0]!.elements[0] as { text: string }).text).toBe("Dear [name],");
+      expect(findDesignBracketTokenMistakes(fixed)).toEqual([]);
     });
   });
 });

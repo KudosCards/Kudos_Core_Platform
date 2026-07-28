@@ -1,6 +1,7 @@
 "use client";
 
 import type { DesignDocument, DesignElement, DesignPage, SavedDesign } from "@kudos/shared-types";
+import { findDesignBracketTokenMistakes, fixDesignBracketTokens } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -115,6 +116,15 @@ export function DesignEditorClient({
 
   /** Whether a QR element is placed anywhere in the design (any face). */
   const hasQr = document_.pages.some((p) => p.elements.some((el) => el.kind === "qr"));
+
+  /** Square-bracket "[name]" mistakes that should be curly-brace merge tokens. */
+  const bracketMistakes = findDesignBracketTokenMistakes(document_);
+
+  /** Rewrite every recognised "[name]"-style mistake to its curly token. */
+  function fixAllBracketTokens() {
+    setError(null);
+    setDocument((doc) => fixDesignBracketTokens(doc));
+  }
 
   function updateElement(updated: DesignElement) {
     updatePage(activePage, (p) => ({
@@ -289,6 +299,32 @@ export function DesignEditorClient({
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+
+      {bracketMistakes.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-semibold">
+              These won&apos;t personalise — use curly braces, not square brackets
+            </p>
+            <button
+              type="button"
+              onClick={fixAllBracketTokens}
+              className="shrink-0 rounded-full bg-amber-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+            >
+              Fix all automatically
+            </button>
+          </div>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1">
+            {bracketMistakes.map((m) => (
+              <li key={m.found} className="font-mono">
+                <span className="line-through opacity-70">{m.found}</span>
+                {" → "}
+                <span className="font-semibold">{m.suggestion}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 border-b border-black/10 pb-2 dark:border-white/10">
         {PAGE_NAMES.map((pageName) => (
