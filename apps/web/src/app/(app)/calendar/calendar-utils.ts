@@ -70,6 +70,29 @@ export function occasionDay(occasion: Occasion, useDispatch: boolean): string {
   return ymdUTC(new Date(value));
 }
 
+/**
+ * An occasion's lifecycle stage, collapsed to what the calendar needs to show:
+ * whether the card has already gone out. Status advances scheduled →
+ * pending_approval → approved → queued → printed → posted → delivered as the
+ * card is checked out and fulfilled, so anything queued-or-later has been sent.
+ */
+export type OccasionProgress = "upcoming" | "sent" | "skipped";
+
+const SENT_STATUSES = new Set(["queued", "printed", "posted", "delivered"]);
+
+export function occasionProgress(status: string): OccasionProgress {
+  if (status === "skipped") return "skipped";
+  return SENT_STATUSES.has(status) ? "sent" : "upcoming";
+}
+
+/** Pill styling for a card that's already been sent — a "done" green with a
+ * tick, so a sent birthday reads instantly differently from an upcoming one. */
+export const OCCASION_SENT_COLOR = "bg-emerald-600 text-white border-emerald-700";
+
+/** Pill styling for a skipped occasion — muted and struck through. */
+export const OCCASION_SKIPPED_COLOR =
+  "bg-foreground/[0.04] text-muted border-border line-through";
+
 /** Colour per occasion type — a coloured pill on the grid. */
 export const OCCASION_TYPE_COLORS: Record<string, string> = {
   birthday: "bg-amber-100 text-amber-800 border-amber-200",

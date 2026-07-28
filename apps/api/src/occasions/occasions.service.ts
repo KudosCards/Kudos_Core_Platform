@@ -24,9 +24,40 @@ const RECIPIENT_SELECT = {
   select: { firstName: true, lastName: true, addressVerificationRequired: true },
 } as const;
 
+/** The occasion's latest order line (if any), so the UI can link straight to
+ * the order it was sent on. Newest first + take 1: an occasion is consumed into
+ * a single order, but ordering defensively covers any re-order edge. */
+const ORDER_LINK_ARGS = {
+  orderBy: { createdAt: "desc" },
+  take: 1,
+  select: {
+    batchOrder: { select: { id: true, orderNumber: true, status: true } },
+  },
+} as const;
+
 export type Occasion = Prisma.OccasionGetPayload<{
   include: { recipient: typeof RECIPIENT_SELECT };
 }>;
+
+/** The order-link shape nested onto list/detail responses (see ADR 0055). */
+export type OccasionOrderLink = Prisma.BatchOrderGetPayload<{
+  select: { id: true; orderNumber: true; status: true };
+}>;
+
+export type OccasionWithOrder = Occasion & { order: OccasionOrderLink | null };
+
+type OccasionWithOrderRecipients = Occasion & {
+  orderRecipients: { batchOrder: OccasionOrderLink }[];
+};
+
+/** Fold the (at most one) included order line into a flat `order` field, and
+ * drop the raw orderRecipients array from the response. */
+function attachOrderLink({
+  orderRecipients,
+  ...occasion
+}: OccasionWithOrderRecipients): OccasionWithOrder {
+  return { ...occasion, order: orderRecipients[0]?.batchOrder ?? null };
+}
 
 @Injectable()
 export class OccasionsService {
@@ -193,7 +224,7 @@ export class OccasionsService {
     accountId: string,
     actorUserId: string,
     query: ListOccasionsQueryDto,
-  ): Promise<Paginated<Occasion>> {
+  ): Promise<Paginated<OccasionWithOrder>> {
     const page = parsePage(query.page);
     const perPage = parsePerPage(query.perPage, 25);
     const where: Prisma.OccasionWhereInput = {
@@ -222,13 +253,14 @@ export class OccasionsService {
     // Two plain queries, not a $transaction — a paginated total needn't be a
     // consistent snapshot with the page, and an explicit read transaction is
     // what misbehaves on a pgBouncer pool (see docs/go-live-runbook.md §1c).
-    const items = await this.prisma.occasion.findMany({
+    const rows = await this.prisma.occasion.findMany({
       where,
       skip: (page - 1) * perPage,
       take: perPage,
       orderBy: { occasionDate: "asc" },
-      include: { recipient: RECIPIENT_SELECT },
+      include: { recipient: RECIPIENT_SELECT, orderRecipients: ORDER_LINK_ARGS },
     });
+    const items = rows.map(attachOrderLink);
     const total = await this.prisma.occasion.count({ where });
 
     await this.audit.record({
@@ -249,10 +281,10 @@ export class OccasionsService {
     return { items, total, page, perPage };
   }
 
-  async findOne(accountId: string, actorUserId: string, id: string): Promise<Occasion> {
+  async findOne(accountId: string, actorUserId: string, id: string): Promise<OccasionWithOrder> {
     const occasion = await this.prisma.occasion.findFirst({
       where: { id, accountId },
-      include: { recipient: RECIPIENT_SELECT },
+      include: { recipient: RECIPIENT_SELECT, orderRecipients: ORDER_LINK_ARGS },
     });
     if (!occasion) {
       throw new NotFoundException("Occasion not found");
@@ -264,7 +296,7 @@ export class OccasionsService {
       targetType: "Occasion",
       targetId: id,
     });
-    return occasion;
+    return attachOrderLink(occasion);
   }
 
   async approve(

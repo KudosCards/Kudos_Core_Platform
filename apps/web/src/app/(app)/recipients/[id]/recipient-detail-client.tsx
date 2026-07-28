@@ -395,6 +395,14 @@ export function RecipientDetailClient({
                     >
                       {STATUS_LABELS[occasion.status] ?? occasion.status}
                     </span>
+                    {occasion.order && (
+                      <Link
+                        href={`/orders/${occasion.order.id}`}
+                        className="rounded-md border border-border px-2.5 py-1 text-xs text-accent hover:bg-accent-soft"
+                      >
+                        ORD-{occasion.order.orderNumber} →
+                      </Link>
+                    )}
                     {occasion.status === "scheduled" && (
                       <>
                         <button
