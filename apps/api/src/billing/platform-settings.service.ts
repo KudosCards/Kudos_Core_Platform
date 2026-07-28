@@ -6,6 +6,9 @@ import { PrismaService } from "../prisma/prisma.service";
 export const PLATFORM_SETTING_KEYS = {
   centreSeatPriceId: "stripe_centre_seat_price_id",
   billingPortalConfigId: "stripe_billing_portal_config_id",
+  /** JSON array of SeasonalDispatchRule — admin-editable seasonal dispatch
+   * windows (Christmas rush, …). See docs/adr/0059-configurable-seasonal-dispatch.md. */
+  dispatchSeasonalRules: "dispatch_seasonal_rules",
 } as const;
 
 /**

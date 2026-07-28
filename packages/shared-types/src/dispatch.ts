@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { PostageClass } from "./enums";
 
 /**
@@ -94,12 +95,12 @@ export interface SeasonalDispatchRule {
 }
 
 /**
- * Default seasonal rules. December is the Royal Mail post rush: cards need to go
- * earlier, and First Class is the safer bet. Seeded here as the sensible
- * default; a platform admin can override the set (see the service layer) without
- * a redeploy.
+ * Bundled default seasonal rules. December is the Royal Mail post rush: cards
+ * need to go earlier, and First Class is the safer bet. This is the fallback the
+ * engine uses until a platform admin overrides the set at runtime (see
+ * `setSeasonalDispatchRules` + the API's DispatchConfigService) — no redeploy.
  */
-export const SEASONAL_DISPATCH_RULES: readonly SeasonalDispatchRule[] = [
+export const DEFAULT_SEASONAL_DISPATCH_RULES: readonly SeasonalDispatchRule[] = [
   {
     label: "Christmas post rush",
     from: { month: 12, day: 1 },
@@ -108,6 +109,33 @@ export const SEASONAL_DISPATCH_RULES: readonly SeasonalDispatchRule[] = [
     suggestFirstClass: true,
   },
 ];
+
+/**
+ * The active rule set the engine uses when a caller doesn't pass its own.
+ * Process-wide, mutable, and seeded with the bundled default — the API loads the
+ * admin-configured set into it on boot and whenever it changes, so
+ * `computeDispatchDate`/`suggestFirstClass` honour it with no per-call plumbing.
+ * The web never sets it, so it keeps the sensible default there.
+ */
+let activeSeasonalRules: readonly SeasonalDispatchRule[] = DEFAULT_SEASONAL_DISPATCH_RULES;
+
+/** Replace the active seasonal rule set (admin config). Pass the default to
+ * reset. Callers can still override per-call via the `options` argument. */
+export function setSeasonalDispatchRules(rules: readonly SeasonalDispatchRule[]): void {
+  activeSeasonalRules = rules;
+}
+
+/** The active seasonal rule set the engine is currently using. */
+export function getSeasonalDispatchRules(): readonly SeasonalDispatchRule[] {
+  return activeSeasonalRules;
+}
+
+/**
+ * @deprecated Use `DEFAULT_SEASONAL_DISPATCH_RULES` (the immutable default) or
+ * `getSeasonalDispatchRules()` (the active, possibly admin-configured set). Kept
+ * as an alias for the default so existing imports don't break.
+ */
+export const SEASONAL_DISPATCH_RULES = DEFAULT_SEASONAL_DISPATCH_RULES;
 
 /** Options for the dispatch calculation — injectable so admin-configured
  * holiday/seasonal sets can override the bundled defaults. */
@@ -146,7 +174,7 @@ function monthDayKey(month: number, day: number): number {
 /** The first seasonal rule whose window contains this occasion date, or null. */
 export function seasonalDispatchRuleFor(
   occasionDate: Date,
-  rules: readonly SeasonalDispatchRule[] = SEASONAL_DISPATCH_RULES,
+  rules: readonly SeasonalDispatchRule[] = activeSeasonalRules,
 ): SeasonalDispatchRule | null {
   const cur = monthDayKey(occasionDate.getUTCMonth() + 1, occasionDate.getUTCDate());
   for (const rule of rules) {
@@ -206,3 +234,23 @@ export function suggestFirstClass(
   }
   return { suggested: false };
 }
+
+/** Validation for an admin-supplied seasonal rule (matches SeasonalDispatchRule).
+ * Bounds keep a bad edit from setting an absurd lead or an unbounded rule list. */
+export const seasonalDispatchRuleSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  from: z.object({
+    month: z.number().int().min(1).max(12),
+    day: z.number().int().min(1).max(31),
+  }),
+  to: z.object({
+    month: z.number().int().min(1).max(12),
+    day: z.number().int().min(1).max(31),
+  }),
+  extraLeadDays: z.number().int().min(0).max(30),
+  suggestFirstClass: z.boolean(),
+});
+
+/** The full admin-editable rule set — bounded so it can't grow unbounded. */
+export const seasonalDispatchRulesSchema = z.array(seasonalDispatchRuleSchema).max(24);
+export type SeasonalDispatchRuleInput = z.infer<typeof seasonalDispatchRuleSchema>;

@@ -1,9 +1,21 @@
-import { Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import type { Customer360 } from "@kudos/shared-types";
+import type { Customer360, SeasonalDispatchRule } from "@kudos/shared-types";
 import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import type { Paginated } from "../common/paginated";
 import { SeatBillingService, type SeatPriceStatus } from "../billing/seat-billing.service";
+import { DispatchConfigService } from "../dispatch/dispatch-config.service";
+import { UpdateSeasonalRulesDto } from "./dto/update-seasonal-rules.dto";
 import {
   AdminService,
   type AdminOverview,
@@ -28,6 +40,7 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly adminCustomer: AdminCustomerService,
     private readonly seatBilling: SeatBillingService,
+    private readonly dispatchConfig: DispatchConfigService,
   ) {}
 
   @Get("overview")
@@ -68,5 +81,27 @@ export class AdminController {
   @Post("billing/seat-price")
   ensureSeatPrice(): Promise<SeatPriceStatus> {
     return this.seatBilling.ensureSeatPrice();
+  }
+
+  /** The active seasonal dispatch windows (Christmas rush, …) plus the bundled
+   * default, so the ops editor can show current config and offer a reset. */
+  @Get("dispatch/seasonal-rules")
+  seasonalRules(): {
+    rules: readonly SeasonalDispatchRule[];
+    default: readonly SeasonalDispatchRule[];
+  } {
+    return {
+      rules: this.dispatchConfig.getRules(),
+      default: this.dispatchConfig.getDefaultRules(),
+    };
+  }
+
+  /** Replace the seasonal dispatch windows. Applied immediately + persisted, so
+   * dispatch timing changes with no redeploy. See docs/adr/0059. */
+  @Put("dispatch/seasonal-rules")
+  async updateSeasonalRules(
+    @Body() dto: UpdateSeasonalRulesDto,
+  ): Promise<{ rules: readonly SeasonalDispatchRule[] }> {
+    return { rules: await this.dispatchConfig.updateRules(dto.rules) };
   }
 }

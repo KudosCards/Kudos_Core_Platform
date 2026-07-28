@@ -197,6 +197,61 @@ describe("Admin — super admin dashboard (e2e)", () => {
     }
   });
 
+  it("reads, validates, updates and resets the seasonal dispatch windows", async () => {
+    const adminToken = await createAdmin();
+    const { token } = await signUp();
+
+    // Non-admins are refused.
+    await request(app.getHttpServer())
+      .get("/admin/dispatch/seasonal-rules")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(403);
+
+    // Read: the active rules + the bundled default (for the reset button).
+    const initial = await request(app.getHttpServer())
+      .get("/admin/dispatch/seasonal-rules")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    const initialBody = initial.body as { rules: unknown[]; default: { label: string }[] };
+    expect(initialBody.default.some((r) => r.label === "Christmas post rush")).toBe(true);
+    const defaultRules = initialBody.default;
+
+    // A bad window (day 40) is rejected.
+    await request(app.getHttpServer())
+      .put("/admin/dispatch/seasonal-rules")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        rules: [
+          { label: "Bad", from: { month: 1, day: 40 }, to: { month: 1, day: 2 }, extraLeadDays: 1, suggestFirstClass: false },
+        ],
+      })
+      .expect(400);
+
+    // A valid update is stored and echoed back.
+    const custom = [
+      { label: "Summer holidays", from: { month: 7, day: 15 }, to: { month: 8, day: 31 }, extraLeadDays: 2, suggestFirstClass: false },
+    ];
+    const updated = await request(app.getHttpServer())
+      .put("/admin/dispatch/seasonal-rules")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ rules: custom })
+      .expect(200);
+    expect((updated.body as { rules: { label: string }[] }).rules[0]?.label).toBe("Summer holidays");
+
+    const afterUpdate = await request(app.getHttpServer())
+      .get("/admin/dispatch/seasonal-rules")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    expect((afterUpdate.body as { rules: { label: string }[] }).rules).toHaveLength(1);
+
+    // Reset so this test can't affect other suites' dispatch-date maths.
+    await request(app.getHttpServer())
+      .put("/admin/dispatch/seasonal-rules")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ rules: defaultRules })
+      .expect(200);
+  });
+
   it("overview reflects a paid order (counts, revenue, cards sent)", async () => {
     const adminToken = await createAdmin();
     const { totalMinor } = await createPaidOrder();
