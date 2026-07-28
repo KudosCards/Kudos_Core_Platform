@@ -2,6 +2,7 @@ import { serverApiFetch } from "@/lib/api.server";
 import { formatGbp } from "@/lib/orders";
 import { planLabel } from "@/lib/admin";
 import { SeatBillingSetup } from "./seat-billing-setup";
+import { SeasonalDispatchSetup } from "./seasonal-dispatch-setup";
 
 interface AdminOverview {
   accounts: { total: number; organisations: number; individuals: number };
@@ -129,6 +130,9 @@ export default async function AdminOverviewPage() {
 
       {/* Billing setup — turn on the £5/mo extra-seat add-on from here. */}
       <SeatBillingSetup />
+
+      {/* Seasonal dispatch windows — Christmas rush etc., editable in-app. */}
+      <SeasonalDispatchSetup />
 
       {/* Revenue chart + plans */}
       <div className="grid gap-4 lg:grid-cols-3">

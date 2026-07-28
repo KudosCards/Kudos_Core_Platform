@@ -1,7 +1,10 @@
 import {
   computeDispatchDate,
+  DEFAULT_SEASONAL_DISPATCH_RULES,
+  getSeasonalDispatchRules,
   isWorkingDay,
   seasonalDispatchRuleFor,
+  setSeasonalDispatchRules,
   suggestFirstClass,
   UK_BANK_HOLIDAYS,
   type SeasonalDispatchRule,
@@ -85,5 +88,42 @@ describe("suggestFirstClass", () => {
 
   it("does not suggest outside a busy window", () => {
     expect(suggestFirstClass(utc(2026, 6, 15)).suggested).toBe(false);
+  });
+});
+
+describe("runtime-configurable seasonal rules", () => {
+  // The active set is a process-wide global; always restore the default so a
+  // config test can't bleed into the others.
+  afterEach(() => setSeasonalDispatchRules(DEFAULT_SEASONAL_DISPATCH_RULES));
+
+  it("makes the default engine calls honour a newly set rule set", () => {
+    // Out of the box, mid-March is not in any window.
+    expect(suggestFirstClass(utc(2026, 2, 15)).suggested).toBe(false);
+
+    setSeasonalDispatchRules([
+      { label: "Spring rush", from: { month: 3, day: 1 }, to: { month: 3, day: 31 }, extraLeadDays: 2, suggestFirstClass: true },
+    ]);
+
+    expect(getSeasonalDispatchRules()).toHaveLength(1);
+    expect(suggestFirstClass(utc(2026, 2, 15)).suggested).toBe(true);
+    expect(seasonalDispatchRuleFor(utc(2026, 2, 15))?.label).toBe("Spring rush");
+    // And the Christmas default no longer applies until reset.
+    expect(seasonalDispatchRuleFor(utc(2026, 11, 20))).toBeNull();
+  });
+
+  it("resets cleanly to the bundled Christmas default", () => {
+    setSeasonalDispatchRules([]);
+    expect(seasonalDispatchRuleFor(utc(2026, 11, 20))).toBeNull();
+
+    setSeasonalDispatchRules(DEFAULT_SEASONAL_DISPATCH_RULES);
+    expect(seasonalDispatchRuleFor(utc(2026, 11, 20))?.label).toBe("Christmas post rush");
+  });
+
+  it("still honours an explicit per-call rule set over the active one", () => {
+    setSeasonalDispatchRules([]);
+    const rules: SeasonalDispatchRule[] = [
+      { label: "Explicit", from: { month: 6, day: 1 }, to: { month: 6, day: 30 }, extraLeadDays: 1, suggestFirstClass: false },
+    ];
+    expect(seasonalDispatchRuleFor(utc(2026, 5, 15), rules)?.label).toBe("Explicit");
   });
 });
