@@ -7,6 +7,7 @@ export * from "./occasion";
 export * from "./event";
 export * from "./pricing";
 export * from "./card";
+export * from "./design-layout";
 export * from "./order";
 export * from "./billing";
 export * from "./fulfillment";

@@ -17,6 +17,15 @@ export const designElementSchema = z.discriminatedUnion("kind", [
     fontFamily: z.string(),
     fontSize: z.number().positive(),
     color: z.string(),
+    /**
+     * Wrap width of the text box in design units. When set, text word-wraps
+     * within this box (the editor's adjustable "text width" guard rail). When
+     * omitted, it wraps to the card's right edge — the legacy behaviour, kept
+     * so existing designs render unchanged.
+     */
+    width: z.number().positive().optional(),
+    /** Horizontal alignment within the text box. Defaults to left. */
+    align: z.enum(["left", "center", "right"]).optional(),
   }),
   z.object({
     kind: z.literal("image"),
