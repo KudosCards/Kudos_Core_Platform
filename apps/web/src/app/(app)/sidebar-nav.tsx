@@ -39,7 +39,10 @@ const GROUPS: NavGroup[] = [
     // Team, Integrations, Wallet & Billing all now live under Settings, so the
     // sidebar stays lean. See docs/adr/0030-settings-and-notification-centre.md.
     title: "Account",
-    items: [{ label: "Settings", href: "/settings", icon: "settings" }],
+    items: [
+      { label: "Settings", href: "/settings", icon: "settings" },
+      { label: "Support", href: "/support", icon: "support" },
+    ],
   },
 ];
 

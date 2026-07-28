@@ -19,6 +19,8 @@ const KIND_DOT: Record<string, string> = {
   order_paid: "bg-emerald-500",
   auto_send: "bg-blue-500",
   invite_accepted: "bg-blue-500",
+  card_returned: "bg-amber-500",
+  support_reply: "bg-accent",
 };
 
 /** A short "2h ago" / "3d ago" relative time for inbox rows. */
