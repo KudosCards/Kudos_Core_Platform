@@ -1,4 +1,5 @@
 export * from "./enums";
+export * from "./dispatch";
 export * from "./account";
 export * from "./recipient";
 export * from "./recipient-list";

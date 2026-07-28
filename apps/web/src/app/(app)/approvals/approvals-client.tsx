@@ -1,6 +1,6 @@
 "use client";
 
-import type { Occasion, SavedDesign } from "@kudos/shared-types";
+import { suggestFirstClass, type Occasion, type SavedDesign } from "@kudos/shared-types";
 import Link from "next/link";
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
@@ -171,21 +171,48 @@ export function ApprovalsClient({
                       />
                       <span>Auto-send — we order, pay from your wallet, and post it automatically</span>
                     </label>
-                    {autoSend && (
-                      <select
-                        value={postageByOccasion[occasion.id] ?? "second_class"}
-                        onChange={(e) =>
-                          setPostageByOccasion((current) => ({
-                            ...current,
-                            [occasion.id]: e.target.value as PostageClass,
-                          }))
-                        }
-                        className="rounded-md border border-border bg-surface px-2 py-1.5 text-sm"
-                      >
-                        <option value="second_class">Second class (posts ~5 days ahead)</option>
-                        <option value="first_class">First class (posts ~3 days ahead)</option>
-                      </select>
-                    )}
+                    {autoSend &&
+                      (() => {
+                        const postage = postageByOccasion[occasion.id] ?? "second_class";
+                        const nudge = suggestFirstClass(new Date(occasion.occasionDate));
+                        const showNudge = nudge.suggested && postage !== "first_class";
+                        return (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <select
+                              value={postage}
+                              onChange={(e) =>
+                                setPostageByOccasion((current) => ({
+                                  ...current,
+                                  [occasion.id]: e.target.value as PostageClass,
+                                }))
+                              }
+                              className="rounded-md border border-border bg-surface px-2 py-1.5 text-sm"
+                            >
+                              <option value="second_class">
+                                Second class (posts ~5 working days ahead)
+                              </option>
+                              <option value="first_class">
+                                First class (posts ~3 working days ahead)
+                              </option>
+                            </select>
+                            {showNudge && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPostageByOccasion((current) => ({
+                                    ...current,
+                                    [occasion.id]: "first_class",
+                                  }))
+                                }
+                                title={nudge.reason}
+                                className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200"
+                              >
+                                ⚡ {nudge.reason} Use First Class
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                   </div>
                 )}
               </div>
