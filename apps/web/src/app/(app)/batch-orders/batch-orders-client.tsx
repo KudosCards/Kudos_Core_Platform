@@ -43,12 +43,17 @@ export function BatchOrdersClient({
   initialOccasions,
   initialUnfinishedOrders,
   walletBalanceMinor,
+  initialSelectedIds = [],
 }: {
   initialOccasions: OccasionWithRecipient[];
   initialUnfinishedOrders: UnfinishedBatchOrder[];
   walletBalanceMinor: number;
+  /** Occasion ids pre-ticked from the calendar list-view bulk action. */
+  initialSelectedIds?: string[];
 }) {
-  const [lines, setLines] = useState<Record<string, LineDraft>>({});
+  const [lines, setLines] = useState<Record<string, LineDraft>>(() =>
+    Object.fromEntries(initialSelectedIds.map((id) => [id, { ...EMPTY_LINE }])),
+  );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);

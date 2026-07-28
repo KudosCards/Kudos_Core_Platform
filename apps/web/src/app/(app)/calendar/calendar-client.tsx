@@ -189,6 +189,16 @@ export function CalendarClient({
   // Shared-event pop-up: an existing event id to manage, or a date to create on.
   const [openEventId, setOpenEventId] = useState<string | null>(null);
   const [createDate, setCreateDate] = useState<string | null>(null);
+  // List-view multi-select of approved occasions → create one order from them.
+  const [orderSelection, setOrderSelection] = useState<Set<string>>(new Set());
+  const toggleOrderSelection = useCallback((id: string) => {
+    setOrderSelection((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   // Reflect an inline edit from the pop-up back into the calendar immediately.
   const applyUpdate = useCallback((updated: Occasion) => {
@@ -386,6 +396,8 @@ export function CalendarClient({
           onOpen={setSelected}
           onOpenEvent={setOpenEventId}
           onCreateForDate={setCreateDate}
+          orderSelection={orderSelection}
+          onToggleOrder={toggleOrderSelection}
         />
       ) : (
         <GridView
@@ -398,6 +410,27 @@ export function CalendarClient({
           onOpenEvent={setOpenEventId}
           onCreateForDate={setCreateDate}
         />
+      )}
+
+      {orderSelection.size > 0 && (
+        <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 self-center rounded-full border border-border bg-surface px-4 py-2 shadow-lg">
+          <span className="text-sm font-medium">
+            {orderSelection.size} approved card{orderSelection.size === 1 ? "" : "s"} selected
+          </span>
+          <Link
+            href={`/batch-orders?occasions=${[...orderSelection].join(",")}`}
+            className="btn-accent"
+          >
+            Create order →
+          </Link>
+          <button
+            type="button"
+            onClick={() => setOrderSelection(new Set())}
+            className="text-sm text-muted hover:text-accent"
+          >
+            Clear
+          </button>
+        </div>
       )}
 
       {selected && (
@@ -519,6 +552,8 @@ function ListView({
   onOpen,
   onOpenEvent,
   onCreateForDate,
+  orderSelection,
+  onToggleOrder,
 }: {
   anchor: Date;
   byDay: Map<string, Occasion[]>;
@@ -527,6 +562,8 @@ function ListView({
   onOpen: (occasion: Occasion) => void;
   onOpenEvent: (id: string) => void;
   onCreateForDate: (dateKey: string) => void;
+  orderSelection: Set<string>;
+  onToggleOrder: (id: string) => void;
 }) {
   const days = [...new Set([...byDay.keys(), ...eventsByDay.keys()])].sort();
   if (days.length === 0) {
@@ -568,7 +605,16 @@ function ListView({
                 </div>
               ))}
               {(byDay.get(key) ?? []).map((occasion) => (
-                <div key={occasion.id} className="max-w-48">
+                <div key={occasion.id} className="flex max-w-56 items-center gap-1.5">
+                  {occasion.status === "approved" && (
+                    <input
+                      type="checkbox"
+                      checked={orderSelection.has(occasion.id)}
+                      onChange={() => onToggleOrder(occasion.id)}
+                      title="Select to include in an order"
+                      className="accent-accent"
+                    />
+                  )}
                   <OccasionPill occasion={occasion} onOpen={onOpen} />
                 </div>
               ))}
