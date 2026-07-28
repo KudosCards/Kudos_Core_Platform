@@ -68,9 +68,15 @@ function periodLabel(view: CalendarView, anchor: Date): string {
 function OccasionPill({
   occasion,
   onOpen,
+  draggable = false,
+  onDragStart,
 }: {
   occasion: Occasion;
   onOpen: (occasion: Occasion) => void;
+  /** When true, the pill can be dragged to a new dispatch day (grid + dispatch
+   * view only, and only for cards not yet on an order). */
+  draggable?: boolean;
+  onDragStart?: (occasion: Occasion) => void;
 }) {
   const progress = occasionProgress(occasion.status);
   const color =
@@ -84,13 +90,34 @@ function OccasionPill({
   return (
     <button
       type="button"
+      draggable={draggable}
+      onDragStart={
+        draggable
+          ? (e) => {
+              e.dataTransfer.setData("text/plain", occasion.id);
+              e.dataTransfer.effectAllowed = "move";
+              onDragStart?.(occasion);
+            }
+          : undefined
+      }
       onClick={() => onOpen(occasion)}
-      className={`flex w-full items-center gap-1 truncate rounded border px-1.5 py-0.5 text-left text-xs hover:opacity-80 ${color}`}
-      title={`${occasionLabel(occasion)} · ${occasionKind(occasion)}${stateNote}`}
+      className={`flex w-full items-center gap-1 truncate rounded border px-1.5 py-0.5 text-left text-xs hover:opacity-80 ${color} ${
+        draggable ? "cursor-grab active:cursor-grabbing" : ""
+      }`}
+      title={
+        draggable
+          ? `${occasionLabel(occasion)} — drag to change the dispatch day`
+          : `${occasionLabel(occasion)} · ${occasionKind(occasion)}${stateNote}`
+      }
     >
       {progress === "sent" && (
         <span aria-hidden className="shrink-0 font-bold">
           ✓
+        </span>
+      )}
+      {occasion.dispatchDateOverridden && draggable && (
+        <span aria-hidden className="shrink-0" title="Manually placed">
+          📌
         </span>
       )}
       <span className="truncate">{occasionLabel(occasion)}</span>
@@ -222,6 +249,34 @@ export function CalendarClient({
     }
   }, [view, anchor, typeFilter]);
 
+  // Drag a card to a new dispatch day (only meaningful with dispatch dates on).
+  // Optimistic: move it immediately, then reconcile with the server's response;
+  // on failure, surface the error and reload the true state.
+  const moveDispatch = useCallback(
+    async (occasionId: string, dateKey: string) => {
+      setOccasions((current) =>
+        current.map((o) =>
+          o.id === occasionId
+            ? { ...o, dispatchDate: new Date(`${dateKey}T00:00:00Z`), dispatchDateOverridden: true }
+            : o,
+        ),
+      );
+      try {
+        const updated = await clientApiFetch<Occasion>(`/occasions/${occasionId}/dispatch-date`, {
+          method: "PATCH",
+          body: JSON.stringify({ dispatchDate: dateKey }),
+        });
+        setOccasions((current) => current.map((o) => (o.id === updated.id ? updated : o)));
+      } catch (moveError) {
+        setError(
+          moveError instanceof ApiError ? moveError.message : "Could not move the dispatch date",
+        );
+        void load();
+      }
+    },
+    [load],
+  );
+
   // Skip the very first run — the server already rendered the current month.
   const firstRender = useRef(true);
   useEffect(() => {
@@ -352,6 +407,9 @@ export function CalendarClient({
             />
             Dispatch dates
           </label>
+          {showDispatch && view !== "list" && (
+            <span className="hidden text-xs text-muted sm:inline">Drag a card to re-time its dispatch</span>
+          )}
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
@@ -409,6 +467,8 @@ export function CalendarClient({
           onOpen={setSelected}
           onOpenEvent={setOpenEventId}
           onCreateForDate={setCreateDate}
+          showDispatch={showDispatch}
+          onMoveDispatch={moveDispatch}
         />
       )}
 
@@ -465,6 +525,8 @@ function GridView({
   onOpen,
   onOpenEvent,
   onCreateForDate,
+  showDispatch,
+  onMoveDispatch,
 }: {
   view: CalendarView;
   anchor: Date;
@@ -474,6 +536,8 @@ function GridView({
   onOpen: (occasion: Occasion) => void;
   onOpenEvent: (id: string) => void;
   onCreateForDate: (dateKey: string) => void;
+  showDispatch: boolean;
+  onMoveDispatch: (occasionId: string, dateKey: string) => void;
 }) {
   const { start } = view === "week" ? weekRange(anchor) : monthGridRange(anchor);
   const dayCount = view === "week" ? 7 : 42;
@@ -504,10 +568,20 @@ function GridView({
             <div
               key={key}
               onDoubleClick={() => onCreateForDate(key)}
+              onDragOver={showDispatch ? (e) => e.preventDefault() : undefined}
+              onDrop={
+                showDispatch
+                  ? (e) => {
+                      e.preventDefault();
+                      const id = e.dataTransfer.getData("text/plain");
+                      if (id) onMoveDispatch(id, key);
+                    }
+                  : undefined
+              }
               title="Double-click to create an event"
               className={`group ${cellHeight} flex flex-col gap-1 border-t border-l border-border p-1.5 first:border-l-0 ${
                 isToday ? "bg-accent-soft/50" : inMonth ? "" : "bg-foreground/[0.02] text-muted"
-              }`}
+              } ${showDispatch ? "hover:bg-accent-soft/30" : ""}`}
             >
               <div className="flex items-center justify-between">
                 <button
@@ -532,7 +606,12 @@ function GridView({
                 <EventPill key={event.id} event={event} onOpen={onOpenEvent} />
               ))}
               {shown.map((occasion) => (
-                <OccasionPill key={occasion.id} occasion={occasion} onOpen={onOpen} />
+                <OccasionPill
+                  key={occasion.id}
+                  occasion={occasion}
+                  onOpen={onOpen}
+                  draggable={showDispatch && occasionProgress(occasion.status) === "upcoming"}
+                />
               ))}
               {extra > 0 && <span className="px-1 text-xs text-muted">+{extra} more</span>}
             </div>

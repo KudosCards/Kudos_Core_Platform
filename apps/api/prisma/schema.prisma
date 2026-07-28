@@ -361,6 +361,11 @@ model Occasion {
   title          String?
   occasionDate   DateTime       @map("occasion_date") @db.Date
   dispatchDate   DateTime?      @map("dispatch_date") @db.Date
+  /// True when a human manually placed the dispatch date (dragged it on the
+  /// calendar), so the working-day recompute doesn't silently undo it. Cleared
+  /// when the occasion date changes (the timing baseline moved). See
+  /// docs/adr/0058-drag-dispatch.md.
+  dispatchDateOverridden Boolean @default(false) @map("dispatch_date_overridden")
   status         OccasionStatus @default(scheduled)
   /// How this occasion is sent once approved. `asap` (default) means a human
   /// checks it out manually; `auto_send` means the auto-send cron creates the

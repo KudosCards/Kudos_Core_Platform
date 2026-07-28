@@ -249,6 +249,8 @@ export class EventsService {
       eventData.eventDate = eventDate;
       memberData.occasionDate = eventDate;
       memberData.dispatchDate = computeDispatchDate(eventDate);
+      // The baseline moved — drop any manual dispatch placement on members.
+      memberData.dispatchDateOverridden = false;
     }
     if (dto.notes !== undefined) {
       eventData.notes = dto.notes.trim() ? dto.notes.trim() : null;
