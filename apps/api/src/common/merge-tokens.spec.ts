@@ -1,4 +1,6 @@
 import {
+  MERGE_FIELDS,
+  MERGE_TOKENS,
   applyMergeText,
   applyMergeTokens,
   findBracketTokenMistakes,
@@ -86,6 +88,33 @@ describe("merge tokens", () => {
       expect(
         hasMergeTokens({ version: 1, pages: [{ name: "front", elements: [] }] }),
       ).toBe(false);
+    });
+  });
+
+  describe("MERGE_FIELDS (editor 'Insert merge field' menu)", () => {
+    it("offers only tokens that are recognised built-ins", () => {
+      for (const field of MERGE_FIELDS) {
+        expect(MERGE_TOKENS as readonly string[]).toContain(field.token);
+      }
+    });
+
+    it("each field's token actually resolves at send time", () => {
+      const ctx = {
+        ...recipient,
+        occasion: "Graduation",
+        occasionDate: "2026-07-25",
+      };
+      for (const field of MERGE_FIELDS) {
+        // Inserting the token and merging must change the text — i.e. it's live,
+        // not a literal the recipient would see.
+        expect(applyMergeText(field.token, ctx)).not.toBe(field.token);
+      }
+    });
+
+    it("has a non-empty, human label for every field", () => {
+      for (const field of MERGE_FIELDS) {
+        expect(field.label.trim().length).toBeGreaterThan(0);
+      }
     });
   });
 
