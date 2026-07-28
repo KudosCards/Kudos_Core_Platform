@@ -2,6 +2,7 @@
 
 import type { DesignDocument, DesignElement, DesignPage, SavedDesign } from "@kudos/shared-types";
 import {
+  CARD_WIDTH,
   MERGE_FIELDS,
   findDesignBracketTokenMistakes,
   fixDesignBracketTokens,
@@ -74,6 +75,9 @@ export function DesignEditorClient({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  // Whether the currently-selected text element spills outside the print safe
+  // area — reported up from the canvas, which measures the rendered text.
+  const [selectedOverflow, setSelectedOverflow] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // The text-element editor's textarea, so "Insert merge field" can drop a token
   // at the caret. `pendingCaret` holds where to place the caret after the
@@ -104,6 +108,13 @@ export function DesignEditorClient({
   const page = document_.pages.find((p) => p.name === activePage) ?? document_.pages[0]!;
   const selectedElement = page.elements.find((el) => el.id === selectedElementId) ?? null;
 
+  /** Change the selection, clearing any stale overflow warning — the canvas
+   * re-reports for the newly selected text element (and never for non-text). */
+  function selectElement(id: string | null) {
+    setSelectedElementId(id);
+    setSelectedOverflow(false);
+  }
+
   function updatePage(pageName: DesignPage["name"], updater: (page: DesignPage) => DesignPage) {
     setDocument((doc) => ({
       ...doc,
@@ -114,13 +125,13 @@ export function DesignEditorClient({
   function addTextElement() {
     const element = newTextElement();
     updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
-    setSelectedElementId(element.id);
+    selectElement(element.id);
   }
 
   function addQrElement() {
     const element = newQrElement();
     updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
-    setSelectedElementId(element.id);
+    selectElement(element.id);
   }
 
   /** Whether a QR element is placed anywhere in the design (any face). */
@@ -172,7 +183,7 @@ export function DesignEditorClient({
       ...p,
       elements: p.elements.filter((el) => el.id !== selectedElementId),
     }));
-    setSelectedElementId(null);
+    selectElement(null);
   }
 
   async function handleImageUpload(file: File) {
@@ -203,7 +214,7 @@ export function DesignEditorClient({
         rotation: 0,
       };
       updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
-      setSelectedElementId(element.id);
+      selectElement(element.id);
     } catch (uploadCatchError) {
       setError(uploadCatchError instanceof Error ? uploadCatchError.message : "Upload failed");
     } finally {
@@ -366,7 +377,7 @@ export function DesignEditorClient({
             type="button"
             onClick={() => {
               setActivePage(pageName);
-              setSelectedElementId(null);
+              selectElement(null);
             }}
             className={`rounded-full px-4 py-2 text-sm ${
               activePage === pageName
@@ -442,9 +453,10 @@ export function DesignEditorClient({
           <DesignCanvas
             page={page}
             selectedElementId={selectedElementId}
-            onSelect={setSelectedElementId}
+            onSelect={selectElement}
             onElementChange={updateElement}
-            onDeselect={() => setSelectedElementId(null)}
+            onDeselect={() => selectElement(null)}
+            onSelectedOverflowChange={setSelectedOverflow}
           />
         </div>
 
@@ -529,6 +541,65 @@ export function DesignEditorClient({
                   className="h-8 w-full rounded-md border border-black/10 dark:border-white/10"
                 />
               </label>
+              {/* Text-box width guard rail: a set width word-wraps the text
+                  within it; "Fit to card" clears it back to wrapping at the
+                  card edge. Keeps long text from running off the card. */}
+              <label className="flex flex-col gap-1 text-xs text-foreground/60">
+                Text box width
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={40}
+                    max={CARD_WIDTH}
+                    placeholder="Fits to card"
+                    value={selectedElement.width ?? ""}
+                    onChange={(e) => {
+                      const raw = e.target.value.trim();
+                      const next = raw === "" ? undefined : Math.min(CARD_WIDTH, Math.max(40, Number(raw) || 40));
+                      updateElement({ ...selectedElement, width: next });
+                    }}
+                    className="w-full rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                  />
+                  {selectedElement.width !== undefined && (
+                    <button
+                      type="button"
+                      onClick={() => updateElement({ ...selectedElement, width: undefined })}
+                      className="shrink-0 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                    >
+                      Fit to card
+                    </button>
+                  )}
+                </div>
+              </label>
+              <div className="flex flex-col gap-1 text-xs text-foreground/60">
+                Alignment
+                <div className="flex gap-1">
+                  {(["left", "center", "right"] as const).map((align) => {
+                    const active = (selectedElement.align ?? "left") === align;
+                    return (
+                      <button
+                        key={align}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => updateElement({ ...selectedElement, align })}
+                        className={`flex-1 rounded-md border px-2 py-1 text-xs capitalize ${
+                          active
+                            ? "border-accent bg-accent/10 font-semibold text-foreground"
+                            : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                        }`}
+                      >
+                        {align}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {selectedOverflow && (
+                <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                  This text spills outside the card&apos;s safe area (the dashed frame). Shorten it,
+                  shrink the font, or narrow the box so it isn&apos;t clipped when printed.
+                </p>
+              )}
             </>
           )}
 

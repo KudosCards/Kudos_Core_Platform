@@ -3,13 +3,13 @@
 import { Stage, Layer, Rect, Text, Image as KonvaImage } from "react-konva";
 import useImage from "use-image";
 import type { DesignDocument, DesignElement } from "@kudos/shared-types";
+import { CARD_HEIGHT, CARD_WIDTH, textWrapWidth } from "@kudos/shared-types";
 
 // The card canvas is authored at 450×600 (see the editor's design-canvas). This
 // renders the front page read-only at an arbitrary display width, scaling the
 // whole stage so element coordinates stay correct.
-const CANVAS_WIDTH = 450;
-const CANVAS_HEIGHT = 600;
-const TEXT_RIGHT_PADDING = 16;
+const CANVAS_WIDTH = CARD_WIDTH;
+const CANVAS_HEIGHT = CARD_HEIGHT;
 
 function ImageNode({ element }: { element: Extract<DesignElement, { kind: "image" }> }) {
   const [image] = useImage(element.assetUrl, "anonymous");
@@ -59,7 +59,8 @@ export function CardFacePreview({
                 text={element.text}
                 x={element.x}
                 y={element.y}
-                width={Math.max(40, CANVAS_WIDTH - element.x - TEXT_RIGHT_PADDING)}
+                width={textWrapWidth(element)}
+                align={element.align ?? "left"}
                 wrap="word"
                 lineHeight={1.3}
                 fontFamily={element.fontFamily}
