@@ -26,7 +26,11 @@ export const occasionTypeSchema = z.enum([
 ]);
 export type OccasionType = z.infer<typeof occasionTypeSchema>;
 
-export const occasionSourceSchema = z.enum(["recurring_per_recipient", "one_off_campaign"]);
+export const occasionSourceSchema = z.enum([
+  "recurring_per_recipient",
+  "one_off_campaign",
+  "shared_event",
+]);
 export type OccasionSource = z.infer<typeof occasionSourceSchema>;
 
 export const occasionStatusSchema = z.enum([

@@ -1,12 +1,13 @@
 "use client";
 
-import type { Occasion } from "@kudos/shared-types";
+import type { EventSummary, Occasion } from "@kudos/shared-types";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
 import { OccasionModal } from "./occasion-modal";
+import { EventModal } from "./event-modal";
 import {
   addDaysUTC,
   fetchRange,
@@ -25,6 +26,20 @@ import {
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const VIEWS: CalendarView[] = ["month", "week", "list"];
+
+/** Fetch the account's shared events for the visible range, type-filtered to
+ * match the occasion view. A plain helper (not a hook) so both the mount effect
+ * and the post-mutation refresh can share it. */
+async function fetchEventsForRange(
+  view: CalendarView,
+  anchor: Date,
+  typeFilter: string,
+): Promise<EventSummary[]> {
+  const { start, end } = fetchRange(view, anchor);
+  const params = new URLSearchParams({ from: ymdUTC(start), to: ymdUTC(end) });
+  const items = await clientApiFetch<EventSummary[]>(`/events?${params.toString()}`);
+  return typeFilter === "all" ? items : items.filter((e) => e.type === typeFilter);
+}
 
 function occasionLabel(occasion: Occasion): string {
   if (occasion.recipient) {
@@ -83,6 +98,37 @@ function OccasionPill({
   );
 }
 
+/** A shared event, collapsed to one calendar entry (not N per-contact pills):
+ * its title plus a "sent / total" progress, opening the manage pop-up. */
+function EventPill({
+  event,
+  onOpen,
+}: {
+  event: EventSummary;
+  onOpen: (id: string) => void;
+}) {
+  const allSent = event.memberCount > 0 && event.sentCount === event.memberCount;
+  const color = allSent
+    ? OCCASION_SENT_COLOR
+    : "bg-indigo-100 text-indigo-800 border-indigo-200";
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(event.id)}
+      className={`flex w-full items-center gap-1 truncate rounded border px-1.5 py-0.5 text-left text-xs font-medium hover:opacity-80 ${color}`}
+      title={`${event.title} · ${event.sentCount}/${event.memberCount} sent`}
+    >
+      <span aria-hidden className="shrink-0">
+        ✦
+      </span>
+      <span className="truncate">{event.title}</span>
+      <span className="ml-auto shrink-0 tabular-nums opacity-70">
+        {event.sentCount}/{event.memberCount}
+      </span>
+    </button>
+  );
+}
+
 /** A small key so the colour/tick states aren't a mystery. */
 function CalendarLegend() {
   return (
@@ -135,10 +181,14 @@ export function CalendarClient({
   const [showDispatch, setShowDispatch] = useState(false);
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [occasions, setOccasions] = useState<Occasion[]>(initialOccasions);
+  const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The occasion whose pop-up is open (null = closed).
   const [selected, setSelected] = useState<Occasion | null>(null);
+  // Shared-event pop-up: an existing event id to manage, or a date to create on.
+  const [openEventId, setOpenEventId] = useState<string | null>(null);
+  const [createDate, setCreateDate] = useState<string | null>(null);
 
   // Reflect an inline edit from the pop-up back into the calendar immediately.
   const applyUpdate = useCallback((updated: Occasion) => {
@@ -172,6 +222,37 @@ export function CalendarClient({
     void load();
   }, [load]);
 
+  // Shared events aren't server-seeded, so this fetch runs on mount too (no
+  // first-render skip). A calendar without events still works, so a failure here
+  // is swallowed — occasions carry the visible error surface.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const items = await fetchEventsForRange(view, anchor, typeFilter);
+        if (active) setEvents(items);
+      } catch {
+        /* keep whatever events are already shown */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [view, anchor, typeFilter]);
+
+  // After a create/add/remove/send, refresh both occasions and events.
+  const refresh = useCallback(() => {
+    void load();
+    void (async () => {
+      try {
+        const items = await fetchEventsForRange(view, anchor, typeFilter);
+        setEvents(items);
+      } catch {
+        /* leave the current events in place */
+      }
+    })();
+  }, [load, view, anchor, typeFilter]);
+
   function move(delta: number) {
     if (view === "week") {
       setAnchor((a) => addDaysUTC(a, delta * 7));
@@ -189,6 +270,15 @@ export function CalendarClient({
     else byDay.set(key, [occasion]);
   }
 
+  // Shared events sit on their event date — one collapsed entry per event.
+  const eventsByDay = new Map<string, EventSummary[]>();
+  for (const event of events) {
+    const key = ymdUTC(new Date(event.eventDate));
+    const bucket = eventsByDay.get(key);
+    if (bucket) bucket.push(event);
+    else eventsByDay.set(key, [event]);
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -198,9 +288,18 @@ export function CalendarClient({
             Every recipient&apos;s upcoming moment. Approve and order ahead of time.
           </p>
         </div>
-        <Link href="/batch-orders" className="btn-accent">
-          Create an order <span aria-hidden>→</span>
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCreateDate(todayKey)}
+            className="rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-foreground/[0.03]"
+          >
+            <span aria-hidden>✦</span> New event
+          </button>
+          <Link href="/batch-orders" className="btn-accent">
+            Create an order <span aria-hidden>→</span>
+          </Link>
+        </div>
       </div>
 
       {/* Toolbar */}
@@ -279,9 +378,26 @@ export function CalendarClient({
       <CalendarLegend />
 
       {view === "list" ? (
-        <ListView anchor={anchor} byDay={byDay} todayKey={todayKey} onOpen={setSelected} />
+        <ListView
+          anchor={anchor}
+          byDay={byDay}
+          eventsByDay={eventsByDay}
+          todayKey={todayKey}
+          onOpen={setSelected}
+          onOpenEvent={setOpenEventId}
+          onCreateForDate={setCreateDate}
+        />
       ) : (
-        <GridView view={view} anchor={anchor} byDay={byDay} todayKey={todayKey} onOpen={setSelected} />
+        <GridView
+          view={view}
+          anchor={anchor}
+          byDay={byDay}
+          eventsByDay={eventsByDay}
+          todayKey={todayKey}
+          onOpen={setSelected}
+          onOpenEvent={setOpenEventId}
+          onCreateForDate={setCreateDate}
+        />
       )}
 
       {selected && (
@@ -289,6 +405,18 @@ export function CalendarClient({
           occasion={selected}
           onClose={() => setSelected(null)}
           onUpdated={applyUpdate}
+        />
+      )}
+
+      {(openEventId !== null || createDate !== null) && (
+        <EventModal
+          eventId={openEventId}
+          createDate={createDate ?? todayKey}
+          onClose={() => {
+            setOpenEventId(null);
+            setCreateDate(null);
+          }}
+          onChanged={refresh}
         />
       )}
     </div>
@@ -299,14 +427,20 @@ function GridView({
   view,
   anchor,
   byDay,
+  eventsByDay,
   todayKey,
   onOpen,
+  onOpenEvent,
+  onCreateForDate,
 }: {
   view: CalendarView;
   anchor: Date;
   byDay: Map<string, Occasion[]>;
+  eventsByDay: Map<string, EventSummary[]>;
   todayKey: string;
   onOpen: (occasion: Occasion) => void;
+  onOpenEvent: (id: string) => void;
+  onCreateForDate: (dateKey: string) => void;
 }) {
   const { start } = view === "week" ? weekRange(anchor) : monthGridRange(anchor);
   const dayCount = view === "week" ? 7 : 42;
@@ -328,25 +462,42 @@ function GridView({
           const key = ymdUTC(day);
           const inMonth = view === "week" || day.getUTCMonth() === anchor.getUTCMonth();
           const isToday = key === todayKey;
+          const dayEvents = eventsByDay.get(key) ?? [];
           const dayOccasions = byDay.get(key) ?? [];
-          const shown = dayOccasions.slice(0, view === "week" ? 12 : 3);
+          const cap = view === "week" ? 12 : 3;
+          const shown = dayOccasions.slice(0, Math.max(0, cap - dayEvents.length));
           const extra = dayOccasions.length - shown.length;
           return (
             <div
               key={key}
-              className={`${cellHeight} flex flex-col gap-1 border-t border-l border-border p-1.5 first:border-l-0 ${
+              onDoubleClick={() => onCreateForDate(key)}
+              title="Double-click to create an event"
+              className={`group ${cellHeight} flex flex-col gap-1 border-t border-l border-border p-1.5 first:border-l-0 ${
                 isToday ? "bg-accent-soft/50" : inMonth ? "" : "bg-foreground/[0.02] text-muted"
               }`}
             >
-              <span
-                className={`self-end text-xs ${
-                  isToday
-                    ? "flex h-5 w-5 items-center justify-center rounded-full bg-foreground font-semibold text-white"
-                    : "text-muted"
-                }`}
-              >
-                {day.getUTCDate()}
-              </span>
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => onCreateForDate(key)}
+                  aria-label="Create an event on this day"
+                  className="text-xs text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
+                >
+                  + event
+                </button>
+                <span
+                  className={`text-xs ${
+                    isToday
+                      ? "flex h-5 w-5 items-center justify-center rounded-full bg-foreground font-semibold text-white"
+                      : "text-muted"
+                  }`}
+                >
+                  {day.getUTCDate()}
+                </span>
+              </div>
+              {dayEvents.map((event) => (
+                <EventPill key={event.id} event={event} onOpen={onOpenEvent} />
+              ))}
               {shown.map((occasion) => (
                 <OccasionPill key={occasion.id} occasion={occasion} onOpen={onOpen} />
               ))}
@@ -363,15 +514,21 @@ function GridView({
 function ListView({
   anchor,
   byDay,
+  eventsByDay,
   todayKey,
   onOpen,
+  onOpenEvent,
+  onCreateForDate,
 }: {
   anchor: Date;
   byDay: Map<string, Occasion[]>;
+  eventsByDay: Map<string, EventSummary[]>;
   todayKey: string;
   onOpen: (occasion: Occasion) => void;
+  onOpenEvent: (id: string) => void;
+  onCreateForDate: (dateKey: string) => void;
 }) {
-  const days = [...byDay.keys()].sort();
+  const days = [...new Set([...byDay.keys(), ...eventsByDay.keys()])].sort();
   if (days.length === 0) {
     return (
       <div className="card p-8 text-center text-sm text-muted">
@@ -384,17 +541,32 @@ function ListView({
       {days.map((key) => {
         const date = new Date(`${key}T00:00:00Z`);
         return (
-          <div key={key} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-6">
-            <div className="w-40 shrink-0 text-sm font-semibold">
-              {date.toLocaleDateString("en-GB", {
-                weekday: "short",
-                day: "numeric",
-                month: "long",
-                timeZone: "UTC",
-              })}
-              {key === todayKey && <span className="ml-2 text-xs text-accent">Today</span>}
+          <div key={key} className="group flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-6">
+            <div className="flex w-40 shrink-0 items-center gap-2 text-sm font-semibold">
+              <span>
+                {date.toLocaleDateString("en-GB", {
+                  weekday: "short",
+                  day: "numeric",
+                  month: "long",
+                  timeZone: "UTC",
+                })}
+                {key === todayKey && <span className="ml-2 text-xs text-accent">Today</span>}
+              </span>
+              <button
+                type="button"
+                onClick={() => onCreateForDate(key)}
+                aria-label="Create an event on this day"
+                className="text-xs text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
+              >
+                + event
+              </button>
             </div>
             <div className="flex flex-1 flex-wrap gap-1.5">
+              {(eventsByDay.get(key) ?? []).map((event) => (
+                <div key={event.id} className="max-w-56">
+                  <EventPill event={event} onOpen={onOpenEvent} />
+                </div>
+              ))}
               {(byDay.get(key) ?? []).map((occasion) => (
                 <div key={occasion.id} className="max-w-48">
                   <OccasionPill occasion={occasion} onOpen={onOpen} />

@@ -4,6 +4,7 @@ export * from "./account";
 export * from "./recipient";
 export * from "./recipient-list";
 export * from "./occasion";
+export * from "./event";
 export * from "./card";
 export * from "./order";
 export * from "./billing";
