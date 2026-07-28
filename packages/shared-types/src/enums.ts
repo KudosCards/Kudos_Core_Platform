@@ -117,3 +117,30 @@ export const returnCaseStatusSchema = z.enum([
   "archived",
 ]);
 export type ReturnCaseStatus = z.infer<typeof returnCaseStatusSchema>;
+
+/** Whose turn it is on a support ticket. Mirrors SupportTicketStatus. */
+export const supportTicketStatusSchema = z.enum([
+  "open",
+  "awaiting_customer",
+  "resolved",
+  "closed",
+]);
+export type SupportTicketStatus = z.infer<typeof supportTicketStatusSchema>;
+
+/** The topic a subscriber picks when raising a ticket. Mirrors SupportTicketCategory. */
+export const supportTicketCategorySchema = z.enum([
+  "billing",
+  "orders",
+  "design",
+  "account",
+  "other",
+]);
+export type SupportTicketCategory = z.infer<typeof supportTicketCategorySchema>;
+
+/** Support-set ticket urgency. Mirrors SupportTicketPriority. */
+export const supportTicketPrioritySchema = z.enum(["low", "normal", "high", "urgent"]);
+export type SupportTicketPriority = z.infer<typeof supportTicketPrioritySchema>;
+
+/** Which side authored a support message. Mirrors SupportMessageAuthor. */
+export const supportMessageAuthorSchema = z.enum(["customer", "support"]);
+export type SupportMessageAuthor = z.infer<typeof supportMessageAuthorSchema>;

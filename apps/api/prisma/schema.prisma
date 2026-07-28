@@ -69,6 +69,7 @@ model Account {
   notifications  Notification[]
   returnCases    ReturnCase[]
   events         Event[]
+  supportTickets SupportTicket[]
 
   // Super-admin subscribers list is ordered newest-first.
   @@index([createdAt])
@@ -874,4 +875,99 @@ model AuditLogEntry {
   @@index([accountId, createdAt])
   @@index([targetType, targetId])
   @@map("audit_log_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Support ticketing
+// ---------------------------------------------------------------------------
+
+/// Whose turn it is on a support ticket. A customer message (new ticket or a
+/// reply) leaves it `open` (support to act); a support reply moves it to
+/// `awaiting_customer`. `resolved` is support marking it done — a customer reply
+/// reopens it to `open`. `closed` is terminal. See docs/adr/0066-support-ticketing.md.
+enum SupportTicketStatus {
+  open
+  awaiting_customer
+  resolved
+  closed
+}
+
+/// Coarse topic the subscriber picks when raising a ticket, so support can
+/// triage and filter the queue.
+enum SupportTicketCategory {
+  billing
+  orders
+  design
+  account
+  other
+}
+
+/// Support-set urgency. Defaults to `normal`; the customer never sets it.
+enum SupportTicketPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+/// Which side authored a ticket message.
+enum SupportMessageAuthor {
+  customer
+  support
+}
+
+/// A support conversation opened by a subscriber and worked by the Kudos support
+/// team in the ops portal. The thread of back-and-forth lives in
+/// SupportTicketMessage. See docs/adr/0066-support-ticketing.md.
+model SupportTicket {
+  id           String  @id @default(uuid())
+  /// Human-friendly sequential reference (rendered as TKT-1000). Sequence starts
+  /// at 1000 (see the migration), mirroring BatchOrder.orderNumber.
+  ticketNumber Int     @unique @default(autoincrement()) @map("ticket_number")
+  accountId    String  @map("account_id")
+  /// The Supabase auth user (a member of the account) who opened the ticket.
+  createdByUserId String @map("created_by_user_id")
+  subject      String
+  category     SupportTicketCategory @default(other)
+  priority     SupportTicketPriority @default(normal)
+  status       SupportTicketStatus   @default(open)
+  /// The ops user (PlatformAdmin.userId) currently handling it, if claimed.
+  assignedToUserId String? @map("assigned_to_user_id")
+  /// Denormalised so the queue can sort by "most recent activity" and show
+  /// "whose turn" without loading the whole message thread.
+  lastMessageAt   DateTime             @default(now()) @map("last_message_at")
+  lastMessageFrom SupportMessageAuthor @default(customer) @map("last_message_from")
+  resolvedAt   DateTime? @map("resolved_at")
+  closedAt     DateTime? @map("closed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  account  Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  messages SupportTicketMessage[]
+
+  // The subscriber's own tickets list (newest first).
+  @@index([accountId, createdAt])
+  // The ops queue: status filter + oldest-activity-first working order.
+  @@index([status, lastMessageAt])
+  @@map("support_tickets")
+}
+
+/// One message in a support ticket thread — from the customer or from support.
+/// `internalNote` messages are support-only (triage/context) and are never
+/// returned to the customer side.
+model SupportTicketMessage {
+  id           String               @id @default(uuid())
+  ticketId     String               @map("ticket_id")
+  authorType   SupportMessageAuthor @map("author_type")
+  /// The authoring Supabase auth user (member or ops); null for system messages.
+  authorUserId String?              @map("author_user_id")
+  body         String
+  /// Support-only note, hidden from the customer. Always false for customer messages.
+  internalNote Boolean              @default(false) @map("internal_note")
+  createdAt    DateTime             @default(now()) @map("created_at")
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_messages")
 }

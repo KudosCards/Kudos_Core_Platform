@@ -145,6 +145,16 @@ export const envSchema = z.object({
   BREVO_DISPATCH_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
   // Returned-to-Sender "please update the address" email (see ADR 0039).
   BREVO_RTS_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  // Support ticketing (see ADR 0066). Optional Brevo templates for the two
+  // notification emails — a support reply (to the customer) and a new/updated
+  // ticket (to the support inbox); unset ⇒ the built-in HTML fallback.
+  BREVO_SUPPORT_REPLY_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  BREVO_SUPPORT_TICKET_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  // Where new tickets and customer replies are emailed so the Kudos support
+  // team is alerted. Optional: unset ⇒ no team alert email is sent (the ticket
+  // is still visible in the ops queue). Blank/malformed degrades to unset rather
+  // than crashing on boot, matching EMAIL_FROM_ADDRESS.
+  SUPPORT_INBOX_EMAIL: z.string().trim().email().optional().catch(undefined),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

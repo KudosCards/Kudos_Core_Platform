@@ -33,6 +33,7 @@ import { RemindersModule } from "./reminders/reminders.module";
 import { TeamModule } from "./team/team.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { ReturnsModule } from "./returns/returns.module";
+import { SupportModule } from "./support/support.module";
 import { SupabaseAdminModule } from "./supabase/supabase-admin.module";
 
 @Module({
@@ -79,6 +80,7 @@ import { SupabaseAdminModule } from "./supabase/supabase-admin.module";
     TeamModule,
     NotificationsModule,
     ReturnsModule,
+    SupportModule,
     SupabaseAdminModule,
   ],
 })
