@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { PublicHeader } from "@/components/public-header";
+import { SocialLinks } from "@/components/social-links";
 
 /**
  * Public marketing landing — the page web traffic lands on. Sells the
@@ -490,13 +491,16 @@ export default function HomePage() {
             © {new Date().getFullYear()} Kudos Cards Ltd. The company that allows you to give some
             Kudos.
           </p>
-          <div className="flex gap-4 text-sm text-slate-600">
-            <Link href="/login" className="hover:text-slate-900">
-              Log in
-            </Link>
-            <Link href="/register" className="hover:text-slate-900">
-              Register
-            </Link>
+          <div className="flex flex-col items-center gap-4 sm:items-end">
+            <SocialLinks className="text-slate-500" />
+            <div className="flex gap-4 text-sm text-slate-600">
+              <Link href="/login" className="hover:text-slate-900">
+                Log in
+              </Link>
+              <Link href="/register" className="hover:text-slate-900">
+                Register
+              </Link>
+            </div>
           </div>
         </div>
       </footer>
