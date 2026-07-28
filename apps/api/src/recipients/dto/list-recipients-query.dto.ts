@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { RecipientStatus } from "@prisma/client";
-import { IsEnum, IsOptional, IsString, IsUUID } from "class-validator";
+import { IsEnum, IsIn, IsOptional, IsString, IsUUID } from "class-validator";
 
 export class ListRecipientsQueryDto {
   @ApiPropertyOptional({ enum: RecipientStatus })
@@ -17,6 +17,14 @@ export class ListRecipientsQueryDto {
   @IsOptional()
   @IsUUID()
   listId?: string;
+
+  @ApiPropertyOptional({
+    enum: ["recent", "name_asc", "name_desc", "dob_asc", "dob_desc"],
+    description: "Column sort; defaults to most-recently-added",
+  })
+  @IsOptional()
+  @IsIn(["recent", "name_asc", "name_desc", "dob_asc", "dob_desc"])
+  sort?: "recent" | "name_asc" | "name_desc" | "dob_asc" | "dob_desc";
 
   // Kept as raw query strings and coerced in the service via parsePage/
   // parsePerPage — NOT class-transformer @Type, which failed in production. See

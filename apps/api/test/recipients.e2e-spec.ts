@@ -82,6 +82,38 @@ describe("Recipients (e2e)", () => {
     expect(list.items[0]?.id).toBe(created.id);
   });
 
+  it("searches by name and sorts the contacts table", async () => {
+    const { token } = await signUp();
+    const add = (firstName: string, lastName: string) =>
+      request(app.getHttpServer())
+        .post("/recipients")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ firstName, lastName })
+        .expect(201);
+    await add("Zoe", "Adams");
+    await add("Amy", "Baker");
+    await add("Bob", "Adams");
+
+    // Search matches first or last name, case-insensitive.
+    const searched = await request(app.getHttpServer())
+      .get("/recipients?search=adams")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const searchList = paginatedRecipientsSchema.parse(searched.body);
+    expect(searchList.total).toBe(2);
+    expect(searchList.items.every((r) => r.lastName === "Adams")).toBe(true);
+
+    // Sort by name ascending: lastName then firstName.
+    const sorted = await request(app.getHttpServer())
+      .get("/recipients?sort=name_asc")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const names = paginatedRecipientsSchema
+      .parse(sorted.body)
+      .items.map((r) => `${r.lastName} ${r.firstName}`);
+    expect(names).toEqual(["Adams Bob", "Adams Zoe", "Baker Amy"]);
+  });
+
   it("schedules a birthday event on the calendar the moment a recipient with a DOB is added", async () => {
     const { token } = await signUp();
 
