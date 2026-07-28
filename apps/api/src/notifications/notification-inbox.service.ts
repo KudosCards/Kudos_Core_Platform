@@ -8,7 +8,8 @@ export type InboxNotificationKind =
   | "order_paid"
   | "auto_send"
   | "invite_accepted"
-  | "card_returned";
+  | "card_returned"
+  | "support_reply";
 
 /** The shape of an event to persist. `entityType`/`entityId` make a producer
  * idempotent under retries — Stripe redelivers webhooks, crons can double-fire —
