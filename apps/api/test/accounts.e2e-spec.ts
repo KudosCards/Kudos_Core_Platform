@@ -156,6 +156,7 @@ describe("Accounts (e2e)", () => {
       pendingApprovals: 0,
       occasionsThisMonth: 0,
       activeOrders: 0,
+      unfinishedOrders: 0,
       completedOrders: 0,
       hasOccasions: false,
       firstOrderPlaced: false,

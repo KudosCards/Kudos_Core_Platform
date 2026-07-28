@@ -16,6 +16,10 @@ export const dashboardSummarySchema = z.object({
   occasionsThisMonth: z.number().int().nonnegative(),
   /** Orders not yet finished: draft, pending payment, paid, or in production. */
   activeOrders: z.number().int().nonnegative(),
+  /** Orders started but not yet paid for — draft or pending payment. These are
+   * the "basket": purchases the member needs to come back and finish (and which
+   * are holding their occasions until they do). Drives the header basket badge. */
+  unfinishedOrders: z.number().int().nonnegative(),
   /** Orders that have completed fulfilment. */
   completedOrders: z.number().int().nonnegative(),
   /** True once at least one occasion exists — i.e. birthdays are lined up on the

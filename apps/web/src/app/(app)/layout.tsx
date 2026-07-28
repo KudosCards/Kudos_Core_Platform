@@ -31,6 +31,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
       accountName={account.name}
       planLabel={planLabel}
       pendingApprovals={summary?.pendingApprovals ?? 0}
+      unfinishedOrders={summary?.unfinishedOrders ?? 0}
       walletLabel={formatGbp(summary?.walletBalanceMinor ?? 0)}
     >
       {children}

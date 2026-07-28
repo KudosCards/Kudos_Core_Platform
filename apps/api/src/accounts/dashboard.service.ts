@@ -7,6 +7,7 @@ export interface DashboardSummary {
   pendingApprovals: number;
   occasionsThisMonth: number;
   activeOrders: number;
+  unfinishedOrders: number;
   completedOrders: number;
   hasOccasions: boolean;
   firstOrderPlaced: boolean;
@@ -14,6 +15,10 @@ export interface DashboardSummary {
 
 /** Orders still moving through the pipeline — anything not completed or cancelled. */
 const ACTIVE_ORDER_STATUSES = ["draft", "pending_payment", "paid", "fulfilling"] as const;
+
+/** Orders started but not yet paid — the member's "basket" of unfinished
+ * purchases (still holding their occasions until checkout completes). */
+const UNFINISHED_ORDER_STATUSES = ["draft", "pending_payment"] as const;
 
 /** Orders the account has actually paid for — the "first purchase" milestone.
  * Excludes draft/pending_payment (not yet paid) and cancelled. */
@@ -35,6 +40,7 @@ export class DashboardService {
       pendingApprovals,
       occasionsThisMonth,
       activeOrders,
+      unfinishedOrders,
       completedOrders,
       firstOccasion,
       firstPurchasedOrder,
@@ -53,6 +59,9 @@ export class DashboardService {
       this.prisma.batchOrder.count({
         where: { accountId, status: { in: [...ACTIVE_ORDER_STATUSES] } },
       }),
+      this.prisma.batchOrder.count({
+        where: { accountId, status: { in: [...UNFINISHED_ORDER_STATUSES] } },
+      }),
       this.prisma.batchOrder.count({ where: { accountId, status: "completed" } }),
       // Existence checks — cheaper than a full count for the onboarding checklist.
       this.prisma.occasion.findFirst({ where: { accountId }, select: { id: true } }),
@@ -68,6 +77,7 @@ export class DashboardService {
       pendingApprovals,
       occasionsThisMonth,
       activeOrders,
+      unfinishedOrders,
       completedOrders,
       hasOccasions: firstOccasion !== null,
       firstOrderPlaced: firstPurchasedOrder !== null,
