@@ -1,14 +1,49 @@
 "use client";
 
-import type { CardDesign, SavedDesign } from "@kudos/shared-types";
+import type { CardDesign, DesignDocument, SavedDesign } from "@kudos/shared-types";
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import { isOptimizableThumbnail } from "@/lib/card-image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { createClient } from "@/lib/supabase/client";
+
+// The read-only Konva renderer that draws a design's front page (artwork + text)
+// from its document — the same one bulk-send and fulfillment use. Client-only
+// (Konva needs the canvas/window), so it's dynamically imported with ssr: false.
+const CardFacePreview = dynamic(
+  () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
+  { ssr: false },
+);
+
+/**
+ * A saved design has no flat thumbnail image (unlike a catalog template) — only
+ * its editable document — so its gallery tile must render that document to show
+ * the artwork. This measures the tile's width and hands it to CardFacePreview,
+ * which scales the 450×600 card to fit crisply (mirrors the editor canvas's own
+ * responsive scaling).
+ */
+function SavedDesignThumb({ document }: { document: DesignDocument }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setWidth(el.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="w-full">
+      {width > 0 && <CardFacePreview document={document} width={width} />}
+    </div>
+  );
+}
 
 const ALL_CATEGORIES = "all";
 
@@ -239,9 +274,15 @@ export function DesignsClient({
               <div key={design.id} className="card flex flex-col gap-2 p-3">
                 <a
                   href={`/designs/${design.id}/edit`}
-                  className="flex aspect-[3/4] w-full items-center justify-center rounded-md bg-foreground/5 text-xs text-muted transition-colors hover:bg-foreground/10"
+                  aria-label={`Edit ${design.name}`}
+                  className="group relative block aspect-[3/4] w-full overflow-hidden rounded-md bg-foreground/5"
                 >
-                  Edit
+                  <SavedDesignThumb document={design.document} />
+                  {/* Keep the "Edit" affordance the tile always had — now as a
+                      hover overlay over the visible artwork. */}
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-xs font-medium text-white opacity-0 transition-opacity group-hover:bg-black/40 group-hover:opacity-100">
+                    Edit
+                  </span>
                 </a>
                 <span className="text-sm font-medium">{design.name}</span>
                 <div className="flex items-center gap-1.5 text-xs">
