@@ -15,7 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Kudos Cards",
   description: "Automated, personalised physical recognition that builds retention and loyalty.",
-  icons: { icon: "/marketing/logo.png", apple: "/marketing/logo.png" },
+  // Favicons come from the file-based convention (app/favicon.ico, app/icon.png,
+  // app/apple-icon.png) — the Kudos Cards megaphone mark. A manual `icons` field
+  // here would override those, so it's intentionally omitted.
 };
 
 export default function RootLayout({
