@@ -1,7 +1,11 @@
 "use client";
 
 import type { DesignDocument, DesignElement, DesignPage, SavedDesign } from "@kudos/shared-types";
-import { findDesignBracketTokenMistakes, fixDesignBracketTokens } from "@kudos/shared-types";
+import {
+  MERGE_FIELDS,
+  findDesignBracketTokenMistakes,
+  fixDesignBracketTokens,
+} from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -71,6 +75,11 @@ export function DesignEditorClient({
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // The text-element editor's textarea, so "Insert merge field" can drop a token
+  // at the caret. `pendingCaret` holds where to place the caret after the
+  // controlled re-render that follows an insertion.
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const pendingCaretRef = useRef<number | null>(null);
 
   // A snapshot of what's currently persisted, so we can tell whether there are
   // unsaved edits and warn before leaving the editor. Updated on every save.
@@ -131,6 +140,30 @@ export function DesignEditorClient({
       ...p,
       elements: p.elements.map((el) => (el.id === updated.id ? updated : el)),
     }));
+  }
+
+  // After an "Insert merge field" edit re-renders the controlled textarea, put
+  // the caret just after the inserted token so typing continues in place.
+  useEffect(() => {
+    if (pendingCaretRef.current === null || !textAreaRef.current) return;
+    const caret = pendingCaretRef.current;
+    pendingCaretRef.current = null;
+    textAreaRef.current.focus();
+    textAreaRef.current.setSelectionRange(caret, caret);
+  });
+
+  /** Insert a merge token (e.g. "{firstName}") into the selected text element at
+   * the current caret / selection, replacing any selected text. Falls back to
+   * appending at the end if the textarea isn't focused. */
+  function insertMergeField(token: string) {
+    if (selectedElement?.kind !== "text") return;
+    const textarea = textAreaRef.current;
+    const current = selectedElement.text;
+    const start = textarea?.selectionStart ?? current.length;
+    const end = textarea?.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    pendingCaretRef.current = start + token.length;
+    updateElement({ ...selectedElement, text: next });
   }
 
   function deleteSelected() {
@@ -423,15 +456,40 @@ export function DesignEditorClient({
           {selectedElement?.kind === "text" && (
             <>
               <label className="flex flex-col gap-1 text-xs text-foreground/60">
-                Text — merge tokens fill in per recipient when sent: {"{name}"}, {"{firstName}"},{" "}
-                {"{lastName}"}, {"{fullName}"} for the name; {"{occasion}"} and {"{occasionDate}"}{" "}
-                for the event; and any custom field as {"{fieldName}"} (e.g. {"{teacher}"}).
+                Text
                 <textarea
+                  ref={textAreaRef}
                   value={selectedElement.text}
                   onChange={(e) => updateElement({ ...selectedElement, text: e.target.value })}
                   rows={3}
                   className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
                 />
+              </label>
+              {/* Insert a merge token at the caret — so designers pick "First
+                  name" instead of remembering {"{firstName}"}. The select resets
+                  to its placeholder after each pick so the same field can be
+                  inserted again. */}
+              <label className="flex flex-col gap-1 text-xs text-foreground/60">
+                Insert merge field — fills in per recipient when sent
+                <select
+                  aria-label="Insert merge field"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) insertMergeField(e.target.value);
+                  }}
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                >
+                  <option value="">Insert merge field…</option>
+                  {MERGE_FIELDS.map((field) => (
+                    <option key={field.token} value={field.token}>
+                      {field.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-foreground/50">
+                  Tip: any custom recipient field works too — type it as {"{fieldName}"} (e.g.{" "}
+                  {"{teacher}"}).
+                </span>
               </label>
               <label className="flex flex-col gap-1 text-xs text-foreground/60">
                 Font
