@@ -25,6 +25,11 @@ function blankRule(): SeasonalDispatchRule {
   };
 }
 
+/** Wrap API rules with a stable client id for React keying (stripped on save). */
+function toRows(rules: SeasonalDispatchRule[]): { id: string; rule: SeasonalDispatchRule }[] {
+  return rules.map((rule) => ({ id: crypto.randomUUID(), rule }));
+}
+
 /**
  * Ops-only editor for the seasonal dispatch windows (Christmas rush, …). Each
  * window adds extra working-day lead for occasions dated inside it and can nudge
@@ -32,7 +37,11 @@ function blankRule(): SeasonalDispatchRule {
  * See docs/adr/0059-configurable-seasonal-dispatch.md.
  */
 export function SeasonalDispatchSetup() {
-  const [rules, setRules] = useState<SeasonalDispatchRule[] | null>(null);
+  // Rows carry a stable client `id` so React keys by identity, not array index —
+  // otherwise removing a middle window would leave the rows below misaligned
+  // (a window's edits/focus would jump to its neighbour). The `id` is stripped
+  // before sending to the API, which takes plain rules.
+  const [rows, setRows] = useState<{ id: string; rule: SeasonalDispatchRule }[] | null>(null);
   const [defaults, setDefaults] = useState<SeasonalDispatchRule[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +52,7 @@ export function SeasonalDispatchSetup() {
     clientApiFetch<RulesResponse>("/admin/dispatch/seasonal-rules")
       .then((r) => {
         if (!active) return;
-        setRules(r.rules);
+        setRows(toRows(r.rules));
         setDefaults(r.default);
       })
       .catch(() => {
@@ -54,10 +63,10 @@ export function SeasonalDispatchSetup() {
     };
   }, []);
 
-  function update(index: number, patch: Partial<SeasonalDispatchRule>) {
+  function update(id: string, patch: Partial<SeasonalDispatchRule>) {
     setSaved(false);
-    setRules((current) =>
-      (current ?? []).map((rule, i) => (i === index ? { ...rule, ...patch } : rule)),
+    setRows((current) =>
+      (current ?? []).map((row) => (row.id === id ? { ...row, rule: { ...row.rule, ...patch } } : row)),
     );
   }
 
@@ -69,7 +78,7 @@ export function SeasonalDispatchSetup() {
       body: JSON.stringify({ rules: next }),
     })
       .then((r) => {
-        setRules(r.rules);
+        setRows(toRows(r.rules));
         setSaved(true);
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "Could not save the windows"))
@@ -93,7 +102,7 @@ export function SeasonalDispatchSetup() {
 
       {error && <p className="text-sm font-medium text-accent">{error}</p>}
 
-      {rules === null ? (
+      {rows === null ? (
         <p className="text-sm text-muted">Loading…</p>
       ) : (
         <>
@@ -110,19 +119,19 @@ export function SeasonalDispatchSetup() {
                 </tr>
               </thead>
               <tbody>
-                {rules.length === 0 ? (
+                {rows.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-3 text-muted">
                       No windows — dispatch uses the standard lead all year.
                     </td>
                   </tr>
                 ) : (
-                  rules.map((rule, i) => (
-                    <tr key={i} className="border-t border-border">
+                  rows.map(({ id, rule }) => (
+                    <tr key={id} className="border-t border-border">
                       <td className="py-2 pr-3">
                         <input
                           value={rule.label}
-                          onChange={(e) => update(i, { label: e.target.value })}
+                          onChange={(e) => update(id, { label: e.target.value })}
                           placeholder="e.g. Christmas post rush"
                           className={`${cell} w-44`}
                         />
@@ -130,11 +139,11 @@ export function SeasonalDispatchSetup() {
                       <td className="py-2 pr-3">
                         <MonthDay
                           value={rule.from}
-                          onChange={(from) => update(i, { from })}
+                          onChange={(from) => update(id, { from })}
                         />
                       </td>
                       <td className="py-2 pr-3">
-                        <MonthDay value={rule.to} onChange={(to) => update(i, { to })} />
+                        <MonthDay value={rule.to} onChange={(to) => update(id, { to })} />
                       </td>
                       <td className="py-2 pr-3">
                         <input
@@ -143,7 +152,7 @@ export function SeasonalDispatchSetup() {
                           max={30}
                           value={rule.extraLeadDays}
                           onChange={(e) =>
-                            update(i, { extraLeadDays: Number(e.target.value) || 0 })
+                            update(id, { extraLeadDays: Number(e.target.value) || 0 })
                           }
                           className={`${cell} w-16`}
                         />
@@ -152,14 +161,14 @@ export function SeasonalDispatchSetup() {
                         <input
                           type="checkbox"
                           checked={rule.suggestFirstClass}
-                          onChange={(e) => update(i, { suggestFirstClass: e.target.checked })}
+                          onChange={(e) => update(id, { suggestFirstClass: e.target.checked })}
                           className="accent-accent"
                         />
                       </td>
                       <td className="py-2 text-right">
                         <button
                           type="button"
-                          onClick={() => setRules(rules.filter((_, j) => j !== i))}
+                          onClick={() => setRows((current) => (current ?? []).filter((r) => r.id !== id))}
                           className="text-xs text-muted hover:text-accent"
                         >
                           Remove
@@ -177,7 +186,10 @@ export function SeasonalDispatchSetup() {
               type="button"
               onClick={() => {
                 setSaved(false);
-                setRules([...(rules ?? []), blankRule()]);
+                setRows((current) => [
+                  ...(current ?? []),
+                  { id: crypto.randomUUID(), rule: blankRule() },
+                ]);
               }}
               className="rounded-full border border-border px-3 py-1.5 text-sm font-medium hover:bg-foreground/[0.03]"
             >
@@ -185,7 +197,7 @@ export function SeasonalDispatchSetup() {
             </button>
             <button
               type="button"
-              onClick={() => save(rules)}
+              onClick={() => save((rows ?? []).map((r) => r.rule))}
               disabled={busy}
               className="btn-accent disabled:opacity-50"
             >

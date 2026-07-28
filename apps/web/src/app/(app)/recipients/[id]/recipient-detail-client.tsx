@@ -70,9 +70,16 @@ export function RecipientDetailClient({
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   // Custom fields — arbitrary key→value pairs that become {key} merge tokens on
-  // a card. Edited as an ordered list of rows, saved as a whole map.
-  const [fieldRows, setFieldRows] = useState<{ key: string; value: string }[]>(() =>
-    Object.entries(recipient.customFields ?? {}).map(([key, value]) => ({ key, value })),
+  // a card. Edited as an ordered list of rows, saved as a whole map. Each row
+  // carries a stable `id` so React keys by identity, not position — otherwise
+  // removing a middle row would leave the inputs below misaligned (a row's
+  // value/focus would jump to its neighbour).
+  const [fieldRows, setFieldRows] = useState<{ id: string; key: string; value: string }[]>(() =>
+    Object.entries(recipient.customFields ?? {}).map(([key, value]) => ({
+      id: crypto.randomUUID(),
+      key,
+      value,
+    })),
   );
   const [savingFields, setSavingFields] = useState(false);
 
@@ -148,7 +155,13 @@ export function RecipientDetailClient({
         body: JSON.stringify({ customFields: map }),
       });
       setRecipient(updated);
-      setFieldRows(Object.entries(updated.customFields ?? {}).map(([key, value]) => ({ key, value })));
+      setFieldRows(
+        Object.entries(updated.customFields ?? {}).map(([key, value]) => ({
+          id: crypto.randomUUID(),
+          key,
+          value,
+        })),
+      );
     } catch (saveError) {
       setError(saveError instanceof ApiError ? saveError.message : "Could not save the card fields");
     } finally {
@@ -489,15 +502,15 @@ export function RecipientDetailClient({
           <p className="text-sm text-muted">No custom fields yet.</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {fieldRows.map((row, index) => (
-              <li key={index} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            {fieldRows.map((row) => (
+              <li key={row.id} className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <input
                   aria-label="Field name"
                   value={row.key}
                   placeholder="Field name (e.g. teacher)"
                   onChange={(e) =>
                     setFieldRows((rows) =>
-                      rows.map((r, i) => (i === index ? { ...r, key: e.target.value } : r)),
+                      rows.map((r) => (r.id === row.id ? { ...r, key: e.target.value } : r)),
                     )
                   }
                   className={`${inputClass} flex-1`}
@@ -508,14 +521,14 @@ export function RecipientDetailClient({
                   placeholder="Value (e.g. Mrs Patel)"
                   onChange={(e) =>
                     setFieldRows((rows) =>
-                      rows.map((r, i) => (i === index ? { ...r, value: e.target.value } : r)),
+                      rows.map((r) => (r.id === row.id ? { ...r, value: e.target.value } : r)),
                     )
                   }
                   className={`${inputClass} flex-[2]`}
                 />
                 <button
                   type="button"
-                  onClick={() => setFieldRows((rows) => rows.filter((_, i) => i !== index))}
+                  onClick={() => setFieldRows((rows) => rows.filter((r) => r.id !== row.id))}
                   className="rounded-md border border-border px-2.5 py-2 text-xs text-accent hover:bg-accent-soft"
                 >
                   Remove
@@ -528,7 +541,9 @@ export function RecipientDetailClient({
         <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
           <button
             type="button"
-            onClick={() => setFieldRows((rows) => [...rows, { key: "", value: "" }])}
+            onClick={() =>
+              setFieldRows((rows) => [...rows, { id: crypto.randomUUID(), key: "", value: "" }])
+            }
             className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-foreground/[0.03]"
           >
             Add field

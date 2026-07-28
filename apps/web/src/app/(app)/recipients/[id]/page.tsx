@@ -18,29 +18,28 @@ export default async function RecipientDetailPage({
 }) {
   const { id } = await params;
 
-  let recipient: Recipient | null;
-  try {
-    recipient = await serverApiFetch<Recipient>(`/recipients/${id}`);
-  } catch (error) {
-    // A wrong/foreign id is a 404 from the account-scoped lookup — render the
-    // app's not-found rather than leaking the API error.
-    if (error instanceof ApiError && error.status === 404) {
-      notFound();
-    }
-    throw error;
-  }
+  // The recipient, its events, and RTS cases don't depend on each other (all
+  // keyed by the same id), so fetch them in one parallel round-trip instead of
+  // three serial ones. The recipient's 404 becomes null → notFound(); the other
+  // two are only wasted in that rare not-found case. See docs/adr/0042.
+  const [recipient, events, allReturns] = await Promise.all([
+    serverApiFetch<Recipient>(`/recipients/${id}`).catch((error: unknown) => {
+      // A wrong/foreign id is a 404 from the account-scoped lookup — render the
+      // app's not-found rather than leaking the API error.
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }),
+    serverApiFetch<Paginated<Occasion>>(`/occasions?recipientId=${id}&perPage=100`),
+    // Any Returned-to-Sender cases for this contact, so the recovery panel can
+    // show the alert + Update-Address flow. Account-scoped; filtered to this one.
+    serverApiFetch<ReturnCase[]>("/returns"),
+  ]);
+
   if (!recipient) {
     notFound();
   }
 
-  const events = await serverApiFetch<Paginated<Occasion>>(
-    `/occasions?recipientId=${id}&perPage=100`,
-  );
-
-  // Any Returned-to-Sender cases for this contact, so the recovery panel can
-  // show the alert + Update-Address flow. Account-scoped; filtered to this one.
-  const allReturns = (await serverApiFetch<ReturnCase[]>("/returns")) ?? [];
-  const returnCases = allReturns.filter((c) => c.recipientId === id);
+  const returnCases = (allReturns ?? []).filter((c) => c.recipientId === id);
 
   return (
     <RecipientDetailClient

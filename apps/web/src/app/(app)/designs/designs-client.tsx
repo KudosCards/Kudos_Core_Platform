@@ -284,8 +284,10 @@ export function DesignsClient({
                     Edit
                   </span>
                 </a>
-                <span className="text-sm font-medium">{design.name}</span>
-                <div className="flex items-center gap-1.5 text-xs">
+                <span className="truncate text-sm font-medium" title={design.name}>
+                  {design.name}
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
                   <a
                     href={`/designs/${design.id}/edit`}
                     className="rounded-md border border-border px-2 py-1 hover:bg-foreground/[0.03]"
@@ -358,7 +360,9 @@ export function DesignsClient({
                     className="object-cover"
                   />
                 </div>
-                <span className="text-sm font-medium">{template.name}</span>
+                <span className="truncate text-sm font-medium" title={template.name}>
+                  {template.name}
+                </span>
                 <button
                   type="button"
                   disabled={creatingTemplateId === template.id}
