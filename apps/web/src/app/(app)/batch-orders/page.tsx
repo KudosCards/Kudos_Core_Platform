@@ -1,5 +1,16 @@
-import type { WalletSummary } from "@kudos/shared-types";
+import type { AccountPricing, WalletSummary } from "@kudos/shared-types";
+import { CARD_PRICE_MINOR, POSTAGE_MINOR, VAT_RATE_PERCENT } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
+
+/** Safe full-price fallback if the pricing lookup fails — the server is always
+ * authoritative at checkout, so this only affects the on-screen estimate. */
+const FALLBACK_PRICING: AccountPricing = {
+  cardPriceMinor: CARD_PRICE_MINOR,
+  cardDiscountPercent: 0,
+  fullCardPriceMinor: CARD_PRICE_MINOR,
+  postageMinor: POSTAGE_MINOR,
+  vatRatePercent: VAT_RATE_PERCENT,
+};
 import type { OccasionWithRecipient } from "../approvals/approvals-client";
 import { BatchOrdersClient, type UnfinishedBatchOrder } from "./batch-orders-client";
 
@@ -23,10 +34,11 @@ export default async function BatchOrdersPage({
     .map((id) => id.trim())
     .filter(Boolean);
 
-  const [occasions, orders, wallet] = await Promise.all([
+  const [occasions, orders, wallet, pricing] = await Promise.all([
     serverApiFetch<Paginated<OccasionWithRecipient>>("/occasions?status=approved&perPage=50"),
     serverApiFetch<Paginated<UnfinishedBatchOrder>>("/batch-orders?perPage=50"),
     serverApiFetch<WalletSummary>("/wallet"),
+    serverApiFetch<AccountPricing>("/pricing"),
   ]);
 
   // No multi-status filter on the list endpoint, so fetch everything recent
@@ -46,6 +58,7 @@ export default async function BatchOrdersPage({
       initialUnfinishedOrders={unfinishedOrders}
       walletBalanceMinor={wallet?.balanceMinor ?? 0}
       initialSelectedIds={initialSelectedIds}
+      pricing={pricing ?? FALLBACK_PRICING}
     />
   );
 }

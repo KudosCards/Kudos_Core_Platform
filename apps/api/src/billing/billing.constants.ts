@@ -1,12 +1,15 @@
 import type { Prisma, PostageClass } from "@prisma/client";
+import { CARD_PRICE_MINOR, POSTAGE_MINOR } from "@kudos/shared-types";
 
 /**
- * Base card price: £2.50, **VAT-inclusive**. The plan's cardDiscountPercent is
- * applied on top (Free 0% → £2.50, Pro 10% → £2.25, Centre 15% → £2.125 ≈ the
- * "from £2.13" Centre price). Postage is charged **separately, per card** — see
- * POSTAGE_MINOR — not baked into this. See docs/adr/0008-checkout-pricing.md.
+ * The canonical card + postage amounts live in `@kudos/shared-types` (so the web
+ * renders exactly what the API charges) and are re-exported here for the API's
+ * existing import path. Card price £2.50 VAT-inclusive; the plan's
+ * cardDiscountPercent applies on top (Free 0% → £2.50, Pro 10% → £2.25, Centre
+ * 15% → £2.125). Postage is a separate VAT-exempt stamp per card. See
+ * docs/adr/0008-checkout-pricing.md.
  */
-export const CARD_PRICE_MINOR = 250;
+export { CARD_PRICE_MINOR, POSTAGE_MINOR };
 
 /**
  * An extra Centre team seat: £5.00/month, **VAT-inclusive**, charged per seat
@@ -15,16 +18,6 @@ export const CARD_PRICE_MINOR = 250;
  * Price behind STRIPE_CENTRE_SEAT_PRICE_ID). See docs/adr/0035-seat-based-billing.md.
  */
 export const CENTRE_SEAT_PRICE_MINOR = 500;
-
-/**
- * A postage stamp per card, added on top of the (VAT-inclusive) card price.
- * Royal Mail stamps are VAT-exempt, so there is no VAT to add on postage.
- * One stamp per card: 5 cards = 5 stamps.
- */
-export const POSTAGE_MINOR: Record<PostageClass, number> = {
-  first_class: 180,
-  second_class: 91,
-};
 
 /** Applies PlanEntitlement.cardDiscountPercent, rounding to the nearest penny. */
 export function computeCardPriceMinor(cardDiscountPercent: Prisma.Decimal | number): number {

@@ -1,5 +1,6 @@
 "use client";
 
+import { CARD_PRICE_MINOR } from "@kudos/shared-types";
 import { useSyncExternalStore } from "react";
 
 /**
@@ -16,8 +17,9 @@ import { useSyncExternalStore } from "react";
  */
 const KEY = "kudos:cart";
 
-/** Flat card price in pence — VAT- and postage-inclusive (see billing.constants). */
-export const CARD_PRICE_PENCE = 150;
+/** Full card price in pence (VAT-inclusive), from the single source of truth.
+ * Postage is charged separately per card — see the basket breakdown. */
+export const CARD_PRICE_PENCE = CARD_PRICE_MINOR;
 
 /** Mirror of the API's GUEST_CART_MAX_ITEMS (free-plan per-order cap). */
 export const CART_MAX_ITEMS = 20;
