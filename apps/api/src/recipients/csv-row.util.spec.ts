@@ -28,9 +28,26 @@ describe("parseRecipientRow", () => {
       firstName: "Archie",
       lastName: "Winn",
       dateOfBirth: null,
+      addressLine1: null,
+      addressLine2: null,
+      addressCity: null,
       addressPostcode: null,
       email: null,
     });
+  });
+
+  it("parses a full postal address", () => {
+    const result = parseRecipientRow({
+      ...baseRow,
+      addressLine1: "12 King Street",
+      addressLine2: "Flat 2",
+      addressCity: "London",
+      postcode: "SW1A 1AA",
+    });
+    expect(result.addressLine1).toBe("12 King Street");
+    expect(result.addressLine2).toBe("Flat 2");
+    expect(result.addressCity).toBe("London");
+    expect(result.addressPostcode).toBe("SW1A 1AA");
   });
 
   it("trims whitespace from all fields", () => {

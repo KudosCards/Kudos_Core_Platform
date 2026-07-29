@@ -157,6 +157,27 @@ async function DashboardOverview() {
         </div>
       )}
 
+      {(summary?.contactsMissingAddress ?? 0) > 0 && (
+        <div className="flex flex-col gap-4 rounded-xl border border-amber-300 bg-amber-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold text-amber-900">
+              {summary!.contactsMissingAddress} contact
+              {summary!.contactsMissingAddress === 1 ? "" : "s"} need
+              {summary!.contactsMissingAddress === 1 ? "s" : ""} an address
+            </p>
+            <p className="text-sm text-amber-800">
+              We post real cards, so these can&apos;t be sent until an address is added.
+            </p>
+          </div>
+          <Link
+            href="/recipients?missingAddress=true"
+            className="shrink-0 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600"
+          >
+            Add addresses <span aria-hidden>→</span>
+          </Link>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((stat) => (
           <Link

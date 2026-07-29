@@ -6,6 +6,17 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { ConnectCrmCallout } from "@/components/connect-crm-callout";
+import { AddressFields } from "@/components/address-fields";
+
+/** A contact is mailable only with line 1, city, and postcode — mirrors the
+ * API's MISSING_ADDRESS_WHERE so the badge agrees with the server filter/count. */
+export function isMailable(recipient: Recipient): boolean {
+  return Boolean(
+    recipient.addressLine1?.trim() &&
+      recipient.addressCity?.trim() &&
+      recipient.addressPostcode?.trim(),
+  );
+}
 
 // First-load page size for the recipients table. Kept modest so the initial
 // SSR payload + DOM stays light above the fold; the prev/next controls (and the
@@ -76,11 +87,15 @@ export function RecipientsClient({
   initialTotal,
   initialPage,
   initialLists,
+  initialMissingOnly = false,
 }: {
   initialRecipients: Recipient[];
   initialTotal: number;
   initialPage: number;
   initialLists: RecipientListSummary[];
+  /** When true (from ?missingAddress=true), the contacts-without-address filter
+   * starts on — the target of the dashboard "needs address" nudge. */
+  initialMissingOnly?: boolean;
 }) {
   const [recipients, setRecipients] = useState(initialRecipients);
   const [total, setTotal] = useState(initialTotal);
@@ -94,6 +109,13 @@ export function RecipientsClient({
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [paginating, setPaginating] = useState(false);
   const [addingRecipient, setAddingRecipient] = useState(false);
+  // Bumped on a successful add to remount AddressFields (controlled inputs that
+  // formEl.reset() can't clear).
+  const [addFormKey, setAddFormKey] = useState(0);
+  // "Needs address" worklist filter. Kept in a ref too so the shared reload()
+  // can read it without every call site having to thread it through.
+  const [missingOnly, setMissingOnly] = useState(initialMissingOnly);
+  const missingOnlyRef = useRef(initialMissingOnly);
   const [rowBusyId, setRowBusyId] = useState<string | null>(null);
 
   // Lists state.
@@ -125,6 +147,7 @@ export function RecipientsClient({
         if (listId) params.set("listId", listId);
         if (searchTerm) params.set("search", searchTerm);
         if (sortKey !== "recent") params.set("sort", sortKey);
+        if (missingOnlyRef.current) params.set("missingAddress", "true");
         const result = await clientApiFetch<Paginated<Recipient>>(
           `/recipients?${params.toString()}`,
         );
@@ -184,7 +207,10 @@ export function RecipientsClient({
     const firstName = String(formData.get("firstName"));
     const lastName = String(formData.get("lastName"));
     const dateOfBirth = String(formData.get("dateOfBirth") || "");
-    const addressPostcode = String(formData.get("addressPostcode") || "");
+    const addressLine1 = String(formData.get("addressLine1") || "").trim();
+    const addressLine2 = String(formData.get("addressLine2") || "").trim();
+    const addressCity = String(formData.get("addressCity") || "").trim();
+    const addressPostcode = String(formData.get("addressPostcode") || "").trim();
 
     setAddingRecipient(true);
     try {
@@ -194,10 +220,16 @@ export function RecipientsClient({
           firstName,
           lastName,
           ...(dateOfBirth && { dateOfBirth }),
+          // The form requires these, so they're present; guard anyway so we never
+          // send an empty string (which the API's @Length would reject).
+          ...(addressLine1 && { addressLine1 }),
+          ...(addressLine2 && { addressLine2 }),
+          ...(addressCity && { addressCity }),
           ...(addressPostcode && { addressPostcode }),
         }),
       });
       formEl.reset();
+      setAddFormKey((k) => k + 1);
       // New recipients sort first (createdAt desc) — jump to page 1, clearing
       // the list filter, search, and sort so the just-added recipient is visible.
       setActiveListId(null);
@@ -389,11 +421,12 @@ export function RecipientsClient({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <input name="firstName" placeholder="First name" required className={inputClass} />
             <input name="lastName" placeholder="Last name" required className={inputClass} />
-            <input type="date" name="dateOfBirth" className={inputClass} />
-            <input name="addressPostcode" placeholder="Postcode" className={inputClass} />
+            <input type="date" name="dateOfBirth" aria-label="Date of birth" className={inputClass} />
           </div>
+          <AddressFields key={addFormKey} />
           <p className="text-xs text-muted">
-            Add a date of birth and their birthday lands on the calendar automatically.
+            We post real cards, so a full address is required. Add a date of birth and their birthday
+            lands on the calendar automatically.
           </p>
           <button type="submit" disabled={addingRecipient} className="btn-accent self-start">
             {addingRecipient ? "Adding…" : "Add recipient"}
@@ -403,7 +436,9 @@ export function RecipientsClient({
         <form onSubmit={(event) => void handleImport(event)} className="card flex flex-col gap-3 p-6">
           <h2 className="font-semibold">Import from CSV</h2>
           <p className="text-xs text-muted">
-            Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), postcode, email
+            Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), addressLine1, addressLine2,
+            addressCity, postcode, email. Contacts without a full address still import — they&apos;re
+            flagged &ldquo;needs address&rdquo; so you can complete them before sending.
           </p>
           <input
             type="file"
@@ -545,6 +580,23 @@ export function RecipientsClient({
             </button>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            const next = !missingOnly;
+            setMissingOnly(next);
+            missingOnlyRef.current = next;
+            void reload(1, activeListId, debouncedSearch, sort);
+          }}
+          aria-pressed={missingOnly}
+          className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+            missingOnly
+              ? "border-amber-400 bg-amber-100 font-medium text-amber-800"
+              : "border-border text-muted hover:bg-foreground/[0.03]"
+          }`}
+        >
+          ⚠️ Needs address
+        </button>
         {debouncedSearch && (
           <span className="text-sm text-muted">
             {total} match{total === 1 ? "" : "es"} for “{debouncedSearch}”
@@ -615,7 +667,19 @@ export function RecipientsClient({
                         ? new Date(recipient.dateOfBirth).toLocaleDateString("en-GB")
                         : "—"}
                     </td>
-                    <td className="px-5 py-3 text-muted">{recipient.addressPostcode ?? "—"}</td>
+                    <td className="px-5 py-3 text-muted">
+                      {isMailable(recipient) ? (
+                        recipient.addressPostcode
+                      ) : (
+                        <Link
+                          href={`/recipients/${recipient.id}`}
+                          title="No mailable address — add one before sending a card"
+                          className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
+                        >
+                          ⚠️ Needs address
+                        </Link>
+                      )}
+                    </td>
                     <td className="px-5 py-3">
                       <span className={`pill ${fromIntegration ? "pill-accent" : "pill-muted"}`}>
                         {sourceLabel(recipient.source)}

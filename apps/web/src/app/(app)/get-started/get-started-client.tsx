@@ -27,9 +27,9 @@ interface ImportSummary {
 const PLAN_LABEL: Record<PaidPlan, string> = { pro: "Pro", centre: "Centre" };
 
 const SAMPLE_CSV = [
-  "firstName,lastName,dateOfBirth,postcode,email",
-  "Ava,Thompson,14/03/2015,SW1A 1AA,ava@example.com",
-  "Noah,Patel,02/09/2014,M1 2AB,noah@example.com",
+  "firstName,lastName,dateOfBirth,addressLine1,addressLine2,addressCity,postcode,email",
+  "Ava,Thompson,14/03/2015,12 King Street,,London,SW1A 1AA,ava@example.com",
+  "Noah,Patel,02/09/2014,4 Oak Road,Flat 2,Manchester,M1 2AB,noah@example.com",
 ].join("\n");
 
 function downloadSampleCsv() {
@@ -263,7 +263,7 @@ export function GetStartedClient({
                   </button>
                 </div>
                 <p className="text-xs text-muted">
-                  Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), postcode, email
+                  Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), addressLine1, addressLine2, addressCity, postcode, email
                 </p>
               </form>
             </details>
@@ -301,7 +301,7 @@ export function GetStartedClient({
                 </button>
               </div>
               <p className="text-xs text-muted">
-                Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), postcode, email
+                Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), addressLine1, addressLine2, addressCity, postcode, email
               </p>
             </form>
 

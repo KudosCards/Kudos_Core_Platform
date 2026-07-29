@@ -152,6 +152,7 @@ describe("Accounts (e2e)", () => {
       .expect(200);
     expect(dashboardSummarySchema.parse(response.body)).toEqual({
       recipientCount: 0,
+      contactsMissingAddress: 0,
       walletBalanceMinor: 0,
       pendingApprovals: 0,
       occasionsThisMonth: 0,

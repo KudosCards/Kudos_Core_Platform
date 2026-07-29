@@ -3,6 +3,13 @@ import { RecipientStatus } from "@prisma/client";
 import { IsEnum, IsIn, IsOptional, IsString, IsUUID } from "class-validator";
 
 export class ListRecipientsQueryDto {
+  @ApiPropertyOptional({
+    description: 'Pass "true" to return only contacts without a mailable address',
+  })
+  @IsOptional()
+  @IsIn(["true", "false"])
+  missingAddress?: "true" | "false";
+
   @ApiPropertyOptional({ enum: RecipientStatus })
   @IsOptional()
   @IsEnum(RecipientStatus)

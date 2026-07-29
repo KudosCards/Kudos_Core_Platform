@@ -82,6 +82,64 @@ describe("Recipients (e2e)", () => {
     expect(list.items[0]?.id).toBe(created.id);
   });
 
+  it("filters to contacts missing a mailable address with ?missingAddress=true", async () => {
+    const { token } = await signUp();
+    const add = (body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post("/recipients")
+        .set("Authorization", `Bearer ${token}`)
+        .send(body)
+        .expect(201);
+
+    // Mailable (full address) vs unmailable (postcode only, no line 1 / city).
+    await add({
+      firstName: "Full",
+      lastName: "Address",
+      addressLine1: "12 King Street",
+      addressCity: "London",
+      addressPostcode: "SW1A 1AA",
+    });
+    await add({ firstName: "Needs", lastName: "Address", addressPostcode: "M1 2AB" });
+
+    const filtered = await request(app.getHttpServer())
+      .get("/recipients?missingAddress=true")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const list = paginatedRecipientsSchema.parse(filtered.body);
+    expect(list.total).toBe(1);
+    expect(list.items[0]?.firstName).toBe("Needs");
+
+    // Unfiltered still returns both.
+    const all = await request(app.getHttpServer())
+      .get("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(paginatedRecipientsSchema.parse(all.body).total).toBe(2);
+  });
+
+  it("imports a full postal address from CSV so the contact is mailable", async () => {
+    const { token } = await signUp();
+    const csv =
+      "firstName,lastName,addressLine1,addressCity,postcode\n" +
+      "Csv,Person,9 Oak Road,Leeds,LS1 1AA\n";
+    await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(csv), "contacts.csv")
+      .expect(201);
+
+    const list = await request(app.getHttpServer())
+      .get("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const item = paginatedRecipientsSchema.parse(list.body).items[0];
+    expect(item).toMatchObject({
+      addressLine1: "9 Oak Road",
+      addressCity: "Leeds",
+      addressPostcode: "LS1 1AA",
+    });
+  });
+
   it("searches by name and sorts the contacts table", async () => {
     const { token } = await signUp();
     const add = (firstName: string, lastName: string) =>

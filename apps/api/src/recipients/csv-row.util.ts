@@ -24,6 +24,9 @@ export interface ParsedRecipientRow {
   firstName: string;
   lastName: string;
   dateOfBirth: Date | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  addressCity: string | null;
   addressPostcode: string | null;
   email: string | null;
 }
@@ -36,6 +39,13 @@ export function parseRecipientRow(row: Record<string, string>): ParsedRecipientR
 
   const dateOfBirth = row.dateOfBirth?.trim() ? parseUkDate(row.dateOfBirth) : null;
 
+  // Full postal address so imported contacts can actually be mailed. Kept
+  // permissive (import-and-flag): a row without an address still imports and is
+  // surfaced as "needs address" rather than rejected — a bulk source is never
+  // silently dropped. A postcode, when given, must still be a valid UK one.
+  const addressLine1 = row.addressLine1?.trim();
+  const addressLine2 = row.addressLine2?.trim();
+  const addressCity = row.addressCity?.trim();
   const postcode = row.postcode?.trim();
   if (postcode && !UK_POSTCODE_REGEX.test(postcode)) {
     throw new Error(`"${postcode}" is not a valid UK postcode`);
@@ -54,6 +64,9 @@ export function parseRecipientRow(row: Record<string, string>): ParsedRecipientR
     firstName,
     lastName,
     dateOfBirth,
+    addressLine1: addressLine1 || null,
+    addressLine2: addressLine2 || null,
+    addressCity: addressCity || null,
     addressPostcode: postcode || null,
     email: email || null,
   };
