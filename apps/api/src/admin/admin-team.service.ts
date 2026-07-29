@@ -63,7 +63,7 @@ export class AdminTeamService {
    * to Kudos staff.
    */
   async access(user: AuthenticatedUser): Promise<AdminIdentity> {
-    const email = user.email?.trim().toLowerCase() ?? null;
+    const email = await this.resolveOperatorEmail(user);
 
     const existing = await this.prisma.platformAdmin.findUnique({ where: { userId: user.id } });
     if (existing) {
@@ -74,10 +74,14 @@ export class AdminTeamService {
     }
 
     if (!email) {
+      this.logger.warn(
+        `Operator access refused for user ${user.id}: no email resolved from the session`,
+      );
       throw new ForbiddenException("This account isn't a Kudos operator");
     }
     const invite = await this.prisma.platformAdminInvite.findUnique({ where: { email } });
     if (!invite) {
+      this.logger.warn(`Operator access refused for ${email}: no matching invite on the allow-list`);
       throw new ForbiddenException("This account isn't a Kudos operator");
     }
 
@@ -88,6 +92,33 @@ export class AdminTeamService {
     });
     this.logger.log(`Provisioned operator ${email} as ${role}`);
     return { userId: user.id, email, role };
+  }
+
+  /**
+   * The operator's normalised email for the allow-list check. Prefers the
+   * verified JWT `email` claim, but falls back to the authoritative Supabase
+   * user record (keyed on the JWT-verified user id) when the claim is absent —
+   * some sessions minted from an invite/recovery link don't populate it, which
+   * would otherwise dead-end a validly-invited operator at "not a Kudos
+   * operator". Returns null only if neither source yields an email.
+   */
+  private async resolveOperatorEmail(user: AuthenticatedUser): Promise<string | null> {
+    const fromToken = user.email?.trim().toLowerCase();
+    if (fromToken) {
+      return fromToken;
+    }
+    try {
+      const { data, error } = await this.supabaseAdmin.auth.admin.getUserById(user.id);
+      if (error) {
+        this.logger.warn(`Could not resolve email for operator ${user.id}: ${error.message}`);
+        return null;
+      }
+      return data.user?.email?.trim().toLowerCase() ?? null;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.warn(`Email lookup failed for operator ${user.id}: ${reason}`);
+      return null;
+    }
   }
 
   /** The signed-in operator (after PlatformAdminGuard). Keeps the stored email fresh. */
