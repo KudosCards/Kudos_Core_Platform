@@ -75,7 +75,13 @@ describe("Messages (e2e)", () => {
     const recipientResponse = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: recipientFirstName, lastName: "Recipient" })
+      .send({
+        firstName: recipientFirstName,
+        lastName: "Recipient",
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
+      })
       .expect(201);
     const recipientId = (recipientResponse.body as { id: string }).id;
 

@@ -131,7 +131,13 @@ describe("Admin — super admin dashboard (e2e)", () => {
     const recipient = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: "Ada", lastName: "Lovelace" })
+      .send({
+        firstName: "Ada",
+        lastName: "Lovelace",
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
+      })
       .expect(201);
     const recipientId = (recipient.body as { id: string }).id;
 

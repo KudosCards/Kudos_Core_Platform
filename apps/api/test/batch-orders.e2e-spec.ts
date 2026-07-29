@@ -99,7 +99,13 @@ describe("Batch orders (e2e)", () => {
     const response = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: "Sam", lastName: "Recipient" })
+      .send({
+        firstName: "Sam",
+        lastName: "Recipient",
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
+      })
       .expect(201);
     return (response.body as { id: string }).id;
   }
@@ -603,8 +609,13 @@ describe("Batch orders (e2e)", () => {
       const { token, accountId } = await signUp();
       const savedDesignId = await createSavedDesign(token);
       const withAddress = await createRecipientWithAddress(token);
-      // A contact with no address at all.
-      const noAddress = await createRecipient(token);
+      // A contact with no address at all. The manual-add API now requires an
+      // address, so an unmailable contact is created straight through Prisma
+      // (mirroring the permissive import-and-flag paths).
+      const unmailable = await prisma.recipient.create({
+        data: { accountId, firstName: "Sam", lastName: "Recipient" },
+      });
+      const noAddress = unmailable.id;
 
       const response = await request(app.getHttpServer())
         .post("/batch-orders/bulk-send")

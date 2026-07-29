@@ -85,21 +85,29 @@ describe("Auto-send (e2e)", () => {
       .expect(201);
   }
 
-  async function createRecipient(token: string, withAddress: boolean): Promise<string> {
+  async function createRecipient(token: string): Promise<string> {
     const response = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
       .send({
         firstName: "Sam",
         lastName: "Recipient",
-        ...(withAddress && {
-          addressLine1: "1 Test Street",
-          addressCity: "London",
-          addressPostcode: "SW1A 1AA",
-        }),
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
       })
       .expect(201);
     return (response.body as { id: string }).id;
+  }
+
+  /** The manual-add API now hard-requires a mailable address, so an unmailable
+   * contact (to exercise the no-address guard) is created straight through
+   * Prisma — mirroring the import-and-flag paths that stay permissive. */
+  async function createUnmailableRecipient(accountId: string): Promise<string> {
+    const recipient = await prisma.recipient.create({
+      data: { accountId, firstName: "Sam", lastName: "Recipient" },
+    });
+    return recipient.id;
   }
 
   async function createSavedDesign(token: string): Promise<string> {
@@ -149,7 +157,7 @@ describe("Auto-send (e2e)", () => {
 
   it("rejects an auto-send approval on a plan without the entitlement", async () => {
     const { token } = await signUp(); // defaults to the free plan
-    const recipientId = await createRecipient(token, true);
+    const recipientId = await createRecipient(token);
     const savedDesignId = await createSavedDesign(token);
     const occasionId = await createOccasion(token, recipientId);
 
@@ -159,7 +167,7 @@ describe("Auto-send (e2e)", () => {
   it("rejects an auto-send approval when the recipient has no postal address", async () => {
     const { token, accountId } = await signUp();
     await enableAutoSend(accountId);
-    const recipientId = await createRecipient(token, false);
+    const recipientId = await createUnmailableRecipient(accountId);
     const savedDesignId = await createSavedDesign(token);
     const occasionId = await createOccasion(token, recipientId);
 
@@ -170,7 +178,7 @@ describe("Auto-send (e2e)", () => {
     const { token, accountId } = await signUp();
     await enableAutoSend(accountId);
     await creditWallet(accountId, 1000);
-    const recipientId = await createRecipient(token, true);
+    const recipientId = await createRecipient(token);
     const savedDesignId = await createSavedDesign(token);
     const occasionId = await createOccasion(token, recipientId);
     await approve(token, occasionId, {
@@ -220,7 +228,7 @@ describe("Auto-send (e2e)", () => {
     const { token, accountId } = await signUp();
     await enableAutoSend(accountId);
     await creditWallet(accountId, 100); // far short of the ~£3 total
-    const recipientId = await createRecipient(token, true);
+    const recipientId = await createRecipient(token);
     const savedDesignId = await createSavedDesign(token);
     const occasionId = await createOccasion(token, recipientId);
     await approve(token, occasionId, { savedDesignId, dispatchOption: "auto_send" }).expect(201);
@@ -249,7 +257,7 @@ describe("Auto-send (e2e)", () => {
     const { token, accountId } = await signUp();
     await enableAutoSend(accountId);
     await creditWallet(accountId, 1000);
-    const recipientId = await createRecipient(token, true);
+    const recipientId = await createRecipient(token);
     const savedDesignId = await createSavedDesign(token);
     const occasionId = await createOccasion(token, recipientId);
     await approve(token, occasionId, { savedDesignId, dispatchOption: "auto_send" }).expect(201);
@@ -272,7 +280,7 @@ describe("Auto-send (e2e)", () => {
     const { token, accountId } = await signUp();
     await enableAutoSend(accountId);
     await creditWallet(accountId, 1000);
-    const recipientId = await createRecipient(token, true);
+    const recipientId = await createRecipient(token);
     const savedDesignId = await createSavedDesign(token);
     const occasionId = await createOccasion(token, recipientId);
     await approve(token, occasionId, { savedDesignId }).expect(201); // asap (default)

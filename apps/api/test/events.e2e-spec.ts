@@ -39,21 +39,29 @@ describe("Events (e2e)", () => {
     return { token, accountId: accountSchema.parse(response.body).id };
   }
 
-  async function createRecipient(token: string, first: string, withAddress = true): Promise<string> {
+  async function createRecipient(token: string, first: string): Promise<string> {
     const response = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
       .send({
         firstName: first,
         lastName: "Pupil",
-        ...(withAddress && {
-          addressLine1: "1 Test Street",
-          addressCity: "London",
-          addressPostcode: "SW1A 1AA",
-        }),
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
       })
       .expect(201);
     return (response.body as { id: string }).id;
+  }
+
+  /** The manual-add API now hard-requires a mailable address, so an unmailable
+   * contact is created straight through Prisma (mirroring the permissive
+   * import-and-flag paths). */
+  async function createUnmailableRecipient(accountId: string, first: string): Promise<string> {
+    const recipient = await prisma.recipient.create({
+      data: { accountId, firstName: first, lastName: "Pupil" },
+    });
+    return recipient.id;
   }
 
   async function createSavedDesign(token: string): Promise<string> {
@@ -174,8 +182,8 @@ describe("Events (e2e)", () => {
   });
 
   it("refuses to order when a contact has no postal address", async () => {
-    const { token } = await signUp();
-    const a = await createRecipient(token, "Gus", false);
+    const { token, accountId } = await signUp();
+    const a = await createUnmailableRecipient(accountId, "Gus");
     const designId = await createSavedDesign(token);
     const created = await request(app.getHttpServer())
       .post("/events")

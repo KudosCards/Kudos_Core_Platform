@@ -107,7 +107,13 @@ describe("Wallet (e2e)", () => {
     const response = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: "Sam", lastName: "Recipient" })
+      .send({
+        firstName: "Sam",
+        lastName: "Recipient",
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
+      })
       .expect(201);
     return (response.body as { id: string }).id;
   }

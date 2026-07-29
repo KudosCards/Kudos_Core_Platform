@@ -14,6 +14,7 @@ import { lookupPostcode } from "@/lib/address-lookup";
 export function AddressFields({
   defaults,
   required = true,
+  namePrefix = "address",
 }: {
   defaults?: {
     addressLine1?: string | null;
@@ -22,6 +23,12 @@ export function AddressFields({
     addressPostcode?: string | null;
   };
   required?: boolean;
+  /**
+   * Base for the input `name`s so the block fits forms with different field
+   * names. Default "address" emits addressLine1/…; pass "shippingAddress" for
+   * the guest/checkout shipping-address forms (shippingAddressLine1/…).
+   */
+  namePrefix?: "address" | "shippingAddress";
 }) {
   const [line1, setLine1] = useState(defaults?.addressLine1 ?? "");
   const [line2, setLine2] = useState(defaults?.addressLine2 ?? "");
@@ -60,7 +67,7 @@ export function AddressFields({
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div className="flex gap-2 sm:col-span-2">
         <input
-          name="addressPostcode"
+          name={`${namePrefix}Postcode`}
           value={postcode}
           onChange={(e) => setPostcode(e.target.value)}
           placeholder="Postcode"
@@ -78,7 +85,7 @@ export function AddressFields({
         </button>
       </div>
       <input
-        name="addressLine1"
+        name={`${namePrefix}Line1`}
         value={line1}
         onChange={(e) => setLine1(e.target.value)}
         placeholder="Address line 1 (house number & street)"
@@ -87,7 +94,7 @@ export function AddressFields({
         className={`${inputClass} sm:col-span-2`}
       />
       <input
-        name="addressLine2"
+        name={`${namePrefix}Line2`}
         value={line2}
         onChange={(e) => setLine2(e.target.value)}
         placeholder="Address line 2 (optional)"
@@ -95,7 +102,7 @@ export function AddressFields({
         className={`${inputClass} sm:col-span-2`}
       />
       <input
-        name="addressCity"
+        name={`${namePrefix}City`}
         value={city}
         onChange={(e) => setCity(e.target.value)}
         placeholder="Town / city"
