@@ -37,7 +37,14 @@ describe("OccasionSchedulerService (e2e)", () => {
     const recipientResponse = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: "Birthday", lastName: "Person", dateOfBirth })
+      .send({
+        firstName: "Birthday",
+        lastName: "Person",
+        dateOfBirth,
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
+      })
       .expect(201);
     return { accountId, recipientId: (recipientResponse.body as { id: string }).id };
   }

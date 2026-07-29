@@ -56,13 +56,31 @@ describe("Recipients (e2e)", () => {
     return { token, accountId: accountSchema.parse(response.body).id };
   }
 
+  /** A full, mailable address — the manual-add API now requires one. */
+  const MAILABLE = {
+    addressLine1: "1 Test Street",
+    addressCity: "London",
+    addressPostcode: "SW1A 1AA",
+  } as const;
+
+  /** Creates an unmailable contact straight through Prisma, the way the
+   * permissive import-and-flag paths (CSV / CRM) do — the manual-add API now
+   * rejects a contact without a full address, so tests that need one bypass it. */
+  async function createUnmailableRecipient(
+    accountId: string,
+    data: { firstName: string; lastName: string; addressPostcode?: string },
+  ): Promise<string> {
+    const recipient = await prisma.recipient.create({ data: { accountId, ...data } });
+    return recipient.id;
+  }
+
   it("creates a recipient and lists it back", async () => {
     const { token } = await signUp();
 
     const createResponse = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: "Archie", lastName: "Winn", addressPostcode: "SW1A 1AA" })
+      .send({ firstName: "Archie", lastName: "Winn", ...MAILABLE })
       .expect(201);
     const created = recipientSchema.parse(createResponse.body);
 
@@ -83,23 +101,21 @@ describe("Recipients (e2e)", () => {
   });
 
   it("filters to contacts missing a mailable address with ?missingAddress=true", async () => {
-    const { token } = await signUp();
-    const add = (body: Record<string, unknown>) =>
-      request(app.getHttpServer())
-        .post("/recipients")
-        .set("Authorization", `Bearer ${token}`)
-        .send(body)
-        .expect(201);
+    const { token, accountId } = await signUp();
 
-    // Mailable (full address) vs unmailable (postcode only, no line 1 / city).
-    await add({
-      firstName: "Full",
+    // Mailable (full address) via the API vs unmailable (postcode only, no line 1
+    // / city) — the latter can now only arrive via an import-and-flag path, so
+    // it's created straight through Prisma.
+    await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ firstName: "Full", lastName: "Address", ...MAILABLE, addressLine1: "12 King Street" })
+      .expect(201);
+    await createUnmailableRecipient(accountId, {
+      firstName: "Needs",
       lastName: "Address",
-      addressLine1: "12 King Street",
-      addressCity: "London",
-      addressPostcode: "SW1A 1AA",
+      addressPostcode: "M1 2AB",
     });
-    await add({ firstName: "Needs", lastName: "Address", addressPostcode: "M1 2AB" });
 
     const filtered = await request(app.getHttpServer())
       .get("/recipients?missingAddress=true")
@@ -123,7 +139,7 @@ describe("Recipients (e2e)", () => {
       request(app.getHttpServer())
         .post("/recipients")
         .set("Authorization", `Bearer ${token}`)
-        .send({ firstName, lastName: "Birthday", dateOfBirth })
+        .send({ firstName, lastName: "Birthday", dateOfBirth, ...MAILABLE })
         .expect(201);
 
     // Two August birthdays in different years, one May, one with no DOB at all.
@@ -133,7 +149,7 @@ describe("Recipients (e2e)", () => {
     await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: "Nodob", lastName: "Person" })
+      .send({ firstName: "Nodob", lastName: "Person", ...MAILABLE })
       .expect(201);
 
     const august = await request(app.getHttpServer())
@@ -187,7 +203,7 @@ describe("Recipients (e2e)", () => {
       request(app.getHttpServer())
         .post("/recipients")
         .set("Authorization", `Bearer ${token}`)
-        .send({ firstName, lastName })
+        .send({ firstName, lastName, ...MAILABLE })
         .expect(201);
     await add("Zoe", "Adams");
     await add("Amy", "Baker");
@@ -221,7 +237,7 @@ describe("Recipients (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       // A December birthday is well outside the 21-day approval window, so it
       // stays `scheduled` (a calendar marker) rather than being promoted.
-      .send({ firstName: "Birthday", lastName: "Child", dateOfBirth: "2015-12-25" })
+      .send({ firstName: "Birthday", lastName: "Child", dateOfBirth: "2015-12-25", ...MAILABLE })
       .expect(201);
 
     const occasions = await request(app.getHttpServer())
@@ -242,7 +258,7 @@ describe("Recipients (e2e)", () => {
     await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: "No", lastName: "Birthday" })
+      .send({ firstName: "No", lastName: "Birthday", ...MAILABLE })
       .expect(201);
 
     const occasions = await request(app.getHttpServer())
@@ -281,7 +297,7 @@ describe("Recipients (e2e)", () => {
         await request(app.getHttpServer())
           .post("/recipients")
           .set("Authorization", `Bearer ${token}`)
-          .send({ firstName: "Change", lastName: "OfBirthday", dateOfBirth: "2015-12-25" })
+          .send({ firstName: "Change", lastName: "OfBirthday", dateOfBirth: "2015-12-25", ...MAILABLE })
           .expect(201)
       ).body,
     );
@@ -309,7 +325,7 @@ describe("Recipients (e2e)", () => {
         await request(app.getHttpServer())
           .post("/recipients")
           .set("Authorization", `Bearer ${token}`)
-          .send({ firstName: "Edit", lastName: "Me" })
+          .send({ firstName: "Edit", lastName: "Me", ...MAILABLE })
           .expect(201)
       ).body,
     );
@@ -338,7 +354,7 @@ describe("Recipients (e2e)", () => {
         await request(app.getHttpServer())
           .post("/recipients")
           .set("Authorization", `Bearer ${token}`)
-          .send({ firstName: "Field", lastName: "Test", customFields: { teacher: "Mrs Patel" } })
+          .send({ firstName: "Field", lastName: "Test", customFields: { teacher: "Mrs Patel" }, ...MAILABLE })
           .expect(201)
       ).body,
     );
@@ -363,7 +379,7 @@ describe("Recipients (e2e)", () => {
         await request(app.getHttpServer())
           .post("/recipients")
           .set("Authorization", `Bearer ${token}`)
-          .send({ firstName: "Archive", lastName: "Restore" })
+          .send({ firstName: "Archive", lastName: "Restore", ...MAILABLE })
           .expect(201)
       ).body,
     );
@@ -397,7 +413,7 @@ describe("Recipients (e2e)", () => {
         await request(app.getHttpServer())
           .post("/recipients")
           .set("Authorization", `Bearer ${token}`)
-          .send({ firstName: "Hidden", lastName: "WhenArchived", dateOfBirth: "2015-12-25" })
+          .send({ firstName: "Hidden", lastName: "WhenArchived", dateOfBirth: "2015-12-25", ...MAILABLE })
           .expect(201)
       ).body,
     );
@@ -457,6 +473,8 @@ describe("Recipients (e2e)", () => {
       firstName: "Sophia",
       lastName: "Johnstone",
       dateOfBirth: "2020-05-14",
+      addressLine1: "1 Test Street",
+      addressCity: "London",
       addressPostcode: "SW1A 2AA",
     };
 
@@ -478,7 +496,29 @@ describe("Recipients (e2e)", () => {
     await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: "Bad", lastName: "Postcode", addressPostcode: "NOTAPOSTCODE" })
+      .send({
+        firstName: "Bad",
+        lastName: "Postcode",
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "NOTAPOSTCODE",
+      })
+      .expect(400);
+  });
+
+  it("rejects a manually-added contact without a full mailable address", async () => {
+    const { token } = await signUp();
+    // Name only — no address at all.
+    await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ firstName: "No", lastName: "Address" })
+      .expect(400);
+    // Postcode but no line 1 / city — still not mailable.
+    await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ firstName: "Partial", lastName: "Address", addressPostcode: "SW1A 1AA" })
       .expect(400);
   });
 
@@ -489,7 +529,7 @@ describe("Recipients (e2e)", () => {
     const createResponse = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${accountA.token}`)
-      .send({ firstName: "Private", lastName: "ToAccountA" })
+      .send({ firstName: "Private", lastName: "ToAccountA", ...MAILABLE })
       .expect(201);
     const created = recipientSchema.parse(createResponse.body);
 
@@ -510,7 +550,7 @@ describe("Recipients (e2e)", () => {
     const createResponse = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: "To", lastName: "Archive" })
+      .send({ firstName: "To", lastName: "Archive", ...MAILABLE })
       .expect(201);
     const created = recipientSchema.parse(createResponse.body);
 
@@ -536,13 +576,13 @@ describe("Recipients (e2e)", () => {
       await request(app.getHttpServer())
         .post("/recipients")
         .set("Authorization", `Bearer ${token}`)
-        .send({ firstName: "First", lastName: "Recipient" })
+        .send({ firstName: "First", lastName: "Recipient", ...MAILABLE })
         .expect(201);
 
       await request(app.getHttpServer())
         .post("/recipients")
         .set("Authorization", `Bearer ${token}`)
-        .send({ firstName: "Second", lastName: "Recipient" })
+        .send({ firstName: "Second", lastName: "Recipient", ...MAILABLE })
         .expect(403);
     } finally {
       await prisma.planEntitlement.update({
@@ -566,7 +606,7 @@ describe("Recipients (e2e)", () => {
         firstName: "Archie",
         lastName: "Winn",
         dateOfBirth: "2011-05-29",
-        addressPostcode: "SW1A 1AA",
+        ...MAILABLE,
       })
       .expect(201);
 
@@ -685,11 +725,11 @@ describe("Recipients (e2e)", () => {
         request(app.getHttpServer())
           .post("/recipients")
           .set("Authorization", `Bearer ${token}`)
-          .send({ firstName: "Racer", lastName: "One" }),
+          .send({ firstName: "Racer", lastName: "One", ...MAILABLE }),
         request(app.getHttpServer())
           .post("/recipients")
           .set("Authorization", `Bearer ${token}`)
-          .send({ firstName: "Racer", lastName: "Two" }),
+          .send({ firstName: "Racer", lastName: "Two", ...MAILABLE }),
       ]);
 
       const statuses = [first.status, second.status].sort();

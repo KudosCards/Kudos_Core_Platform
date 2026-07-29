@@ -59,7 +59,14 @@ describe("Reminders (e2e)", () => {
     await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: "Birthday", lastName: "Soon", dateOfBirth: birthdayInDays(daysAhead) })
+      .send({
+        firstName: "Birthday",
+        lastName: "Soon",
+        dateOfBirth: birthdayInDays(daysAhead),
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
+      })
       .expect(201);
   }
 

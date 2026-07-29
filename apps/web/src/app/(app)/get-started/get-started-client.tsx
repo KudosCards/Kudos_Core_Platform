@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { clearPendingPlan, readPendingPlan, type PaidPlan } from "@/lib/pending-plan";
 import { ConnectCrmCallout } from "@/components/connect-crm-callout";
+import { AddressFields } from "@/components/address-fields";
 
 /** Read the pending plan from localStorage on the client only (null during SSR),
  * without a setState-in-effect. localStorage doesn't change under us here, so an
@@ -88,6 +89,9 @@ export function GetStartedClient({
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [addingManual, setAddingManual] = useState(false);
   const [activating, setActivating] = useState(false);
+  // Bumped after a successful manual add to remount AddressFields (it's
+  // controlled internally, so a form reset alone won't clear it).
+  const [addFormKey, setAddFormKey] = useState(0);
 
   const hasContacts = recipientCount > 0;
 
@@ -136,17 +140,36 @@ export function GetStartedClient({
     const firstName = String(data.get("firstName") || "").trim();
     const lastName = String(data.get("lastName") || "").trim();
     const dateOfBirth = String(data.get("dateOfBirth") || "");
+    const addressLine1 = String(data.get("addressLine1") || "").trim();
+    const addressLine2 = String(data.get("addressLine2") || "").trim();
+    const addressCity = String(data.get("addressCity") || "").trim();
+    const addressPostcode = String(data.get("addressPostcode") || "").trim();
     if (!firstName || !lastName) {
       setError("A first and last name are needed.");
+      return;
+    }
+    // We post physical cards, so a mailable address is required to add a contact
+    // (matches the API). Bulk CSV import stays import-and-flag.
+    if (!addressLine1 || !addressCity || !addressPostcode) {
+      setError("An address (line 1, town and postcode) is needed so we can post their card.");
       return;
     }
     setAddingManual(true);
     try {
       await clientApiFetch("/recipients", {
         method: "POST",
-        body: JSON.stringify({ firstName, lastName, ...(dateOfBirth && { dateOfBirth }) }),
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          ...(dateOfBirth && { dateOfBirth }),
+          addressLine1,
+          ...(addressLine2 && { addressLine2 }),
+          addressCity,
+          addressPostcode,
+        }),
       });
       formEl.reset();
+      setAddFormKey((k) => k + 1);
       await refreshCount();
     } catch (addError) {
       setError(addError instanceof ApiError ? addError.message : "Could not add the contact.");
@@ -224,14 +247,19 @@ export function GetStartedClient({
             <p className="text-sm text-muted">
               Add someone whose birthday you never want to miss — just their name and the date.
             </p>
-            <form
-              onSubmit={(event) => void handleAddManual(event)}
-              className="flex flex-wrap items-end gap-2"
-            >
-              <input name="firstName" placeholder="First name" className={inputClass} />
-              <input name="lastName" placeholder="Last name" className={inputClass} />
-              <input type="date" name="dateOfBirth" aria-label="Date of birth" className={inputClass} />
-              <button type="submit" disabled={addingManual} className="btn-accent">
+            <form onSubmit={(event) => void handleAddManual(event)} className="flex flex-col gap-2">
+              <div className="flex flex-wrap gap-2">
+                <input name="firstName" placeholder="First name" className={`${inputClass} flex-1`} />
+                <input name="lastName" placeholder="Last name" className={`${inputClass} flex-1`} />
+                <input
+                  type="date"
+                  name="dateOfBirth"
+                  aria-label="Date of birth"
+                  className={inputClass}
+                />
+              </div>
+              <AddressFields key={addFormKey} />
+              <button type="submit" disabled={addingManual} className="btn-accent w-fit">
                 {addingManual ? "Adding…" : "Add birthday"}
               </button>
             </form>
@@ -316,12 +344,23 @@ export function GetStartedClient({
               <summary className="cursor-pointer text-muted">Or add one by hand</summary>
               <form
                 onSubmit={(event) => void handleAddManual(event)}
-                className="mt-3 flex flex-wrap items-end gap-2"
+                className="mt-3 flex flex-col gap-2"
               >
-                <input name="firstName" placeholder="First name" className={inputClass} />
-                <input name="lastName" placeholder="Last name" className={inputClass} />
-                <input type="date" name="dateOfBirth" className={inputClass} />
-                <button type="submit" disabled={addingManual} className="btn-secondary">
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    name="firstName"
+                    placeholder="First name"
+                    className={`${inputClass} flex-1`}
+                  />
+                  <input
+                    name="lastName"
+                    placeholder="Last name"
+                    className={`${inputClass} flex-1`}
+                  />
+                  <input type="date" name="dateOfBirth" className={inputClass} />
+                </div>
+                <AddressFields key={addFormKey} />
+                <button type="submit" disabled={addingManual} className="btn-secondary w-fit">
                   {addingManual ? "Adding…" : "Add"}
                 </button>
               </form>
