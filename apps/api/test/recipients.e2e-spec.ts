@@ -117,6 +117,47 @@ describe("Recipients (e2e)", () => {
     expect(paginatedRecipientsSchema.parse(all.body).total).toBe(2);
   });
 
+  it("filters contacts by birthday month with ?birthMonth, ignoring the year", async () => {
+    const { token } = await signUp();
+    const add = (firstName: string, dateOfBirth: string) =>
+      request(app.getHttpServer())
+        .post("/recipients")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ firstName, lastName: "Birthday", dateOfBirth })
+        .expect(201);
+
+    // Two August birthdays in different years, one May, one with no DOB at all.
+    await add("Augusta", "2015-08-14");
+    await add("Gus", "1990-08-30");
+    await add("Mabel", "2001-05-02");
+    await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ firstName: "Nodob", lastName: "Person" })
+      .expect(201);
+
+    const august = await request(app.getHttpServer())
+      .get("/recipients?birthMonth=8")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const list = paginatedRecipientsSchema.parse(august.body);
+    expect(list.total).toBe(2);
+    expect(list.items.map((r) => r.firstName).sort()).toEqual(["Augusta", "Gus"]);
+
+    // A month with no birthdays returns nothing (not an error).
+    const january = await request(app.getHttpServer())
+      .get("/recipients?birthMonth=1")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(paginatedRecipientsSchema.parse(january.body).total).toBe(0);
+
+    // An out-of-range month is rejected by validation.
+    await request(app.getHttpServer())
+      .get("/recipients?birthMonth=13")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(400);
+  });
+
   it("imports a full postal address from CSV so the contact is mailable", async () => {
     const { token } = await signUp();
     const csv =

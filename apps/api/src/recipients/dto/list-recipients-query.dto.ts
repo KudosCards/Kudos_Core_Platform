@@ -20,6 +20,13 @@ export class ListRecipientsQueryDto {
   @IsString()
   search?: string;
 
+  @ApiPropertyOptional({
+    description: 'Birthday month 1–12 (e.g. "8" for August), ignoring year',
+  })
+  @IsOptional()
+  @IsIn(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"])
+  birthMonth?: string;
+
   @ApiPropertyOptional({ description: "Only recipients on this list" })
   @IsOptional()
   @IsUUID()

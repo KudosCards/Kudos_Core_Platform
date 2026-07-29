@@ -23,6 +23,22 @@ export function isMailable(recipient: Recipient): boolean {
 // list filter) page through the rest, so nothing is hidden. See ADR 0042.
 export const PER_PAGE = 30;
 
+/** Month labels for the birthday-month filter; index 0 = January. */
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
 /** Friendly labels for where a recipient came from (see the integrations spine). */
 const SOURCE_LABELS: Record<string, string> = {
   manual: "Manual",
@@ -116,6 +132,10 @@ export function RecipientsClient({
   // can read it without every call site having to thread it through.
   const [missingOnly, setMissingOnly] = useState(initialMissingOnly);
   const missingOnlyRef = useRef(initialMissingOnly);
+  // Birthday-month filter ("" = all months). Kept in a ref too so the shared
+  // reload() picks it up without threading it through the call signature.
+  const [birthMonth, setBirthMonth] = useState("");
+  const birthMonthRef = useRef("");
   const [rowBusyId, setRowBusyId] = useState<string | null>(null);
 
   // Lists state.
@@ -148,6 +168,7 @@ export function RecipientsClient({
         if (searchTerm) params.set("search", searchTerm);
         if (sortKey !== "recent") params.set("sort", sortKey);
         if (missingOnlyRef.current) params.set("missingAddress", "true");
+        if (birthMonthRef.current) params.set("birthMonth", birthMonthRef.current);
         const result = await clientApiFetch<Paginated<Recipient>>(
           `/recipients?${params.toString()}`,
         );
@@ -191,6 +212,13 @@ export function RecipientsClient({
   function changeSort(key: SortKey) {
     setSort(key);
     setSelected(new Set());
+  }
+
+  function changeBirthMonth(value: string) {
+    setBirthMonth(value);
+    birthMonthRef.current = value;
+    setSelected(new Set());
+    void reload(1, activeListId, debouncedSearch, sort);
   }
 
   function selectList(listId: string | null) {
@@ -580,6 +608,19 @@ export function RecipientsClient({
             </button>
           )}
         </div>
+        <select
+          value={birthMonth}
+          onChange={(e) => changeBirthMonth(e.target.value)}
+          aria-label="Filter by birthday month"
+          className={`${inputClass} ${birthMonth ? "border-accent font-medium text-accent" : ""}`}
+        >
+          <option value="">🎂 All birthdays</option>
+          {MONTH_NAMES.map((name, index) => (
+            <option key={name} value={String(index + 1)}>
+              {name}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           onClick={() => {
