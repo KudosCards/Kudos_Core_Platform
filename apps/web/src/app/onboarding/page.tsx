@@ -1,12 +1,24 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+} from "react";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch, ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { readPendingCardId } from "@/lib/pending-card";
 import { readPendingClaimToken, clearPendingClaimToken } from "@/lib/pending-claim";
+import {
+  readPendingAccountRaw,
+  parsePendingAccount,
+  clearPendingAccount,
+} from "@/lib/pending-account";
 import { Logo } from "@/components/logo";
 
 /**
@@ -54,6 +66,56 @@ export default function OnboardingPage() {
     })();
   }, [claimToken, router]);
 
+  // A visitor who set up their account on /register but had to confirm their
+  // email first arrives here with the chosen type + name stashed. Finish the
+  // account automatically so they aren't asked for the organisation name a
+  // second time; only fall back to the form when nothing was stashed (or it
+  // can't be applied). Read as a stable raw snapshot (mirrors the claim token)
+  // and parse via memo so the effect never sets state synchronously.
+  const storedPendingRaw = useSyncExternalStore(
+    () => () => {},
+    () => readPendingAccountRaw(),
+    () => null,
+  );
+  const [pendingDismissed, setPendingDismissed] = useState(false);
+  const pendingAccount = useMemo(
+    () => (pendingDismissed ? null : parsePendingAccount(storedPendingRaw)),
+    [storedPendingRaw, pendingDismissed],
+  );
+  // The claim flow takes priority; only auto-create an account once no claim is
+  // in flight.
+  const autoSetup = !claimToken && pendingAccount !== null;
+  const autoSetupAttempted = useRef(false);
+
+  useEffect(() => {
+    if (!autoSetup || autoSetupAttempted.current || !pendingAccount) return;
+    autoSetupAttempted.current = true;
+    void (async () => {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        router.push("/login");
+        return;
+      }
+      try {
+        await apiFetch("/accounts", session.access_token, {
+          method: "POST",
+          body: JSON.stringify({ type: pendingAccount.type, name: pendingAccount.name }),
+        });
+        clearPendingAccount();
+        router.push(readPendingCardId() ? "/start" : "/get-started");
+        router.refresh();
+      } catch {
+        // Couldn't finish automatically (e.g. the account already exists) — drop
+        // the stash and let them complete the set-up form below.
+        clearPendingAccount();
+        setPendingDismissed(true);
+      }
+    })();
+  }, [autoSetup, pendingAccount, router]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -95,6 +157,18 @@ export default function OnboardingPage() {
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center">
         <Logo className="h-16 w-auto" priority />
         <p className="text-muted">Saving your order…</p>
+      </div>
+    );
+  }
+
+  // While the stashed account from /register is being finished, show a spinner
+  // rather than the set-up form — the form only appears when there's nothing to
+  // finish automatically.
+  if (autoSetup) {
+    return (
+      <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center">
+        <Logo className="h-16 w-auto" priority />
+        <p className="text-muted">Setting up your account…</p>
       </div>
     );
   }

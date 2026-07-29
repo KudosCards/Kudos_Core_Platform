@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { apiFetch, ApiError } from "@/lib/api";
 import { readPendingCardId, setPendingCardId } from "@/lib/pending-card";
 import { setPendingPlan } from "@/lib/pending-plan";
+import { setPendingAccount, clearPendingAccount } from "@/lib/pending-account";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -54,10 +55,11 @@ export default function RegisterPage() {
     }
 
     if (!data.session) {
-      // Email confirmation is required before a session exists — the
-      // account gets created once they confirm and log in (see the
-      // onboarding flow in (app)/layout.tsx). The pending card waits in
-      // localStorage and is picked up after they log in.
+      // Email confirmation is required before a session exists — the account
+      // gets created once they confirm and log in (see /onboarding). Stash the
+      // chosen type + name so onboarding finishes set-up without asking for the
+      // organisation name a second time; the pending card/plan wait alongside it.
+      setPendingAccount({ type: accountType, name });
       setSubmitting(false);
       setCheckEmail(true);
       return;
@@ -68,6 +70,8 @@ export default function RegisterPage() {
         method: "POST",
         body: JSON.stringify({ type: accountType, name }),
       });
+      // Created inline — no confirmation hop — so drop any stale stash.
+      clearPendingAccount();
     } catch (apiError) {
       setSubmitting(false);
       setError(apiError instanceof ApiError ? apiError.message : "Could not create your account");
