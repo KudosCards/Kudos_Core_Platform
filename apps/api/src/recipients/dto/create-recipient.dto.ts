@@ -12,6 +12,16 @@ import {
 } from "class-validator";
 import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
 
+/**
+ * Address on a directly-added contact: the web Add-Contact form makes line 1,
+ * city, and postcode required (with postcode autocomplete) so a manually-added
+ * contact is mailable — we post physical cards via Royal Mail. It's kept
+ * optional at this DTO layer for now so bulk/programmatic callers (and the
+ * import-and-flag path) aren't rejected; anything missing an address is surfaced
+ * everywhere via the "needs address" flag + worklist. A follow-up can promote
+ * this to a hard API requirement. See docs/adr/0067-mandatory-addresses.md.
+ */
+
 export class CreateRecipientDto {
   @ApiProperty()
   @IsString()

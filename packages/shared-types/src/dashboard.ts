@@ -8,6 +8,9 @@ import { z } from "zod";
 export const dashboardSummarySchema = z.object({
   /** Active recipients on the account. */
   recipientCount: z.number().int().nonnegative(),
+  /** Active contacts without a mailable address (no line 1 / city / postcode) —
+   * they can't be posted a card until it's added. Drives the "add addresses" nudge. */
+  contactsMissingAddress: z.number().int().nonnegative(),
   /** Wallet balance in pence (the same figure as GET /wallet). */
   walletBalanceMinor: z.number().int(),
   /** Occasions waiting in the approvals queue. */

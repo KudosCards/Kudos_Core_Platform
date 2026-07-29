@@ -23,6 +23,23 @@ import {
 
 export type { Paginated };
 
+/**
+ * A contact is "unmailable" (needs an address) when any of address line 1, city,
+ * or postcode is missing or blank — the minimum to post a card via Royal Mail.
+ * Shared by the recipients list filter and the dashboard "needs address" count
+ * so both agree on exactly one definition. See docs/adr/0067-mandatory-addresses.md.
+ */
+export const MISSING_ADDRESS_WHERE: Prisma.RecipientWhereInput = {
+  OR: [
+    { addressLine1: null },
+    { addressLine1: "" },
+    { addressCity: null },
+    { addressCity: "" },
+    { addressPostcode: null },
+    { addressPostcode: "" },
+  ],
+};
+
 export interface ImportSummary {
   created: number;
   updated: number;
@@ -144,10 +161,17 @@ export class RecipientsService {
       accountId,
       ...(query.status && { status: query.status }),
       ...(query.listId && { listMemberships: { some: { listId: query.listId } } }),
+      ...(query.missingAddress === "true" && MISSING_ADDRESS_WHERE),
       ...(query.search && {
-        OR: [
-          { firstName: { contains: query.search, mode: "insensitive" } },
-          { lastName: { contains: query.search, mode: "insensitive" } },
+        // AND-wrap so a search combines with (rather than overwrites) a
+        // missing-address filter that also uses OR.
+        AND: [
+          {
+            OR: [
+              { firstName: { contains: query.search, mode: "insensitive" } },
+              { lastName: { contains: query.search, mode: "insensitive" } },
+            ],
+          },
         ],
       }),
     };
@@ -385,6 +409,9 @@ export class RecipientsService {
           firstName: parsed.firstName,
           lastName: parsed.lastName,
           dateOfBirth: parsed.dateOfBirth,
+          addressLine1: parsed.addressLine1,
+          addressLine2: parsed.addressLine2,
+          addressCity: parsed.addressCity,
           addressPostcode: parsed.addressPostcode,
           email: parsed.email,
         } satisfies Prisma.RecipientCreateManyInput,

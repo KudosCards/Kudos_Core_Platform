@@ -1,8 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { MISSING_ADDRESS_WHERE } from "../recipients/recipients.service";
 
 export interface DashboardSummary {
   recipientCount: number;
+  /** Active contacts without a mailable address — drives the "add addresses" nudge. */
+  contactsMissingAddress: number;
   walletBalanceMinor: number;
   pendingApprovals: number;
   occasionsThisMonth: number;
@@ -36,6 +39,7 @@ export class DashboardService {
     // One round-trip of independent counts, not eight awaited in series.
     const [
       recipientCount,
+      contactsMissingAddress,
       walletSum,
       pendingApprovals,
       occasionsThisMonth,
@@ -46,6 +50,9 @@ export class DashboardService {
       firstPurchasedOrder,
     ] = await Promise.all([
       this.prisma.recipient.count({ where: { accountId, status: "active" } }),
+      this.prisma.recipient.count({
+        where: { accountId, status: "active", ...MISSING_ADDRESS_WHERE },
+      }),
       // Balance = SUM of the wallet ledger — the same invariant WalletService
       // owns (see docs/adr/0012-wallet.md); read-only here.
       this.prisma.walletLedgerEntry.aggregate({
@@ -73,6 +80,7 @@ export class DashboardService {
 
     return {
       recipientCount,
+      contactsMissingAddress,
       walletBalanceMinor: walletSum._sum.amountMinor ?? 0,
       pendingApprovals,
       occasionsThisMonth,
