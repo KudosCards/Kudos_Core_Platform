@@ -405,7 +405,13 @@ export function RecipientsClient({
           <p className="text-xs text-muted">
             Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), postcode, email
           </p>
-          <input type="file" name="file" accept=".csv" required className="text-sm" />
+          <input
+            type="file"
+            name="file"
+            accept=".csv"
+            required
+            className="block w-full cursor-pointer rounded-md border border-border bg-surface text-sm text-muted file:mr-3 file:cursor-pointer file:border-0 file:bg-accent file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-accent-hover"
+          />
           <button type="submit" className="btn-secondary self-start">
             Import
           </button>

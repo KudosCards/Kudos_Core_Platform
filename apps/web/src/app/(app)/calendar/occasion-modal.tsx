@@ -6,7 +6,12 @@ import type { Occasion } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { Modal } from "@/components/modal";
-import { OCCASION_STATUS_LABELS, OCCASION_TYPE_LABELS, formatOccasionDate } from "@/lib/occasions";
+import {
+  OCCASION_CARD_IN_FLIGHT,
+  OCCASION_STATUS_LABELS,
+  OCCASION_TYPE_LABELS,
+  formatOccasionDate,
+} from "@/lib/occasions";
 
 /** The display name for a calendar occasion — recipient, else its label/type. */
 function occasionName(occasion: Occasion): string {
@@ -93,9 +98,12 @@ export function OccasionModal({
   const actionLink =
     occasion.status === "pending_approval"
       ? { href: "/approvals", label: "Review & approve →" }
-      : occasion.status === "approved"
-        ? { href: "/batch-orders", label: "Create an order →" }
-        : null;
+      : null;
+
+  // The quickest path to a posted card: the one-page send flow, pre-seeded with
+  // this contact. Offered whenever a card isn't already on its way, so the
+  // subscriber can send straight from the calendar instead of hunting for it.
+  const canSendCard = Boolean(occasion.recipientId) && !OCCASION_CARD_IN_FLIGHT.has(occasion.status);
 
   return (
     <Modal open onClose={onClose} title={occasionName(occasion)}>
@@ -172,7 +180,7 @@ export function OccasionModal({
               />
             )}
             <DetailRow
-              label="Status"
+              label="Card status"
               value={OCCASION_STATUS_LABELS[occasion.status] ?? occasion.status}
             />
             {occasion.order && (
@@ -192,8 +200,21 @@ export function OccasionModal({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {canSendCard && (
+              <Link
+                href={`/send?recipients=${occasion.recipientId}`}
+                onClick={onClose}
+                className="btn-accent"
+              >
+                🎂 Send a card
+              </Link>
+            )}
             {isScheduled && (
-              <button type="button" onClick={() => setEditing(true)} className="btn-accent">
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className={canSendCard ? "btn-secondary" : "btn-accent"}
+              >
                 Edit event
               </button>
             )}

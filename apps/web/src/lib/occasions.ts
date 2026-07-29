@@ -7,17 +7,29 @@ export const OCCASION_TYPE_LABELS: Record<string, string> = {
   bespoke_campaign: "Bespoke campaign",
 };
 
-/** Human labels for an occasion's lifecycle status (calendar pop-up, etc.). */
+/** Card-centric labels for an occasion's lifecycle (calendar pop-up, etc.) —
+ * phrased around what's happening to the card, not an abstract "status", so a
+ * subscriber can tell at a glance whether a card is scheduled, on its way, or
+ * already sent. */
 export const OCCASION_STATUS_LABELS: Record<string, string> = {
-  scheduled: "Scheduled",
-  pending_approval: "Pending approval",
-  approved: "Approved",
-  queued: "In an order",
-  printed: "Printed",
-  posted: "Posted",
-  delivered: "Delivered",
+  scheduled: "Card scheduled",
+  pending_approval: "Awaiting your approval",
+  approved: "Ready to send",
+  queued: "Card ordered",
+  printed: "Printing",
+  posted: "Card sent",
+  delivered: "Card delivered",
   skipped: "Skipped",
 };
+
+/** Statuses where a card is already ordered/in production/sent — offering
+ * "Send a card" again from the calendar would risk a duplicate. */
+export const OCCASION_CARD_IN_FLIGHT: ReadonlySet<string> = new Set([
+  "queued",
+  "printed",
+  "posted",
+  "delivered",
+]);
 
 export function formatOccasionDate(value: string | Date): string {
   return new Date(value).toLocaleDateString("en-GB", {

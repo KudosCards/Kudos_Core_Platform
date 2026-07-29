@@ -339,6 +339,27 @@ export function BatchOrdersClient({
               </div>
             );
           })()}
+          {(() => {
+            // Cards greet the recipient by first name ({firstName}); a selected
+            // contact without one would print an awkward blank. Warn before they
+            // pay — don't block, since some may be intentional.
+            const missingName = initialOccasions.filter(
+              (o) => lines[o.id] && !o.recipient?.firstName?.trim(),
+            );
+            if (missingName.length === 0) return null;
+            return (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="font-semibold">
+                  ⚠️ {missingName.length} contact{missingName.length === 1 ? " is" : "s are"} missing a
+                  first name
+                </p>
+                <p className="mt-1">
+                  Cards use the first name in the greeting, so these may read oddly. Add a first name on
+                  the contact record before sending, or continue if that&apos;s intended.
+                </p>
+              </div>
+            );
+          })()}
           {initialOccasions.map((occasion) => {
             const selected = lines[occasion.id];
             return (
@@ -445,6 +466,13 @@ export function BatchOrdersClient({
                         </button>
                       );
                     })()}
+                    <button
+                      type="button"
+                      onClick={() => toggle(occasion.id)}
+                      className="self-start text-xs font-medium text-muted underline-offset-2 hover:text-accent hover:underline sm:col-span-2"
+                    >
+                      Remove from order
+                    </button>
                   </div>
                 )}
               </div>
