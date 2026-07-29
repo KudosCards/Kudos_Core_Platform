@@ -1,6 +1,12 @@
 "use client";
 
-import type { DesignDocument, DesignElement, DesignPage, SavedDesign } from "@kudos/shared-types";
+import type {
+  DesignAsset,
+  DesignDocument,
+  DesignElement,
+  DesignPage,
+  SavedDesign,
+} from "@kudos/shared-types";
 import {
   CARD_WIDTH,
   MERGE_FIELDS,
@@ -116,6 +122,23 @@ export function DesignEditorClient({
   // When on (the default), resizing an image keeps its aspect ratio so it can't
   // be stretched out of shape; turn it off for deliberate stretching (#11).
   const [lockImageAspect, setLockImageAspect] = useState(true);
+  // The account's reusable-image library ("Your uploads"); loaded once and kept
+  // in sync as the member uploads or removes assets (#16).
+  const [assets, setAssets] = useState<DesignAsset[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    clientApiFetch<DesignAsset[]>("/design-assets")
+      .then((items) => {
+        if (active) setAssets(items);
+      })
+      .catch(() => {
+        /* Non-fatal: the editor still works without the uploads library. */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   // Whether the currently-selected text element spills outside the print safe
   // area — reported up from the canvas, which measures the rendered text.
   const [selectedOverflow, setSelectedOverflow] = useState(false);
@@ -227,6 +250,28 @@ export function DesignEditorClient({
     selectElement(null);
   }
 
+  /** Place an image element on the active page, sized to preserve its aspect
+   * ratio (natural dimensions when known, else a square fallback). Shared by a
+   * fresh upload and the "Your uploads" library picker. */
+  function insertImage(url: string, naturalW: number | null, naturalH: number | null) {
+    const { width, height } = fitWithinBox(
+      { width: naturalW ?? IMAGE_INSERT_MAX, height: naturalH ?? IMAGE_INSERT_MAX },
+      IMAGE_INSERT_MAX,
+    );
+    const element: Extract<DesignElement, { kind: "image" }> = {
+      kind: "image",
+      id: crypto.randomUUID(),
+      assetUrl: url,
+      x: 40,
+      y: 40,
+      width,
+      height,
+      rotation: 0,
+    };
+    updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
+    selectElement(element.id);
+  }
+
   async function handleImageUpload(file: File) {
     setError(null);
     setUploading(true);
@@ -249,24 +294,43 @@ export function DesignEditorClient({
         throw new Error(uploadError.message);
       }
 
-      const { width, height } = fitWithinBox(naturalSize, IMAGE_INSERT_MAX);
-      const element: Extract<DesignElement, { kind: "image" }> = {
-        kind: "image",
-        id: crypto.randomUUID(),
-        assetUrl: signed.publicUrl,
-        x: 40,
-        y: 40,
-        width,
-        height,
-        rotation: 0,
-      };
-      updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
-      selectElement(element.id);
+      insertImage(signed.publicUrl, naturalSize.width, naturalSize.height);
+
+      // Record it in the reusable-uploads library so it can be placed again
+      // later without re-uploading (#16). Non-fatal if it fails — the image is
+      // already on the card.
+      try {
+        const asset = await clientApiFetch<DesignAsset>("/design-assets", {
+          method: "POST",
+          body: JSON.stringify({
+            url: signed.publicUrl,
+            fileName: file.name,
+            width: naturalSize.width,
+            height: naturalSize.height,
+          }),
+        });
+        setAssets((current) => [asset, ...current]);
+      } catch {
+        /* library is best-effort */
+      }
     } catch (uploadCatchError) {
       setError(uploadCatchError instanceof Error ? uploadCatchError.message : "Upload failed");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  /** Remove an asset from the "Your uploads" library. This only forgets it from
+   * the library — a card already using the image keeps rendering (the storage
+   * object is left in place). */
+  async function removeAsset(id: string) {
+    const previous = assets;
+    setAssets((current) => current.filter((a) => a.id !== id));
+    try {
+      await clientApiFetch(`/design-assets/${id}`, { method: "DELETE" });
+    } catch {
+      setAssets(previous); // restore on failure
     }
   }
 
@@ -473,6 +537,43 @@ export function DesignEditorClient({
               }}
             />
           </div>
+
+          {assets.length > 0 && (
+            <div className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 dark:border-white/10">
+              <span className="text-xs font-medium text-foreground/70">
+                Your uploads — click to place again
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {assets.map((asset) => (
+                  <div key={asset.id} className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => insertImage(asset.url, asset.width, asset.height)}
+                      title={`Add ${asset.fileName}`}
+                      className="size-14 overflow-hidden rounded-md border border-black/10 hover:ring-2 hover:ring-accent dark:border-white/10"
+                    >
+                      {/* Library thumbnails come from arbitrary user uploads, so a
+                          plain <img> (not next/image) is intentional here. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={asset.url}
+                        alt={asset.fileName}
+                        className="size-full object-cover"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void removeAsset(asset.id)}
+                      aria-label={`Remove ${asset.fileName} from your uploads`}
+                      className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border border-black/10 bg-surface text-xs text-muted opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 dark:border-white/10"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {hasQr && (
             <label className="flex flex-col gap-1 rounded-lg border border-black/10 p-3 text-xs text-foreground/60 dark:border-white/10">
