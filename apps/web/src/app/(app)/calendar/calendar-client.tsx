@@ -2,7 +2,7 @@
 
 import type { EventSummary, Occasion } from "@kudos/shared-types";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
@@ -180,13 +180,18 @@ function CalendarLegend() {
 
 export function CalendarClient({
   initialOccasions,
+  initialEvents,
   todayIso,
 }: {
   initialOccasions: Occasion[];
+  initialEvents: EventSummary[];
   todayIso: string;
 }) {
-  const today = new Date(todayIso);
-  const todayKey = ymdUTC(today);
+  // Memoised so they're stable references across renders — `today` seeds
+  // `anchor` and feeds the fetch effects, so rebuilding it each render churned
+  // dependencies and contributed to the reload flashing.
+  const today = useMemo(() => new Date(todayIso), [todayIso]);
+  const todayKey = useMemo(() => ymdUTC(today), [today]);
 
   // The month/week grids need ~560px to be legible (they scroll horizontally on
   // a phone); the list view is the mobile-friendly one. Default to list on
@@ -208,7 +213,7 @@ export function CalendarClient({
   const [showDispatch, setShowDispatch] = useState(false);
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [occasions, setOccasions] = useState<Occasion[]>(initialOccasions);
-  const [events, setEvents] = useState<EventSummary[]>([]);
+  const [events, setEvents] = useState<EventSummary[]>(initialEvents);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The occasion whose pop-up is open (null = closed).
@@ -287,10 +292,17 @@ export function CalendarClient({
     void load();
   }, [load]);
 
-  // Shared events aren't server-seeded, so this fetch runs on mount too (no
-  // first-render skip). A calendar without events still works, so a failure here
-  // is swallowed — occasions carry the visible error surface.
+  // Events are server-seeded for the initial month (see page.tsx), so — like
+  // occasions — skip the first run and only re-fetch when the range/filter
+  // actually changes. This removes the on-mount fetch that made the calendar
+  // flash before settling. A failure here is swallowed: occasions carry the
+  // visible error surface.
+  const firstEventsRender = useRef(true);
   useEffect(() => {
+    if (firstEventsRender.current) {
+      firstEventsRender.current = false;
+      return;
+    }
     let active = true;
     (async () => {
       try {

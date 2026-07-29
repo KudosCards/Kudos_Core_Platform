@@ -157,11 +157,29 @@ export class RecipientsService {
   ): Promise<Paginated<Recipient>> {
     const page = parsePage(query.page);
     const perPage = parsePerPage(query.perPage, 25);
+
+    // Birthday-month filter (year-agnostic): Prisma's typed `where` can't extract
+    // the month from a date column, so resolve the matching ids with a small
+    // account-scoped raw query, then constrain the main query by id. An empty
+    // result set naturally yields no rows (`id in ()`).
+    let birthMonthIds: string[] | undefined;
+    if (query.birthMonth) {
+      const month = Number(query.birthMonth);
+      const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "recipients"
+        WHERE account_id = ${accountId}
+          AND date_of_birth IS NOT NULL
+          AND EXTRACT(MONTH FROM date_of_birth) = ${month}
+      `;
+      birthMonthIds = rows.map((r) => r.id);
+    }
+
     const where: Prisma.RecipientWhereInput = {
       accountId,
       ...(query.status && { status: query.status }),
       ...(query.listId && { listMemberships: { some: { listId: query.listId } } }),
       ...(query.missingAddress === "true" && MISSING_ADDRESS_WHERE),
+      ...(birthMonthIds && { id: { in: birthMonthIds } }),
       ...(query.search && {
         // AND-wrap so a search combines with (rather than overwrites) a
         // missing-address filter that also uses OR.

@@ -177,10 +177,11 @@ export function BulkSendClient({
         <Link href="/recipients" className="text-sm text-muted hover:text-foreground">
           ← Recipients
         </Link>
-        <h1 className="text-3xl font-bold tracking-tight">Bulk send</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Send a card</h1>
         <p className="text-muted">
-          Send the same card to a whole group in one go — choose who it&apos;s for, pick a design,
-          and we print &amp; post each one, addressed automatically.
+          The quickest way to post a card — pick who it&apos;s for, choose a design, and we print
+          &amp; post each one, addressed automatically. Send to one contact or a whole group in the
+          same go.
         </p>
       </div>
 

@@ -1,4 +1,4 @@
-import type { AccountPricing, WalletSummary } from "@kudos/shared-types";
+import type { AccountPricing, PlanEntitlement, WalletSummary } from "@kudos/shared-types";
 import { CARD_PRICE_MINOR, POSTAGE_MINOR, VAT_RATE_PERCENT } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 
@@ -34,11 +34,12 @@ export default async function BatchOrdersPage({
     .map((id) => id.trim())
     .filter(Boolean);
 
-  const [occasions, orders, wallet, pricing] = await Promise.all([
+  const [occasions, orders, wallet, pricing, entitlement] = await Promise.all([
     serverApiFetch<Paginated<OccasionWithRecipient>>("/occasions?status=approved&perPage=50"),
     serverApiFetch<Paginated<UnfinishedBatchOrder>>("/batch-orders?perPage=50"),
     serverApiFetch<WalletSummary>("/wallet"),
     serverApiFetch<AccountPricing>("/pricing"),
+    serverApiFetch<PlanEntitlement>("/accounts/me/entitlements"),
   ]);
 
   // No multi-status filter on the list endpoint, so fetch everything recent
@@ -59,6 +60,7 @@ export default async function BatchOrdersPage({
       walletBalanceMinor={wallet?.balanceMinor ?? 0}
       initialSelectedIds={initialSelectedIds}
       pricing={pricing ?? FALLBACK_PRICING}
+      maxPerOrder={entitlement?.batchOrderMaxSize ?? 20}
     />
   );
 }

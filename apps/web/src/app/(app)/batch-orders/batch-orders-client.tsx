@@ -47,6 +47,7 @@ export function BatchOrdersClient({
   walletBalanceMinor,
   initialSelectedIds = [],
   pricing,
+  maxPerOrder,
 }: {
   initialOccasions: OccasionWithRecipient[];
   initialUnfinishedOrders: UnfinishedBatchOrder[];
@@ -55,6 +56,8 @@ export function BatchOrdersClient({
   initialSelectedIds?: string[];
   /** The account's live per-card pricing, for the checkout estimate. */
   pricing: AccountPricing;
+  /** Plan's `batchOrderMaxSize` — the most cards allowed in a single order. */
+  maxPerOrder: number;
 }) {
   const [lines, setLines] = useState<Record<string, LineDraft>>(() =>
     Object.fromEntries(initialSelectedIds.map((id) => [id, { ...EMPTY_LINE }])),
@@ -87,6 +90,11 @@ export function BatchOrdersClient({
   function validateSelection(): string | null {
     if (selectedIds.length === 0) {
       return "Select at least one occasion to include";
+    }
+    if (selectedIds.length > maxPerOrder) {
+      return `You can send up to ${maxPerOrder} cards per order — deselect ${
+        selectedIds.length - maxPerOrder
+      } to continue, then start another order for the rest.`;
     }
     for (const occasionId of selectedIds) {
       const line = lines[occasionId]!;
@@ -229,8 +237,16 @@ export function BatchOrdersClient({
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Checkout</h1>
         <p className="text-muted">
-          Choose which approved occasions to send to print. Kudos Cards prints, packs and posts every
-          card straight to your recipient — no shipping admin on your end.
+          This is where occasions you&apos;ve already approved on the{" "}
+          <Link href="/calendar" className="text-accent hover:underline">
+            calendar
+          </Link>{" "}
+          get paid for and sent to print. Just want to post a card now?{" "}
+          <Link href="/send" className="text-accent hover:underline">
+            Send a card
+          </Link>{" "}
+          is the quicker route. You can send up to {maxPerOrder} cards per order; Kudos Cards prints,
+          packs and posts each one straight to your recipient — no shipping admin on your end.
         </p>
       </div>
 
@@ -501,23 +517,44 @@ export function BatchOrdersClient({
         })()}
 
       {initialOccasions.length > 0 && (
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            disabled={submitting || walletSubmitting || selectedIds.length === 0}
-            onClick={() => void handleCheckout()}
-            className="btn-accent"
-          >
-            {submitting ? "Starting checkout…" : `Pay by card for ${selectedIds.length} card(s)`}
-          </button>
-          <button
-            type="button"
-            disabled={submitting || walletSubmitting || selectedIds.length === 0}
-            onClick={() => void handleWalletCheckout()}
-            className="btn-secondary"
-          >
-            {walletSubmitting ? "Paying…" : "Pay with wallet"}
-          </button>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-muted">
+            {selectedIds.length} of {maxPerOrder} selected
+            {selectedIds.length > maxPerOrder && (
+              <span className="ml-2 font-medium text-amber-700">
+                — that&apos;s over the {maxPerOrder}-card limit for this order. Deselect{" "}
+                {selectedIds.length - maxPerOrder} to continue.
+              </span>
+            )}
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={
+                submitting ||
+                walletSubmitting ||
+                selectedIds.length === 0 ||
+                selectedIds.length > maxPerOrder
+              }
+              onClick={() => void handleCheckout()}
+              className="btn-accent"
+            >
+              {submitting ? "Starting checkout…" : `Pay by card for ${selectedIds.length} card(s)`}
+            </button>
+            <button
+              type="button"
+              disabled={
+                submitting ||
+                walletSubmitting ||
+                selectedIds.length === 0 ||
+                selectedIds.length > maxPerOrder
+              }
+              onClick={() => void handleWalletCheckout()}
+              className="btn-secondary"
+            >
+              {walletSubmitting ? "Paying…" : "Pay with wallet"}
+            </button>
+          </div>
         </div>
       )}
     </div>

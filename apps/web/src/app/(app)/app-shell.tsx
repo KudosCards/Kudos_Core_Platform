@@ -167,8 +167,8 @@ export function AppShell({
           <div className="flex items-center gap-1">
             <BasketIndicator count={unfinishedOrders} />
             <NotificationBell />
-            <Link href="/batch-orders" className="btn-accent px-3 py-1.5 text-xs">
-              Order
+            <Link href="/send" className="btn-accent px-3 py-1.5 text-xs">
+              Send
             </Link>
           </div>
         </header>
@@ -184,8 +184,8 @@ export function AppShell({
           </Link>
           <BasketIndicator count={unfinishedOrders} />
           <NotificationBell />
-          <Link href="/batch-orders" className="btn-accent">
-            Create an order <span aria-hidden>→</span>
+          <Link href="/send" className="btn-accent">
+            Send a card <span aria-hidden>→</span>
           </Link>
         </header>
 
