@@ -99,4 +99,30 @@ export class FulfillmentController {
   ): Promise<BulkTransitionSummary> {
     return this.fulfillmentService.bulkTransition(admin.userId, dto);
   }
+
+  /** Whether Royal Mail shipping automation is wired — the ops UI shows the
+   * "Dispatch via Royal Mail" action only when true. */
+  @Get("shipping-status")
+  shippingStatus(): { enabled: boolean } {
+    return { enabled: this.fulfillmentService.shippingAutomationEnabled() };
+  }
+
+  /** Auto-create a Royal Mail shipment for a printed card and mark it posted,
+   * storing the tracking number + label. */
+  @Post("jobs/:id/dispatch")
+  dispatch(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<FulfillmentQueueJob> {
+    return this.fulfillmentService.dispatch(admin.userId, id);
+  }
+
+  /** Bulk auto-dispatch a print run via Royal Mail. */
+  @Post("jobs/dispatch")
+  dispatchMany(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body() dto: ExportAddressesDto,
+  ): Promise<{ dispatched: number; failed: number }> {
+    return this.fulfillmentService.dispatchMany(admin.userId, dto.jobIds);
+  }
 }

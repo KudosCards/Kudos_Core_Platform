@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import type { DesignDocument } from "@kudos/shared-types";
@@ -51,6 +51,7 @@ export interface FulfillmentJob {
   id: string;
   status: FulfillmentStatus;
   trackingReference: string | null;
+  labelUrl: string | null;
   orderRecipient: {
     shippingAddressCity: string;
     shippingAddressPostcode: string;
@@ -156,6 +157,40 @@ export function FulfillmentClient({
   const [printCards, setPrintCards] = useState<PrintRunCard[] | null>(null);
   const [printPending, setPrintPending] = useState(false);
   const [returningId, setReturningId] = useState<string | null>(null);
+  // Whether Royal Mail shipping automation is wired — gates the auto-dispatch
+  // action (falls back to manual "Mark posted" when off). See ADR 0072.
+  const [shippingEnabled, setShippingEnabled] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    clientApiFetch<{ enabled: boolean }>("/fulfillment/shipping-status")
+      .then((r) => {
+        if (active) setShippingEnabled(r.enabled);
+      })
+      .catch(() => {
+        /* non-fatal: manual dispatch still works */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  /** Auto-create a Royal Mail shipment for a printed card (buys postage,
+   * allocates tracking + label) and mark it posted — no manual tracking entry. */
+  async function dispatchViaRoyalMail(job: FulfillmentJob) {
+    setError(null);
+    setPendingId(job.id);
+    try {
+      await clientApiFetch(`/fulfillment/jobs/${job.id}/dispatch`, { method: "POST" });
+      removeJob(job.id);
+    } catch (dispatchError) {
+      setError(
+        dispatchError instanceof ApiError ? dispatchError.message : "Could not dispatch via Royal Mail",
+      );
+    } finally {
+      setPendingId(null);
+    }
+  }
 
   async function printRun() {
     if (selected.size === 0) return;
@@ -392,6 +427,19 @@ export function FulfillmentClient({
                       Design: {r.savedDesign.name} ·{" "}
                       {POSTAGE_LABELS[r.postageClass] ?? r.postageClass}
                       {job.trackingReference && ` · ${job.trackingReference}`}
+                      {job.labelUrl && (
+                        <>
+                          {" · "}
+                          <a
+                            href={job.labelUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-accent hover:underline"
+                          >
+                            Print label
+                          </a>
+                        </>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -405,6 +453,17 @@ export function FulfillmentClient({
                   >
                     {previewLoadingId === job.id ? "…" : "Preview card"}
                   </button>
+                  {shippingEnabled && job.status === "printed" && (
+                    <button
+                      type="button"
+                      disabled={pendingId === job.id}
+                      onClick={() => void dispatchViaRoyalMail(job)}
+                      title="Create a Royal Mail shipment, buy postage, and get a tracking number"
+                      className="rounded-full border border-accent bg-accent-soft px-4 py-1.5 text-sm font-medium text-accent hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {pendingId === job.id ? "…" : "🚚 Dispatch (Royal Mail)"}
+                    </button>
+                  )}
                   {step && (
                     <button
                       type="button"
