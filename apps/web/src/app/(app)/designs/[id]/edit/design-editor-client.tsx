@@ -17,7 +17,7 @@ import { createClient } from "@/lib/supabase/client";
 const DesignCanvas = dynamic(() => import("./design-canvas").then((mod) => mod.DesignCanvas), {
   ssr: false,
   loading: () => (
-    <div className="flex aspect-[3/4] w-full max-w-[450px] items-center justify-center rounded-md border border-black/10 text-sm text-foreground/50 dark:border-white/10">
+    <div className="flex aspect-[3/4] w-full max-w-[640px] items-center justify-center rounded-md border border-black/10 text-sm text-foreground/50 dark:border-white/10">
       Loading canvas…
     </div>
   ),
@@ -26,10 +26,48 @@ const DesignCanvas = dynamic(() => import("./design-canvas").then((mod) => mod.D
 const PAGE_NAMES: DesignPage["name"][] = ["front", "inside-left", "inside-right", "back"];
 const FONT_OPTIONS = ["Georgia", "Helvetica", "Times New Roman", "Courier New"];
 
+/** Longest side (in design units) a freshly-inserted image is scaled to fit. */
+const IMAGE_INSERT_MAX = 200;
+
 interface SignedUpload {
   path: string;
   token: string;
   publicUrl: string;
+}
+
+/** Read an image file's natural pixel dimensions in the browser. Falls back to
+ * a square if the browser can't decode it, so an insert never hard-fails. */
+function readImageSize(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new window.Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({
+        width: img.naturalWidth || IMAGE_INSERT_MAX,
+        height: img.naturalHeight || IMAGE_INSERT_MAX,
+      });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: IMAGE_INSERT_MAX, height: IMAGE_INSERT_MAX });
+    };
+    img.src = url;
+  });
+}
+
+/** Scale a natural size down to fit within a square box while preserving its
+ * aspect ratio (never upscales past the box on its longest side). */
+function fitWithinBox(
+  size: { width: number; height: number },
+  maxSide: number,
+): { width: number; height: number } {
+  const longest = Math.max(size.width, size.height);
+  const factor = longest > maxSide ? maxSide / longest : 1;
+  return {
+    width: Math.max(1, Math.round(size.width * factor)),
+    height: Math.max(1, Math.round(size.height * factor)),
+  };
 }
 
 function newTextElement(): Extract<DesignElement, { kind: "text" }> {
@@ -75,6 +113,9 @@ export function DesignEditorClient({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  // When on (the default), resizing an image keeps its aspect ratio so it can't
+  // be stretched out of shape; turn it off for deliberate stretching (#11).
+  const [lockImageAspect, setLockImageAspect] = useState(true);
   // Whether the currently-selected text element spills outside the print safe
   // area — reported up from the canvas, which measures the rendered text.
   const [selectedOverflow, setSelectedOverflow] = useState(false);
@@ -195,6 +236,11 @@ export function DesignEditorClient({
         body: JSON.stringify({ fileName: file.name, contentType: file.type }),
       });
 
+      // Read the file's natural dimensions up front so the placed element keeps
+      // the photo's real aspect ratio — a square default (the old 150×150) is
+      // what squashed portrait/landscape photos out of shape (#11).
+      const naturalSize = await readImageSize(file);
+
       const supabase = createClient();
       const { error: uploadError } = await supabase.storage
         .from("design-assets")
@@ -203,14 +249,15 @@ export function DesignEditorClient({
         throw new Error(uploadError.message);
       }
 
+      const { width, height } = fitWithinBox(naturalSize, IMAGE_INSERT_MAX);
       const element: Extract<DesignElement, { kind: "image" }> = {
         kind: "image",
         id: crypto.randomUUID(),
         assetUrl: signed.publicUrl,
         x: 40,
         y: 40,
-        width: 150,
-        height: 150,
+        width,
+        height,
         rotation: 0,
       };
       updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
@@ -460,7 +507,7 @@ export function DesignEditorClient({
           />
         </div>
 
-        <aside className="flex w-full flex-col gap-3 rounded-lg border border-black/10 p-4 sm:w-64 dark:border-white/10">
+        <aside className="flex w-full flex-col gap-3 rounded-lg border border-black/10 p-4 sm:w-64 lg:sticky lg:top-4 lg:w-72 lg:self-start dark:border-white/10">
           <h2 className="text-sm font-semibold">
             {selectedElement ? "Selected element" : "Nothing selected"}
           </h2>
@@ -605,15 +652,27 @@ export function DesignEditorClient({
 
           {selectedElement?.kind === "image" && (
             <>
+              <label className="flex items-center gap-2 text-xs text-foreground/70">
+                <input
+                  type="checkbox"
+                  checked={lockImageAspect}
+                  onChange={(e) => setLockImageAspect(e.target.checked)}
+                />
+                Lock aspect ratio (keeps the photo from stretching)
+              </label>
               <label className="flex flex-col gap-1 text-xs text-foreground/60">
                 Width
                 <input
                   type="number"
                   min={10}
                   value={selectedElement.width}
-                  onChange={(e) =>
-                    updateElement({ ...selectedElement, width: Number(e.target.value) || 1 })
-                  }
+                  onChange={(e) => {
+                    const width = Number(e.target.value) || 1;
+                    const height = lockImageAspect
+                      ? Math.max(1, Math.round(width * (selectedElement.height / selectedElement.width)))
+                      : selectedElement.height;
+                    updateElement({ ...selectedElement, width, height });
+                  }}
                   className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
                 />
               </label>
@@ -623,9 +682,13 @@ export function DesignEditorClient({
                   type="number"
                   min={10}
                   value={selectedElement.height}
-                  onChange={(e) =>
-                    updateElement({ ...selectedElement, height: Number(e.target.value) || 1 })
-                  }
+                  onChange={(e) => {
+                    const height = Number(e.target.value) || 1;
+                    const width = lockImageAspect
+                      ? Math.max(1, Math.round(height * (selectedElement.width / selectedElement.height)))
+                      : selectedElement.width;
+                    updateElement({ ...selectedElement, width, height });
+                  }}
                   className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
                 />
               </label>

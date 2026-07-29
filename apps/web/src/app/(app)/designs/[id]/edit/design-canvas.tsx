@@ -20,6 +20,12 @@ import { qrDataUrl } from "@/lib/qr";
 export const CANVAS_WIDTH = CARD_WIDTH;
 export const CANVAS_HEIGHT = CARD_HEIGHT;
 
+// On a wide screen the card is authored at 450px but there's plenty of room to
+// work bigger, so let the Stage scale up (Konva re-renders text/shapes crisply
+// at any scale). Capped so the card never dominates the viewport; the container
+// max-width below is kept in step (450 × 1.42 ≈ 640px). See #12 (widescreen).
+const MAX_CANVAS_SCALE = 1.42;
+
 /** Clamp a Konva drag to keep the element on the card. `scale` converts between
  * the on-screen (scaled) coordinates dragBoundFunc works in and the 450×600
  * design space the guard rail is defined in. */
@@ -230,7 +236,8 @@ export function DesignCanvas({
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const measure = () => setScale(Math.min(1, el.clientWidth / CANVAS_WIDTH));
+    const measure = () =>
+      setScale(Math.min(MAX_CANVAS_SCALE, el.clientWidth / CANVAS_WIDTH));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
@@ -240,7 +247,7 @@ export function DesignCanvas({
   const reportOverflow = onSelectedOverflowChange ?? (() => {});
 
   return (
-    <div ref={containerRef} className="w-full max-w-[450px] overflow-hidden">
+    <div ref={containerRef} className="w-full max-w-[640px] overflow-hidden">
       <Stage
         width={CANVAS_WIDTH * scale}
         height={CANVAS_HEIGHT * scale}
