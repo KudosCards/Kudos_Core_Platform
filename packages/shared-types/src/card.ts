@@ -101,3 +101,27 @@ export const savedDesignSchema = z.object({
   updatedAt: z.coerce.date(),
 });
 export type SavedDesign = z.infer<typeof savedDesignSchema>;
+
+/**
+ * A reusable image an account uploaded in the designer — the "Your uploads"
+ * library, so a logo/photo can be placed again without re-uploading. `url` is
+ * the public storage URL a design document references.
+ */
+export const designAssetSchema = z.object({
+  id: z.string().uuid(),
+  url: z.string().url(),
+  fileName: z.string(),
+  width: z.number().int().positive().nullable(),
+  height: z.number().int().positive().nullable(),
+  createdAt: z.coerce.date(),
+});
+export type DesignAsset = z.infer<typeof designAssetSchema>;
+
+/** Body for recording a completed upload into the library. */
+export const createDesignAssetSchema = z.object({
+  url: z.string().url(),
+  fileName: z.string().min(1).max(200),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+});
+export type CreateDesignAssetInput = z.infer<typeof createDesignAssetSchema>;

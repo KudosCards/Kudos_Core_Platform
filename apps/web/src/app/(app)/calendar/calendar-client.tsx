@@ -53,6 +53,18 @@ function occasionKind(occasion: Occasion): string {
   return occasion.title ?? OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type;
 }
 
+/** A friendly heading for the list view's month relative to today: "This month",
+ * "Next month", or the month + year. `todayKey` is a YYYY-MM-DD string. */
+function relativeMonthLabel(anchor: Date, todayKey: string): string {
+  const [ty, tm] = todayKey.split("-").map(Number);
+  const ay = anchor.getUTCFullYear();
+  const am = anchor.getUTCMonth() + 1;
+  const monthsAhead = (ay - ty!) * 12 + (am - tm!);
+  if (monthsAhead === 0) return "This month";
+  if (monthsAhead === 1) return "Next month";
+  return anchor.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
 function periodLabel(view: CalendarView, anchor: Date): string {
   if (view === "week") {
     const { start, end } = weekRange(anchor);
@@ -666,6 +678,12 @@ function ListView({
   }
   return (
     <div className="card flex flex-col divide-y divide-border overflow-hidden">
+      <div className="flex items-baseline justify-between gap-2 bg-foreground/[0.02] px-4 py-2.5">
+        <h2 className="text-sm font-semibold">{relativeMonthLabel(anchor, todayKey)}</h2>
+        <span className="text-xs text-muted">
+          {days.length} day{days.length === 1 ? "" : "s"} with events
+        </span>
+      </div>
       {days.map((key) => {
         const date = new Date(`${key}T00:00:00Z`);
         return (

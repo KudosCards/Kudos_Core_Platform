@@ -11,6 +11,7 @@ import { RecipientsModule } from "./recipients/recipients.module";
 import { RecipientListsModule } from "./recipient-lists/recipient-lists.module";
 import { CardDesignsModule } from "./card-designs/card-designs.module";
 import { SavedDesignsModule } from "./saved-designs/saved-designs.module";
+import { DesignAssetsModule } from "./design-assets/design-assets.module";
 import { StorageModule } from "./storage/storage.module";
 import { OccasionsModule } from "./occasions/occasions.module";
 import { EventsModule } from "./events/events.module";
@@ -58,6 +59,7 @@ import { SupabaseAdminModule } from "./supabase/supabase-admin.module";
     RecipientListsModule,
     CardDesignsModule,
     SavedDesignsModule,
+    DesignAssetsModule,
     StorageModule,
     OccasionsModule,
     EventsModule,

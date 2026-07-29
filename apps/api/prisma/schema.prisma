@@ -70,6 +70,7 @@ model Account {
   returnCases    ReturnCase[]
   events         Event[]
   supportTickets SupportTicket[]
+  designAssets   DesignAsset[]
 
   // Super-admin subscribers list is ordered newest-first.
   @@index([createdAt])
@@ -164,6 +165,29 @@ model AccountApiKey {
 
   @@index([accountId])
   @@map("account_api_keys")
+}
+
+/// A reusable image a member uploaded in the card designer, so a logo/photo can
+/// be placed again without re-uploading (the "Your uploads" library). One row
+/// per completed upload; `url` is the bucket's public URL that design documents
+/// reference. Deleting a row only removes it from the library — the storage
+/// object is intentionally left in place because existing designs may still
+/// reference the same url. See docs/adr/0070-saved-assets-library.md.
+model DesignAsset {
+  id        String   @id @default(uuid())
+  accountId String   @map("account_id")
+  url       String
+  fileName  String   @map("file_name")
+  /// Natural pixel dimensions, captured at upload so the picker can insert the
+  /// image at its true aspect ratio. Nullable for assets recorded without them.
+  width     Int?
+  height    Int?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@map("design_assets")
 }
 
 /// userId references the Supabase Auth user (managed outside Prisma's schema),
