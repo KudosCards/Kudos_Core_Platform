@@ -243,7 +243,13 @@ export function GetStartedClient({
                 onSubmit={(event) => void handleImport(event)}
                 className="mt-3 flex flex-col gap-2"
               >
-                <input type="file" name="file" accept=".csv" required className="text-sm" />
+                <input
+                  type="file"
+                  name="file"
+                  accept=".csv"
+                  required
+                  className="block w-full cursor-pointer rounded-md border border-border bg-surface text-sm text-muted file:mr-3 file:cursor-pointer file:border-0 file:bg-accent file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-accent-hover"
+                />
                 <div className="flex flex-wrap items-center gap-3">
                   <button type="submit" disabled={importing} className="btn-secondary">
                     {importing ? "Importing…" : "Import contacts"}
@@ -275,7 +281,13 @@ export function GetStartedClient({
               you have it. Birthdays appear on your calendar automatically.
             </p>
             <form onSubmit={(event) => void handleImport(event)} className="flex flex-col gap-2">
-              <input type="file" name="file" accept=".csv" required className="text-sm" />
+              <input
+                  type="file"
+                  name="file"
+                  accept=".csv"
+                  required
+                  className="block w-full cursor-pointer rounded-md border border-border bg-surface text-sm text-muted file:mr-3 file:cursor-pointer file:border-0 file:bg-accent file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-accent-hover"
+                />
               <div className="flex flex-wrap items-center gap-3">
                 <button type="submit" disabled={importing} className="btn-accent">
                   {importing ? "Importing…" : "Import contacts"}

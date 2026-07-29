@@ -27,6 +27,8 @@ export default function DashboardPage() {
         <DashboardOverview />
       </Suspense>
 
+      <QuickActions />
+
       <div className="card p-5">
         <p className="font-semibold">Get cards out the door</p>
         <p className="mt-1 text-sm text-muted">
@@ -37,6 +39,41 @@ export default function DashboardPage() {
           to pay, or turn on auto-send at approval to have us order, pay, and post them for you.
         </p>
       </div>
+    </div>
+  );
+}
+
+/** The three things a subscriber most often wants to do, front and centre — the
+ * quickest paths to sending a card. Static, so it paints in the first flush. */
+function QuickActions() {
+  const actions: { href: string; label: string; sub: string; emoji: string; primary?: boolean }[] = [
+    { href: "/send", label: "Send a card", sub: "Pick a design, add a recipient, pay", emoji: "🎂", primary: true },
+    { href: "/get-started", label: "Upload contacts", sub: "Import your list from a CSV", emoji: "📇" },
+    { href: "/calendar", label: "View calendar", sub: "Upcoming birthdays & dispatches", emoji: "📅" },
+  ];
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      {actions.map((action) => (
+        <Link
+          key={action.href}
+          href={action.href}
+          className={`group flex items-center gap-3 rounded-xl border p-4 transition-colors ${
+            action.primary
+              ? "border-accent/30 bg-accent-soft hover:border-accent/50"
+              : "border-border hover:border-foreground/20 hover:bg-foreground/[0.02]"
+          }`}
+        >
+          <span className="text-2xl" aria-hidden>
+            {action.emoji}
+          </span>
+          <span className="flex flex-col">
+            <span className={`font-semibold ${action.primary ? "text-accent" : ""}`}>
+              {action.label}
+            </span>
+            <span className="text-xs text-muted">{action.sub}</span>
+          </span>
+        </Link>
+      ))}
     </div>
   );
 }
