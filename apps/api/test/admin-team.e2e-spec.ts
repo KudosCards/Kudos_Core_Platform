@@ -16,7 +16,10 @@ const generateLinkMock = jest.fn().mockResolvedValue({
   data: { properties: { action_link: "https://supabase.test/auth/v1/verify?token=abc" } },
   error: null,
 });
-const supabaseAdminMock = { auth: { admin: { generateLink: generateLinkMock } } };
+const getUserByIdMock = jest.fn().mockResolvedValue({ data: { user: null }, error: null });
+const supabaseAdminMock = {
+  auth: { admin: { generateLink: generateLinkMock, getUserById: getUserByIdMock } },
+};
 
 interface AdminTeamBody {
   admins: Array<{ userId: string; email: string | null; role: string; isYou: boolean }>;
@@ -46,6 +49,8 @@ describe("Admin team / operator auth (e2e)", () => {
     await prisma.platformAdminInvite.deleteMany({});
     await prisma.platformAdmin.deleteMany({});
     emailMock.sendTransactional.mockClear();
+    getUserByIdMock.mockClear();
+    getUserByIdMock.mockResolvedValue({ data: { user: null }, error: null });
     generateLinkMock.mockClear();
     generateLinkMock.mockResolvedValue({
       data: { properties: { action_link: "https://supabase.test/auth/v1/verify?token=abc" } },
@@ -122,6 +127,32 @@ describe("Admin team / operator auth (e2e)", () => {
     const body = team.body as AdminTeamBody;
     expect(body.admins.some((a) => a.email === inviteeEmail)).toBe(true);
     expect(body.invites).toHaveLength(0);
+  });
+
+  it("provisions an invited operator whose session token carries no email (admin-client fallback)", async () => {
+    const { token: superToken } = await superAdmin();
+    const inviteeEmail = `noemail-${randomUUID()}@kudos.test`;
+    await request(app.getHttpServer())
+      .post("/admin/team/invites")
+      .set("Authorization", `Bearer ${superToken}`)
+      .send({ email: inviteeEmail, role: "ops" })
+      .expect(201);
+
+    // A session whose JWT has no `email` claim — the invite would dead-end at
+    // "not a Kudos operator" without the authoritative Supabase lookup.
+    const inviteeUserId = randomUUID();
+    getUserByIdMock.mockResolvedValue({
+      data: { user: { id: inviteeUserId, email: inviteeEmail } },
+      error: null,
+    });
+    const inviteeToken = await mintToken(inviteeUserId, null);
+
+    const access = await request(app.getHttpServer())
+      .post("/admin/access")
+      .set("Authorization", `Bearer ${inviteeToken}`)
+      .expect(201);
+    expect(access.body).toMatchObject({ role: "ops", email: inviteeEmail });
+    expect(getUserByIdMock).toHaveBeenCalledWith(inviteeUserId);
   });
 
   it("sends a recovery set-password link when the invitee already exists in Supabase", async () => {

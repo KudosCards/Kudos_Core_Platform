@@ -34,9 +34,14 @@ export async function getTestJwks(): Promise<JWTVerifyGetKey> {
   return (await getKeys()).jwks;
 }
 
-export async function mintToken(userId: string, email = "test@example.com"): Promise<string> {
+/** Mint a signed test JWT. Pass `email: null` to omit the `email` claim
+ * entirely — mirrors a Supabase session whose token carries no email. */
+export async function mintToken(
+  userId: string,
+  email: string | null = "test@example.com",
+): Promise<string> {
   const { privateKey } = await getKeys();
-  return new SignJWT({ sub: userId, email, aud: "authenticated" })
+  return new SignJWT({ sub: userId, aud: "authenticated", ...(email ? { email } : {}) })
     .setProtectedHeader({ alg: "ES256", kid: KEY_ID })
     .setIssuedAt()
     .setExpirationTime("1h")
