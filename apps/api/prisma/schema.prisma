@@ -755,6 +755,9 @@ model FulfillmentJob {
   postedAt          DateTime?            @map("posted_at")
   deliveredAt       DateTime?            @map("delivered_at")
   trackingReference String?              @map("tracking_reference")
+  /// The printable Royal Mail label/QR URL, when a shipment was auto-created via
+  /// the Shipping API. Null for manually-dispatched jobs. See ADR 0072.
+  labelUrl          String?              @map("label_url")
   createdAt         DateTime             @default(now()) @map("created_at")
   updatedAt         DateTime             @updatedAt @map("updated_at")
 

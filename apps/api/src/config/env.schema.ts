@@ -72,6 +72,20 @@ export const envSchema = z.object({
   // The table holding the card designs; defaults to the name in the Airtable base.
   AIRTABLE_CARDS_TABLE: z.string().min(1).default("Card List"),
 
+  // Royal Mail Shipping API v4 (Click & Drop / Intersoft) — creates shipments,
+  // buys postage, and allocates a tracking number from the ops fulfillment
+  // queue. Optional: with no key the shipping client is a no-op and ops keep
+  // dispatching manually (paste-your-own tracking). Treat blank as unset. See
+  // docs/adr/0072-royal-mail-shipping.md.
+  ROYAL_MAIL_API_KEY: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  // The Shipping API base URL. Defaults to the live host; point at the sandbox
+  // for test-mode verification before go-live.
+  ROYAL_MAIL_API_BASE_URL: z.string().url().default("https://api.parcel.royalmail.com"),
+
   // Error monitoring. When set, the API initialises Sentry (see
   // observability/sentry.ts, called from main.ts) and reports 5xx errors via a
   // global exception filter; unset = monitoring disabled (a clean no-op). Treat

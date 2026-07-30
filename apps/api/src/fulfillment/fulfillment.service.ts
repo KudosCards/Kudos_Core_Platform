@@ -1,4 +1,11 @@
-import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { FulfillmentJobStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
@@ -6,6 +13,8 @@ import { AuditService } from "../audit/audit.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
+import { ROYAL_MAIL_CLIENT } from "../shipping/royal-mail-client.provider";
+import { royalMailTrackingUrl, type RoyalMailClient } from "../shipping/royal-mail-client";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
@@ -30,6 +39,7 @@ const QUEUE_SELECT = {
   postedAt: true,
   deliveredAt: true,
   trackingReference: true,
+  labelUrl: true,
   createdAt: true,
   orderRecipient: {
     select: {
@@ -117,7 +127,7 @@ interface DispatchGroup {
   orderId: string;
   orderNumber: number;
   email: string;
-  names: string[];
+  cards: { name: string; trackingReference: string | null }[];
 }
 
 @Injectable()
@@ -129,7 +139,105 @@ export class FulfillmentService {
     private readonly audit: AuditService,
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
+    @Inject(ROYAL_MAIL_CLIENT) private readonly royalMail: RoyalMailClient,
   ) {}
+
+  /** Whether Royal Mail shipping automation is wired (drives the ops UI). */
+  shippingAutomationEnabled(): boolean {
+    return this.royalMail.enabled;
+  }
+
+  /**
+   * Auto-dispatch a printed card via Royal Mail: create the shipment (buys
+   * postage + allocates a tracking number + label), then move the job to
+   * `posted` with the tracking reference and label stored. The buyer's dispatch
+   * email (fired on `posted`) then carries the tracking link.
+   *
+   * The Shipping API call happens BEFORE the DB transition and outside any
+   * transaction — a real network call must never hold a DB transaction open —
+   * and only a success transitions the job. If the transition then finds the
+   * job already moved on (double-click), we've created a shipment we didn't
+   * record; that's surfaced as a conflict for the operator to reconcile rather
+   * than silently dropped.
+   */
+  async dispatch(actorUserId: string, id: string): Promise<FulfillmentQueueJob> {
+    if (!this.royalMail.enabled) {
+      throw new BadRequestException(
+        "Royal Mail shipping isn't configured — mark the card posted manually instead.",
+      );
+    }
+    const job = await this.prisma.fulfillmentJob.findUnique({
+      where: { id },
+      select: DETAIL_SELECT,
+    });
+    if (!job) {
+      throw new NotFoundException("Fulfillment job not found");
+    }
+    if (!FROM_STATUSES.posted.includes(job.status)) {
+      throw new ConflictException(`Job is "${job.status}" — print it before dispatching`);
+    }
+
+    const r = job.orderRecipient;
+    const shipment = await this.royalMail.createShipment({
+      orderReference: `ORD-${await this.orderNumberFor(r.batchOrderId)}`,
+      recipientName: `${r.recipient.firstName} ${r.recipient.lastName}`.trim(),
+      addressLine1: r.shippingAddressLine1,
+      addressLine2: r.shippingAddressLine2,
+      city: r.shippingAddressCity,
+      postcode: r.shippingAddressPostcode,
+      country: r.shippingAddressCountry,
+      postageClass: r.postageClass,
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      const applied = await this.applyTransition(tx, actorUserId, id, "posted", {
+        trackingReference: shipment.trackingNumber,
+        labelUrl: shipment.labelUrl,
+      });
+      if (!applied) {
+        throw new ConflictException(
+          `Royal Mail shipment ${shipment.trackingNumber} was created, but the job is no longer printable — reconcile manually`,
+        );
+      }
+    });
+    await this.notifyDispatched([id]);
+    return this.prisma.fulfillmentJob.findUniqueOrThrow({ where: { id }, select: QUEUE_SELECT });
+  }
+
+  /** Bulk auto-dispatch: dispatch each printed job in turn. A per-job failure
+   * (e.g. a Royal Mail error on one address) is recorded and skipped so the
+   * rest of the run still goes; the summary reports how many shipped. */
+  async dispatchMany(
+    actorUserId: string,
+    jobIds: string[],
+  ): Promise<{ dispatched: number; failed: number }> {
+    if (!this.royalMail.enabled) {
+      throw new BadRequestException(
+        "Royal Mail shipping isn't configured — mark cards posted manually instead.",
+      );
+    }
+    let dispatched = 0;
+    let failed = 0;
+    for (const id of jobIds) {
+      try {
+        await this.dispatch(actorUserId, id);
+        dispatched += 1;
+      } catch (error) {
+        failed += 1;
+        const reason = error instanceof Error ? error.message : "Unknown error";
+        this.logger.error(`Royal Mail dispatch for job ${id} failed: ${reason}`);
+      }
+    }
+    return { dispatched, failed };
+  }
+
+  private async orderNumberFor(batchOrderId: string): Promise<number> {
+    const order = await this.prisma.batchOrder.findUniqueOrThrow({
+      where: { id: batchOrderId },
+      select: { orderNumber: true },
+    });
+    return order.orderNumber;
+  }
 
   async list(query: ListFulfillmentQueryDto): Promise<Paginated<FulfillmentQueueJob>> {
     const page = parsePage(query.page);
@@ -371,6 +479,7 @@ export class FulfillmentService {
       const jobs = await this.prisma.fulfillmentJob.findMany({
         where: { id: { in: jobIds } },
         select: {
+          trackingReference: true,
           orderRecipient: {
             select: {
               recipient: { select: { firstName: true, lastName: true } },
@@ -395,9 +504,12 @@ export class FulfillmentService {
           orderId: or.batchOrder.id,
           orderNumber: or.batchOrder.orderNumber,
           email,
-          names: [],
+          cards: [],
         };
-        group.names.push(`${or.recipient.firstName} ${or.recipient.lastName}`);
+        group.cards.push({
+          name: `${or.recipient.firstName} ${or.recipient.lastName}`,
+          trackingReference: job.trackingReference,
+        });
         byOrder.set(or.batchOrder.id, group);
       }
       groups = [...byOrder.values()];
@@ -422,10 +534,19 @@ export class FulfillmentService {
   private async sendDispatchNotification(webAppUrl: string, group: DispatchGroup): Promise<void> {
     const orderRef = `ORD-${group.orderNumber}`;
     const orderUrl = `${webAppUrl}/orders/${group.orderId}`;
-    const count = group.names.length;
+    const count = group.cards.length;
     const cards = count === 1 ? "Your card is" : "Your cards are";
-    const list = group.names
-      .map((name) => `<li style="margin-bottom:4px">${escapeHtml(name)}</li>`)
+    // Each name, with a "Track" link when the card has a Royal Mail tracking
+    // number (auto-dispatched via the Shipping API).
+    const list = group.cards
+      .map((card) => {
+        const track = card.trackingReference
+          ? ` — <a href="${royalMailTrackingUrl(card.trackingReference)}" style="color:${
+              BRAND.accent
+            }">track it</a>`
+          : "";
+        return `<li style="margin-bottom:4px">${escapeHtml(card.name)}${track}</li>`;
+      })
       .join("");
 
     await this.email.sendTransactional({
@@ -440,7 +561,10 @@ export class FulfillmentService {
       params: {
         orderNumber: orderRef,
         cardCount: count,
-        recipientNames: group.names,
+        recipientNames: group.cards.map((c) => c.name),
+        tracking: group.cards
+          .filter((c) => c.trackingReference)
+          .map((c) => ({ name: c.name, trackingReference: c.trackingReference })),
         orderUrl,
       },
       html: renderBrandedEmail({
@@ -470,7 +594,7 @@ export class FulfillmentService {
     actorUserId: string,
     id: string,
     toStatus: TransitionableStatus,
-    opts: { trackingReference?: string; failureReason?: string },
+    opts: { trackingReference?: string; failureReason?: string; labelUrl?: string | null },
   ): Promise<boolean> {
     const now = new Date();
     const jobData: Prisma.FulfillmentJobUpdateManyMutationInput = { status: toStatus };
@@ -478,6 +602,7 @@ export class FulfillmentService {
     if (toStatus === "posted") {
       jobData.postedAt = now;
       if (opts.trackingReference) jobData.trackingReference = opts.trackingReference;
+      if (opts.labelUrl) jobData.labelUrl = opts.labelUrl;
     }
     if (toStatus === "delivered") jobData.deliveredAt = now;
 
