@@ -1,15 +1,18 @@
 import type { EventSummary, Occasion } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { CalendarClient } from "./calendar-client";
-import { monthGridRange, ymdUTC, type Paginated } from "./calendar-utils";
+import { listWindowRange, monthGridRange, ymdUTC, type Paginated } from "./calendar-utils";
 
 export default async function CalendarPage() {
-  // Server-render the current month so the grid is fully populated on first
-  // paint — both occasions AND shared events. Seeding events too means the
-  // client no longer has to fetch them on mount, which was causing the calendar
-  // to flash (blank → occasions → events) before settling.
+  // Server-render enough to populate BOTH first-paint views without a flash:
+  // the month grid (desktop default) and the list view's forward window (mobile
+  // default). The union runs from the month grid's start (the Monday before the
+  // 1st) through the list window's end (a few months out), so whichever view the
+  // client settles on already has its occasions AND shared events — no on-mount
+  // fetch, no blank → occasions → events flash.
   const now = new Date();
-  const { start, end } = monthGridRange(now);
+  const { start } = monthGridRange(now);
+  const { end } = listWindowRange(now);
   const range = `from=${ymdUTC(start)}&to=${ymdUTC(end)}`;
   const [occasions, events] = await Promise.all([
     serverApiFetch<Paginated<Occasion>>(`/occasions?${range}&perPage=100`),

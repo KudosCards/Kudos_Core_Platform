@@ -57,11 +57,33 @@ export function monthRange(anchor: Date): { start: Date; end: Date } {
   return { start, end: addDaysUTC(new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, 1)), -1) };
 }
 
+/**
+ * How many months the list view spans forward from its anchor month, so it
+ * reads as a rolling "what's coming up" agenda across month boundaries rather
+ * than one month at a time. Kept modest so a single fetch (perPage 100) covers
+ * a realistic account's occasions.
+ */
+export const LIST_WINDOW_MONTHS = 3;
+
+/**
+ * The forward window the list view fetches and groups: from the start of the
+ * anchor's month through the last day of the (LIST_WINDOW_MONTHS-1)th following
+ * month. Anchored to whole months so the month sub-headers line up cleanly.
+ */
+export function listWindowRange(anchor: Date): { start: Date; end: Date } {
+  const start = startOfMonthUTC(anchor);
+  const end = addDaysUTC(
+    new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + LIST_WINDOW_MONTHS, 1)),
+    -1,
+  );
+  return { start, end };
+}
+
 /** The date window to fetch occasions for, given the current view + anchor. */
 export function fetchRange(view: CalendarView, anchor: Date): { start: Date; end: Date } {
   if (view === "month") return monthGridRange(anchor);
   if (view === "week") return weekRange(anchor);
-  return monthRange(anchor);
+  return listWindowRange(anchor);
 }
 
 /** Which date an occasion sits on, honouring the "dispatch dates" toggle. */

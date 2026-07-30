@@ -11,6 +11,7 @@ import { EventModal } from "./event-modal";
 import {
   addDaysUTC,
   fetchRange,
+  listWindowRange,
   monthGridRange,
   occasionDay,
   occasionProgress,
@@ -65,6 +66,15 @@ function relativeMonthLabel(anchor: Date, todayKey: string): string {
   return anchor.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
+/** Whether `relativeMonthLabel` returns a relative phrase ("This/Next month")
+ * rather than the month name itself — so the list header knows whether to also
+ * spell out the actual month. */
+function isRelativeMonthLabel(anchor: Date, todayKey: string): boolean {
+  const [ty, tm] = todayKey.split("-").map(Number);
+  const monthsAhead = (anchor.getUTCFullYear() - ty!) * 12 + (anchor.getUTCMonth() + 1 - tm!);
+  return monthsAhead === 0 || monthsAhead === 1;
+}
+
 function periodLabel(view: CalendarView, anchor: Date): string {
   if (view === "week") {
     const { start, end } = weekRange(anchor);
@@ -73,6 +83,15 @@ function periodLabel(view: CalendarView, anchor: Date): string {
       ...opts,
       year: "numeric",
     })}`;
+  }
+  if (view === "list") {
+    // The list spans a forward window of months, so label the span, not a
+    // single month (e.g. "Jul – Sep 2026").
+    const { start, end } = listWindowRange(anchor);
+    return `${start.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" })} – ${end.toLocaleDateString(
+      "en-GB",
+      { month: "short", year: "numeric", timeZone: "UTC" },
+    )}`;
   }
   return anchor.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
 }
@@ -668,69 +687,112 @@ function ListView({
   orderSelection: Set<string>;
   onToggleOrder: (id: string) => void;
 }) {
-  const days = [...new Set([...byDay.keys(), ...eventsByDay.keys()])].sort();
+  // Constrain to the anchor's forward window (the server union-seed can carry a
+  // few trailing days of the previous month from the month grid — those aren't
+  // part of the list agenda), then group the days by their month so the list
+  // reads "This month → Next month → Month Year" across boundaries.
+  const { start, end } = listWindowRange(anchor);
+  const startKey = ymdUTC(start);
+  const endKey = ymdUTC(end);
+  const days = [...new Set([...byDay.keys(), ...eventsByDay.keys()])]
+    .filter((key) => key >= startKey && key <= endKey)
+    .sort();
+
   if (days.length === 0) {
     return (
       <div className="card p-8 text-center text-sm text-muted">
-        No occasions in {anchor.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })}.
+        Nothing coming up between {periodLabel("list", anchor)}.
       </div>
     );
   }
+
+  // Group the day keys by "YYYY-MM", preserving chronological order.
+  const groups: { monthKey: string; monthDate: Date; days: string[] }[] = [];
+  for (const key of days) {
+    const monthKey = key.slice(0, 7);
+    const last = groups[groups.length - 1];
+    if (last && last.monthKey === monthKey) {
+      last.days.push(key);
+    } else {
+      groups.push({ monthKey, monthDate: new Date(`${monthKey}-01T00:00:00Z`), days: [key] });
+    }
+  }
+
   return (
-    <div className="card flex flex-col divide-y divide-border overflow-hidden">
-      <div className="flex items-baseline justify-between gap-2 bg-foreground/[0.02] px-4 py-2.5">
-        <h2 className="text-sm font-semibold">{relativeMonthLabel(anchor, todayKey)}</h2>
-        <span className="text-xs text-muted">
-          {days.length} day{days.length === 1 ? "" : "s"} with events
-        </span>
-      </div>
-      {days.map((key) => {
-        const date = new Date(`${key}T00:00:00Z`);
-        return (
-          <div key={key} className="group flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-6">
-            <div className="flex w-40 shrink-0 items-center gap-2 text-sm font-semibold">
-              <span>
-                {date.toLocaleDateString("en-GB", {
-                  weekday: "short",
-                  day: "numeric",
-                  month: "long",
-                  timeZone: "UTC",
-                })}
-                {key === todayKey && <span className="ml-2 text-xs text-accent">Today</span>}
-              </span>
-              <button
-                type="button"
-                onClick={() => onCreateForDate(key)}
-                aria-label="Create an event on this day"
-                className="text-xs text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
-              >
-                + event
-              </button>
-            </div>
-            <div className="flex flex-1 flex-wrap gap-1.5">
-              {(eventsByDay.get(key) ?? []).map((event) => (
-                <div key={event.id} className="max-w-56">
-                  <EventPill event={event} onOpen={onOpenEvent} />
-                </div>
-              ))}
-              {(byDay.get(key) ?? []).map((occasion) => (
-                <div key={occasion.id} className="flex max-w-56 items-center gap-1.5">
-                  {occasion.status === "approved" && (
-                    <input
-                      type="checkbox"
-                      checked={orderSelection.has(occasion.id)}
-                      onChange={() => onToggleOrder(occasion.id)}
-                      title="Select to include in an order"
-                      className="accent-accent"
-                    />
-                  )}
-                  <OccasionPill occasion={occasion} onOpen={onOpen} />
-                </div>
-              ))}
-            </div>
+    <div className="flex flex-col gap-4">
+      {groups.map((group) => (
+        <div key={group.monthKey} className="card flex flex-col divide-y divide-border overflow-hidden">
+          <div className="flex items-baseline justify-between gap-2 bg-foreground/[0.02] px-4 py-2.5">
+            <h2 className="text-sm font-semibold">
+              {relativeMonthLabel(group.monthDate, todayKey)}
+              {/* "This month"/"Next month" gain the actual month name; a further-out
+                  month's label already IS the month + year, so don't repeat it. */}
+              {isRelativeMonthLabel(group.monthDate, todayKey) && (
+                <span className="ml-2 font-normal text-muted">
+                  {group.monthDate.toLocaleDateString("en-GB", {
+                    month: "long",
+                    year: "numeric",
+                    timeZone: "UTC",
+                  })}
+                </span>
+              )}
+            </h2>
+            <span className="text-xs text-muted">
+              {group.days.length} day{group.days.length === 1 ? "" : "s"} with events
+            </span>
           </div>
-        );
-      })}
+          {group.days.map((key) => {
+            const date = new Date(`${key}T00:00:00Z`);
+            return (
+              <div
+                key={key}
+                className="group flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-6"
+              >
+                <div className="flex w-40 shrink-0 items-center gap-2 text-sm font-semibold">
+                  <span>
+                    {date.toLocaleDateString("en-GB", {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "long",
+                      timeZone: "UTC",
+                    })}
+                    {key === todayKey && <span className="ml-2 text-xs text-accent">Today</span>}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onCreateForDate(key)}
+                    aria-label="Create an event on this day"
+                    className="text-xs text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
+                  >
+                    + event
+                  </button>
+                </div>
+                <div className="flex flex-1 flex-wrap gap-1.5">
+                  {(eventsByDay.get(key) ?? []).map((event) => (
+                    <div key={event.id} className="max-w-56">
+                      <EventPill event={event} onOpen={onOpenEvent} />
+                    </div>
+                  ))}
+                  {(byDay.get(key) ?? []).map((occasion) => (
+                    <div key={occasion.id} className="flex max-w-56 items-center gap-1.5">
+                      {occasion.status === "approved" && (
+                        <input
+                          type="checkbox"
+                          checked={orderSelection.has(occasion.id)}
+                          onChange={() => onToggleOrder(occasion.id)}
+                          title="Select to include in an order"
+                          className="accent-accent"
+                        />
+                      )}
+                      <OccasionPill occasion={occasion} onOpen={onOpen} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
