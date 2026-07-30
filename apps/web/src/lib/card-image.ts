@@ -16,3 +16,14 @@ const SUPABASE_PUBLIC_PREFIX = `${env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/objec
 export function isOptimizableThumbnail(src: string): boolean {
   return src.startsWith(SUPABASE_PUBLIC_PREFIX);
 }
+
+/**
+ * A neutral, card-shaped (2:3) placeholder for `next/image`'s `placeholder="blur"`.
+ * Card art loads over the network from Supabase Storage; without a placeholder the
+ * thumbnail area is blank until it arrives, then pops in. This soft grey fills the
+ * box immediately and the real image fades over it — steadier perceived load on the
+ * catalog/designs grids and the product-page hero. A single tiny inlined SVG (no
+ * per-image work), so it costs nothing. See ADR 0045.
+ */
+export const CARD_BLUR_DATA_URL =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxOCI+PHJlY3Qgd2lkdGg9IjEyIiBoZWlnaHQ9IjE4IiBmaWxsPSIjZTZlYWYwIi8+PC9zdmc+";

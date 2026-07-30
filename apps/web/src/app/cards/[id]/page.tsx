@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
-import { isOptimizableThumbnail } from "@/lib/card-image";
+import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
 import { CardsHeader } from "../cards-header";
 import { PersonaliseButton } from "./personalise-button";
 
@@ -64,7 +64,12 @@ export default async function CardPreviewPage({ params }: { params: Promise<{ id
               src={card.thumbnailUrl}
               alt={card.name}
               fill
+              // The product-page hero is this route's LCP — load it eagerly
+              // instead of lazily so it paints as fast as possible.
+              priority
               sizes="(min-width: 768px) 384px, 100vw"
+              placeholder="blur"
+              blurDataURL={CARD_BLUR_DATA_URL}
               unoptimized={!isOptimizableThumbnail(card.thumbnailUrl)}
               className="object-cover"
             />

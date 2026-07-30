@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import Image from "next/image";
-import { isOptimizableThumbnail } from "@/lib/card-image";
+import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
 import Link from "next/link";
 import type { GuestCartCheckoutInput, GuestCheckoutResult } from "@kudos/shared-types";
 import { POSTAGE_MINOR, computePricingBreakdown } from "@kudos/shared-types";
@@ -100,6 +100,8 @@ export function BasketClient() {
                 alt={item.cardName}
                 fill
                 sizes="72px"
+                placeholder="blur"
+                blurDataURL={CARD_BLUR_DATA_URL}
                 unoptimized={!isOptimizableThumbnail(item.thumbnailUrl)}
                 className="object-cover"
               />
