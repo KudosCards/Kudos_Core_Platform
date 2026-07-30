@@ -99,6 +99,22 @@ describe("Storage reaper (e2e)", () => {
       .expect(403);
   });
 
+  it("reports the enabled status to an operator, and 403s a customer", async () => {
+    const customer = await customerToken();
+    await request(app.getHttpServer())
+      .get("/storage-maintenance/status")
+      .set("Authorization", `Bearer ${customer}`)
+      .expect(403);
+
+    const ops = await opsToken();
+    await request(app.getHttpServer())
+      .get("/storage-maintenance/status")
+      .set("Authorization", `Bearer ${ops}`)
+      .expect(200)
+      // STORAGE_REAPER_ENABLED is set "true" for this file (see top).
+      .expect({ enabled: true });
+  });
+
   it("deletes the orphan and keeps the referenced object (real Prisma)", async () => {
     const account = await prisma.account.create({
       data: { type: "organisation", name: `Centre ${randomUUID()}` },

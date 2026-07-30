@@ -35,6 +35,7 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
     { href: "/admin/support", label: "Support", group: "Operations" },
     { href: "/admin/returns", label: "Returned to sender", group: "Operations" },
     { href: "/catalog", label: "Card catalog", group: "Operations" },
+    { href: "/storage", label: "Storage cleanup", group: "Operations" },
     // Team management is a super-admin-only surface.
     ...(me.role === "super_admin"
       ? [{ href: "/admin/team", label: "Operators", group: "Administration" }]
