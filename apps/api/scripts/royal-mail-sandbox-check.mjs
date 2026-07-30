@@ -14,6 +14,15 @@
  *
  * Optional: RM_POSTAGE_CLASS=first_class (default second_class).
  *
+ * Live test: point ROYAL_MAIL_API_BASE_URL at the live host and pass
+ * --force-live. This buys ONE real postage label and creates a real shipment in
+ * your Royal Mail account, so send it to YOUR OWN address (via the RM_TEST_*
+ * vars below) and then either void the label in Click & Drop or actually post
+ * it to verify the tracking end-to-end.
+ *
+ * Optional address override (recommended for a live test — use your own address):
+ *   RM_TEST_NAME, RM_TEST_LINE1, RM_TEST_LINE2, RM_TEST_CITY, RM_TEST_POSTCODE
+ *
  * Safety: refuses to run against the live host unless you pass --force-live, so
  * you can't accidentally buy real postage while testing.
  */
@@ -45,23 +54,31 @@ if (baseUrl.replace(/\/$/, "") === LIVE_HOST && !forceLive) {
   );
 }
 
-// A dummy test parcel — a real-format UK address so RM's validation passes.
-const orderReference = `SANDBOX-TEST-${Date.now()}`;
+// The test recipient. Defaults to a real-format dummy address (fine for the
+// sandbox); for a LIVE test, override with your OWN address via the RM_TEST_*
+// vars so the real label you buy is harmless (and usable).
+const isLive = baseUrl.replace(/\/$/, "") === LIVE_HOST;
+const line2 = process.env.RM_TEST_LINE2;
+const orderReference = `${isLive ? "LIVE" : "SANDBOX"}-TEST-${Date.now()}`;
 const requestBody = {
   shipmentType: "Delivery",
   serviceCode: SERVICE_CODES[postageClass],
   shipmentReference: orderReference,
-  recipientContact: { name: "Sandbox Test" },
+  recipientContact: { name: process.env.RM_TEST_NAME ?? "Kudos Test" },
   recipientAddress: {
-    addressLine1: "1 Test Street",
-    city: "Leeds",
-    postcode: "LS1 1AA",
+    addressLine1: process.env.RM_TEST_LINE1 ?? "1 Test Street",
+    ...(line2 ? { addressLine2: line2 } : {}),
+    city: process.env.RM_TEST_CITY ?? "Leeds",
+    postcode: process.env.RM_TEST_POSTCODE ?? "LS1 1AA",
     countryCode: "GB",
   },
   packages: [{ weightInGrams: CARD_WEIGHT_GRAMS, packageType: "largeLetter" }],
 };
 
 const url = `${baseUrl.replace(/\/$/, "")}/api/v4/shipments`;
+if (isLive) {
+  console.log("⚠  LIVE mode — this will buy ONE real postage label. Void it in Click & Drop after.\n");
+}
 console.log(`→ POST ${url}`);
 console.log(`→ serviceCode ${requestBody.serviceCode} (${postageClass}), ${CARD_WEIGHT_GRAMS}g largeLetter`);
 console.log(`→ request body:\n${JSON.stringify(requestBody, null, 2)}\n`);
