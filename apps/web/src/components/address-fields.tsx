@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { lookupPostcode } from "@/lib/address-lookup";
+import { lookupAddresses, lookupPostcode, type AddressSuggestion } from "@/lib/address-lookup";
 
 /**
  * A reusable UK address block: postcode + "Find address" (validates via the free
@@ -36,14 +36,40 @@ export function AddressFields({
   const [postcode, setPostcode] = useState(defaults?.addressPostcode ?? "");
   const [looking, setLooking] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
+  // House-level candidates from a keyed provider (Ideal Postcodes); empty = the
+  // free town-only fallback was used or no provider is configured.
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
 
   const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
+
+  function selectSuggestion(value: string) {
+    const chosen = suggestions.find((s) => s.label === value);
+    if (!chosen) return;
+    setLine1(chosen.line1);
+    setLine2(chosen.line2);
+    setCity(chosen.town);
+    setPostcode(chosen.postcode);
+    setMessage({ tone: "ok", text: "Address filled in — check it and continue." });
+  }
 
   async function findAddress() {
     const trimmed = postcode.trim();
     if (!trimmed) return;
     setLooking(true);
     setMessage(null);
+    setSuggestions([]);
+
+    // Prefer a house-level lookup when a keyed provider is configured; it lets
+    // the user pick their exact address. Falls through to town-only otherwise.
+    const addresses = await lookupAddresses(trimmed);
+    if (addresses && addresses.length > 0) {
+      setLooking(false);
+      setSuggestions(addresses);
+      setPostcode(addresses[0]!.postcode);
+      setMessage({ tone: "ok", text: `Found ${addresses.length} addresses — pick yours below.` });
+      return;
+    }
+
     const result = await lookupPostcode(trimmed);
     setLooking(false);
     if (!result) {
@@ -84,6 +110,25 @@ export function AddressFields({
           {looking ? "Finding…" : "Find address"}
         </button>
       </div>
+      {suggestions.length > 0 && (
+        <label className="flex flex-col gap-1 text-xs text-foreground/60 sm:col-span-2">
+          Choose your address
+          <select
+            defaultValue=""
+            onChange={(e) => selectSuggestion(e.target.value)}
+            className={inputClass}
+          >
+            <option value="" disabled>
+              Select an address…
+            </option>
+            {suggestions.map((s) => (
+              <option key={s.label} value={s.label}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <input
         name={`${namePrefix}Line1`}
         value={line1}
