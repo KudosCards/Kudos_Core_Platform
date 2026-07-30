@@ -176,7 +176,10 @@ export class RecipientsService {
 
     const where: Prisma.RecipientWhereInput = {
       accountId,
-      ...(query.status && { status: query.status }),
+      // Archived recipients live in their own "folder": the main list hides them
+      // by default (show active + lapsed), and the web asks for them explicitly
+      // with ?status=archived. An explicit status filter always wins.
+      ...(query.status ? { status: query.status } : { status: { not: "archived" } }),
       ...(query.listId && { listMemberships: { some: { listId: query.listId } } }),
       ...(query.missingAddress === "true" && MISSING_ADDRESS_WHERE),
       ...(birthMonthIds && { id: { in: birthMonthIds } }),

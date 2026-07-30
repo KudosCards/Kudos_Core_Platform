@@ -132,6 +132,12 @@ export function RecipientsClient({
   // can read it without every call site having to thread it through.
   const [missingOnly, setMissingOnly] = useState(initialMissingOnly);
   const missingOnlyRef = useRef(initialMissingOnly);
+  // "Archived" folder view. Off by default, so archived recipients are out of
+  // sight in the main list; toggling it on asks the API for status=archived and
+  // shows only them (where they can be restored). Kept in a ref too so the
+  // shared reload() reads it without threading it through every call site.
+  const [archivedView, setArchivedView] = useState(false);
+  const archivedViewRef = useRef(false);
   // Birthday-month filter ("" = all months). Kept in a ref too so the shared
   // reload() picks it up without threading it through the call signature.
   const [birthMonth, setBirthMonth] = useState("");
@@ -169,6 +175,7 @@ export function RecipientsClient({
         if (sortKey !== "recent") params.set("sort", sortKey);
         if (missingOnlyRef.current) params.set("missingAddress", "true");
         if (birthMonthRef.current) params.set("birthMonth", birthMonthRef.current);
+        if (archivedViewRef.current) params.set("status", "archived");
         const result = await clientApiFetch<Paginated<Recipient>>(
           `/recipients?${params.toString()}`,
         );
@@ -221,6 +228,14 @@ export function RecipientsClient({
     void reload(1, activeListId, debouncedSearch, sort);
   }
 
+  function switchArchivedView(next: boolean) {
+    if (next === archivedView) return;
+    setArchivedView(next);
+    archivedViewRef.current = next;
+    setSelected(new Set());
+    void reload(1, activeListId, debouncedSearch, sort);
+  }
+
   function selectList(listId: string | null) {
     setActiveListId(listId);
     setSelected(new Set());
@@ -264,6 +279,10 @@ export function RecipientsClient({
       setSearch("");
       setDebouncedSearch("");
       setSort("recent");
+      // New recipients are active — make sure we're on the main list, not the
+      // archived folder, so the just-added contact is actually visible.
+      setArchivedView(false);
+      archivedViewRef.current = false;
       await reload(1, null, "", "recent");
     } catch (submitError) {
       setError(submitError instanceof ApiError ? submitError.message : "Could not add recipient");
@@ -298,6 +317,10 @@ export function RecipientsClient({
       setSearch("");
       setDebouncedSearch("");
       setSort("recent");
+      // New recipients are active — make sure we're on the main list, not the
+      // archived folder, so the just-added contact is actually visible.
+      setArchivedView(false);
+      archivedViewRef.current = false;
       await reload(1, null, "", "recent");
     } catch (importError) {
       setError(importError instanceof ApiError ? importError.message : "Import failed");
@@ -418,7 +441,24 @@ export function RecipientsClient({
               body: JSON.stringify({ status: "active" }),
             })
           : await clientApiFetch<Recipient>(`/recipients/${recipient.id}`, { method: "DELETE" });
-      setRecipients((current) => current.map((r) => (r.id === recipient.id ? updated : r)));
+      // A row belongs in the current view only while its status still matches it:
+      // the active list shows non-archived, the archived folder shows archived.
+      // Once it flips (archive/restore), drop it from view instead of leaving a
+      // stale row behind — it reappears in the other folder.
+      const stillInView =
+        archivedViewRef.current ? updated.status === "archived" : updated.status !== "archived";
+      if (stillInView) {
+        setRecipients((current) => current.map((r) => (r.id === recipient.id ? updated : r)));
+      } else {
+        setRecipients((current) => current.filter((r) => r.id !== recipient.id));
+        setSelected((current) => {
+          if (!current.has(recipient.id)) return current;
+          const next = new Set(current);
+          next.delete(recipient.id);
+          return next;
+        });
+        setTotal((current) => Math.max(0, current - 1));
+      }
     } catch (archiveError) {
       setError(archiveError instanceof ApiError ? archiveError.message : "Could not update the recipient");
     } finally {
@@ -588,6 +628,31 @@ export function RecipientsClient({
         </div>
       )}
 
+      {/* Active vs Archived "folders": archived recipients are kept out of the
+          main list and live here, where they can be restored. */}
+      <div className="inline-flex self-start rounded-full border border-border p-1 text-sm">
+        <button
+          type="button"
+          onClick={() => switchArchivedView(false)}
+          aria-pressed={!archivedView}
+          className={`rounded-full px-4 py-1 transition-colors ${
+            !archivedView ? "bg-accent text-white" : "text-muted hover:text-foreground"
+          }`}
+        >
+          Active
+        </button>
+        <button
+          type="button"
+          onClick={() => switchArchivedView(true)}
+          aria-pressed={archivedView}
+          className={`rounded-full px-4 py-1 transition-colors ${
+            archivedView ? "bg-accent text-white" : "text-muted hover:text-foreground"
+          }`}
+        >
+          🗄 Archived
+        </button>
+      </div>
+
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 sm:max-w-xs">
           <input
@@ -673,7 +738,11 @@ export function RecipientsClient({
             {recipients.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-5 py-6 text-muted">
-                  {activeList ? "No recipients on this list yet." : "No recipients yet."}
+                  {archivedView
+                    ? "No archived recipients."
+                    : activeList
+                      ? "No recipients on this list yet."
+                      : "No recipients yet."}
                 </td>
               </tr>
             ) : (

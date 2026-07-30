@@ -406,6 +406,58 @@ describe("Recipients (e2e)", () => {
     expect(restored.status).toBe("active");
   });
 
+  it("keeps archived recipients out of the default list but returns them under ?status=archived", async () => {
+    const { token } = await signUp();
+    const active = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/recipients")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ firstName: "Stays", lastName: "Visible", ...MAILABLE })
+          .expect(201)
+      ).body,
+    );
+    const toArchive = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/recipients")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ firstName: "Goes", lastName: "ToFolder", ...MAILABLE })
+          .expect(201)
+      ).body,
+    );
+    await request(app.getHttpServer())
+      .delete(`/recipients/${toArchive.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    // Default list: the active one shows, the archived one is out of sight.
+    const defaultList = paginatedRecipientsSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .get("/recipients?page=1&perPage=100")
+          .set("Authorization", `Bearer ${token}`)
+          .expect(200)
+      ).body,
+    );
+    const defaultIds = defaultList.items.map((r) => r.id);
+    expect(defaultIds).toContain(active.id);
+    expect(defaultIds).not.toContain(toArchive.id);
+
+    // The archived "folder": only the archived recipient.
+    const archivedFolder = paginatedRecipientsSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .get("/recipients?page=1&perPage=100&status=archived")
+          .set("Authorization", `Bearer ${token}`)
+          .expect(200)
+      ).body,
+    );
+    const archivedIds = archivedFolder.items.map((r) => r.id);
+    expect(archivedIds).toContain(toArchive.id);
+    expect(archivedIds).not.toContain(active.id);
+  });
+
   it("hides an archived recipient's events from the calendar but keeps them on the recipient's own view", async () => {
     const { token } = await signUp();
     const created = recipientSchema.parse(
