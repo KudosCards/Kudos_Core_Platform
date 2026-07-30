@@ -81,3 +81,17 @@ API against an in-memory double.
   disabled and dry-run delete nothing, past-grace orphan is deleted) and an e2e
   covers the ops endpoint — auth, the dry-run default, and a real
   Prisma-backed run that deletes the orphan while keeping the referenced object.
+
+## Addendum — ops UI
+
+The reaper was originally endpoint-only (operable by `curl`, and by the nightly
+cron). It now has a **Storage cleanup** screen in the ops shell
+(`/storage`, `Operations` nav, `PlatformAdminGuard`) so a non-technical operator
+can run it: a **Preview cleanup (dry run)** button that reports
+`{ scanned, referenced, recentlyUploaded, orphaned, deleted, capped }` without
+deleting, and a **Run cleanup** button that's disabled (with an explanation)
+until `STORAGE_REAPER_ENABLED` is set. A new `GET /storage-maintenance/status`
+(`{ enabled }`) drives the "cleanup is on / off — preview only" banner, mirroring
+the catalog module's `status` + action shape. Preview works whether or not the
+feature is enabled, so the safe two-step from the Consequences above is now a UI
+flow rather than an API call.
