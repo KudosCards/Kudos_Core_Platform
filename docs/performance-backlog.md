@@ -22,10 +22,11 @@ pgbouncer pooling documented, no heavy date/animation libs.
 
 ## Phases
 
-- **Phase 0 — Measurement. ✅ Done (ADR 0042).** `Server-Timing` header on every API
-  response + opt-in `apiFetch` timing (`API_TIMING=1`). DB env confirmed on Railway.
-  Still to do during a live measurement pass: capture Lighthouse + TTFB for the 6
-  heaviest pages with the new signals.
+- **Phase 0 — Measurement. ✅ Done (ADR 0042 + 0077).** `Server-Timing` header on every
+  API response + opt-in `apiFetch` timing (`API_TIMING=1`). DB env confirmed on Railway.
+  A weekly + on-demand Lighthouse workflow (`.github/workflows/lighthouse.yml`, ADR 0077)
+  now captures LCP/perf scores on the public pages — non-blocking, reads
+  `LIGHTHOUSE_BASE_URL`, no-ops if unset.
 - **Phase 1 — Cross-cutting quick wins. ✅ Done (ADR 0042).** Added `compression()`;
   wrapped session resolution in React `cache()`; trimmed recipients first load
   (`perPage` 100→30). Broader payload trimming on the unpaginated lists is folded into
@@ -41,10 +42,12 @@ pgbouncer pooling documented, no heavy date/animation libs.
   per visit. `publicApiFetch` gained an opt-in `revalidate` so the per-token public pages
   (invite/gift/rts) stay `no-store`. On-demand revalidation from the catalog sync is the
   follow-up if the ≤1h lag ever matters.
-- **Phase 4 — Images. ✅ Done (ADR 0045).** Added `images.remotePatterns` for the Supabase
-  Storage host; dropped `unoptimized` and added real `sizes` on all five `thumbnailUrl`
-  images so catalog art is resized + format-negotiated. (Thumbnails are already Supabase
-  public URLs; Airtable images are copied there by the sync, so no Airtable host needed.)
+- **Phase 4 — Images. ✅ Done (ADR 0045 + 0077).** Added `images.remotePatterns` for the
+  Supabase Storage host; dropped `unoptimized` and added real `sizes` on all five
+  `thumbnailUrl` images so catalog art is resized + format-negotiated. (Thumbnails are
+  already Supabase public URLs; Airtable images are copied there by the sync, so no
+  Airtable host needed.) Follow-up (0077): `priority` on the two public LCP heroes
+  (`/cards/[id]`, `/cards/[id]/send`) + a shared blur placeholder on all five thumbnails.
 - **Phase 5 — API/DB depth. ✅ Done (ADR 0046).** Added composite indexes for the hot
   per-account list queries — `batch_orders [account_id, created_at]`, `recipients
   [account_id, created_at]`, `occasions [account_id, occasion_date]` — each eliminating a

@@ -1,0 +1,63 @@
+name: Lighthouse
+
+# Measures real page-load quality (LCP, TBT, CLS, perf score) on the public
+# pages so speed work is grounded in numbers rather than guesswork — the
+# measurement half of the performance backlog (docs/performance-backlog.md,
+# Phase 0). It collects reports and uploads them as artifacts; it is
+# deliberately NOT a blocking gate, because Lighthouse over the network is noisy
+# and a flaky score should never block a merge.
+#
+# Setup (one-time): add a repository *variable* named LIGHTHOUSE_BASE_URL set to
+# the public site's base URL, e.g. https://kudoscards.co.uk (or a deploy-preview
+# URL to profile a change before it ships).
+#   Repo → Settings → Secrets and variables → Actions → Variables → New variable
+# Until it's set, the job no-ops instead of failing. Only public (no-login)
+# pages are profiled — Lighthouse can't authenticate — which are exactly the
+# pages a first-time visitor lands on.
+
+on:
+  workflow_dispatch: {} # run on demand from the Actions tab
+  schedule:
+    # Mondays 07:00 UTC — a weekly trend line without profiling on every push.
+    - cron: "0 7 * * 1"
+
+# Never let overlapping runs pile up.
+concurrency:
+  group: lighthouse
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Resolve target URLs
+        id: target
+        env:
+          BASE_URL: ${{ vars.LIGHTHOUSE_BASE_URL }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "LIGHTHOUSE_BASE_URL repo variable is not set — nothing to profile. See this workflow's header for setup."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="${BASE_URL%/}"
+          # The two highest-traffic public entry points: the marketing home and
+          # the card catalog (image-heavy, so the most to gain from image work).
+          {
+            echo "urls<<EOF"
+            echo "$base/"
+            echo "$base/cards"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Run Lighthouse
+        if: steps.target.outputs.skip == 'false'
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          urls: ${{ steps.target.outputs.urls }}
+          # Two runs per URL, median reported — smooths out per-run network noise.
+          runs: 2
+          uploadArtifacts: true # attach the full HTML reports to the run
+          temporaryPublicStorage: true # also print a shareable report link in the log

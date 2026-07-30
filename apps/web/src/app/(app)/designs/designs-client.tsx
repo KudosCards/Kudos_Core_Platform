@@ -3,7 +3,7 @@
 import type { CardDesign, DesignDocument, SavedDesign } from "@kudos/shared-types";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { isOptimizableThumbnail } from "@/lib/card-image";
+import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -356,6 +356,8 @@ export function DesignsClient({
                     alt={template.name}
                     fill
                     sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+                    placeholder="blur"
+                    blurDataURL={CARD_BLUR_DATA_URL}
                     unoptimized={!isOptimizableThumbnail(template.thumbnailUrl)}
                     className="object-cover"
                   />
