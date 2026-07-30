@@ -30,7 +30,7 @@ describe("Password reset (e2e)", () => {
 
   it("emails a recovery link for a known address and returns 200 (no auth required)", async () => {
     generateLinkMock.mockResolvedValue({
-      data: { properties: { action_link: "https://supabase.test/auth/v1/verify?token=xyz" } },
+      data: { properties: { hashed_token: "hash-xyz" } },
       error: null,
     });
 
@@ -42,10 +42,12 @@ describe("Password reset (e2e)", () => {
     expect(generateLinkMock).toHaveBeenCalledWith(
       expect.objectContaining({ type: "recovery", email: "known@kudos.test" }),
     );
+    // A token_hash link to our own /reset-password page (works with the PKCE
+    // browser client, scanner-safe) — not the raw Supabase action_link.
     expect(emailMock.sendTransactional).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "known@kudos.test",
-        html: expect.stringContaining("https://supabase.test/auth/v1/verify?token=xyz"),
+        html: expect.stringContaining("/reset-password?token_hash=hash-xyz&type=recovery"),
       }),
     );
   });
@@ -66,7 +68,7 @@ describe("Password reset (e2e)", () => {
 
   it("still returns 200 even if the email send fails (never leaks a failure)", async () => {
     generateLinkMock.mockResolvedValue({
-      data: { properties: { action_link: "https://supabase.test/auth/v1/verify?token=xyz" } },
+      data: { properties: { hashed_token: "hash-xyz" } },
       error: null,
     });
     emailMock.sendTransactional.mockRejectedValueOnce(new Error("brevo down"));

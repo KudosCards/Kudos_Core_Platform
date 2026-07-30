@@ -14,7 +14,7 @@ import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { escapeHtml, renderBrandedEmail } from "../email/email-layout";
 import { SUPABASE_ADMIN_CLIENT } from "../supabase/supabase-admin.provider";
-import { generateAuthLink } from "../supabase/generate-auth-link";
+import { type AuthLinkType, generateAuthLink } from "../supabase/generate-auth-link";
 import type { AuthenticatedUser, PlatformAdminRole } from "../auth/types";
 
 export interface AdminIdentity {
@@ -227,26 +227,31 @@ export class AdminTeamService {
     const redirectTo = `${webAppUrl}/admin-set-password`;
 
     // New user → `invite` (also creates the auth user). If Supabase reports the
-    // email already exists, `actionLink` is null; fall back to a `recovery` link,
-    // which works for an existing user and still lets them set a password.
-    let { actionLink } = await generateAuthLink(this.supabaseAdmin, {
+    // email already exists, `hashedToken` is null; fall back to a `recovery`
+    // token, which works for an existing user and still lets them set a password.
+    let linkType: AuthLinkType = "invite";
+    let { hashedToken } = await generateAuthLink(this.supabaseAdmin, {
       type: "invite",
       email,
       redirectTo,
     });
-    if (!actionLink) {
-      ({ actionLink } = await generateAuthLink(this.supabaseAdmin, {
+    if (!hashedToken) {
+      linkType = "recovery";
+      ({ hashedToken } = await generateAuthLink(this.supabaseAdmin, {
         type: "recovery",
         email,
         redirectTo,
       }));
     }
-    if (!actionLink) {
-      // Neither link could be minted (no such user for recovery, yet invite said
+    if (!hashedToken) {
+      // Neither token could be minted (no such user for recovery, yet invite said
       // it exists — shouldn't happen). Surface it so callers can log/resend
       // rather than silently sending nothing.
       throw new Error(`Could not mint a set-password link for ${email}`);
     }
+    // Link to our own page with the token_hash; /admin-set-password verifies it
+    // with supabase.auth.verifyOtp (no PKCE verifier needed, scanner-safe).
+    const actionLink = `${redirectTo}?token_hash=${encodeURIComponent(hashedToken)}&type=${linkType}`;
 
     await this.email.sendTransactional({
       to: email,
