@@ -28,15 +28,20 @@ export class PasswordResetService {
     const email = rawEmail.trim().toLowerCase();
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
     try {
-      const { actionLink } = await generateAuthLink(this.supabaseAdmin, {
+      const redirectTo = `${webAppUrl}/reset-password`;
+      const { hashedToken } = await generateAuthLink(this.supabaseAdmin, {
         type: "recovery",
         email,
-        redirectTo: `${webAppUrl}/reset-password`,
+        redirectTo,
       });
       // No account for this email — stay silent (don't leak which emails exist).
-      if (!actionLink) {
+      if (!hashedToken) {
         return;
       }
+      // Link to our own page with the token_hash; /reset-password verifies it with
+      // supabase.auth.verifyOtp (works with our PKCE client, and a link scanner
+      // pre-fetching the page can't burn the one-time token). See ADR 0051.
+      const actionLink = `${redirectTo}?token_hash=${encodeURIComponent(hashedToken)}&type=recovery`;
       await this.email.sendTransactional({
         to: email,
         subject: "Reset your Kudos Cards password",

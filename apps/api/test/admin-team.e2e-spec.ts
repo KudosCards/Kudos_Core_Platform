@@ -13,7 +13,7 @@ const emailMock = { sendTransactional: jest.fn().mockResolvedValue(undefined) };
 // Fakes the service-role Supabase admin client so no real Supabase Auth call is
 // made. Default: a fresh invite mints a set-password action link.
 const generateLinkMock = jest.fn().mockResolvedValue({
-  data: { properties: { action_link: "https://supabase.test/auth/v1/verify?token=abc" } },
+  data: { properties: { hashed_token: "hash-abc" } },
   error: null,
 });
 const getUserByIdMock = jest.fn().mockResolvedValue({ data: { user: null }, error: null });
@@ -53,7 +53,7 @@ describe("Admin team / operator auth (e2e)", () => {
     getUserByIdMock.mockResolvedValue({ data: { user: null }, error: null });
     generateLinkMock.mockClear();
     generateLinkMock.mockResolvedValue({
-      data: { properties: { action_link: "https://supabase.test/auth/v1/verify?token=abc" } },
+      data: { properties: { hashed_token: "hash-abc" } },
       error: null,
     });
   });
@@ -100,10 +100,13 @@ describe("Admin team / operator auth (e2e)", () => {
     expect(generateLinkMock).toHaveBeenCalledWith(
       expect.objectContaining({ type: "invite", email: inviteeEmail }),
     );
+    // The email carries a token_hash link to our own set-password page — not the
+    // raw Supabase action_link — so it works with the PKCE browser client and
+    // survives email-scanner pre-fetching. See docs/adr/0051.
     expect(emailMock.sendTransactional).toHaveBeenCalledWith(
       expect.objectContaining({
         to: inviteeEmail,
-        html: expect.stringContaining("https://supabase.test/auth/v1/verify?token=abc"),
+        html: expect.stringContaining("/admin-set-password?token_hash=hash-abc&type=invite"),
       }),
     );
 
@@ -166,7 +169,7 @@ describe("Admin team / operator auth (e2e)", () => {
         error: { code: "email_exists", message: "A user with this email already exists" },
       })
       .mockResolvedValueOnce({
-        data: { properties: { action_link: "https://supabase.test/auth/v1/verify?token=rec" } },
+        data: { properties: { hashed_token: "hash-rec" } },
         error: null,
       });
 
@@ -184,7 +187,7 @@ describe("Admin team / operator auth (e2e)", () => {
     const calls = emailMock.sendTransactional.mock.calls as Array<[{ to: string; html: string }]>;
     const call = calls.at(-1)?.[0];
     expect(call?.to).toBe(existingEmail);
-    expect(call?.html).toContain("https://supabase.test/auth/v1/verify?token=rec");
+    expect(call?.html).toContain("/admin-set-password?token_hash=hash-rec&type=recovery");
   });
 
   it("does not provision an uninvited user", async () => {

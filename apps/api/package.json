@@ -14,6 +14,7 @@
     "start:prod": "node dist/main",
     "start:deploy": "prisma migrate deploy && node dist/main",
     "create-stripe-prices": "node scripts/create-stripe-prices.mjs",
+    "royal-mail-sandbox-check": "node scripts/royal-mail-sandbox-check.mjs",
     "lint": "eslint \"{src,test}/**/*.ts\" --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "test": "jest",

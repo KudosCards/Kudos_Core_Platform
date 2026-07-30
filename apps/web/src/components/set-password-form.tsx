@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 
 /**
@@ -33,11 +34,37 @@ export function SetPasswordForm({
   const [hasSession, setHasSession] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // verifyOtp consumes the one-time token, so it must run exactly once even
+  // under React StrictMode's double-mount in development.
+  const verifyStarted = useRef(false);
 
   useEffect(() => {
     const supabase = createClient();
-    // getSession resolves the fragment on load; onAuthStateChange catches the
-    // slightly-later PASSWORD_RECOVERY/SIGNED_IN event so we don't race it.
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get("token_hash");
+    const type = params.get("type") as EmailOtpType | null;
+
+    // Preferred path: the invite/reset email links here with ?token_hash=…&type=…
+    // (see the API's generate-auth-link). verifyOtp mints the session directly —
+    // no PKCE code verifier needed (our links are service-role generated), and
+    // the token is only spent by this call, so a link scanner that merely fetches
+    // the page can't burn it. See docs/adr/0051.
+    if (tokenHash && type) {
+      if (verifyStarted.current) return;
+      verifyStarted.current = true;
+      void supabase.auth.verifyOtp({ type, token_hash: tokenHash }).then(({ data, error: verifyError }) => {
+        setHasSession(Boolean(data.session) && !verifyError);
+        setChecking(false);
+        // Strip the token from the URL so a refresh (or the browser restoring the
+        // tab) can't replay an already-spent token and show a false "invalid".
+        window.history.replaceState(null, "", window.location.pathname);
+      });
+      return;
+    }
+
+    // Fallback for any legacy fragment/implicit link still in flight: getSession
+    // resolves the fragment on load; onAuthStateChange catches the slightly-later
+    // PASSWORD_RECOVERY/SIGNED_IN event so we don't race it.
     void supabase.auth.getSession().then(({ data }) => {
       if (data.session) setHasSession(true);
       setChecking(false);

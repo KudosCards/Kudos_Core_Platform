@@ -94,3 +94,38 @@ auth emails on our branded Brevo path rather than Supabase's default templates.
   400), full suite green (237 e2e), and a compiled-server boot check.
 - Supersedes the ADR 0040 decision that emailed operator invites are "just a
   convenience pointer" and that internal staff already have logins.
+
+## Addendum — token_hash + verifyOtp (the fix for "link invalid / already used")
+
+The original design emailed Supabase's ready-made **`action_link`** (a one-time
+`GET …/auth/v1/verify?token=…&redirect_to=…`) and let the browser client pick up
+the session from the redirect. In production this dead-ended at *"This link is
+invalid or has expired / already been used"* for two compounding reasons:
+
+1. **PKCE mismatch.** The web browser client is `@supabase/ssr`
+   `createBrowserClient`, which defaults to the **PKCE** flow. A service-role
+   `admin.generateLink` link has no PKCE `code_verifier` in the recipient's
+   browser, so the redirect could never complete the exchange into a session.
+2. **One-time link pre-consumed.** `action_link` is a plain GET. Business email
+   security (Microsoft/Outlook **SafeLinks**, Mimecast, Proofpoint) **pre-fetches**
+   links to scan them, spending the single-use token before the human clicks —
+   hence "already been used" (as seen in a super-admin's failed attempt).
+
+**Fix:** switch to the **`token_hash` + `verifyOtp`** pattern (Supabase's
+recommended approach for server-generated links in SSR apps).
+
+- `generateAuthLink` now returns `hashedToken` (`properties.hashed_token`), not
+  the `actionLink`.
+- `AdminTeamService.sendInviteEmail` and `PasswordResetService.requestReset`
+  email a link to **our own** page carrying `?token_hash=…&type=invite|recovery`.
+- `SetPasswordForm` reads `token_hash` + `type` from the query and calls
+  `supabase.auth.verifyOtp({ type, token_hash })` to mint the session (run-once
+  guarded; strips the token from the URL afterwards). It falls back to the old
+  fragment/`getSession` path for any legacy link still in flight.
+
+This removes **both** failure modes: `verifyOtp` needs no PKCE verifier, and the
+token is only spent by the in-page `verifyOtp` call — a scanner that merely
+fetches the page (and doesn't run our JS or POST to Supabase) can no longer burn
+it. It also removes the reliance on the redirect happening at all. The Supabase
+**Redirect URLs** dashboard step above is no longer load-bearing for these flows
+(the link points at our own domain), though keeping the entries is harmless.
