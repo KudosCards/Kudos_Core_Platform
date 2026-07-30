@@ -1,0 +1,54 @@
+name: Keep API warm
+
+# Pings the API on a schedule so Railway doesn't idle the service to zero and
+# make the next real user pay a multi-second cold start. A cheaper alternative
+# to a Railway min-instance (see docs/adr/0076-app-shell-perf.md, phase 4).
+#
+# Setup (one-time): add a repository *variable* named API_HEALTH_URL set to the
+# API's public base URL, e.g. https://api.kudoscards.co.uk
+#   Repo → Settings → Secrets and variables → Actions → Variables → New variable
+# It's a public endpoint (the web app already calls it), so a plain variable —
+# not a secret — is fine. Until it's set, the job no-ops instead of failing.
+
+on:
+  schedule:
+    # Every 5 minutes, 06:00–20:00 UTC, Mon–Fri — covers UK business hours with
+    # margin. Cron is always UTC. Scheduled runs can be delayed under GitHub
+    # load; 5-min cadence keeps the instance from sleeping regardless.
+    - cron: "*/5 6-20 * * 1-5"
+  workflow_dispatch: {} # allow a manual "wake it now" from the Actions tab
+
+# Never let overlapping runs pile up.
+concurrency:
+  group: keep-api-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /health/ready (warms the app + DB pool)
+        env:
+          API_HEALTH_URL: ${{ vars.API_HEALTH_URL }}
+        run: |
+          if [ -z "$API_HEALTH_URL" ]; then
+            echo "API_HEALTH_URL repo variable is not set — nothing to ping. See this workflow's header for setup."
+            exit 0
+          fi
+          url="${API_HEALTH_URL%/}/health/ready"
+          echo "Pinging $url"
+          # --retry rides out a cold-start's slow first response; we only care
+          # that the instance woke and answered, so a 503 (transient DB blip) is
+          # logged, not failed. A total connection failure (no response) does
+          # fail, since that means the instance is actually unreachable.
+          code=$(curl -sS --max-time 60 --retry 3 --retry-delay 5 --retry-all-errors \
+            -o /dev/null -w "%{http_code}" "$url") || {
+            echo "::error::No response from $url — the API is unreachable."
+            exit 1
+          }
+          echo "HTTP $code"
+          if [ "$code" = "000" ]; then
+            echo "::error::Empty response code from $url — the API is unreachable."
+            exit 1
+          fi
