@@ -1,22 +1,30 @@
 import { redirect } from "next/navigation";
-import type { Account, DashboardSummary } from "@kudos/shared-types";
+import type { Account, NavBadges } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
-import { serverApiFetch } from "@/lib/api.server";
+import { cachedServerApiFetch, serverApiFetch } from "@/lib/api.server";
 import { formatGbp } from "@/lib/orders";
 import { AppShell } from "./app-shell";
 
+// The account (name + plan) changes rarely, so cache it per-user for a minute:
+// the shell no longer re-queries it on every navigation once warm. The badges
+// stay live (below). See docs/adr/0076-app-shell-perf.md.
+const ACCOUNT_CACHE_SECONDS = 60;
+
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   // Account is required (its 403 means "no membership yet" → onboarding); the
-  // summary is best-effort and only feeds the sidebar badge + wallet chip, so a
-  // transient failure there degrades gracefully rather than blocking the shell.
-  const [accountResult, summary] = await Promise.all([
-    serverApiFetch<Account>("/accounts/me").catch((error: unknown) => {
+  // nav badges are best-effort and only feed the sidebar badge + wallet chip, so
+  // a transient failure there degrades gracefully rather than blocking the shell.
+  // Deliberately the *tiny* /nav-badges (3 counts) — the shell runs this on every
+  // navigation, so it must not pay for the full dashboard aggregation. See ADR
+  // 0072-perf.
+  const [accountResult, badges] = await Promise.all([
+    cachedServerApiFetch<Account>("/accounts/me", ACCOUNT_CACHE_SECONDS).catch((error: unknown) => {
       if (error instanceof ApiError && error.status === 403) {
         redirect("/onboarding");
       }
       throw error;
     }),
-    serverApiFetch<DashboardSummary>("/accounts/me/summary").catch(() => null),
+    serverApiFetch<NavBadges>("/accounts/me/nav-badges").catch(() => null),
   ]);
   if (!accountResult) {
     redirect("/login");
@@ -30,9 +38,9 @@ export default async function AppLayout({ children }: Readonly<{ children: React
     <AppShell
       accountName={account.name}
       planLabel={planLabel}
-      pendingApprovals={summary?.pendingApprovals ?? 0}
-      unfinishedOrders={summary?.unfinishedOrders ?? 0}
-      walletLabel={formatGbp(summary?.walletBalanceMinor ?? 0)}
+      pendingApprovals={badges?.pendingApprovals ?? 0}
+      unfinishedOrders={badges?.unfinishedOrders ?? 0}
+      walletLabel={formatGbp(badges?.walletBalanceMinor ?? 0)}
     >
       {children}
     </AppShell>

@@ -2,7 +2,7 @@ import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { Account, PlanEntitlement } from "@prisma/client";
 import { AccountsService, type SafeAccount } from "./accounts.service";
-import { DashboardService, type DashboardSummary } from "./dashboard.service";
+import { DashboardService, type DashboardSummary, type NavBadges } from "./dashboard.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { CreateAccountDto } from "./dto/create-account.dto";
 import { UpdateNotificationsDto } from "./dto/update-notifications.dto";
@@ -62,5 +62,13 @@ export class AccountsController {
     @CurrentMembership() membership: CurrentMembershipContext,
   ): Promise<DashboardSummary> {
     return this.dashboard.getSummary(membership.accountId);
+  }
+
+  /** The three counts the app shell renders on every page — deliberately cheap
+   * (see NavBadges). The full summary above is only for the dashboard. */
+  @UseGuards(MembershipGuard)
+  @Get("me/nav-badges")
+  getNavBadges(@CurrentMembership() membership: CurrentMembershipContext): Promise<NavBadges> {
+    return this.dashboard.getNavBadges(membership.accountId);
   }
 }

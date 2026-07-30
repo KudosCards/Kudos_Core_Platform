@@ -2,6 +2,18 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { MISSING_ADDRESS_WHERE } from "../recipients/recipients.service";
 
+/**
+ * The three numbers the app-shell sidebar/header actually render on every page
+ * (pending-approval badge, basket count, wallet chip). Deliberately a tiny
+ * subset of DashboardSummary: the shell fetches this on *every* navigation, so
+ * it must stay cheap — three counts, not the dashboard's ten. See ADR 0076-app-shell-perf.
+ */
+export interface NavBadges {
+  pendingApprovals: number;
+  unfinishedOrders: number;
+  walletBalanceMinor: number;
+}
+
 export interface DashboardSummary {
   recipientCount: number;
   /** Active contacts without a mailable address — drives the "add addresses" nudge. */
@@ -30,6 +42,29 @@ const PURCHASED_ORDER_STATUSES = ["paid", "fulfilling", "completed"] as const;
 @Injectable()
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * The cheap subset the app shell needs on every page (see NavBadges). Three
+   * counts in one round-trip instead of the dashboard's ten, so navigating to
+   * any page no longer pays for the full home-screen aggregation.
+   */
+  async getNavBadges(accountId: string): Promise<NavBadges> {
+    const [pendingApprovals, unfinishedOrders, walletSum] = await Promise.all([
+      this.prisma.occasion.count({ where: { accountId, status: "pending_approval" } }),
+      this.prisma.batchOrder.count({
+        where: { accountId, status: { in: [...UNFINISHED_ORDER_STATUSES] } },
+      }),
+      this.prisma.walletLedgerEntry.aggregate({
+        where: { accountId },
+        _sum: { amountMinor: true },
+      }),
+    ]);
+    return {
+      pendingApprovals,
+      unfinishedOrders,
+      walletBalanceMinor: walletSum._sum.amountMinor ?? 0,
+    };
+  }
 
   async getSummary(accountId: string): Promise<DashboardSummary> {
     const now = new Date();
