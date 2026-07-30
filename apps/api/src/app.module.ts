@@ -36,6 +36,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
 import { ReturnsModule } from "./returns/returns.module";
 import { SupportModule } from "./support/support.module";
 import { SupabaseAdminModule } from "./supabase/supabase-admin.module";
+import { StorageMaintenanceModule } from "./storage-maintenance/storage-maintenance.module";
 
 @Module({
   imports: [
@@ -84,6 +85,7 @@ import { SupabaseAdminModule } from "./supabase/supabase-admin.module";
     ReturnsModule,
     SupportModule,
     SupabaseAdminModule,
+    StorageMaintenanceModule,
   ],
 })
 export class AppModule {}

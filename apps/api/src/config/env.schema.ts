@@ -56,6 +56,20 @@ export const envSchema = z.object({
 
   WEB_APP_URL: z.string().url(),
 
+  // Orphaned-asset reaper (see docs/adr/0074-orphaned-asset-reaper.md). Deleting
+  // storage objects is irreversible, so it ships DARK: it only ever deletes when
+  // STORAGE_REAPER_ENABLED is exactly "true" or "1" (interpreted in the service,
+  // kept as a plain string here so ConfigService reads it live). Unset/anything
+  // else ⇒ the scheduled run is a logged no-op and a manual trigger runs in
+  // dry-run (report only). STORAGE_REAPER_GRACE_DAYS is how old an unreferenced
+  // object must be before it's eligible — a safety window so an in-progress
+  // upload or edit is never reaped; defaults to 7, blank/invalid → the default.
+  STORAGE_REAPER_ENABLED: z
+    .string()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  STORAGE_REAPER_GRACE_DAYS: z.coerce.number().int().positive().default(7).catch(7),
+
   // Airtable-sourced card catalog (see docs/adr/0011-airtable-catalog-sync.md).
   // Optional: the app boots without them; the catalog sync reports "not
   // configured" until both are set. Treat blank the same as unset.
