@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import {
   accountSchema,
   dashboardSummarySchema,
+  navBadgesSchema,
   planEntitlementSchema,
 } from "@kudos/shared-types";
 import type { App } from "supertest/types";
@@ -162,6 +163,46 @@ describe("Accounts (e2e)", () => {
       hasOccasions: false,
       firstOrderPlaced: false,
     });
+  });
+
+  it("serves the lightweight nav badges (the shell's per-navigation counts)", async () => {
+    await request(app.getHttpServer()).get("/accounts/me/nav-badges").expect(401);
+
+    const token = await signUp();
+    const zeroed = await request(app.getHttpServer())
+      .get("/accounts/me/nav-badges")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(navBadgesSchema.parse(zeroed.body)).toEqual({
+      pendingApprovals: 0,
+      unfinishedOrders: 0,
+      walletBalanceMinor: 0,
+    });
+
+    // A pending-approval occasion should surface in the badge count.
+    const recipient = await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        firstName: "Badge",
+        lastName: "Test",
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
+      })
+      .expect(201);
+    const recipientId = (recipient.body as { id: string }).id;
+    await request(app.getHttpServer())
+      .post("/occasions")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ type: "achievement", occasionDate: new Date().toISOString().slice(0, 10), recipientId })
+      .expect(201);
+
+    const after = await request(app.getHttpServer())
+      .get("/accounts/me/nav-badges")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(navBadgesSchema.parse(after.body).pendingApprovals).toBe(1);
   });
 
   it("counts recipients and this-month occasions awaiting approval in the summary", async () => {

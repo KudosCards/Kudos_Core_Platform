@@ -33,3 +33,18 @@ export const dashboardSummarySchema = z.object({
   firstOrderPlaced: z.boolean(),
 });
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
+
+/**
+ * The tiny subset the app-shell sidebar/header render on *every* page —
+ * GET /accounts/me/nav-badges. Three counts, so navigating between pages
+ * doesn't re-run the full dashboard aggregation. See ADR 0076-app-shell-perf.
+ */
+export const navBadgesSchema = z.object({
+  /** Occasions waiting in the approvals queue (sidebar badge). */
+  pendingApprovals: z.number().int().nonnegative(),
+  /** Draft/pending-payment orders — the header basket badge. */
+  unfinishedOrders: z.number().int().nonnegative(),
+  /** Wallet balance in pence (header wallet chip). */
+  walletBalanceMinor: z.number().int(),
+});
+export type NavBadges = z.infer<typeof navBadgesSchema>;
