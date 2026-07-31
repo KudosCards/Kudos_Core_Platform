@@ -144,3 +144,7 @@ export type SupportTicketPriority = z.infer<typeof supportTicketPrioritySchema>;
 /** Which side authored a support message. Mirrors SupportMessageAuthor. */
 export const supportMessageAuthorSchema = z.enum(["customer", "support"]);
 export type SupportMessageAuthor = z.infer<typeof supportMessageAuthorSchema>;
+
+/** A support attachment's media kind. Mirrors SupportAttachmentKind. */
+export const supportAttachmentKindSchema = z.enum(["image", "video"]);
+export type SupportAttachmentKind = z.infer<typeof supportAttachmentKindSchema>;

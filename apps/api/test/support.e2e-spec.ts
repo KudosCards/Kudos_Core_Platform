@@ -77,6 +77,86 @@ describe("Support ticketing (e2e)", () => {
     });
   });
 
+  it("attaches screenshots to messages and captures diagnostics for ops", async () => {
+    const { token } = await signUp();
+    const ops = await opsToken();
+    const attachment = {
+      url: "https://proj.supabase.co/storage/v1/object/public/support-attachments/a/1-error.png",
+      fileName: "error.png",
+      contentType: "image/png",
+      sizeBytes: 2048,
+      kind: "image",
+    };
+
+    const created = supportTicketDetailSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/support")
+          .set("Authorization", `Bearer ${token}`)
+          .send({
+            subject: "The editor won't save",
+            category: "design",
+            message: "What happened:\nSaving spins forever.",
+            attachments: [attachment],
+            diagnostics: {
+              pageUrl: "https://app.kudoscards.co.uk/designs/x/edit",
+              userAgent: "Mozilla/5.0 Test",
+              viewport: "1280x800",
+              appVersion: "1.2.3",
+            },
+          })
+          .expect(201)
+      ).body,
+    );
+    expect(created.messages[0]?.attachments).toHaveLength(1);
+    expect(created.messages[0]?.attachments[0]).toMatchObject({
+      fileName: "error.png",
+      kind: "image",
+      sizeBytes: 2048,
+    });
+
+    // Ops detail exposes both the attachment and the silently-captured diagnostics.
+    const opsDetail = supportTicketOpsDetailSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .get(`/admin/support/${created.id}`)
+          .set("Authorization", `Bearer ${ops.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(opsDetail.diagnostics).toMatchObject({ viewport: "1280x800", appVersion: "1.2.3" });
+    expect(opsDetail.messages[0]?.attachments[0]?.fileName).toBe("error.png");
+
+    // A customer reply carries its own attachment.
+    const reply = supportTicketDetailSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post(`/support/${created.id}/reply`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({ body: "Here's another screenshot.", attachments: [{ ...attachment, fileName: "second.png" }] })
+          .expect(201)
+      ).body,
+    );
+    const last = reply.messages[reply.messages.length - 1];
+    expect(last?.attachments[0]?.fileName).toBe("second.png");
+  });
+
+  it("rejects an attachment with a non-URL location", async () => {
+    const { token } = await signUp();
+    await request(app.getHttpServer())
+      .post("/support")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        subject: "Bad attachment",
+        category: "other",
+        message: "test",
+        attachments: [
+          { url: "not-a-url", fileName: "x.png", contentType: "image/png", sizeBytes: 1, kind: "image" },
+        ],
+      })
+      .expect(400);
+  });
+
   it("lists the account's own tickets and scopes them to the account", async () => {
     const a = await signUp();
     const b = await signUp();

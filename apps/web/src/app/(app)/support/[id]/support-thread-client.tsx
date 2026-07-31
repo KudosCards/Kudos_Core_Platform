@@ -3,7 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
-import type { SupportMessage, SupportTicketDetail } from "@kudos/shared-types";
+import type {
+  SupportAttachmentInput,
+  SupportMessage,
+  SupportTicketDetail,
+} from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import {
@@ -13,6 +17,7 @@ import {
   formatSupportDate,
   ticketRef,
 } from "@/lib/support";
+import { SupportAttachmentsInput, SupportAttachmentList } from "@/components/support-attachments";
 
 const inputClass = "rounded-md border border-border bg-surface px-3 py-2.5 text-base sm:text-sm";
 
@@ -29,6 +34,11 @@ function MessageBubble({ message }: { message: SupportMessage }) {
       >
         {message.body}
       </div>
+      {message.attachments.length > 0 && (
+        <div className={mine ? "flex justify-end" : ""}>
+          <SupportAttachmentList attachments={message.attachments} />
+        </div>
+      )}
       <span className="px-1 text-[11px] text-muted">
         {mine ? "You" : "Kudos Support"} · {formatSupportDate(message.createdAt)}
       </span>
@@ -39,6 +49,8 @@ function MessageBubble({ message }: { message: SupportMessage }) {
 export function SupportThreadClient({ ticket }: { ticket: SupportTicketDetail }) {
   const router = useRouter();
   const [body, setBody] = useState("");
+  const [attachments, setAttachments] = useState<SupportAttachmentInput[]>([]);
+  const [uploadBusy, setUploadBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<"reply" | "close" | null>(null);
 
@@ -52,9 +64,13 @@ export function SupportThreadClient({ ticket }: { ticket: SupportTicketDetail })
     try {
       await clientApiFetch(`/support/${ticket.id}/reply`, {
         method: "POST",
-        body: JSON.stringify({ body: body.trim() }),
+        body: JSON.stringify({
+          body: body.trim(),
+          ...(attachments.length > 0 && { attachments }),
+        }),
       });
       setBody("");
+      setAttachments([]);
       router.refresh();
     } catch (replyError) {
       setError(replyError instanceof ApiError ? replyError.message : "Could not send your reply");
@@ -123,8 +139,18 @@ export function SupportThreadClient({ ticket }: { ticket: SupportTicketDetail })
             placeholder="Type your reply…"
             className={`${inputClass} resize-y`}
           />
+          <SupportAttachmentsInput
+            value={attachments}
+            onChange={setAttachments}
+            onBusyChange={setUploadBusy}
+            disabled={pending !== null}
+          />
           <div className="flex flex-wrap items-center gap-2">
-            <button type="submit" className="btn-accent" disabled={pending !== null || !body.trim()}>
+            <button
+              type="submit"
+              className="btn-accent"
+              disabled={pending !== null || uploadBusy || !body.trim()}
+            >
               {pending === "reply" ? "Sending…" : "Send reply"}
             </button>
             <button
