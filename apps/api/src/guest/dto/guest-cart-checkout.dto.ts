@@ -24,7 +24,7 @@ import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
  * validating here gives the caller a clean 400 instead of a 403 deep in the
  * money path.
  */
-export const GUEST_CART_MAX_ITEMS = 20;
+export const GUEST_CART_MAX_ITEMS = 10;
 
 /**
  * One personalised card in a guest basket: a card design + its personalisation

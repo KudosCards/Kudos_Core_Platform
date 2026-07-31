@@ -88,9 +88,9 @@ const CARD_DESIGN_TEMPLATES = [
  * they differ between Stripe test mode and live.
  */
 const PLAN_ENTITLEMENTS = [
-  { planId: "free", recipientCap: 50, batchOrderMaxSize: 20, cardDiscountPercent: 0, autoSendEnabled: false, customArtworkEnabled: false, teamSeatsEnabled: false, includedSeats: 1 },
-  { planId: "pro", recipientCap: 200, batchOrderMaxSize: 20, cardDiscountPercent: 10, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: false, includedSeats: 1 },
-  { planId: "centre", recipientCap: null, batchOrderMaxSize: 20, cardDiscountPercent: 15, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: true, includedSeats: 3 },
+  { planId: "free", recipientCap: 50, batchOrderMaxSize: 10, cardDiscountPercent: 0, autoSendEnabled: false, customArtworkEnabled: false, teamSeatsEnabled: false, includedSeats: 1 },
+  { planId: "pro", recipientCap: 200, batchOrderMaxSize: 200, cardDiscountPercent: 10, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: false, includedSeats: 1 },
+  { planId: "centre", recipientCap: null, batchOrderMaxSize: 500, cardDiscountPercent: 15, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: true, includedSeats: 3 },
 ];
 
 /**

@@ -60,7 +60,7 @@ export default async function BatchOrdersPage({
       walletBalanceMinor={wallet?.balanceMinor ?? 0}
       initialSelectedIds={initialSelectedIds}
       pricing={pricing ?? FALLBACK_PRICING}
-      maxPerOrder={entitlement?.batchOrderMaxSize ?? 20}
+      maxPerOrder={entitlement?.batchOrderMaxSize ?? 10}
     />
   );
 }
