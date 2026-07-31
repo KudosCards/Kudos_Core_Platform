@@ -3,6 +3,7 @@ export * from "./dispatch";
 export * from "./account";
 export * from "./recipient";
 export * from "./recipient-list";
+export * from "./csv-import";
 export * from "./occasion";
 export * from "./event";
 export * from "./pricing";

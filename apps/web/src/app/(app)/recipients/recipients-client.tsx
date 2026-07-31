@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { ConnectCrmCallout } from "@/components/connect-crm-callout";
 import { AddressFields } from "@/components/address-fields";
+import { CsvImport } from "@/components/csv-import";
 
 /** A contact is mailable only with line 1, city, and postcode — mirrors the
  * API's MISSING_ADDRESS_WHERE so the badge agrees with the server filter/count. */
@@ -92,12 +93,6 @@ function SortHeader({
   );
 }
 
-interface ImportSummary {
-  created: number;
-  updated: number;
-  rejected: { row: number; reason: string }[];
-}
-
 export function RecipientsClient({
   initialRecipients,
   initialTotal,
@@ -122,7 +117,6 @@ export function RecipientsClient({
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const [error, setError] = useState<string | null>(null);
-  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [paginating, setPaginating] = useState(false);
   const [addingRecipient, setAddingRecipient] = useState(false);
   // Bumped on a successful add to remount AddressFields (controlled inputs that
@@ -291,40 +285,18 @@ export function RecipientsClient({
     }
   }
 
-  async function handleImport(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    setImportSummary(null);
-    const formEl = event.currentTarget;
-    const formData = new FormData(formEl);
-    const file = formData.get("file");
-    if (!(file instanceof File) || file.size === 0) {
-      setError("Choose a CSV file first");
-      return;
-    }
-
-    const uploadData = new FormData();
-    uploadData.set("file", file);
-
-    try {
-      const summary = await clientApiFetch<ImportSummary>("/recipients/import", {
-        method: "POST",
-        body: uploadData,
-      });
-      setImportSummary(summary);
-      formEl.reset();
-      setActiveListId(null);
-      setSearch("");
-      setDebouncedSearch("");
-      setSort("recent");
-      // New recipients are active — make sure we're on the main list, not the
-      // archived folder, so the just-added contact is actually visible.
-      setArchivedView(false);
-      archivedViewRef.current = false;
-      await reload(1, null, "", "recent");
-    } catch (importError) {
-      setError(importError instanceof ApiError ? importError.message : "Import failed");
-    }
+  // After a CSV import completes, surface the just-added contacts: jump to the
+  // main (non-archived) list, clear filters/search, and refresh the table + list
+  // counts. The CsvImport component owns the file/mapping/summary UI itself.
+  function handleImported() {
+    setActiveListId(null);
+    setSearch("");
+    setDebouncedSearch("");
+    setSort("recent");
+    setArchivedView(false);
+    archivedViewRef.current = false;
+    void reload(1, null, "", "recent");
+    void reloadLists();
   }
 
   async function handleCreateList(event: FormEvent<HTMLFormElement>) {
@@ -501,30 +473,10 @@ export function RecipientsClient({
           </button>
         </form>
 
-        <form onSubmit={(event) => void handleImport(event)} className="card flex flex-col gap-3 p-6">
+        <div className="card flex flex-col gap-3 p-6">
           <h2 className="font-semibold">Import from CSV</h2>
-          <p className="text-xs text-muted">
-            Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), addressLine1, addressLine2,
-            addressCity, postcode, email. Contacts without a full address still import — they&apos;re
-            flagged &ldquo;needs address&rdquo; so you can complete them before sending.
-          </p>
-          <input
-            type="file"
-            name="file"
-            accept=".csv"
-            required
-            className="block w-full cursor-pointer rounded-md border border-border bg-surface text-sm text-muted file:mr-3 file:cursor-pointer file:border-0 file:bg-accent file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-accent-hover"
-          />
-          <button type="submit" className="btn-secondary self-start">
-            Import
-          </button>
-          {importSummary && (
-            <p className="text-sm text-muted">
-              Created {importSummary.created}, updated {importSummary.updated}
-              {importSummary.rejected.length > 0 && `, rejected ${importSummary.rejected.length}`}
-            </p>
-          )}
-        </form>
+          <CsvImport onImported={handleImported} />
+        </div>
       </section>
 
       {/* CRM awareness: the "there's a faster way than CSV" nudge. */}

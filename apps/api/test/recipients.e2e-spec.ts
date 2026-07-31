@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import { accountSchema, recipientSchema } from "@kudos/shared-types";
+import { accountSchema, recipientSchema, csvImportPreviewSchema } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { z } from "zod";
@@ -194,6 +194,63 @@ describe("Recipients (e2e)", () => {
       addressLine1: "9 Oak Road",
       addressCity: "Leeds",
       addressPostcode: "LS1 1AA",
+    });
+  });
+
+  it("previews a CSV: reports columns, row count, and an auto-detected mapping", async () => {
+    const { token } = await signUp();
+    const csv =
+      "First Name,Surname,DOB,Post Code,Email Address\n" +
+      "Ada,Lovelace,10/12/1815,SW1A 1AA,ada@example.com\n";
+    const response = await request(app.getHttpServer())
+      .post("/recipients/import/preview")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(csv), "contacts.csv")
+      .expect(201);
+    const preview = csvImportPreviewSchema.parse(response.body);
+    expect(preview.columns).toEqual(["First Name", "Surname", "DOB", "Post Code", "Email Address"]);
+    expect(preview.totalRows).toBe(1);
+    expect(preview.sampleRows[0]).toMatchObject({ "First Name": "Ada", Surname: "Lovelace" });
+    expect(preview.suggestedMapping).toMatchObject({
+      firstName: "First Name",
+      lastName: "Surname",
+      dateOfBirth: "DOB",
+      postcode: "Post Code",
+      email: "Email Address",
+    });
+  });
+
+  it("imports a CSV whose headers don't match ours, using a column mapping", async () => {
+    const { token } = await signUp();
+    const csv =
+      "First Name,Surname,House,City,Post Code\n" + "Grace,Hopper,3 Navy Lane,Bristol,BS1 1AA\n";
+    await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .field(
+        "mapping",
+        JSON.stringify({
+          firstName: "First Name",
+          lastName: "Surname",
+          addressLine1: "House",
+          addressCity: "City",
+          postcode: "Post Code",
+        }),
+      )
+      .attach("file", Buffer.from(csv), "contacts.csv")
+      .expect(201);
+
+    const list = await request(app.getHttpServer())
+      .get("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const item = paginatedRecipientsSchema.parse(list.body).items[0];
+    expect(item).toMatchObject({
+      firstName: "Grace",
+      lastName: "Hopper",
+      addressLine1: "3 Navy Lane",
+      addressCity: "Bristol",
+      addressPostcode: "BS1 1AA",
     });
   });
 
