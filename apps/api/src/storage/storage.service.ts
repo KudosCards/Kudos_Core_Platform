@@ -16,6 +16,23 @@ export const DESIGN_ASSETS_BUCKET = "design-assets";
  * way. See docs/adr/0009-phase-4-message-pages.md. */
 export const MESSAGE_VIDEOS_BUCKET = "message-videos";
 
+/** Public-read, same model as the other buckets (unguessable per-account path).
+ * Holds the screenshots + screen recordings customers attach to support tickets
+ * so support can see the problem. See docs/adr/0079-support-attachments.md. */
+export const SUPPORT_ATTACHMENTS_BUCKET = "support-attachments";
+
+/** Image + video mime types the support uploader accepts, kept in one place so
+ * the DTO's `contentType` pattern and the bucket's `allowedMimeTypes` agree. */
+export const SUPPORT_ATTACHMENT_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+];
+
 /** A storage bucket plus the upload limits Supabase enforces on it. */
 export interface BucketConfig {
   name: string;
@@ -46,6 +63,11 @@ export const BUCKET_CONFIGS: readonly BucketConfig[] = [
   {
     name: MESSAGE_VIDEOS_BUCKET,
     allowedMimeTypes: ["video/mp4", "video/quicktime", "video/webm"],
+    fileSizeLimit: "50MB",
+  },
+  {
+    name: SUPPORT_ATTACHMENTS_BUCKET,
+    allowedMimeTypes: SUPPORT_ATTACHMENT_MIME_TYPES,
     fileSizeLimit: "50MB",
   },
 ];

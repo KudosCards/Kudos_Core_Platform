@@ -7,10 +7,12 @@ import {
   StorageService,
   DESIGN_ASSETS_BUCKET,
   MESSAGE_VIDEOS_BUCKET,
+  SUPPORT_ATTACHMENTS_BUCKET,
   type SignedUpload,
 } from "./storage.service";
 import { CreateUploadDto } from "./dto/create-upload.dto";
 import { CreateVideoUploadDto } from "./dto/create-video-upload.dto";
+import { CreateSupportUploadDto } from "./dto/create-support-upload.dto";
 
 @ApiTags("uploads")
 @ApiBearerAuth()
@@ -34,6 +36,18 @@ export class StorageController {
   ): Promise<SignedUpload> {
     return this.storageService.createSignedUpload(
       MESSAGE_VIDEOS_BUCKET,
+      membership.accountId,
+      dto,
+    );
+  }
+
+  @Post("support-attachments")
+  createSupportAttachmentUpload(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Body() dto: CreateSupportUploadDto,
+  ): Promise<SignedUpload> {
+    return this.storageService.createSignedUpload(
+      SUPPORT_ATTACHMENTS_BUCKET,
       membership.accountId,
       dto,
     );

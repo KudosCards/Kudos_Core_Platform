@@ -18,6 +18,7 @@ import {
   formatSupportDate,
   ticketRef,
 } from "@/lib/support";
+import { SupportAttachmentList } from "@/components/support-attachments";
 
 const inputClass = "rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/15";
 const controlBtn =
@@ -50,6 +51,11 @@ function OpsMessage({ message }: { message: SupportMessage }) {
       >
         {message.body}
       </div>
+      {message.attachments.length > 0 && (
+        <div className={fromSupport ? "flex justify-end" : ""}>
+          <SupportAttachmentList attachments={message.attachments} />
+        </div>
+      )}
       <span className="px-1 text-[11px] text-foreground/50">
         {fromSupport ? "Support" : "Customer"} · {formatSupportDate(message.createdAt)}
       </span>
@@ -224,6 +230,44 @@ export function OpsSupportThreadClient({ ticket }: { ticket: SupportTicketOpsDet
             )}
           </div>
         </div>
+
+        {ticket.diagnostics && (
+          <div className="flex flex-col gap-1.5 border-t border-black/10 pt-4 text-sm dark:border-white/10">
+            <span className="text-foreground/60">Diagnostics</span>
+            <dl className="flex flex-col gap-1.5 text-xs">
+              {ticket.diagnostics.pageUrl && (
+                <div className="flex flex-col">
+                  <dt className="text-foreground/50">From page</dt>
+                  <dd className="break-all text-foreground/80">{ticket.diagnostics.pageUrl}</dd>
+                </div>
+              )}
+              {ticket.diagnostics.userAgent && (
+                <div className="flex flex-col">
+                  <dt className="text-foreground/50">Browser</dt>
+                  <dd className="break-words text-foreground/80">{ticket.diagnostics.userAgent}</dd>
+                </div>
+              )}
+              {ticket.diagnostics.viewport && (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-foreground/50">Viewport</dt>
+                  <dd className="text-foreground/80">{ticket.diagnostics.viewport}</dd>
+                </div>
+              )}
+              {ticket.diagnostics.appVersion && (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-foreground/50">App version</dt>
+                  <dd className="text-foreground/80">{ticket.diagnostics.appVersion}</dd>
+                </div>
+              )}
+              {ticket.diagnostics.plan && (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-foreground/50">Plan</dt>
+                  <dd className="text-foreground/80">{ticket.diagnostics.plan}</dd>
+                </div>
+              )}
+            </dl>
+          </div>
+        )}
       </aside>
     </div>
   );

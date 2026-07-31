@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  supportAttachmentKindSchema,
   supportMessageAuthorSchema,
   supportTicketCategorySchema,
   supportTicketPrioritySchema,
@@ -15,6 +16,18 @@ import {
  * docs/adr/0066-support-ticketing.md.
  */
 
+/** A screenshot or screen recording attached to a message — a stored file the
+ * UI renders inline (image thumbnail / video player). */
+export const supportAttachmentSchema = z.object({
+  id: z.string().uuid(),
+  url: z.string().url(),
+  fileName: z.string(),
+  contentType: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  kind: supportAttachmentKindSchema,
+});
+export type SupportAttachment = z.infer<typeof supportAttachmentSchema>;
+
 /** One message in a ticket thread. `internalNote` is only ever true in the ops
  * views — it is stripped from every customer-facing payload. */
 export const supportMessageSchema = z.object({
@@ -23,8 +36,36 @@ export const supportMessageSchema = z.object({
   body: z.string(),
   internalNote: z.boolean(),
   createdAt: z.coerce.date(),
+  attachments: z.array(supportAttachmentSchema),
 });
 export type SupportMessage = z.infer<typeof supportMessageSchema>;
+
+/** Best-effort technical context captured silently from the browser at ticket
+ * creation, surfaced to ops only. Every field optional — capture is never
+ * allowed to block a customer from submitting. */
+export const supportDiagnosticsSchema = z.object({
+  pageUrl: z.string().max(2000).optional(),
+  userAgent: z.string().max(500).optional(),
+  viewport: z.string().max(30).optional(),
+  appVersion: z.string().max(100).optional(),
+  plan: z.string().max(50).optional(),
+});
+export type SupportDiagnostics = z.infer<typeof supportDiagnosticsSchema>;
+
+/** An already-uploaded attachment the client references when creating a
+ * message. The bytes are PUT to a signed storage URL first (see the uploads
+ * endpoint); this is just the resulting file reference. */
+export const supportAttachmentInputSchema = z.object({
+  url: z.string().url().max(2000),
+  fileName: z.string().trim().min(1).max(200),
+  contentType: z.string().trim().min(1).max(120),
+  sizeBytes: z.number().int().nonnegative(),
+  kind: supportAttachmentKindSchema,
+});
+export type SupportAttachmentInput = z.infer<typeof supportAttachmentInputSchema>;
+
+/** At most this many files per message — keeps a single submission bounded. */
+export const SUPPORT_MAX_ATTACHMENTS = 5;
 
 /** A ticket row for a list (no thread). Shared shape for both sides. */
 export const supportTicketSummarySchema = z.object({
@@ -58,9 +99,11 @@ export const supportTicketOpsSummarySchema = supportTicketSummarySchema.extend({
 });
 export type SupportTicketOpsSummary = z.infer<typeof supportTicketOpsSummarySchema>;
 
-/** The ops detail view — the full thread (including internal notes) + assignee. */
+/** The ops detail view — the full thread (including internal notes) + assignee +
+ * the silently-captured diagnostics (ops-only). */
 export const supportTicketOpsDetailSchema = supportTicketOpsSummarySchema.extend({
   messages: z.array(supportMessageSchema),
+  diagnostics: supportDiagnosticsSchema.nullable(),
 });
 export type SupportTicketOpsDetail = z.infer<typeof supportTicketOpsDetailSchema>;
 
@@ -68,17 +111,21 @@ export type SupportTicketOpsDetail = z.infer<typeof supportTicketOpsDetailSchema
 // Inputs
 // ---------------------------------------------------------------------------
 
-/** Raise a ticket: subject + category + the first message. */
+/** Raise a ticket: subject + category + the first message, optionally with
+ * screenshots/recordings and silently-captured diagnostics. */
 export const createSupportTicketSchema = z.object({
   subject: z.string().trim().min(3).max(150),
   category: supportTicketCategorySchema.default("other"),
   message: z.string().trim().min(1).max(5000),
+  attachments: z.array(supportAttachmentInputSchema).max(SUPPORT_MAX_ATTACHMENTS).optional(),
+  diagnostics: supportDiagnosticsSchema.optional(),
 });
 export type CreateSupportTicketInput = z.infer<typeof createSupportTicketSchema>;
 
 /** A subscriber's reply on their own ticket. */
 export const supportReplySchema = z.object({
   body: z.string().trim().min(1).max(5000),
+  attachments: z.array(supportAttachmentInputSchema).max(SUPPORT_MAX_ATTACHMENTS).optional(),
 });
 export type SupportReplyInput = z.infer<typeof supportReplySchema>;
 

@@ -13,6 +13,7 @@ import { NotificationInboxService } from "../notifications/notification-inbox.se
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { renderBrandedEmail, escapeHtml } from "../email/email-layout";
 import type { EnvConfig } from "../config/env.schema";
+import type { SupportAttachment, SupportDiagnostics } from "@kudos/shared-types";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
 import type { CreateSupportTicketDto } from "./dto/create-support-ticket.dto";
@@ -29,6 +30,7 @@ export interface SupportMessageView {
   body: string;
   internalNote: boolean;
   createdAt: Date;
+  attachments: SupportAttachment[];
 }
 
 /** A ticket row for a list (no thread) — the shared shape for both sides. */
@@ -57,9 +59,11 @@ export interface SupportTicketOpsSummaryView extends SupportTicketSummaryView {
   assignee: string | null;
 }
 
-/** The ops detail view — the full thread (including internal notes) + assignee. */
+/** The ops detail view — the full thread (including internal notes) + assignee +
+ * the silently-captured browser diagnostics (ops-only). */
 export interface SupportTicketOpsDetailView extends SupportTicketOpsSummaryView {
   messages: SupportMessageView[];
+  diagnostics: SupportDiagnostics | null;
 }
 
 /** Statuses a ticket is still "open" in for the ops default queue — anything
@@ -109,8 +113,14 @@ export class SupportService {
           status: "open",
           lastMessageAt: now,
           lastMessageFrom: "customer",
+          diagnostics: dto.diagnostics ? { ...dto.diagnostics } : undefined,
           messages: {
-            create: { authorType: "customer", authorUserId: userId, body: dto.message },
+            create: {
+              authorType: "customer",
+              authorUserId: userId,
+              body: dto.message,
+              attachments: { create: this.attachmentCreates(dto.attachments) },
+            },
           },
         },
       });
@@ -146,7 +156,9 @@ export class SupportService {
   async getForAccount(accountId: string, id: string): Promise<SupportTicketDetailView> {
     const ticket = await this.prisma.supportTicket.findFirst({
       where: { id, accountId },
-      include: { messages: { orderBy: { createdAt: "asc" } } },
+      include: {
+        messages: { orderBy: { createdAt: "asc" }, include: { attachments: true } },
+      },
     });
     if (!ticket) {
       throw new NotFoundException("Support ticket not found");
@@ -176,7 +188,13 @@ export class SupportService {
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
       await tx.supportTicketMessage.create({
-        data: { ticketId: id, authorType: "customer", authorUserId: userId, body: dto.body },
+        data: {
+          ticketId: id,
+          authorType: "customer",
+          authorUserId: userId,
+          body: dto.body,
+          attachments: { create: this.attachmentCreates(dto.attachments) },
+        },
       });
       await tx.supportTicket.update({
         where: { id },
@@ -278,7 +296,7 @@ export class SupportService {
       where: { id },
       include: {
         account: { select: { name: true } },
-        messages: { orderBy: { createdAt: "asc" } },
+        messages: { orderBy: { createdAt: "asc" }, include: { attachments: true } },
       },
     });
     if (!ticket) {
@@ -291,6 +309,7 @@ export class SupportService {
       businessName: ticket.account.name,
       assignee: ticket.assignedToUserId ? (assignees.get(ticket.assignedToUserId) ?? null) : null,
       messages: ticket.messages.map((m) => this.toMessage(m)),
+      diagnostics: (ticket.diagnostics as SupportDiagnostics | null) ?? null,
     };
   }
 
@@ -448,6 +467,14 @@ export class SupportService {
     body: string;
     internalNote: boolean;
     createdAt: Date;
+    attachments?: {
+      id: string;
+      url: string;
+      fileName: string;
+      contentType: string;
+      sizeBytes: number;
+      kind: SupportAttachment["kind"];
+    }[];
   }): SupportMessageView {
     return {
       id: m.id,
@@ -455,7 +482,35 @@ export class SupportService {
       body: m.body,
       internalNote: m.internalNote,
       createdAt: m.createdAt,
+      attachments: (m.attachments ?? []).map((a) => ({
+        id: a.id,
+        url: a.url,
+        fileName: a.fileName,
+        contentType: a.contentType,
+        sizeBytes: a.sizeBytes,
+        kind: a.kind,
+      })),
     };
+  }
+
+  /** Build the nested `attachments.create` rows from the (already-uploaded)
+   * file references on a create/reply DTO. Returns `[]` when none were sent. */
+  private attachmentCreates(
+    attachments?: {
+      url: string;
+      fileName: string;
+      contentType: string;
+      sizeBytes: number;
+      kind: SupportAttachment["kind"];
+    }[],
+  ): Prisma.SupportTicketMessageAttachmentCreateWithoutMessageInput[] {
+    return (attachments ?? []).map((a) => ({
+      url: a.url,
+      fileName: a.fileName,
+      contentType: a.contentType,
+      sizeBytes: a.sizeBytes,
+      kind: a.kind,
+    }));
   }
 
   /** Map operator user ids → their email for the assignee column. One query for

@@ -943,6 +943,13 @@ enum SupportMessageAuthor {
   support
 }
 
+/// The kind of file attached to a support message, so the UI knows whether to
+/// render an image thumbnail or a video player.
+enum SupportAttachmentKind {
+  image
+  video
+}
+
 /// A support conversation opened by a subscriber and worked by the Kudos support
 /// team in the ops portal. The thread of back-and-forth lives in
 /// SupportTicketMessage. See docs/adr/0066-support-ticketing.md.
@@ -960,6 +967,11 @@ model SupportTicket {
   status       SupportTicketStatus   @default(open)
   /// The ops user (PlatformAdmin.userId) currently handling it, if claimed.
   assignedToUserId String? @map("assigned_to_user_id")
+  /// Best-effort technical context captured silently from the browser when the
+  /// ticket was raised (page URL, user agent, viewport, app version, plan). Ops-
+  /// only — never shown to the customer. Speeds up triage so support doesn't have
+  /// to ask "which page? which browser?". See docs/adr/0079-support-attachments.md.
+  diagnostics  Json?     @map("diagnostics")
   /// Denormalised so the queue can sort by "most recent activity" and show
   /// "whose turn" without loading the whole message thread.
   lastMessageAt   DateTime             @default(now()) @map("last_message_at")
@@ -993,8 +1005,31 @@ model SupportTicketMessage {
   internalNote Boolean              @default(false) @map("internal_note")
   createdAt    DateTime             @default(now()) @map("created_at")
 
-  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket      SupportTicket                     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  attachments SupportTicketMessageAttachment[]
 
   @@index([ticketId, createdAt])
   @@map("support_ticket_messages")
+}
+
+/// A screenshot or screen recording a customer attached to a support message, so
+/// they can *show* the problem rather than only describe it. Stored in the
+/// `support-attachments` bucket (public-read, unguessable path — same model as
+/// the other upload buckets). See docs/adr/0079-support-attachments.md.
+model SupportTicketMessageAttachment {
+  id          String                @id @default(uuid())
+  messageId   String                @map("message_id")
+  /// Public storage URL of the uploaded file.
+  url         String
+  /// Original filename, for the download label.
+  fileName    String                @map("file_name")
+  contentType String                @map("content_type")
+  sizeBytes   Int                   @map("size_bytes")
+  kind        SupportAttachmentKind
+  createdAt   DateTime              @default(now()) @map("created_at")
+
+  message SupportTicketMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("support_ticket_message_attachments")
 }
