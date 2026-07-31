@@ -22,7 +22,7 @@ const KEY = "kudos:cart";
 export const CARD_PRICE_PENCE = CARD_PRICE_MINOR;
 
 /** Mirror of the API's GUEST_CART_MAX_ITEMS (free-plan per-order cap). */
-export const CART_MAX_ITEMS = 20;
+export const CART_MAX_ITEMS = 10;
 
 export interface CartItem {
   /** Client-generated line id — lets the same card appear for several people. */

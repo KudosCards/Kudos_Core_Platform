@@ -180,7 +180,7 @@ describe("Guest checkout (e2e)", () => {
       .post("/guest/cart-checkout")
       .send({
         buyerEmail: `big-${randomUUID()}@example.com`,
-        items: Array.from({ length: 21 }, () => cartItem()),
+        items: Array.from({ length: 11 }, () => cartItem()),
       })
       .expect(400);
   });

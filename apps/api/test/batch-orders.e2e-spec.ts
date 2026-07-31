@@ -314,16 +314,16 @@ describe("Batch orders (e2e)", () => {
     // here — this test is about the batch-order size limit, not the
     // recipient-cap race (already covered in recipients.e2e-spec.ts).
     const occasionIds: string[] = [];
-    for (let i = 0; i < 21; i += 1) {
+    for (let i = 0; i < 11; i += 1) {
       occasionIds.push(await createApprovedOccasion(token));
     }
 
-    // Exactly at the free plan's batchOrderMaxSize (20, per seed.ts) — the
+    // Exactly at the free plan's batchOrderMaxSize (10, per seed.ts) — the
     // boundary itself must succeed, not just fail one-over-the-limit.
     await request(app.getHttpServer())
       .post("/batch-orders")
       .set("Authorization", `Bearer ${token}`)
-      .send({ lines: occasionIds.slice(0, 20).map(buildLine) })
+      .send({ lines: occasionIds.slice(0, 10).map(buildLine) })
       .expect(201);
 
     await request(app.getHttpServer())
@@ -648,10 +648,10 @@ describe("Batch orders (e2e)", () => {
 
     it("enforces the plan's per-order cap", async () => {
       const { token, accountId } = await signUp();
-      // Free plan allows 20 cards per order; ask for 21.
+      // Free plan allows 10 cards per order; ask for 11.
       const savedDesignId = await createSavedDesign(token);
       const recipientIds: string[] = [];
-      for (let i = 0; i < 21; i += 1) {
+      for (let i = 0; i < 11; i += 1) {
         recipientIds.push(await createRecipientWithAddress(token));
       }
 

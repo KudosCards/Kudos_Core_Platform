@@ -36,7 +36,7 @@ export type GuestCheckoutResult = z.infer<typeof guestCheckoutResultSchema>;
 
 /** The most cards a guest basket can hold in one payment — mirrors the free
  * plan's per-order cap (see the API's GUEST_CART_MAX_ITEMS / prisma seed). */
-export const GUEST_CART_MAX_ITEMS = 20;
+export const GUEST_CART_MAX_ITEMS = 10;
 
 /**
  * One personalised card in a guest basket — {@link guestCheckoutInputSchema}
