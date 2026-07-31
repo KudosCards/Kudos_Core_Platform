@@ -16,6 +16,8 @@ import type { CreateRecipientDto } from "./dto/create-recipient.dto";
 import type { UpdateRecipientDto } from "./dto/update-recipient.dto";
 import type { ListRecipientsQueryDto } from "./dto/list-recipients-query.dto";
 import { parseRecipientRow, type ParsedRecipientRow } from "./csv-row.util";
+import { suggestMapping, remapRow } from "./csv-mapping.util";
+import type { CsvColumnMapping, CsvImportPreview } from "@kudos/shared-types";
 import {
   buildScheduledBirthdayOccasion,
   startOfUtcDay,
@@ -329,10 +331,43 @@ export class RecipientsService {
     return recipient;
   }
 
+  /**
+   * Inspect an uploaded CSV without importing: the columns, a few sample rows,
+   * the row count, and an auto-detected field→column mapping. Drives the
+   * import UI's mapping step so a customer's own header names ("Surname",
+   * "DOB"…) don't have to match ours. See ADR 0078.
+   */
+  previewImport(csvBuffer: Buffer): CsvImportPreview {
+    let records: string[][];
+    try {
+      // Parse as raw arrays (not keyed objects) so we get the header row even
+      // for a header-only file, and preserve column order for the UI.
+      records = parse(csvBuffer, { columns: false, skip_empty_lines: true, trim: true });
+    } catch (error) {
+      throw new BadRequestException(
+        `Could not parse CSV: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    }
+    const [header, ...dataRows] = records;
+    if (!header || header.length === 0) {
+      throw new BadRequestException("The CSV has no header row.");
+    }
+    const columns = header;
+    const toObject = (cells: string[]): Record<string, string> =>
+      Object.fromEntries(columns.map((col, i) => [col, cells[i] ?? ""]));
+    return {
+      columns,
+      sampleRows: dataRows.slice(0, 5).map(toObject),
+      totalRows: dataRows.length,
+      suggestedMapping: suggestMapping(columns),
+    };
+  }
+
   async importCsv(
     accountId: string,
     actorUserId: string,
     csvBuffer: Buffer,
+    mapping?: CsvColumnMapping,
   ): Promise<ImportSummary> {
     let rows: Record<string, string>[];
     try {
@@ -355,7 +390,11 @@ export class RecipientsService {
     rows.forEach((row, index) => {
       const rowNumber = index + 2; // +1 for 0-index, +1 for the header row
       try {
-        parsedRows.push({ rowNumber, parsed: parseRecipientRow(row) });
+        // With a mapping, translate the file's own column names to our canonical
+        // field keys first; without one, the CSV must already use our headers
+        // (the documented, backward-compatible contract).
+        const source = mapping ? remapRow(row, mapping) : row;
+        parsedRows.push({ rowNumber, parsed: parseRecipientRow(source) });
       } catch (error) {
         summary.rejected.push({
           row: rowNumber,

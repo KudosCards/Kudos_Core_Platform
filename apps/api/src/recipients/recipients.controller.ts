@@ -24,6 +24,11 @@ import { RecipientsService, type ImportSummary, type Paginated } from "./recipie
 import { CreateRecipientDto } from "./dto/create-recipient.dto";
 import { UpdateRecipientDto } from "./dto/update-recipient.dto";
 import { ListRecipientsQueryDto } from "./dto/list-recipients-query.dto";
+import {
+  csvColumnMappingSchema,
+  type CsvColumnMapping,
+  type CsvImportPreview,
+} from "@kudos/shared-types";
 
 @ApiTags("recipients")
 @ApiBearerAuth()
@@ -89,10 +94,42 @@ export class RecipientsController {
     @CurrentMembership() membership: CurrentMembershipContext,
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file?: Express.Multer.File,
+    // Optional column mapping (JSON string in the multipart form) so the
+    // uploaded CSV's own headers can be mapped onto our fields. Omitted → the
+    // file must already use our canonical headers (the legacy contract).
+    @Body("mapping") mappingRaw?: string,
   ): Promise<ImportSummary> {
     if (!file) {
       throw new BadRequestException("A CSV file is required");
     }
-    return this.recipientsService.importCsv(membership.accountId, user.id, file.buffer);
+    const mapping = this.parseMapping(mappingRaw);
+    return this.recipientsService.importCsv(membership.accountId, user.id, file.buffer, mapping);
+  }
+
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 5 * 1024 * 1024, files: 1 } }))
+  @Post("import/preview")
+  previewImport(@UploadedFile() file?: Express.Multer.File): CsvImportPreview {
+    if (!file) {
+      throw new BadRequestException("A CSV file is required");
+    }
+    return this.recipientsService.previewImport(file.buffer);
+  }
+
+  /** Parse + validate the optional mapping form field, turning bad JSON or a
+   * malformed shape into a clean 400 rather than a 500. */
+  private parseMapping(raw?: string): CsvColumnMapping | undefined {
+    if (!raw) return undefined;
+    let json: unknown;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      throw new BadRequestException("mapping must be valid JSON");
+    }
+    const result = csvColumnMappingSchema.safeParse(json);
+    if (!result.success) {
+      throw new BadRequestException("mapping has an invalid shape");
+    }
+    return result.data;
   }
 }

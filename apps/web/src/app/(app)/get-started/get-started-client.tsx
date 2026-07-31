@@ -7,6 +7,7 @@ import { clientApiFetch } from "@/lib/api.client";
 import { clearPendingPlan, readPendingPlan, type PaidPlan } from "@/lib/pending-plan";
 import { ConnectCrmCallout } from "@/components/connect-crm-callout";
 import { AddressFields } from "@/components/address-fields";
+import { CsvImport } from "@/components/csv-import";
 
 /** Read the pending plan from localStorage on the client only (null during SSR),
  * without a setState-in-effect. localStorage doesn't change under us here, so an
@@ -19,28 +20,7 @@ function usePendingPlan(): PaidPlan | null {
   );
 }
 
-interface ImportSummary {
-  created: number;
-  updated: number;
-  rejected: { row: number; reason: string }[];
-}
-
 const PLAN_LABEL: Record<PaidPlan, string> = { pro: "Pro", centre: "Centre" };
-
-const SAMPLE_CSV = [
-  "firstName,lastName,dateOfBirth,addressLine1,addressLine2,addressCity,postcode,email",
-  "Ava,Thompson,14/03/2015,12 King Street,,London,SW1A 1AA,ava@example.com",
-  "Noah,Patel,02/09/2014,4 Oak Road,Flat 2,Manchester,M1 2AB,noah@example.com",
-].join("\n");
-
-function downloadSampleCsv() {
-  const url = URL.createObjectURL(new Blob([SAMPLE_CSV], { type: "text/csv" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "kudos-contacts-template.csv";
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
 
 /** A numbered step shell — coral when active/done, muted when still to-do. */
 function Step({
@@ -85,8 +65,6 @@ export function GetStartedClient({
   const [recipientCount, setRecipientCount] = useState(initialRecipientCount);
   const plan = usePendingPlan();
   const [error, setError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [addingManual, setAddingManual] = useState(false);
   const [activating, setActivating] = useState(false);
   // Bumped after a successful manual add to remount AddressFields (it's
@@ -104,33 +82,6 @@ export function GetStartedClient({
     }
   }
 
-  async function handleImport(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    setImportSummary(null);
-    const formEl = event.currentTarget;
-    const file = new FormData(formEl).get("file");
-    if (!(file instanceof File) || file.size === 0) {
-      setError("Choose a CSV file first.");
-      return;
-    }
-    const upload = new FormData();
-    upload.set("file", file);
-    setImporting(true);
-    try {
-      const summary = await clientApiFetch<ImportSummary>("/recipients/import", {
-        method: "POST",
-        body: upload,
-      });
-      setImportSummary(summary);
-      formEl.reset();
-      await refreshCount();
-    } catch (importError) {
-      setError(importError instanceof ApiError ? importError.message : "Import failed.");
-    } finally {
-      setImporting(false);
-    }
-  }
 
   async function handleAddManual(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -267,40 +218,10 @@ export function GetStartedClient({
               <summary className="cursor-pointer text-muted">
                 Got a lot of people? Import a spreadsheet
               </summary>
-              <form
-                onSubmit={(event) => void handleImport(event)}
-                className="mt-3 flex flex-col gap-2"
-              >
-                <input
-                  type="file"
-                  name="file"
-                  accept=".csv"
-                  required
-                  className="block w-full cursor-pointer rounded-md border border-border bg-surface text-sm text-muted file:mr-3 file:cursor-pointer file:border-0 file:bg-accent file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-accent-hover"
-                />
-                <div className="flex flex-wrap items-center gap-3">
-                  <button type="submit" disabled={importing} className="btn-secondary">
-                    {importing ? "Importing…" : "Import contacts"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={downloadSampleCsv}
-                    className="text-sm text-accent underline hover:no-underline"
-                  >
-                    Download a template
-                  </button>
-                </div>
-                <p className="text-xs text-muted">
-                  Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), addressLine1, addressLine2, addressCity, postcode, email
-                </p>
-              </form>
+              <div className="mt-3">
+                <CsvImport onImported={() => void refreshCount()} />
+              </div>
             </details>
-            {importSummary && (
-              <p className="text-sm text-muted">
-                Imported {importSummary.created} new contact{importSummary.created === 1 ? "" : "s"}
-                {importSummary.rejected.length > 0 && `, ${importSummary.rejected.length} skipped`}.
-              </p>
-            )}
           </div>
         ) : (
           <div className="flex flex-col gap-4">
@@ -308,37 +229,7 @@ export function GetStartedClient({
               Import your students or team from a spreadsheet — name, date of birth, and address if
               you have it. Birthdays appear on your calendar automatically.
             </p>
-            <form onSubmit={(event) => void handleImport(event)} className="flex flex-col gap-2">
-              <input
-                  type="file"
-                  name="file"
-                  accept=".csv"
-                  required
-                  className="block w-full cursor-pointer rounded-md border border-border bg-surface text-sm text-muted file:mr-3 file:cursor-pointer file:border-0 file:bg-accent file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-accent-hover"
-                />
-              <div className="flex flex-wrap items-center gap-3">
-                <button type="submit" disabled={importing} className="btn-accent">
-                  {importing ? "Importing…" : "Import contacts"}
-                </button>
-                <button
-                  type="button"
-                  onClick={downloadSampleCsv}
-                  className="text-sm text-accent underline hover:no-underline"
-                >
-                  Download a template
-                </button>
-              </div>
-              <p className="text-xs text-muted">
-                Columns: firstName, lastName, dateOfBirth (dd/mm/yyyy), addressLine1, addressLine2, addressCity, postcode, email
-              </p>
-            </form>
-
-            {importSummary && (
-              <p className="text-sm text-muted">
-                Imported {importSummary.created} new contact{importSummary.created === 1 ? "" : "s"}
-                {importSummary.rejected.length > 0 && `, ${importSummary.rejected.length} skipped`}.
-              </p>
-            )}
+            <CsvImport onImported={() => void refreshCount()} />
 
             <details className="text-sm">
               <summary className="cursor-pointer text-muted">Or add one by hand</summary>
