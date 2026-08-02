@@ -47,13 +47,22 @@ public read is what lets a saved design / message video render later):
   `@supabase/ssr` session cookies.
 - No JWT secret to copy anywhere: the API verifies session tokens against the project's JWKS
   endpoint, so it keeps working automatically if Supabase rotates its signing key (ADR 0005).
-- **Redirect URLs (needed for operator set-password + password reset, ADR 0051).** In
-  Authentication → URL Configuration → **Redirect URLs**, add
-  `${WEB_APP_URL}/admin-set-password` and `${WEB_APP_URL}/reset-password` (use the live Netlify
-  URL). The operator-invite and forgot-password emails send Supabase auth links that redirect
-  to these pages; Supabase **rejects** any `redirectTo` not on this allow-list, so without them
-  the invite/reset links dead-end. (Same class of one-time dashboard step as the Stripe/HubSpot
-  redirect URIs.)
+- **Site URL (needed for signup confirmation, ADR 0080).** In Authentication → URL Configuration
+  → **Site URL**, set the live web app origin — the **custom domain** (e.g.
+  `https://kudos-cards.co.uk`), *not* the `*.netlify.app` URL. This is the fallback base Supabase
+  uses for the signup-confirmation email. If it's left as the Netlify URL, confirmation links go
+  to the wrong origin and the new account never gets created (the pending-account stash lives on
+  the domain the user registered on). Also set the web env `NEXT_PUBLIC_SITE_URL` to the same
+  value (env table below) so the confirmation redirect is deterministic.
+- **Redirect URLs (needed for signup confirmation + operator set-password + password reset,
+  ADRs 0051 & 0080).** In Authentication → URL Configuration → **Redirect URLs**, add
+  `${WEB_APP_URL}/auth/confirm`, `${WEB_APP_URL}/admin-set-password` and
+  `${WEB_APP_URL}/reset-password` — using the **custom domain** for `${WEB_APP_URL}`. (Adding a
+  wildcard such as `${WEB_APP_URL}/**` also covers these.) The signup-confirmation, operator-invite
+  and forgot-password emails send Supabase auth links that redirect to these pages; Supabase
+  **rejects** any `redirectTo` not on this allow-list — and silently falls back to the Site URL —
+  so without them the links dead-end or land on the wrong domain. (Same class of one-time dashboard
+  step as the Stripe/HubSpot redirect URIs.)
 
 ### 1c. Connection strings
 
@@ -127,7 +136,7 @@ returns a clean 409 ("not yet configured") — no crash, just no upgrades.
 | `STRIPE_WEBHOOK_SECRET` | signing secret from 2b |
 | `STRIPE_PRICE_ID_PRO` | Pro plan's Stripe `price_...` id (test-mode first) — read by the seed, step 2a |
 | `STRIPE_PRICE_ID_CENTRE` | Centre plan's Stripe `price_...` id (test-mode first) — read by the seed, step 2a |
-| `WEB_APP_URL` | the live Netlify URL (CORS + Stripe redirect targets) |
+| `WEB_APP_URL` | the live web app origin — the **custom domain** (e.g. `https://kudos-cards.co.uk`), used for CORS, Stripe redirects, and the auth-email links |
 | `AIRTABLE_API_KEY` | read-only Airtable PAT (`data.records:read` on the cards base) — step 4b |
 | `AIRTABLE_BASE_ID` | the cards base id (`app…`) — step 4b |
 | `AIRTABLE_CARDS_TABLE` | *(optional; defaults to `Card List`)* |
@@ -138,6 +147,7 @@ returns a clean 409 ("not yet configured") — no crash, just no upgrades.
 
 | Var | Value |
 |---|---|
+| `NEXT_PUBLIC_SITE_URL` | the live web app origin — the **custom domain** (e.g. `https://kudos-cards.co.uk`). Makes the signup-confirmation redirect deterministic; must match the Supabase Site URL / Redirect allow-list (step 1b, ADR 0080). |
 | `NEXT_PUBLIC_SENTRY_DSN` | Sentry DSN for the web (browser + SSR errors, e.g. a failed page fetch). Leave unset to disable. |
 | `SENTRY_AUTH_TOKEN` | *(optional)* Sentry auth token — only needed to upload source maps for readable stack traces; the build succeeds without it. |
 

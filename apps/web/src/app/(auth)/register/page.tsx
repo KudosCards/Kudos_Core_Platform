@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getSiteUrl } from "@/lib/site-url";
 import { apiFetch, ApiError } from "@/lib/api";
 import { readPendingCardId, setPendingCardId } from "@/lib/pending-card";
 import { setPendingPlan } from "@/lib/pending-plan";
@@ -46,7 +47,16 @@ export default function RegisterPage() {
     }
 
     const supabase = createClient();
-    const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+    // Pin the confirmation email's redirect to our own origin + /auth/confirm.
+    // Without this, Supabase falls back to the dashboard "Site URL", which sent
+    // people to the wrong (Netlify) domain — a different origin from the one that
+    // holds their pending-account stash, so the account never got created. The
+    // target must also be on the project's Redirect URLs allow-list. See ADR 0080.
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: `${getSiteUrl()}/auth/confirm` },
+    });
 
     if (signUpError) {
       setSubmitting(false);
