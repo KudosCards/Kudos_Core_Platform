@@ -19,6 +19,7 @@ const importSummarySchema = z.object({
   created: z.number(),
   updated: z.number(),
   rejected: z.array(z.object({ row: z.number(), reason: z.string() })),
+  warnings: z.array(z.object({ row: z.number(), message: z.string() })),
 });
 
 /** Just enough of the occasions list to assert birthday scheduling. */
@@ -195,6 +196,45 @@ describe("Recipients (e2e)", () => {
       addressCity: "Leeds",
       addressPostcode: "LS1 1AA",
     });
+  });
+
+  it("imports contacts whose birthdays aren't dd/mm/yyyy instead of rejecting the whole file", async () => {
+    // The reported bug: a CSV whose date-of-birth column is a common non-UK
+    // format (here ISO yyyy-mm-dd, plus one unparseable value) had EVERY row
+    // rejected, so the whole import silently failed. Now the rows import — the
+    // DOB is parsed when recognised, dropped-with-a-warning when not.
+    const { token } = await signUp();
+    const csv =
+      "firstName,lastName,dateOfBirth\n" +
+      "Iso,Contact,1990-05-01\n" +
+      "Another,Contact,1985-12-24\n" +
+      "Unparseable,Dob,May the 4th\n";
+    const response = await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(csv), "contacts.csv")
+      .expect(201);
+    const summary = importSummarySchema.parse(response.body);
+    // All three import; none rejected.
+    expect(summary.created).toBe(3);
+    expect(summary.rejected).toHaveLength(0);
+    // Only the unparseable DOB produces a warning.
+    expect(summary.warnings).toHaveLength(1);
+    expect(summary.warnings[0]?.message).toMatch(/date of birth/i);
+
+    const list = await request(app.getHttpServer())
+      .get("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const items = paginatedRecipientsSchema.parse(list.body).items;
+    expect(items).toHaveLength(3);
+    // The ISO birthday was understood and stored.
+    const iso = items.find((r) => r.firstName === "Iso");
+    expect(iso?.dateOfBirth).not.toBeNull();
+    // The unparseable one imported without a DOB rather than being dropped.
+    const bad = items.find((r) => r.firstName === "Unparseable");
+    expect(bad).toBeDefined();
+    expect(bad?.dateOfBirth).toBeNull();
   });
 
   it("previews a CSV: reports columns, row count, and an auto-detected mapping", async () => {
@@ -704,7 +744,7 @@ describe("Recipients (e2e)", () => {
     expect(count).toBe(1);
   });
 
-  it("imports a CSV: creates new rows, updates existing ones, and reports rejected rows", async () => {
+  it("imports a CSV: creates new rows, updates existing ones, and warns on a malformed optional field", async () => {
     const { token } = await signUp();
 
     // Pre-existing recipient that the CSV should update, not duplicate.
@@ -722,7 +762,7 @@ describe("Recipients (e2e)", () => {
     const csv = [
       "firstName,lastName,dateOfBirth,postcode,email",
       "Sophia,Johnstone,14/05/2020,SW1A 2AA,sophia@example.com",
-      "BadRow,Missing,not-a-date,SW1A 4AA,",
+      "WarnRow,DodgyDob,not-a-date,SW1A 4AA,",
       "Archie,Winn,29/05/2011,SW1A 1AA,updated@example.com",
     ].join("\n");
 
@@ -733,20 +773,27 @@ describe("Recipients (e2e)", () => {
       .expect(201);
     const summary = importSummarySchema.parse(importResponse.body);
 
-    expect(summary.created).toBe(1);
+    // Sophia + WarnRow are created; Archie is updated. The unparseable DOB no
+    // longer rejects its row — it imports with the DOB dropped and a warning.
+    expect(summary.created).toBe(2);
     expect(summary.updated).toBe(1);
-    expect(summary.rejected).toHaveLength(1);
-    expect(summary.rejected[0]?.reason).toMatch(/dd\/mm\/yyyy/);
+    expect(summary.rejected).toHaveLength(0);
+    expect(summary.warnings).toHaveLength(1);
+    expect(summary.warnings[0]?.message).toMatch(/date of birth/i);
 
     const listResponse = await request(app.getHttpServer())
       .get("/recipients")
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
     const list = paginatedRecipientsSchema.parse(listResponse.body);
-    expect(list.total).toBe(2);
+    expect(list.total).toBe(3);
 
     const archie = list.items.find((r) => r.lastName === "Winn");
     expect(archie?.email).toBe("updated@example.com");
+    // The warned row still imported, just without its date of birth.
+    const warnRow = list.items.find((r) => r.lastName === "DodgyDob");
+    expect(warnRow).toBeDefined();
+    expect(warnRow?.dateOfBirth).toBeNull();
   });
 
   it("does not merge two different recipients that share a name but have no postcode or DOB on file", async () => {
@@ -806,7 +853,7 @@ describe("Recipients (e2e)", () => {
       .expect(400);
   });
 
-  it("rejects a malformed email via CSV import that the JSON API would also reject", async () => {
+  it("imports a contact with a malformed email, dropping the email with a warning", async () => {
     const { token } = await signUp();
     const csv = ["firstName,lastName,email", "Bad,Email,a@b@example.com"].join("\n");
 
@@ -817,9 +864,18 @@ describe("Recipients (e2e)", () => {
       .expect(201);
     const summary = importSummarySchema.parse(importResponse.body);
 
-    expect(summary.created).toBe(0);
-    expect(summary.rejected).toHaveLength(1);
-    expect(summary.rejected[0]?.reason).toMatch(/not a valid email/);
+    // The contact still imports (its name is valid); only the bad email is
+    // dropped, with a warning — never a silent whole-row rejection.
+    expect(summary.created).toBe(1);
+    expect(summary.rejected).toHaveLength(0);
+    expect(summary.warnings).toHaveLength(1);
+    expect(summary.warnings[0]?.message).toMatch(/email/i);
+
+    const list = await request(app.getHttpServer())
+      .get("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(paginatedRecipientsSchema.parse(list.body).items[0]?.email).toBeNull();
   });
 
   it("rejects two concurrent creates that would both push the account over its cap", async () => {
