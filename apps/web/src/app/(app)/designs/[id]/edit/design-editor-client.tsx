@@ -20,6 +20,7 @@ import {
   reorderElement,
 } from "@kudos/shared-types";
 import { FontPreloader } from "@/lib/editor-fonts";
+import { STICKERS, STICKER_INSERT_SIZE } from "@/lib/stickers";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -479,6 +480,12 @@ export function DesignEditorClient({
     selectElement(element.id);
   }
 
+  /** Place a curated sticker (a self-hosted SVG) as an image element. Square
+   * artwork, so it inserts at a fixed size. */
+  function insertSticker(src: string) {
+    insertImage(src, STICKER_INSERT_SIZE, STICKER_INSERT_SIZE);
+  }
+
   async function handleImageUpload(file: File) {
     setError(null);
     setUploading(true);
@@ -760,6 +767,25 @@ export function DesignEditorClient({
                 className="flex size-9 items-center justify-center rounded-md border border-black/15 text-base leading-none hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
               >
                 {glyph}
+              </button>
+            ))}
+          </div>
+
+          {/* Stickers palette — curated self-hosted SVG art, placed as images. */}
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-1 text-xs text-foreground/60">Stickers</span>
+            {STICKERS.map((sticker) => (
+              <button
+                key={sticker.key}
+                type="button"
+                title={`Add ${sticker.label.toLowerCase()} sticker`}
+                aria-label={`Add ${sticker.label.toLowerCase()} sticker`}
+                onClick={() => insertSticker(sticker.src)}
+                className="flex size-9 items-center justify-center rounded-md border border-black/15 p-1 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+              >
+                {/* Static bundled SVG art — a plain <img> is intentional here. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={sticker.src} alt="" className="size-full object-contain" />
               </button>
             ))}
           </div>
