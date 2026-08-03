@@ -9,6 +9,7 @@ export * from "./event";
 export * from "./pricing";
 export * from "./card";
 export * from "./design-layout";
+export * from "./design-fonts";
 export * from "./order";
 export * from "./billing";
 export * from "./fulfillment";

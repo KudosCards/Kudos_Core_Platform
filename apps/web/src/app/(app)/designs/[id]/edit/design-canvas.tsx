@@ -14,12 +14,16 @@ import {
   clampElementPosition,
   computeSnap,
   isOutsideSafeArea,
+  konvaFontStyle,
+  konvaTextDecoration,
   MIN_ELEMENT_SIZE,
   MIN_FONT_SIZE,
   normaliseRotation,
   textWrapWidth,
 } from "@kudos/shared-types";
 import { qrDataUrl } from "@/lib/qr";
+import { resolveFontFamily } from "@/lib/editor-fonts";
+import { useFontsReady } from "@/lib/use-fonts-ready";
 
 // Kept as named exports for stability; the card geometry itself now lives in
 // shared-types so the editor, previews, and any server render stay in lockstep.
@@ -187,6 +191,7 @@ function TextNode({
   isSelected,
   scale,
   drag,
+  fontsTick,
   onSelect,
   onChange,
   onOverflowChange,
@@ -195,6 +200,9 @@ function TextNode({
   isSelected: boolean;
   scale: number;
   drag: DragBridge;
+  /** Bumps when web fonts finish loading, so height re-measures once the real
+   * font (not the fallback) is in use. */
+  fontsTick: number;
   onSelect: () => void;
   onChange: (element: DesignElement) => void;
   onOverflowChange: (overflowing: boolean) => void;
@@ -204,11 +212,21 @@ function TextNode({
   const width = textWrapWidth(element);
 
   // Measure the rendered height after every layout-affecting change so the
-  // bounding box and overflow check track the real text extent.
+  // bounding box and overflow check track the real text extent (fontsTick so it
+  // re-measures once the chosen web font has actually loaded).
   useLayoutEffect(() => {
     const node = textRef.current;
     if (node) setHeight(node.height());
-  }, [element.text, element.fontFamily, element.fontSize, element.width, width]);
+  }, [
+    element.text,
+    element.fontFamily,
+    element.fontSize,
+    element.width,
+    element.bold,
+    element.italic,
+    width,
+    fontsTick,
+  ]);
 
   const overflowing = height > 0 && isOutsideSafeArea({ x: element.x, y: element.y, width, height });
 
@@ -249,8 +267,10 @@ function TextNode({
         align={element.align ?? "left"}
         wrap="word"
         lineHeight={1.3}
-        fontFamily={element.fontFamily}
+        fontFamily={resolveFontFamily(element.fontFamily)}
         fontSize={element.fontSize}
+        fontStyle={konvaFontStyle(element.bold, element.italic)}
+        textDecoration={konvaTextDecoration(element.underline)}
         fill={element.color}
         draggable
         dragBoundFunc={makeDragBound(scale, { width, height: height || undefined })}
@@ -333,6 +353,10 @@ export function DesignCanvas({
 
   const reportOverflow = onSelectedOverflowChange ?? (() => {});
 
+  // Bumps when web fonts finish loading; used to re-measure text and redraw the
+  // canvas so a chosen font paints for real instead of the fallback.
+  const fontsTick = useFontsReady();
+
   // Attach the Transformer to whichever node is selected. Re-run when the
   // selection changes or the elements change (e.g. after undo/redo), so it
   // never points at a stale or removed node.
@@ -346,6 +370,11 @@ export function DesignCanvas({
     tr.nodes(node ? [node] : []);
     tr.getLayer()?.batchDraw();
   }, [selectedElementId, page.elements]);
+
+  // Redraw once web fonts settle so text repaints in the real font.
+  useEffect(() => {
+    layerRef.current?.batchDraw();
+  }, [fontsTick]);
 
   const selected = page.elements.find((el) => el.id === selectedElementId) ?? null;
   // Text + QR scale uniformly (font/box together, square QR); an image resizes
@@ -446,6 +475,7 @@ export function DesignCanvas({
                   isSelected={isSelected}
                   scale={scale}
                   drag={dragBridge}
+                  fontsTick={fontsTick}
                   onSelect={() => onSelect(element.id)}
                   onChange={onElementChange}
                   onOverflowChange={reportOverflow}

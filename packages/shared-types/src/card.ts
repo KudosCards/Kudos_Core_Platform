@@ -32,6 +32,15 @@ export const designElementSchema = z.discriminatedUnion("kind", [
      * handle and the read-only previews both honour it. Defaults to 0.
      */
     rotation: z.number().optional(),
+    /**
+     * Type styling toggles. Additive + optional so existing designs render
+     * unchanged (all default off). `bold`/`italic` map to Konva's `fontStyle`
+     * (see `konvaFontStyle`); `underline` maps to `textDecoration`. Both
+     * renderers honour them.
+     */
+    bold: z.boolean().optional(),
+    italic: z.boolean().optional(),
+    underline: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal("image"),
