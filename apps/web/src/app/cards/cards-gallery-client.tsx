@@ -33,7 +33,7 @@ function CardTile({ template, className = "" }: { template: CardDesign; classNam
           className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
         />
         {/* Make the action unmistakable — a personalise pill that lifts in on hover. */}
-        <span className="pointer-events-none absolute inset-x-2 bottom-2 translate-y-2 rounded-full bg-slate-900/90 px-3 py-1.5 text-center text-xs font-semibold text-white opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100">
+        <span className="pointer-events-none absolute inset-x-2 bottom-2 translate-y-2 rounded-full bg-slate-900/90 px-3 py-1.5 text-center text-xs font-semibold text-white opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 pointer-coarse:translate-y-0 pointer-coarse:opacity-100">
           Personalise this card →
         </span>
       </div>
