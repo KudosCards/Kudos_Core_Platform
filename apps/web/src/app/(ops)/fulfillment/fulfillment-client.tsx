@@ -52,6 +52,11 @@ export interface FulfillmentJob {
   status: FulfillmentStatus;
   trackingReference: string | null;
   labelUrl: string | null;
+  /** Royal Mail's id once this card is imported into Click & Drop; null until
+   * the sweep pushes it (or if import is off). See ADR 0095. */
+  clickAndDropOrderId: string | null;
+  /** The last Click & Drop import error, shown with a retry action. */
+  clickAndDropError: string | null;
   orderRecipient: {
     shippingAddressCity: string;
     shippingAddressPostcode: string;
@@ -161,6 +166,11 @@ export function FulfillmentClient({
   // action (falls back to manual "Mark posted" when off). See ADR 0072.
   const [shippingEnabled, setShippingEnabled] = useState(false);
 
+  // Whether Click & Drop order-import is wired — gates the import status chip +
+  // retry action. See ADR 0095.
+  const [clickAndDropEnabled, setClickAndDropEnabled] = useState(false);
+  const [cndRetryId, setCndRetryId] = useState<string | null>(null);
+
   useEffect(() => {
     let active = true;
     clientApiFetch<{ enabled: boolean }>("/fulfillment/shipping-status")
@@ -170,10 +180,37 @@ export function FulfillmentClient({
       .catch(() => {
         /* non-fatal: manual dispatch still works */
       });
+    clientApiFetch<{ enabled: boolean }>("/fulfillment/click-and-drop-status")
+      .then((r) => {
+        if (active) setClickAndDropEnabled(r.enabled);
+      })
+      .catch(() => {
+        /* non-fatal: the sweep still imports automatically */
+      });
     return () => {
       active = false;
     };
   }, []);
+
+  /** Retry importing a card into Click & Drop after a failed push, patching the
+   * refreshed row in place. */
+  async function retryClickAndDrop(job: FulfillmentJob) {
+    setError(null);
+    setCndRetryId(job.id);
+    try {
+      const updated = await clientApiFetch<FulfillmentJob>(
+        `/fulfillment/jobs/${job.id}/click-and-drop`,
+        { method: "POST" },
+      );
+      setJobs((current) => current.map((j) => (j.id === job.id ? { ...j, ...updated } : j)));
+    } catch (retryError) {
+      setError(
+        retryError instanceof ApiError ? retryError.message : "Could not import to Click & Drop",
+      );
+    } finally {
+      setCndRetryId(null);
+    }
+  }
 
   /** Auto-create a Royal Mail shipment for a printed card (buys postage,
    * allocates tracking + label) and mark it posted — no manual tracking entry. */
@@ -441,6 +478,34 @@ export function FulfillmentClient({
                         </>
                       )}
                     </p>
+                    {clickAndDropEnabled && (
+                      <p className="mt-1 text-xs">
+                        {job.clickAndDropOrderId ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
+                            ✓ In Click &amp; Drop
+                          </span>
+                        ) : job.clickAndDropError ? (
+                          <span className="inline-flex flex-wrap items-center gap-1.5">
+                            <span
+                              title={job.clickAndDropError}
+                              className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+                            >
+                              ⚠️ Click &amp; Drop import failed
+                            </span>
+                            <button
+                              type="button"
+                              disabled={cndRetryId === job.id}
+                              onClick={() => void retryClickAndDrop(job)}
+                              className="rounded-full border border-black/20 px-2 py-0.5 hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+                            >
+                              {cndRetryId === job.id ? "Retrying…" : "Retry"}
+                            </button>
+                          </span>
+                        ) : (
+                          <span className="text-foreground/50">Importing to Click &amp; Drop…</span>
+                        )}
+                      </p>
+                    )}
                   </div>
                 </div>
 

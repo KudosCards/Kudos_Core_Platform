@@ -143,6 +143,25 @@ export const envSchema = z.object({
   // for test-mode verification before go-live.
   ROYAL_MAIL_API_BASE_URL: z.string().url().default("https://api.parcel.royalmail.com"),
 
+  // Royal Mail Click & Drop *Orders API* — a different product from the Shipping
+  // API above. This IMPORTS each paid card as an order into the operator's Click
+  // & Drop dashboard queue (to batch, label, and dispatch there), rather than
+  // creating a finished shipment server-side. Optional: with no key the Click &
+  // Drop client is a no-op and nothing is pushed. Treat blank as unset. The key
+  // is the "Click & Drop API authorization key" from Settings → Integrations. See
+  // docs/adr/0095-click-and-drop-import.md.
+  CLICK_AND_DROP_API_KEY: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  CLICK_AND_DROP_API_BASE_URL: z.string().url().default("https://api.parcel.royalmail.com"),
+  // Optional Click & Drop service codes per postage class. When unset (default),
+  // the order imports with no service selected so the operator picks it in the
+  // dashboard — the safest default until the account's exact codes are confirmed.
+  CLICK_AND_DROP_SERVICE_CODE_FIRST: z.string().min(1).optional(),
+  CLICK_AND_DROP_SERVICE_CODE_SECOND: z.string().min(1).optional(),
+
   // Error monitoring. When set, the API initialises Sentry (see
   // observability/sentry.ts, called from main.ts) and reports 5xx errors via a
   // global exception filter; unset = monitoring disabled (a clean no-op). Treat

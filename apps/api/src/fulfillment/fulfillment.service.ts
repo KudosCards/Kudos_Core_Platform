@@ -15,6 +15,7 @@ import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
 import { ROYAL_MAIL_CLIENT } from "../shipping/royal-mail-client.provider";
 import { royalMailTrackingUrl, type RoyalMailClient } from "../shipping/royal-mail-client";
+import { ClickAndDropService } from "../shipping/click-and-drop.service";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
@@ -40,6 +41,8 @@ const QUEUE_SELECT = {
   deliveredAt: true,
   trackingReference: true,
   labelUrl: true,
+  clickAndDropOrderId: true,
+  clickAndDropError: true,
   createdAt: true,
   orderRecipient: {
     select: {
@@ -140,7 +143,20 @@ export class FulfillmentService {
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
     @Inject(ROYAL_MAIL_CLIENT) private readonly royalMail: RoyalMailClient,
+    private readonly clickAndDrop: ClickAndDropService,
   ) {}
+
+  /** Whether Click & Drop order-import is wired (drives the ops UI). */
+  clickAndDropEnabled(): boolean {
+    return this.clickAndDrop.enabled();
+  }
+
+  /** Retry importing a single card into Click & Drop (an ops action), returning
+   * the refreshed queue row so the UI can patch it in place. */
+  async retryClickAndDrop(id: string): Promise<FulfillmentQueueJob> {
+    await this.clickAndDrop.retryJob(id);
+    return this.prisma.fulfillmentJob.findUniqueOrThrow({ where: { id }, select: QUEUE_SELECT });
+  }
 
   /** Whether Royal Mail shipping automation is wired (drives the ops UI). */
   shippingAutomationEnabled(): boolean {
