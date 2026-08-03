@@ -7,13 +7,17 @@ import {
   clampElementPosition,
   computeSnap,
   designElementSchema,
+  EDITOR_FONTS,
   isOutsideSafeArea,
+  konvaFontStyle,
+  konvaTextDecoration,
   MIN_ELEMENT_SIZE,
   MIN_FONT_SIZE,
   normaliseRotation,
   reorderElement,
   SNAP_THRESHOLD,
   textWrapWidth,
+  WEB_FONT_KEYS,
 } from "@kudos/shared-types";
 
 describe("design layout guard rails", () => {
@@ -239,6 +243,82 @@ describe("design layout guard rails", () => {
       const original = list();
       reorderElement(original, "a", "front");
       expect(ids(original)).toEqual(["a", "b", "c", "d"]);
+    });
+  });
+
+  describe("konvaFontStyle", () => {
+    it("maps the four bold/italic combinations to Konva's fontStyle", () => {
+      expect(konvaFontStyle(false, false)).toBe("normal");
+      expect(konvaFontStyle(true, false)).toBe("bold");
+      expect(konvaFontStyle(false, true)).toBe("italic");
+      expect(konvaFontStyle(true, true)).toBe("italic bold");
+    });
+
+    it("treats undefined toggles as off", () => {
+      expect(konvaFontStyle()).toBe("normal");
+      expect(konvaFontStyle(undefined, true)).toBe("italic");
+    });
+  });
+
+  describe("konvaTextDecoration", () => {
+    it("maps the underline toggle to Konva's textDecoration", () => {
+      expect(konvaTextDecoration(true)).toBe("underline");
+      expect(konvaTextDecoration(false)).toBe("");
+      expect(konvaTextDecoration()).toBe("");
+    });
+  });
+
+  describe("EDITOR_FONTS catalogue", () => {
+    it("has unique keys", () => {
+      const keys = EDITOR_FONTS.map((f) => f.key);
+      expect(new Set(keys).size).toBe(keys.length);
+    });
+
+    it("keeps the legacy system fonts so existing designs still resolve", () => {
+      const keys = EDITOR_FONTS.map((f) => f.key);
+      for (const legacy of ["Helvetica", "Georgia", "Times New Roman", "Courier New"]) {
+        expect(keys).toContain(legacy);
+      }
+    });
+
+    it("lists WEB_FONT_KEYS as exactly the web fonts", () => {
+      expect(WEB_FONT_KEYS).toEqual(EDITOR_FONTS.filter((f) => f.webFont).map((f) => f.key));
+      // System fonts are never in the web-load set.
+      expect(WEB_FONT_KEYS).not.toContain("Helvetica");
+    });
+  });
+
+  describe("designElementSchema text styling (additive/optional)", () => {
+    const baseText = {
+      kind: "text" as const,
+      id: "t1",
+      text: "Hi",
+      x: 10,
+      y: 10,
+      fontFamily: "Montserrat",
+      fontSize: 20,
+      color: "#111111",
+    };
+
+    it("accepts bold/italic/underline toggles", () => {
+      const parsed = designElementSchema.parse({
+        ...baseText,
+        bold: true,
+        italic: true,
+        underline: true,
+      });
+      expect(parsed).toMatchObject({ bold: true, italic: true, underline: true });
+    });
+
+    it("leaves the toggles undefined when omitted (existing designs unchanged)", () => {
+      const parsed = designElementSchema.parse(baseText) as {
+        bold?: boolean;
+        italic?: boolean;
+        underline?: boolean;
+      };
+      expect(parsed.bold).toBeUndefined();
+      expect(parsed.italic).toBeUndefined();
+      expect(parsed.underline).toBeUndefined();
     });
   });
 });

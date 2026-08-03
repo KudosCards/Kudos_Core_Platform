@@ -10,11 +10,14 @@ import type {
 import type { LayerMove } from "@kudos/shared-types";
 import {
   CARD_WIDTH,
+  EDITOR_FONTS,
+  FONT_CATEGORY_ORDER,
   MERGE_FIELDS,
   findDesignBracketTokenMistakes,
   fixDesignBracketTokens,
   reorderElement,
 } from "@kudos/shared-types";
+import { FontPreloader } from "@/lib/editor-fonts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -32,7 +35,12 @@ const DesignCanvas = dynamic(() => import("./design-canvas").then((mod) => mod.D
 });
 
 const PAGE_NAMES: DesignPage["name"][] = ["front", "inside-left", "inside-right", "back"];
-const FONT_OPTIONS = ["Georgia", "Helvetica", "Times New Roman", "Courier New"];
+
+/** The font picker's options, grouped by category in the shared display order. */
+const FONT_GROUPS = FONT_CATEGORY_ORDER.map(({ category, label }) => ({
+  label,
+  fonts: EDITOR_FONTS.filter((f) => f.category === category).map((f) => f.key),
+})).filter((group) => group.fonts.length > 0);
 
 /** Longest side (in design units) a freshly-inserted image is scaled to fit. */
 const IMAGE_INSERT_MAX = 200;
@@ -487,6 +495,8 @@ export function DesignEditorClient({
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Warm the self-hosted web fonts so the canvas paints them for real. */}
+      <FontPreloader />
       <div className="flex flex-col gap-3">
         {/* Back link. When we arrived from bulk send, it returns there (keeping
             the recipient selection); otherwise back to the library. Guard the
@@ -757,13 +767,49 @@ export function DesignEditorClient({
                   }
                   className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
                 >
-                  {FONT_OPTIONS.map((font) => (
-                    <option key={font} value={font}>
-                      {font}
-                    </option>
+                  {FONT_GROUPS.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.fonts.map((font) => (
+                        <option key={font} value={font}>
+                          {font}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>
+              {/* Bold / italic / underline — map to Konva fontStyle +
+                  textDecoration in both renderers (see konvaFontStyle). */}
+              <div className="flex flex-col gap-1 text-xs text-foreground/60">
+                Style
+                <div className="flex gap-1">
+                  {(
+                    [
+                      { key: "bold", label: "B", className: "font-bold" },
+                      { key: "italic", label: "I", className: "italic" },
+                      { key: "underline", label: "U", className: "underline" },
+                    ] as const
+                  ).map(({ key, label, className }) => {
+                    const active = Boolean(selectedElement[key]);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        aria-pressed={active}
+                        aria-label={key}
+                        onClick={() => updateElement({ ...selectedElement, [key]: !active })}
+                        className={`flex-1 rounded-md border px-2 py-1 text-sm ${className} ${
+                          active
+                            ? "border-accent bg-accent/10 font-semibold text-foreground"
+                            : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <label className="flex flex-col gap-1 text-xs text-foreground/60">
                 Size
                 <input
