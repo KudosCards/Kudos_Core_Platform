@@ -19,7 +19,10 @@ import {
   MIN_ELEMENT_SIZE,
   MIN_FONT_SIZE,
   normaliseRotation,
+  steppedZoom,
   textWrapWidth,
+  ZOOM_MAX,
+  ZOOM_MIN,
 } from "@kudos/shared-types";
 import { qrDataUrl } from "@/lib/qr";
 import { resolveFontFamily } from "@/lib/editor-fonts";
@@ -397,17 +400,24 @@ export function DesignCanvas({
   // stay in the 450×600 design space (drag reports layer coords, unaffected by
   // Stage scale), so nothing downstream changes.
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
+  const [fitScale, setFitScale] = useState(1);
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const measure = () =>
-      setScale(Math.min(MAX_CANVAS_SCALE, el.clientWidth / CANVAS_WIDTH));
+      setFitScale(Math.min(MAX_CANVAS_SCALE, el.clientWidth / CANVAS_WIDTH));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // User zoom on top of the fit-to-width scale: 1 = fitted (the whole card
+  // visible), >1 zooms in for fine placement (the canvas box then scrolls). The
+  // effective Stage scale is the product, so every coordinate conversion
+  // (drag/snap/transform, which already use `scale`) tracks zoom automatically.
+  const [zoom, setZoom] = useState(1);
+  const scale = fitScale * zoom;
 
   const reportOverflow = onSelectedOverflowChange ?? (() => {});
 
@@ -484,12 +494,45 @@ export function DesignCanvas({
   };
 
   return (
-    <div ref={containerRef} className="w-full max-w-[640px] overflow-hidden">
-      <Stage
-        width={CANVAS_WIDTH * scale}
-        height={CANVAS_HEIGHT * scale}
-        scaleX={scale}
-        scaleY={scale}
+    <div className="flex w-full max-w-[640px] flex-col gap-2">
+      {/* Zoom controls — zoom is relative to fit-to-width (100% = whole card
+          visible). Zooming in scrolls the canvas box below. */}
+      <div className="flex items-center gap-1 self-end text-sm">
+        <button
+          type="button"
+          aria-label="Zoom out"
+          disabled={zoom <= ZOOM_MIN}
+          onClick={() => setZoom((z) => steppedZoom(z, -1))}
+          className="flex size-8 items-center justify-center rounded-md border border-black/15 text-lg leading-none hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          onClick={() => setZoom(1)}
+          title="Fit to width"
+          className="min-w-14 rounded-md border border-black/15 px-2 py-1 text-xs tabular-nums hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+        >
+          {Math.round(zoom * 100)}%
+        </button>
+        <button
+          type="button"
+          aria-label="Zoom in"
+          disabled={zoom >= ZOOM_MAX}
+          onClick={() => setZoom((z) => steppedZoom(z, 1))}
+          className="flex size-8 items-center justify-center rounded-md border border-black/15 text-lg leading-none hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+        >
+          +
+        </button>
+      </div>
+      {/* At zoom 1 the Stage exactly fits this box; zooming in makes it wider/
+          taller and this box scrolls. Measured for the fit-to-width scale. */}
+      <div ref={containerRef} className="w-full overflow-auto">
+        <Stage
+          width={CANVAS_WIDTH * scale}
+          height={CANVAS_HEIGHT * scale}
+          scaleX={scale}
+          scaleY={scale}
         onMouseDown={(e) => {
           if (e.target === e.target.getStage()) {
             onDeselect();
@@ -618,7 +661,8 @@ export function DesignCanvas({
             }}
           />
         </Layer>
-      </Stage>
+        </Stage>
+      </div>
     </div>
   );
 }

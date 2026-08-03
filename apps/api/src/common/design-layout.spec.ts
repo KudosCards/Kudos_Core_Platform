@@ -5,6 +5,7 @@ import {
   CARD_WIDTH,
   cardSnapLines,
   clampElementPosition,
+  clampZoom,
   computeSnap,
   coverCrop,
   designElementSchema,
@@ -19,8 +20,11 @@ import {
   normaliseRotation,
   reorderElement,
   SNAP_THRESHOLD,
+  steppedZoom,
   textWrapWidth,
   WEB_FONT_KEYS,
+  ZOOM_MAX,
+  ZOOM_MIN,
 } from "@kudos/shared-types";
 
 describe("design layout guard rails", () => {
@@ -463,6 +467,27 @@ describe("design layout guard rails", () => {
       expect(() =>
         designElementSchema.parse({ ...baseImage, assetUrl: "not-a-url" }),
       ).toThrow();
+    });
+  });
+
+  describe("zoom (clampZoom / steppedZoom)", () => {
+    it("clamps to the allowed range", () => {
+      expect(clampZoom(10)).toBe(ZOOM_MAX);
+      expect(clampZoom(0.1)).toBe(ZOOM_MIN);
+      expect(clampZoom(1.25)).toBe(1.25);
+    });
+
+    it("steps up and down on a clean grid", () => {
+      expect(steppedZoom(1, 1)).toBe(1.25);
+      expect(steppedZoom(1, -1)).toBe(0.75);
+      // Snaps an off-grid value to the grid, then steps.
+      expect(steppedZoom(1.1, 1)).toBe(1.25);
+      expect(steppedZoom(1.1, -1)).toBe(0.75);
+    });
+
+    it("never steps past the bounds", () => {
+      expect(steppedZoom(ZOOM_MAX, 1)).toBe(ZOOM_MAX);
+      expect(steppedZoom(ZOOM_MIN, -1)).toBe(ZOOM_MIN);
     });
   });
 });
