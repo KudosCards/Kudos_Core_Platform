@@ -383,4 +383,45 @@ describe("design layout guard rails", () => {
       ).toThrow();
     });
   });
+
+  describe("designElementSchema shape (additive kind)", () => {
+    const baseShape = {
+      kind: "shape" as const,
+      id: "s1",
+      shape: "rect" as const,
+      x: 10,
+      y: 10,
+      width: 100,
+      height: 80,
+    };
+
+    it("accepts a minimal shape (styling all optional)", () => {
+      const parsed = designElementSchema.parse(baseShape);
+      expect(parsed.kind).toBe("shape");
+      // rotation defaults to 0 like the other visual elements.
+      expect((parsed as { rotation: number }).rotation).toBe(0);
+    });
+
+    it("accepts fill / stroke / strokeWidth / cornerRadius", () => {
+      const parsed = designElementSchema.parse({
+        ...baseShape,
+        fill: "#93c5fd",
+        stroke: "#111111",
+        strokeWidth: 2,
+        cornerRadius: 8,
+      });
+      expect(parsed).toMatchObject({ fill: "#93c5fd", stroke: "#111111", strokeWidth: 2 });
+    });
+
+    it("accepts every supported shape kind", () => {
+      for (const shape of ["rect", "ellipse", "triangle", "star", "heart", "line"] as const) {
+        expect(designElementSchema.parse({ ...baseShape, shape }).kind).toBe("shape");
+      }
+    });
+
+    it("rejects an unknown shape kind and a negative stroke width", () => {
+      expect(() => designElementSchema.parse({ ...baseShape, shape: "hexagon" })).toThrow();
+      expect(() => designElementSchema.parse({ ...baseShape, strokeWidth: -1 })).toThrow();
+    });
+  });
 });
