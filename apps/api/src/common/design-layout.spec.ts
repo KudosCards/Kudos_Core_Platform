@@ -10,6 +10,7 @@ import {
   designElementSchema,
   designPageSchema,
   EDITOR_FONTS,
+  isImageAssetSrc,
   isOutsideSafeArea,
   konvaFontStyle,
   konvaTextDecoration,
@@ -422,6 +423,46 @@ describe("design layout guard rails", () => {
     it("rejects an unknown shape kind and a negative stroke width", () => {
       expect(() => designElementSchema.parse({ ...baseShape, shape: "hexagon" })).toThrow();
       expect(() => designElementSchema.parse({ ...baseShape, strokeWidth: -1 })).toThrow();
+    });
+  });
+
+  describe("isImageAssetSrc / image assetUrl", () => {
+    it("accepts absolute http(s) URLs and root-relative paths", () => {
+      expect(isImageAssetSrc("https://cdn.example.com/a.png")).toBe(true);
+      expect(isImageAssetSrc("http://cdn.example.com/a.png")).toBe(true);
+      expect(isImageAssetSrc("/stickers/cake.svg")).toBe(true);
+    });
+
+    it("rejects bare/relative or scheme-less values", () => {
+      expect(isImageAssetSrc("stickers/cake.svg")).toBe(false);
+      expect(isImageAssetSrc("cake.svg")).toBe(false);
+      expect(isImageAssetSrc("")).toBe(false);
+    });
+
+    const baseImage = {
+      kind: "image" as const,
+      id: "i1",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+    };
+
+    it("lets an image element use a sticker's root-relative path", () => {
+      const parsed = designElementSchema.parse({
+        ...baseImage,
+        assetUrl: "/stickers/balloon.svg",
+      });
+      expect(parsed).toMatchObject({ kind: "image", assetUrl: "/stickers/balloon.svg" });
+    });
+
+    it("still accepts an uploaded absolute URL, and rejects a bare path", () => {
+      expect(() =>
+        designElementSchema.parse({ ...baseImage, assetUrl: "https://cdn.example.com/x.png" }),
+      ).not.toThrow();
+      expect(() =>
+        designElementSchema.parse({ ...baseImage, assetUrl: "not-a-url" }),
+      ).toThrow();
     });
   });
 });

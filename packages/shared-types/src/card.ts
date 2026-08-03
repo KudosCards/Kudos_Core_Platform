@@ -6,6 +6,16 @@ import { z } from "zod";
  * so a design can be re-opened for editing and re-rendered per recipient
  * (e.g. substituting the {name} token) at print time.
  */
+/**
+ * A placeable image source: an absolute http(s) URL (an uploaded asset) or a
+ * root-relative path (a self-hosted app asset, e.g. a `/stickers/*.svg`
+ * sticker). Loosened from a strict URL so bundled stickers can be referenced
+ * without coupling to the deployed domain; existing absolute URLs still pass.
+ */
+export function isImageAssetSrc(value: string): boolean {
+  return /^https?:\/\//.test(value) || value.startsWith("/");
+}
+
 export const designElementSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("text"),
@@ -45,7 +55,10 @@ export const designElementSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("image"),
     id: z.string(),
-    assetUrl: z.string().url(),
+    /** An uploaded asset URL or a root-relative app asset (e.g. a sticker). */
+    assetUrl: z.string().refine(isImageAssetSrc, {
+      message: "must be an http(s) URL or a root-relative path",
+    }),
     x: z.number(),
     y: z.number(),
     width: z.number().positive(),
