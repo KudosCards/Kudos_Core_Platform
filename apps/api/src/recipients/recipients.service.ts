@@ -45,7 +45,11 @@ export const MISSING_ADDRESS_WHERE: Prisma.RecipientWhereInput = {
 export interface ImportSummary {
   created: number;
   updated: number;
+  /** Rows that couldn't be imported at all (e.g. missing a required name). */
   rejected: { row: number; reason: string }[];
+  /** Rows that *were* imported, but with a malformed optional field dropped
+   * (e.g. an unrecognised date of birth) — surfaced so nothing is silent. */
+  warnings: { row: number; message: string }[];
 }
 
 /**
@@ -383,7 +387,7 @@ export class RecipientsService {
       );
     }
 
-    const summary: ImportSummary = { created: 0, updated: 0, rejected: [] };
+    const summary: ImportSummary = { created: 0, updated: 0, rejected: [], warnings: [] };
     const entitlement = await this.entitlements.getForAccount(accountId);
 
     const parsedRows: { rowNumber: number; parsed: ParsedRecipientRow }[] = [];
@@ -394,7 +398,14 @@ export class RecipientsService {
         // field keys first; without one, the CSV must already use our headers
         // (the documented, backward-compatible contract).
         const source = mapping ? remapRow(row, mapping) : row;
-        parsedRows.push({ rowNumber, parsed: parseRecipientRow(source) });
+        const { parsed, warnings } = parseRecipientRow(source);
+        parsedRows.push({ rowNumber, parsed });
+        // A present-but-malformed optional field (e.g. an unrecognised DOB) no
+        // longer rejects the row — it imports with that field dropped, recorded
+        // here so the customer can see what wasn't used.
+        for (const message of warnings) {
+          summary.warnings.push({ row: rowNumber, message });
+        }
       } catch (error) {
         summary.rejected.push({
           row: rowNumber,
@@ -549,6 +560,7 @@ export class RecipientsService {
         created: summary.created,
         updated: summary.updated,
         rejected: summary.rejected.length,
+        warnings: summary.warnings.length,
       },
     });
 
