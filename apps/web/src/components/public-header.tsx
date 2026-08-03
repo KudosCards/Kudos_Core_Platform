@@ -50,14 +50,83 @@ export function PublicHeader({ navLinks = [] }: { navLinks?: PublicNavLink[] }) 
           <BasketButton />
           <Link
             href="/login"
-            className="rounded-full px-3 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 sm:px-4"
+            className="inline-flex min-h-11 items-center rounded-full px-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 sm:px-4"
             style={{ backgroundColor: CORAL }}
           >
             Sign in
           </Link>
+          {navLinks.length > 0 && <MobileNav navLinks={navLinks} />}
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * The mobile counterpart to the desktop `md:flex` nav — a hamburger that opens a
+ * dropdown of the same links, so a phone visitor can still reach the card
+ * library / plans / sections that are otherwise hidden below `md`.
+ */
+function MobileNav({ navLinks }: { navLinks: PublicNavLink[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on an outside click or Escape (mirrors the Reminders prompt).
+  useEffect(() => {
+    if (!open) return;
+    function onClick(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative md:hidden" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Menu"
+        className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100"
+      >
+        <MenuIcon />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-40 mt-2 w-56 rounded-2xl border border-slate-100 bg-white p-2 shadow-xl"
+        >
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {link.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <path d="M3 6h18M3 12h18M3 18h18" />
+    </svg>
   );
 }
 
@@ -67,7 +136,7 @@ function BasketButton() {
   return (
     <Link
       href="/basket"
-      className="relative flex flex-col items-center rounded-lg px-2 py-1 text-slate-700 hover:text-slate-900"
+      className="relative flex min-h-11 flex-col items-center justify-center rounded-lg px-2 py-1 text-slate-700 hover:text-slate-900"
       aria-label={`Basket${count > 0 ? ` (${count} ${count === 1 ? "card" : "cards"})` : ""}`}
     >
       <span className="relative">
@@ -129,7 +198,7 @@ function RemindersButton() {
       {signedIn ? (
         <Link
           href="/calendar"
-          className="flex flex-col items-center rounded-lg px-2 py-1 text-slate-700 hover:text-slate-900"
+          className="flex min-h-11 flex-col items-center justify-center rounded-lg px-2 py-1 text-slate-700 hover:text-slate-900"
           aria-label="Reminders"
         >
           <BellIcon />
@@ -139,7 +208,7 @@ function RemindersButton() {
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="flex flex-col items-center rounded-lg px-2 py-1 text-slate-700 hover:text-slate-900"
+          className="flex min-h-11 flex-col items-center justify-center rounded-lg px-2 py-1 text-slate-700 hover:text-slate-900"
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-label="Reminders"
