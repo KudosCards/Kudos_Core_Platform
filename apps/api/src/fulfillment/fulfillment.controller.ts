@@ -125,4 +125,20 @@ export class FulfillmentController {
   ): Promise<{ dispatched: number; failed: number }> {
     return this.fulfillmentService.dispatchMany(admin.userId, dto.jobIds);
   }
+
+  /** Whether Click & Drop order-import is wired — the ops UI shows the import
+   * status column + retry action only when true. */
+  @Get("click-and-drop-status")
+  clickAndDropStatus(): { enabled: boolean } {
+    return { enabled: this.fulfillmentService.clickAndDropEnabled() };
+  }
+
+  /** Retry importing a card into the Click & Drop dashboard queue after a failed
+   * push (the background sweep imports automatically; this is the manual retry). */
+  @Post("jobs/:id/click-and-drop")
+  retryClickAndDrop(
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<FulfillmentQueueJob> {
+    return this.fulfillmentService.retryClickAndDrop(id);
+  }
 }

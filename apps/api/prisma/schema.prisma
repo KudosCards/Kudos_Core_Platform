@@ -758,6 +758,14 @@ model FulfillmentJob {
   /// The printable Royal Mail label/QR URL, when a shipment was auto-created via
   /// the Shipping API. Null for manually-dispatched jobs. See ADR 0072.
   labelUrl          String?              @map("label_url")
+  /// Royal Mail's identifier for this card once it's been imported into the
+  /// operator's Click & Drop dashboard queue. Null until pushed (or if Click &
+  /// Drop import is off). Its presence is the idempotency guard — a card is never
+  /// pushed twice. See ADR 0095.
+  clickAndDropOrderId String?            @map("click_and_drop_order_id")
+  /// The last Click & Drop import error for this card, if the push failed — shown
+  /// in the ops queue so an operator can retry. Cleared on a successful push.
+  clickAndDropError String?              @map("click_and_drop_error")
   createdAt         DateTime             @default(now()) @map("created_at")
   updatedAt         DateTime             @updatedAt @map("updated_at")
 
