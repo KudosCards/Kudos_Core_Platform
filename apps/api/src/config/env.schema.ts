@@ -1,6 +1,29 @@
 import { z } from "zod";
 
 /**
+ * A URL that must use the http or https scheme. `z.string().url()` alone is not
+ * enough: `new URL("ttps://kudos-cards.co.uk")` succeeds (it treats `ttps:` as a
+ * valid — if nonsensical — scheme), so a single-character typo passed validation
+ * and booted the API with a dead CORS origin, silently locking the real domain
+ * out of the whole backend. Requiring http(s) makes that typo fail loudly at
+ * boot instead. See docs/adr/0081-cors-allowlist-and-url-validation.md.
+ */
+const httpUrl = z
+  .string()
+  .url()
+  .refine(
+    (value) => {
+      try {
+        const { protocol } = new URL(value);
+        return protocol === "http:" || protocol === "https:";
+      } catch {
+        return false;
+      }
+    },
+    { message: "must be an http(s) URL (e.g. https://kudos-cards.co.uk)" },
+  );
+
+/**
  * Validated once at boot. The process refuses to start with a missing or
  * malformed env var rather than failing later, at first use, in production.
  */
@@ -54,7 +77,27 @@ export const envSchema = z.object({
     .optional()
     .or(z.literal("").transform(() => undefined)),
 
-  WEB_APP_URL: z.string().url(),
+  // The canonical public origin of the web app (custom domain). Used for CORS,
+  // Stripe redirects, and every auth-email link. Must be http(s) — see `httpUrl`.
+  WEB_APP_URL: httpUrl,
+
+  // Extra browser origins allowed to call the API beyond WEB_APP_URL, as a
+  // comma-separated list (e.g. "https://www.kudos-cards.co.uk"). The CORS
+  // allow-list is [WEB_APP_URL, ...these], so a single wrong value can no longer
+  // black out the whole app. Optional; blank ⇒ unset. See ADR 0081.
+  CORS_ALLOWED_ORIGINS: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  // Comma-separated origin SUFFIXES also allowed — for dynamic hosts like Netlify
+  // deploy previews (e.g. "--kudos-cards.netlify.app"). Matched against the tail
+  // of the request Origin. Optional; blank ⇒ unset. See ADR 0081.
+  CORS_ALLOWED_ORIGIN_SUFFIXES: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
 
   // Orphaned-asset reaper (see docs/adr/0074-orphaned-asset-reaper.md). Deleting
   // storage objects is irreversible, so it ships DARK: it only ever deletes when

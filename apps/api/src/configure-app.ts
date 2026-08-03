@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import compression from "compression";
 import helmet from "helmet";
 import type { EnvConfig } from "./config/env.schema";
+import { corsOriginChecker, parseCommaList } from "./config/cors";
 import { ServerTimingInterceptor } from "./observability/server-timing.interceptor";
 
 /**
@@ -21,8 +22,18 @@ export function configureApp(app: INestApplication): void {
   // so this is the broadest single latency win. Response-side only — it never
   // touches req.rawBody, so Stripe webhook signature verification is unaffected.
   app.use(compression());
+  // CORS allow-list: the canonical WEB_APP_URL plus any extra origins/suffixes.
+  // A configurable list (not a single origin) means a wrong value can't lock the
+  // whole app out of the API — see ADR 0081.
+  const allowedOrigins = [
+    config.get("WEB_APP_URL", { infer: true }),
+    ...parseCommaList(config.get("CORS_ALLOWED_ORIGINS", { infer: true })),
+  ];
+  const allowedOriginSuffixes = parseCommaList(
+    config.get("CORS_ALLOWED_ORIGIN_SUFFIXES", { infer: true }),
+  );
   app.enableCors({
-    origin: config.get("WEB_APP_URL", { infer: true }),
+    origin: corsOriginChecker(allowedOrigins, allowedOriginSuffixes),
     credentials: true,
     // Let browser-side callers (clientApiFetch) read the API timing header.
     exposedHeaders: ["Server-Timing"],

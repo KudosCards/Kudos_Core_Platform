@@ -28,6 +28,25 @@ describe("validateEnv", () => {
     );
   });
 
+  it("rejects a WEB_APP_URL with a typo'd (non-http) scheme", () => {
+    // The real incident: `ttps://…` parses as a valid URL (scheme `ttps:`), so a
+    // plain url() check passed and the API booted with a dead CORS origin. It
+    // must now fail loudly at boot instead.
+    expect(() => validateEnv({ ...validConfig, WEB_APP_URL: "ttps://kudos-cards.co.uk" })).toThrow(
+      /WEB_APP_URL/,
+    );
+  });
+
+  it("accepts optional CORS allow-list vars and treats blank as unset", () => {
+    const result = validateEnv({
+      ...validConfig,
+      CORS_ALLOWED_ORIGINS: "https://www.kudos-cards.co.uk",
+      CORS_ALLOWED_ORIGIN_SUFFIXES: "",
+    });
+    expect(result.CORS_ALLOWED_ORIGINS).toBe("https://www.kudos-cards.co.uk");
+    expect(result.CORS_ALLOWED_ORIGIN_SUFFIXES).toBeUndefined();
+  });
+
   it("treats a blank SENTRY_DSN as not provided rather than invalid", () => {
     const result = validateEnv({ ...validConfig, SENTRY_DSN: "" });
     expect(result.SENTRY_DSN).toBeUndefined();
