@@ -60,6 +60,18 @@ runbook (§1b) now also requires:
 - Web env `NEXT_PUBLIC_SITE_URL` and API env `WEB_APP_URL` both set to the custom
   domain.
 
+### Canonical domain redirect (custom-domain cutover)
+
+Moving to the custom domain surfaced a related trap: the API's CORS allow-list is
+a **single** origin (`WEB_APP_URL`). Once that became `https://kudos-cards.co.uk`,
+the app still served from the free `kudos-cards.netlify.app` subdomain had all its
+API calls (login, password reset, admin dashboard) blocked by CORS. Setting the
+custom domain as Netlify's *primary* domain does **not** auto-redirect the
+`.netlify.app` subdomain (only other custom aliases like `www`). So `netlify.toml`
+now force-redirects `https://kudos-cards.netlify.app/*` → the custom domain (301),
+making the custom domain the single origin every request comes from. Deploy
+previews are intentionally left alone.
+
 ## Consequences
 
 - New signups confirm on the correct domain and their account is created.
