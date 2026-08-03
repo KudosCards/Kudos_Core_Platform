@@ -177,6 +177,27 @@ export function reorderElement<T extends { id: string }>(
   return next;
 }
 
+/** Editor zoom bounds and step. Zoom is relative to fit-to-width: 1 = the whole
+ * card fitted to the canvas column, >1 zooms in for fine placement. */
+export const ZOOM_MIN = 0.5;
+export const ZOOM_MAX = 3;
+export const ZOOM_STEP = 0.25;
+
+/** Clamp a zoom factor to the allowed range. Pure. */
+export function clampZoom(zoom: number): number {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
+}
+
+/**
+ * The next zoom when the user clicks +/−: snap to the nearest step grid then
+ * move one step, so repeated clicks land on clean values (…0.75, 1, 1.25…)
+ * regardless of the starting point. Clamped. Pure.
+ */
+export function steppedZoom(current: number, direction: 1 | -1): number {
+  const snapped = Math.round(current / ZOOM_STEP) * ZOOM_STEP;
+  return clampZoom(Number((snapped + direction * ZOOM_STEP).toFixed(2)));
+}
+
 export interface Rect {
   x: number;
   y: number;
