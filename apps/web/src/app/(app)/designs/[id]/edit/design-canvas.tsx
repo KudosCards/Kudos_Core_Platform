@@ -419,6 +419,19 @@ export function DesignCanvas({
   const [zoom, setZoom] = useState(1);
   const scale = fitScale * zoom;
 
+  // On a touch screen (coarse pointer) the Transformer's resize/rotate handles
+  // need to be finger-sized, not the tight 10px they are for a mouse — otherwise
+  // they're almost impossible to grab. Tracked reactively so a 2-in-1 device that
+  // switches input mode updates live.
+  const [coarsePointer, setCoarsePointer] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: coarse)");
+    const update = () => setCoarsePointer(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
   const reportOverflow = onSelectedOverflowChange ?? (() => {});
 
   // Bumps when web fonts finish loading; used to re-measure text and redraw the
@@ -505,7 +518,7 @@ export function DesignCanvas({
           aria-label="Zoom out"
           disabled={zoom <= ZOOM_MIN}
           onClick={() => setZoom((z) => steppedZoom(z, -1))}
-          className="flex size-8 items-center justify-center rounded-md border border-black/15 text-lg leading-none hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+          className="flex size-8 items-center justify-center rounded-md border border-black/15 text-lg leading-none hover:bg-black/5 disabled:opacity-40 pointer-coarse:size-11 dark:border-white/15 dark:hover:bg-white/5"
         >
           −
         </button>
@@ -513,7 +526,7 @@ export function DesignCanvas({
           type="button"
           onClick={() => setZoom(1)}
           title="Fit to width"
-          className="min-w-14 rounded-md border border-black/15 px-2 py-1 text-xs tabular-nums hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+          className="flex min-w-14 items-center justify-center rounded-md border border-black/15 px-2 py-1 text-xs tabular-nums hover:bg-black/5 pointer-coarse:min-h-11 dark:border-white/15 dark:hover:bg-white/5"
         >
           {Math.round(zoom * 100)}%
         </button>
@@ -653,7 +666,8 @@ export function DesignCanvas({
             anchorFill="#ffffff"
             borderStroke="#2563eb"
             anchorCornerRadius={6}
-            anchorSize={10}
+            // Finger-sized handles on touch, tight handles for a mouse.
+            anchorSize={coarsePointer ? 20 : 10}
             rotationSnaps={[0, 90, 180, 270]}
             // Don't let a resize collapse an element to nothing.
             boundBoxFunc={(oldBox, newBox) => {

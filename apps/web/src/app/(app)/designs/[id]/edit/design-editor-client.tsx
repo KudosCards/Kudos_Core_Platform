@@ -764,7 +764,7 @@ export function DesignEditorClient({
                 title={`Add ${label.toLowerCase()}`}
                 aria-label={`Add ${label.toLowerCase()}`}
                 onClick={() => addShapeElement(shape)}
-                className="flex size-9 items-center justify-center rounded-md border border-black/15 text-base leading-none hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                className="flex size-9 items-center justify-center rounded-md border border-black/15 text-base leading-none hover:bg-black/5 pointer-coarse:size-11 dark:border-white/15 dark:hover:bg-white/5"
               >
                 {glyph}
               </button>
@@ -781,7 +781,7 @@ export function DesignEditorClient({
                 title={`Add ${sticker.label.toLowerCase()} sticker`}
                 aria-label={`Add ${sticker.label.toLowerCase()} sticker`}
                 onClick={() => insertSticker(sticker.src)}
-                className="flex size-9 items-center justify-center rounded-md border border-black/15 p-1 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                className="flex size-9 items-center justify-center rounded-md border border-black/15 p-1 hover:bg-black/5 pointer-coarse:size-11 dark:border-white/15 dark:hover:bg-white/5"
               >
                 {/* Static bundled SVG art — a plain <img> is intentional here. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -882,7 +882,7 @@ export function DesignEditorClient({
                     aria-pressed={active}
                     disabled={type === "image" && bgUploading}
                     onClick={() => selectBackgroundType(type)}
-                    className={`flex-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50 ${
+                    className={`flex-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50 pointer-coarse:py-3.5 ${
                       active
                         ? "border-accent bg-accent/10 font-semibold text-foreground"
                         : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
@@ -1006,7 +1006,7 @@ export function DesignEditorClient({
                         aria-pressed={active}
                         aria-label={key}
                         onClick={() => updateElement({ ...selectedElement, [key]: !active })}
-                        className={`flex-1 rounded-md border px-2 py-1 text-sm ${className} ${
+                        className={`flex-1 rounded-md border px-2 py-1 text-sm pointer-coarse:py-3.5 ${className} ${
                           active
                             ? "border-accent bg-accent/10 font-semibold text-foreground"
                             : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
@@ -1081,7 +1081,7 @@ export function DesignEditorClient({
                         type="button"
                         aria-pressed={active}
                         onClick={() => updateElement({ ...selectedElement, align })}
-                        className={`flex-1 rounded-md border px-2 py-1 text-xs capitalize ${
+                        className={`flex-1 rounded-md border px-2 py-1 text-xs capitalize pointer-coarse:py-3.5 ${
                           active
                             ? "border-accent bg-accent/10 font-semibold text-foreground"
                             : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
@@ -1317,7 +1317,7 @@ export function DesignEditorClient({
                       onClick={() => reorderSelected("back")}
                       disabled={isBackmost}
                       title="Send to back"
-                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5 dark:border-white/15 dark:hover:bg-white/5"
                     >
                       To back
                     </button>
@@ -1326,7 +1326,7 @@ export function DesignEditorClient({
                       onClick={() => reorderSelected("backward")}
                       disabled={isBackmost}
                       title="Send backward (⌘/Ctrl+[)"
-                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5 dark:border-white/15 dark:hover:bg-white/5"
                     >
                       Back
                     </button>
@@ -1335,7 +1335,7 @@ export function DesignEditorClient({
                       onClick={() => reorderSelected("forward")}
                       disabled={isFrontmost}
                       title="Bring forward (⌘/Ctrl+])"
-                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5 dark:border-white/15 dark:hover:bg-white/5"
                     >
                       Forward
                     </button>
@@ -1344,7 +1344,7 @@ export function DesignEditorClient({
                       onClick={() => reorderSelected("front")}
                       disabled={isFrontmost}
                       title="Bring to front"
-                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5 dark:border-white/15 dark:hover:bg-white/5"
                     >
                       To front
                     </button>
