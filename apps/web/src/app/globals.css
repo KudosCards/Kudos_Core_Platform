@@ -59,6 +59,15 @@ body {
   textarea {
     font-size: 16px;
   }
+
+  /* On touch screens the shared buttons meet the 44px WCAG target height, even
+     where a page passes tighter padding (e.g. `py-1.5 text-xs`). Centralising it
+     here lifts every primary/secondary button — pagination, actions, filters —
+     without touching each call site. Desktop keeps the compact padding. */
+  .btn-accent,
+  .btn-secondary {
+    min-height: 2.75rem;
+  }
 }
 
 /* ---- Shared building blocks, so every page speaks the same visual language ---- */
