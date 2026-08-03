@@ -6,7 +6,9 @@ import {
   cardSnapLines,
   clampElementPosition,
   computeSnap,
+  coverCrop,
   designElementSchema,
+  designPageSchema,
   EDITOR_FONTS,
   isOutsideSafeArea,
   konvaFontStyle,
@@ -319,6 +321,66 @@ describe("design layout guard rails", () => {
       expect(parsed.bold).toBeUndefined();
       expect(parsed.italic).toBeUndefined();
       expect(parsed.underline).toBeUndefined();
+    });
+  });
+
+  describe("coverCrop", () => {
+    const box = { width: 450, height: 600 }; // the card face (portrait)
+
+    it("crops the sides of a landscape image to fill a portrait box", () => {
+      const crop = coverCrop({ width: 2000, height: 1000 }, box);
+      expect(crop.height).toBe(1000); // full height kept
+      expect(crop.width).toBeCloseTo(750); // 1000 * (450/600)
+      expect(crop.x).toBeCloseTo((2000 - 750) / 2); // centred
+      expect(crop.y).toBe(0);
+    });
+
+    it("crops the top and bottom of a very tall image", () => {
+      const crop = coverCrop({ width: 450, height: 2000 }, box);
+      expect(crop.width).toBe(450); // full width kept
+      expect(crop.height).toBeCloseTo(600); // 450 / (450/600)
+      expect(crop.y).toBeCloseTo((2000 - 600) / 2); // centred
+      expect(crop.x).toBe(0);
+    });
+
+    it("returns the whole image when it already matches the box ratio", () => {
+      const crop = coverCrop({ width: 900, height: 1200 }, box);
+      expect(crop).toEqual({ x: 0, y: 0, width: 900, height: 1200 });
+    });
+
+    it("returns a zero rect for a degenerate image", () => {
+      expect(coverCrop({ width: 0, height: 0 }, box)).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+    });
+  });
+
+  describe("designPageSchema background (additive/optional)", () => {
+    const basePage = { name: "front" as const, elements: [] };
+
+    it("accepts a page with no background (existing designs unchanged)", () => {
+      const parsed = designPageSchema.parse(basePage);
+      expect(parsed.background).toBeUndefined();
+    });
+
+    it("accepts a solid-colour background", () => {
+      const parsed = designPageSchema.parse({
+        ...basePage,
+        background: { type: "color", color: "#ffeecc" },
+      });
+      expect(parsed.background).toEqual({ type: "color", color: "#ffeecc" });
+    });
+
+    it("accepts an image background", () => {
+      const parsed = designPageSchema.parse({
+        ...basePage,
+        background: { type: "image", assetUrl: "https://cdn.example.com/bg.jpg" },
+      });
+      expect(parsed.background).toMatchObject({ type: "image" });
+    });
+
+    it("rejects an unknown background type", () => {
+      expect(() =>
+        designPageSchema.parse({ ...basePage, background: { type: "gradient" } }),
+      ).toThrow();
     });
   });
 });

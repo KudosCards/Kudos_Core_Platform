@@ -70,9 +70,23 @@ export const designElementSchema = z.discriminatedUnion("kind", [
 ]);
 export type DesignElement = z.infer<typeof designElementSchema>;
 
+/**
+ * A page's background fill, drawn behind its elements. Additive + optional on
+ * the page: when omitted a page is plain white (the legacy behaviour), so
+ * existing designs render unchanged. An image background covers the whole face
+ * (centre-cropped to fill — see `coverCrop`).
+ */
+export const pageBackgroundSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("color"), color: z.string() }),
+  z.object({ type: z.literal("image"), assetUrl: z.string().url() }),
+]);
+export type PageBackground = z.infer<typeof pageBackgroundSchema>;
+
 export const designPageSchema = z.object({
   name: z.enum(["front", "inside-left", "inside-right", "back"]),
   elements: z.array(designElementSchema),
+  /** Optional background fill drawn behind the elements. Omitted = white. */
+  background: pageBackgroundSchema.optional(),
 });
 export type DesignPage = z.infer<typeof designPageSchema>;
 
