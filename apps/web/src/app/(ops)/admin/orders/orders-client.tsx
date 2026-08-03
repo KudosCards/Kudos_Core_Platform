@@ -84,48 +84,82 @@ export function AdminOrdersClient({
         </select>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-border">
-        {filtered.length === 0 ? (
-          <p className="p-6 text-sm text-muted">No orders match your filters.</p>
-        ) : (
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs tracking-wide text-muted uppercase">
-                <th className="px-5 py-3 font-medium">Order</th>
-                <th className="px-5 py-3 font-medium">Account</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Fulfillment</th>
-                <th className="px-5 py-3 font-medium">Placed</th>
-                <th className="px-5 py-3 text-right font-medium">Value</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map((order) => (
-                <tr key={order.id} className="hover:bg-foreground/[0.02]">
-                  <td className="px-5 py-3.5 font-semibold whitespace-nowrap tabular-nums">
-                    {formatOrderNumber(order.orderNumber)}
-                  </td>
-                  <td className="px-5 py-3.5 font-medium">{order.accountName}</td>
-                  <td className="px-5 py-3.5">
-                    <span
-                      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${ORDER_STATUS_CLASSES[order.status]}`}
-                    >
-                      {ORDER_STATUS_LABELS[order.status]}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 text-muted">{fulfillmentLabel(order.status)}</td>
-                  <td className="px-5 py-3.5 whitespace-nowrap text-muted">
-                    {formatOrderDate(order.createdAt)}
-                  </td>
-                  <td className="px-5 py-3.5 text-right font-semibold tabular-nums">
-                    {formatGbp(order.totalMinor)}
-                  </td>
+      {filtered.length === 0 ? (
+        <p className="rounded-xl border border-border p-6 text-sm text-muted">
+          No orders match your filters.
+        </p>
+      ) : (
+        <>
+          {/* Table on ≥sm; a stacked-card list replaces it on phones so the row
+              never becomes a sideways-scrolling wall. */}
+          <div className="hidden overflow-x-auto rounded-xl border border-border sm:block">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs tracking-wide text-muted uppercase">
+                  <th className="px-5 py-3 font-medium">Order</th>
+                  <th className="px-5 py-3 font-medium">Account</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium">Fulfillment</th>
+                  <th className="px-5 py-3 font-medium">Placed</th>
+                  <th className="px-5 py-3 text-right font-medium">Value</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((order) => (
+                  <tr key={order.id} className="hover:bg-foreground/[0.02]">
+                    <td className="px-5 py-3.5 font-semibold whitespace-nowrap tabular-nums">
+                      {formatOrderNumber(order.orderNumber)}
+                    </td>
+                    <td className="px-5 py-3.5 font-medium">{order.accountName}</td>
+                    <td className="px-5 py-3.5">
+                      <span
+                        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${ORDER_STATUS_CLASSES[order.status]}`}
+                      >
+                        {ORDER_STATUS_LABELS[order.status]}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-muted">{fulfillmentLabel(order.status)}</td>
+                    <td className="px-5 py-3.5 whitespace-nowrap text-muted">
+                      {formatOrderDate(order.createdAt)}
+                    </td>
+                    <td className="px-5 py-3.5 text-right font-semibold tabular-nums">
+                      {formatGbp(order.totalMinor)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:hidden">
+            {filtered.map((order) => (
+              <div key={order.id} className="rounded-xl border border-border p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold tabular-nums">
+                      {formatOrderNumber(order.orderNumber)}
+                    </p>
+                    <p className="truncate text-sm font-medium">{order.accountName}</p>
+                  </div>
+                  <p className="shrink-0 text-right font-semibold tabular-nums">
+                    {formatGbp(order.totalMinor)}
+                  </p>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                  <span
+                    className={`inline-block rounded-full px-2 py-0.5 font-medium ${ORDER_STATUS_CLASSES[order.status]}`}
+                  >
+                    {ORDER_STATUS_LABELS[order.status]}
+                  </span>
+                  <span>{fulfillmentLabel(order.status)}</span>
+                  <span aria-hidden>·</span>
+                  <span>{formatOrderDate(order.createdAt)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

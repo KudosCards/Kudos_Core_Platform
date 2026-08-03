@@ -84,36 +84,82 @@ export default async function AdminReturnsPage({
           Nothing here.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/10">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead className="border-b border-black/10 text-left text-xs uppercase tracking-wide text-foreground/50 dark:border-white/10">
-              <tr>
-                <th className="px-4 py-3 font-medium">Business</th>
-                <th className="px-4 py-3 font-medium">Contact</th>
-                <th className="px-4 py-3 font-medium">Event</th>
-                <th className="px-4 py-3 font-medium">Reason</th>
-                <th className="px-4 py-3 font-medium">Days since return</th>
-                <th className="px-4 py-3 font-medium">Stage</th>
-                <th className="px-4 py-3 font-medium">Free recovery</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black/5 dark:divide-white/5">
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-4 py-3">{item.businessName}</td>
-                  <td className="px-4 py-3">{item.recipientName}</td>
-                  <td className="px-4 py-3">
-                    {item.occasionType ? OCCASION_LABELS[item.occasionType] ?? item.occasionType : "—"}
-                  </td>
-                  <td className="px-4 py-3">{REASON_LABELS[item.reason] ?? item.reason}</td>
-                  <td className="px-4 py-3">{item.daysSinceReturn}</td>
-                  <td className="px-4 py-3">{stageLabel(item)}</td>
-                  <td className="px-4 py-3">{item.freeRecoveryUsed ? "Used" : "Available"}</td>
+        <>
+          {/* Table on ≥sm; a stacked-card list replaces it on phones. */}
+          <div className="hidden overflow-x-auto rounded-xl border border-black/10 sm:block dark:border-white/10">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="border-b border-black/10 text-left text-xs uppercase tracking-wide text-foreground/50 dark:border-white/10">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Business</th>
+                  <th className="px-4 py-3 font-medium">Contact</th>
+                  <th className="px-4 py-3 font-medium">Event</th>
+                  <th className="px-4 py-3 font-medium">Reason</th>
+                  <th className="px-4 py-3 font-medium">Days since return</th>
+                  <th className="px-4 py-3 font-medium">Stage</th>
+                  <th className="px-4 py-3 font-medium">Free recovery</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-4 py-3">{item.businessName}</td>
+                    <td className="px-4 py-3">{item.recipientName}</td>
+                    <td className="px-4 py-3">
+                      {item.occasionType ? OCCASION_LABELS[item.occasionType] ?? item.occasionType : "—"}
+                    </td>
+                    <td className="px-4 py-3">{REASON_LABELS[item.reason] ?? item.reason}</td>
+                    <td className="px-4 py-3">{item.daysSinceReturn}</td>
+                    <td className="px-4 py-3">{stageLabel(item)}</td>
+                    <td className="px-4 py-3">{item.freeRecoveryUsed ? "Used" : "Available"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:hidden">
+            {items.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-xl border border-black/10 p-4 dark:border-white/10"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">{item.recipientName}</p>
+                    <p className="truncate text-xs text-foreground/60">{item.businessName}</p>
+                  </div>
+                  <span className="shrink-0 text-xs text-foreground/60">{stageLabel(item)}</span>
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                  <div>
+                    <dt className="text-[11px] uppercase tracking-wide text-foreground/50">Event</dt>
+                    <dd>
+                      {item.occasionType
+                        ? OCCASION_LABELS[item.occasionType] ?? item.occasionType
+                        : "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] uppercase tracking-wide text-foreground/50">Reason</dt>
+                    <dd>{REASON_LABELS[item.reason] ?? item.reason}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] uppercase tracking-wide text-foreground/50">
+                      Days since return
+                    </dt>
+                    <dd>{item.daysSinceReturn}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] uppercase tracking-wide text-foreground/50">
+                      Free recovery
+                    </dt>
+                    <dd>{item.freeRecoveryUsed ? "Used" : "Available"}</dd>
+                  </div>
+                </dl>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
