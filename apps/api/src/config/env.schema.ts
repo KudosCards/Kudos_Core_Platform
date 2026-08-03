@@ -142,6 +142,11 @@ export const envSchema = z.object({
   // The Shipping API base URL. Defaults to the live host; point at the sandbox
   // for test-mode verification before go-live.
   ROYAL_MAIL_API_BASE_URL: z.string().url().default("https://api.parcel.royalmail.com"),
+  // Royal Mail Shipping API service codes per postage class. Account-specific, so
+  // overridable without a redeploy; the defaults in royal-mail-client.ts apply
+  // when unset and MUST be confirmed against the live account (see ADR 0072/0096).
+  ROYAL_MAIL_SERVICE_CODE_FIRST: z.string().min(1).optional(),
+  ROYAL_MAIL_SERVICE_CODE_SECOND: z.string().min(1).optional(),
 
   // Royal Mail Click & Drop *Orders API* — a different product from the Shipping
   // API above. This IMPORTS each paid card as an order into the operator's Click

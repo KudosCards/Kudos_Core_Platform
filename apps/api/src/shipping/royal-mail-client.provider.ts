@@ -6,6 +6,7 @@ import {
   HttpRoyalMailClient,
   NoopRoyalMailClient,
   type RoyalMailClient,
+  type RoyalMailServiceCodes,
 } from "./royal-mail-client";
 
 export const ROYAL_MAIL_CLIENT = Symbol("ROYAL_MAIL_CLIENT");
@@ -28,7 +29,11 @@ export const royalMailClientProvider: Provider = {
       return new NoopRoyalMailClient();
     }
     const baseUrl = config.get("ROYAL_MAIL_API_BASE_URL", { infer: true });
-    return new HttpRoyalMailClient(apiKey, baseUrl);
+    const serviceCodes: RoyalMailServiceCodes = {
+      first_class: config.get("ROYAL_MAIL_SERVICE_CODE_FIRST", { infer: true }),
+      second_class: config.get("ROYAL_MAIL_SERVICE_CODE_SECOND", { infer: true }),
+    };
+    return new HttpRoyalMailClient(apiKey, baseUrl, serviceCodes);
   },
   inject: [ConfigService],
 };
