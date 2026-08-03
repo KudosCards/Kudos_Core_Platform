@@ -662,7 +662,9 @@ export function RecipientsClient({
         )}
       </div>
 
-      <div className="card overflow-x-auto">
+      {/* Table on ≥sm; a stacked-card list replaces it on phones (below) so the
+          data never becomes a sideways-scrolling 7-column table. */}
+      <div className="card hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[820px] text-left text-sm">
           <thead>
             <tr className="border-b border-border">
@@ -778,6 +780,110 @@ export function RecipientsClient({
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile stacked-card list (below sm). Same data as the table above, but
+          each recipient is a self-contained card so phones never sideways-scroll
+          a 7-column table. Touch targets (select, edit, archive) are ≥44px. */}
+      <div className="flex flex-col gap-3 sm:hidden">
+        {recipients.length === 0 ? (
+          <p className="card px-4 py-6 text-sm text-muted">
+            {archivedView
+              ? "No archived recipients."
+              : activeList
+                ? "No recipients on this list yet."
+                : "No recipients yet."}
+          </p>
+        ) : (
+          recipients.map((recipient) => {
+            const fromIntegration =
+              recipient.source !== "manual" && recipient.source !== "csv";
+            return (
+              <div key={recipient.id} className="card flex flex-col gap-3 p-4">
+                <div className="flex items-start gap-3">
+                  <label className="flex min-h-11 min-w-11 items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(recipient.id)}
+                      onChange={() => toggleSelect(recipient.id)}
+                      aria-label={`Select ${recipient.firstName} ${recipient.lastName}`}
+                    />
+                  </label>
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      href={`/recipients/${recipient.id}`}
+                      className="font-medium hover:text-accent hover:underline"
+                    >
+                      {recipient.firstName} {recipient.lastName}
+                    </Link>
+                    {recipient.addressVerificationRequired && (
+                      <span
+                        title="A card was returned — address needs updating"
+                        className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 align-middle"
+                      >
+                        ⚠️ Address returned
+                      </span>
+                    )}
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className={`pill ${fromIntegration ? "pill-accent" : "pill-muted"}`}>
+                        {sourceLabel(recipient.source)}
+                      </span>
+                      <span className="pill pill-muted capitalize">{recipient.status}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                  <div className="flex flex-col">
+                    <dt className="section-label">Date of birth</dt>
+                    <dd className="text-muted">
+                      {recipient.dateOfBirth
+                        ? new Date(recipient.dateOfBirth).toLocaleDateString("en-GB")
+                        : "—"}
+                    </dd>
+                  </div>
+                  <div className="flex flex-col">
+                    <dt className="section-label">Postcode</dt>
+                    <dd className="text-muted">
+                      {isMailable(recipient) ? (
+                        recipient.addressPostcode
+                      ) : (
+                        <Link
+                          href={`/recipients/${recipient.id}`}
+                          title="No mailable address — add one before sending a card"
+                          className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
+                        >
+                          ⚠️ Needs address
+                        </Link>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="flex items-center gap-2 border-t border-border pt-3 text-sm">
+                  <Link
+                    href={`/recipients/${recipient.id}`}
+                    className="inline-flex min-h-11 flex-1 items-center justify-center rounded-md border border-border px-3 hover:bg-foreground/[0.03]"
+                  >
+                    Edit
+                  </Link>
+                  <button
+                    type="button"
+                    disabled={rowBusyId === recipient.id}
+                    onClick={() => void toggleArchive(recipient)}
+                    className="inline-flex min-h-11 flex-1 items-center justify-center rounded-md border border-border px-3 hover:bg-foreground/[0.03] disabled:opacity-40"
+                  >
+                    {rowBusyId === recipient.id
+                      ? "…"
+                      : recipient.status === "archived"
+                        ? "Restore"
+                        : "Archive"}
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {total > PER_PAGE && (

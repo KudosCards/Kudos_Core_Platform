@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -18,6 +18,14 @@ export const metadata: Metadata = {
   // Favicons come from the file-based convention (app/favicon.ico, app/icon.png,
   // app/apple-icon.png) — the Kudos Cards megaphone mark. A manual `icons` field
   // here would override those, so it's intentionally omitted.
+};
+
+// Explicit mobile viewport. `initialScale: 1` fits to device width, and we
+// deliberately leave pinch-zoom enabled (no maximumScale/userScalable cap) so
+// the app stays accessible to low-vision users.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
