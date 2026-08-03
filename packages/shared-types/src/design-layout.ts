@@ -67,6 +67,79 @@ export function normaliseRotation(degrees: number): number {
   return normalised === 0 ? 0 : normalised;
 }
 
+/** Distance (design units) within which a dragged edge/centre snaps to a guide. */
+export const SNAP_THRESHOLD = 6;
+
+/** A single alignment guide line the editor draws while dragging. `axis: "x"` is
+ * a vertical line at that x; `axis: "y"` is a horizontal line at that y. */
+export interface SnapLine {
+  axis: "x" | "y";
+  position: number;
+}
+
+export interface SnapResult {
+  /** The box's snapped top-left origin (unchanged on an axis that didn't snap). */
+  x: number;
+  y: number;
+  /** The guide lines to draw — at most one per axis. */
+  guides: SnapLine[];
+}
+
+/**
+ * The card's built-in snap lines on each axis: the two edges, the two safe-area
+ * margins, and the centre — so an element clicks to the middle of the card or
+ * flush with the safe frame. Pure.
+ */
+export function cardSnapLines(
+  card: { width: number; height: number } = { width: CARD_WIDTH, height: CARD_HEIGHT },
+  margin: number = CARD_SAFE_MARGIN,
+): { x: number[]; y: number[] } {
+  return {
+    x: [0, margin, card.width / 2, card.width - margin, card.width],
+    y: [0, margin, card.height / 2, card.height - margin, card.height],
+  };
+}
+
+/**
+ * Snap a dragged box to the nearest alignment line on each axis (Moonpig/Figma
+ * style). The box's left / centre / right (x) and top / middle / bottom (y) are
+ * each tested against the candidate lines; the closest match within `threshold`
+ * wins per axis. Returns the adjusted top-left origin plus the guide lines to
+ * draw (at most one per axis). Pure — the canvas measures real boxes and feeds
+ * them in; this is just the maths, so it can be unit-tested without a browser.
+ */
+export function computeSnap(
+  box: { x: number; y: number; width: number; height: number },
+  targets: { x: number[]; y: number[] },
+  threshold: number = SNAP_THRESHOLD,
+): SnapResult {
+  const pick = (anchors: number[], lines: number[]) => {
+    let bestDist = threshold + 1;
+    let delta = 0;
+    let line: number | null = null;
+    for (const anchor of anchors) {
+      for (const candidate of lines) {
+        const dist = Math.abs(anchor - candidate);
+        if (dist <= threshold && dist < bestDist) {
+          bestDist = dist;
+          delta = candidate - anchor;
+          line = candidate;
+        }
+      }
+    }
+    return { delta, line };
+  };
+
+  const sx = pick([box.x, box.x + box.width / 2, box.x + box.width], targets.x);
+  const sy = pick([box.y, box.y + box.height / 2, box.y + box.height], targets.y);
+
+  const guides: SnapLine[] = [];
+  if (sx.line !== null) guides.push({ axis: "x", position: sx.line });
+  if (sy.line !== null) guides.push({ axis: "y", position: sy.line });
+
+  return { x: box.x + sx.delta, y: box.y + sy.delta, guides };
+}
+
 export interface Point {
   x: number;
   y: number;

@@ -2,15 +2,17 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type Konva from "konva";
-import { Stage, Layer, Text, Rect, Image as KonvaImage, Transformer } from "react-konva";
+import { Stage, Layer, Text, Rect, Line, Image as KonvaImage, Transformer } from "react-konva";
 import useImage from "use-image";
-import type { DesignElement, DesignPage } from "@kudos/shared-types";
+import type { DesignElement, DesignPage, SnapLine } from "@kudos/shared-types";
 import {
   bakeScale,
   CARD_HEIGHT,
   CARD_SAFE_MARGIN,
   CARD_WIDTH,
+  cardSnapLines,
   clampElementPosition,
+  computeSnap,
   isOutsideSafeArea,
   MIN_ELEMENT_SIZE,
   MIN_FONT_SIZE,
@@ -32,6 +34,15 @@ const MAX_CANVAS_SCALE = 1.42;
 
 const CORNER_ANCHORS = ["top-left", "top-right", "bottom-left", "bottom-right"];
 
+/** Live drag-snapping wiring shared by every node: `onStart` gathers the snap
+ * targets, `onMove` snaps the node + shows guides, `onEnd` clears the guides.
+ * The node still commits its own x/y in its own `onDragEnd`. */
+interface DragBridge {
+  onStart: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onMove: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onEnd: () => void;
+}
+
 /** Clamp a Konva drag to keep the element on the card. `scale` converts between
  * the on-screen (scaled) coordinates dragBoundFunc works in and the 450×600
  * design space the guard rail is defined in. */
@@ -51,11 +62,13 @@ function makeDragBound(
 function QrNode({
   element,
   scale,
+  drag,
   onSelect,
   onChange,
 }: {
   element: Extract<DesignElement, { kind: "qr" }>;
   scale: number;
+  drag: DragBridge;
   onSelect: () => void;
   onChange: (element: DesignElement) => void;
 }) {
@@ -86,7 +99,12 @@ function QrNode({
       dragBoundFunc={makeDragBound(scale, { width: element.size, height: element.size })}
       onClick={onSelect}
       onTap={onSelect}
-      onDragEnd={(e) => onChange({ ...element, x: e.target.x(), y: e.target.y() })}
+      onDragStart={drag.onStart}
+      onDragMove={drag.onMove}
+      onDragEnd={(e) => {
+        drag.onEnd();
+        onChange({ ...element, x: e.target.x(), y: e.target.y() });
+      }}
       onTransformEnd={(e) => {
         const node = e.target;
         const s = node.scaleX();
@@ -107,11 +125,13 @@ function QrNode({
 function ImageNode({
   element,
   scale,
+  drag,
   onSelect,
   onChange,
 }: {
   element: Extract<DesignElement, { kind: "image" }>;
   scale: number;
+  drag: DragBridge;
   onSelect: () => void;
   onChange: (element: DesignElement) => void;
 }) {
@@ -130,7 +150,12 @@ function ImageNode({
       dragBoundFunc={makeDragBound(scale, { width: element.width, height: element.height })}
       onClick={onSelect}
       onTap={onSelect}
-      onDragEnd={(e) => onChange({ ...element, x: e.target.x(), y: e.target.y() })}
+      onDragStart={drag.onStart}
+      onDragMove={drag.onMove}
+      onDragEnd={(e) => {
+        drag.onEnd();
+        onChange({ ...element, x: e.target.x(), y: e.target.y() });
+      }}
       onTransformEnd={(e) => {
         const node = e.target;
         const scaleX = node.scaleX();
@@ -161,6 +186,7 @@ function TextNode({
   element,
   isSelected,
   scale,
+  drag,
   onSelect,
   onChange,
   onOverflowChange,
@@ -168,6 +194,7 @@ function TextNode({
   element: Extract<DesignElement, { kind: "text" }>;
   isSelected: boolean;
   scale: number;
+  drag: DragBridge;
   onSelect: () => void;
   onChange: (element: DesignElement) => void;
   onOverflowChange: (overflowing: boolean) => void;
@@ -229,7 +256,12 @@ function TextNode({
         dragBoundFunc={makeDragBound(scale, { width, height: height || undefined })}
         onClick={onSelect}
         onTap={onSelect}
-        onDragEnd={(e) => onChange({ ...element, x: e.target.x(), y: e.target.y() })}
+        onDragStart={drag.onStart}
+        onDragMove={drag.onMove}
+        onDragEnd={(e) => {
+          drag.onEnd();
+          onChange({ ...element, x: e.target.x(), y: e.target.y() });
+        }}
         onTransformEnd={(e) => {
           // Uniform scale (the Transformer is keepRatio for text): fold it into
           // the font size + wrap width so the text stays crisp instead of a
@@ -256,8 +288,10 @@ function TextNode({
  * Client-only (dynamically imported with ssr: false — Konva touches the
  * canvas/window APIs and can't render on the server). Direct manipulation: a
  * Konva Transformer gives corner scale handles + a rotate handle on the
- * selected element (Moonpig-style), on top of dragging. Numeric inputs in the
- * side panel remain as an accessible alternative. See ADR 0083.
+ * selected element (Moonpig-style), on top of dragging, and dragging snaps to
+ * alignment guides (card centre / safe margins / other elements — hold Alt to
+ * bypass). Numeric inputs in the side panel remain as an accessible
+ * alternative. See ADR 0083 (handles) and 0084 (snapping).
  */
 export function DesignCanvas({
   page,
@@ -318,6 +352,50 @@ export function DesignCanvas({
   // freely unless the panel's "lock aspect" is on.
   const keepRatio = selected?.kind === "image" ? lockImageAspect : true;
 
+  // Live alignment guides shown while dragging (Moonpig/Figma style). The snap
+  // targets are gathered once at drag start (card lines + the other elements'
+  // edges/centres, measured in real design units) and reused for the drag.
+  const [guides, setGuides] = useState<SnapLine[]>([]);
+  const snapTargetsRef = useRef<{ x: number[]; y: number[] }>({ x: [], y: [] });
+
+  const dragBridge: DragBridge = {
+    onStart: (e) => {
+      const layer = layerRef.current;
+      if (!layer) return;
+      const dragged = e.target;
+      const cardLines = cardSnapLines();
+      const xs = [...cardLines.x];
+      const ys = [...cardLines.y];
+      // Every other element contributes its left/centre/right and top/middle/
+      // bottom as snap lines, so elements align to each other, not just the card.
+      layer.find(".element").forEach((node) => {
+        if (node === dragged) return;
+        const box = node.getClientRect({ relativeTo: layer });
+        xs.push(box.x, box.x + box.width / 2, box.x + box.width);
+        ys.push(box.y, box.y + box.height / 2, box.y + box.height);
+      });
+      snapTargetsRef.current = { x: xs, y: ys };
+    },
+    onMove: (e) => {
+      const layer = layerRef.current;
+      if (!layer) return;
+      const node = e.target;
+      // Hold Alt to drag freely (bypass snapping), like other editors.
+      if (e.evt.altKey) {
+        if (guides.length) setGuides([]);
+        return;
+      }
+      const box = node.getClientRect({ relativeTo: layer });
+      const result = computeSnap(box, snapTargetsRef.current);
+      // Nudge the node by the snap delta (its origin ≈ the box origin when not
+      // rotated; for a rotated box the same delta still pulls it into line).
+      node.x(node.x() + (result.x - box.x));
+      node.y(node.y() + (result.y - box.y));
+      setGuides(result.guides);
+    },
+    onEnd: () => setGuides([]),
+  };
+
   return (
     <div ref={containerRef} className="w-full max-w-[640px] overflow-hidden">
       <Stage
@@ -367,6 +445,7 @@ export function DesignCanvas({
                   element={element}
                   isSelected={isSelected}
                   scale={scale}
+                  drag={dragBridge}
                   onSelect={() => onSelect(element.id)}
                   onChange={onElementChange}
                   onOverflowChange={reportOverflow}
@@ -379,6 +458,7 @@ export function DesignCanvas({
                   key={element.id}
                   element={element}
                   scale={scale}
+                  drag={dragBridge}
                   onSelect={() => onSelect(element.id)}
                   onChange={onElementChange}
                 />
@@ -389,11 +469,33 @@ export function DesignCanvas({
                 key={element.id}
                 element={element}
                 scale={scale}
+                drag={dragBridge}
                 onSelect={() => onSelect(element.id)}
                 onChange={onElementChange}
               />
             );
           })}
+          {/* Alignment guides — thin lines that appear while an element's edge or
+              centre lines up with the card or another element. Non-interactive. */}
+          {guides.map((g) =>
+            g.axis === "x" ? (
+              <Line
+                key={`x-${g.position}`}
+                points={[g.position, 0, g.position, CANVAS_HEIGHT]}
+                stroke="#ec4899"
+                strokeWidth={1}
+                listening={false}
+              />
+            ) : (
+              <Line
+                key={`y-${g.position}`}
+                points={[0, g.position, CANVAS_WIDTH, g.position]}
+                stroke="#ec4899"
+                strokeWidth={1}
+                listening={false}
+              />
+            ),
+          )}
           <Transformer
             ref={trRef}
             rotateEnabled

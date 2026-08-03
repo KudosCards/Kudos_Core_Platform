@@ -962,8 +962,9 @@ export function DesignEditorClient({
               </div>
               {/* Discoverability for the on-canvas handles + shortcuts. */}
               <p className="text-[11px] text-foreground/50">
-                Drag the handles to resize or rotate. Arrow keys nudge · Shift+arrows move further ·
-                ⌘/Ctrl+D duplicates · Delete removes · Esc deselects.
+                Drag the handles to resize or rotate. Dragging snaps to the card centre, safe margins,
+                and other elements — hold Alt to move freely. Arrow keys nudge · Shift+arrows move
+                further · ⌘/Ctrl+D duplicates · Delete removes · Esc deselects.
               </p>
             </div>
           )}
