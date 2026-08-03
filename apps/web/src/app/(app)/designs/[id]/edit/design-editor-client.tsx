@@ -7,11 +7,13 @@ import type {
   DesignPage,
   SavedDesign,
 } from "@kudos/shared-types";
+import type { LayerMove } from "@kudos/shared-types";
 import {
   CARD_WIDTH,
   MERGE_FIELDS,
   findDesignBracketTokenMistakes,
   fixDesignBracketTokens,
+  reorderElement,
 } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -267,6 +269,24 @@ export function DesignEditorClient({
     updateElement({ ...selectedElement, x: selectedElement.x + dx, y: selectedElement.y + dy });
   }
 
+  /** Restack the selected element (the array order is the z-order — later draws
+   * on top), for bring-forward / send-back layer controls. */
+  function reorderSelected(move: LayerMove) {
+    if (!selectedElementId) return;
+    updatePage(activePage, (p) => ({
+      ...p,
+      elements: reorderElement(p.elements, selectedElementId, move),
+    }));
+  }
+
+  /** Whether the selected element is already at the top / bottom of the stack,
+   * so the layer buttons can disable the no-op direction. */
+  const selectedIndex = selectedElementId
+    ? page.elements.findIndex((el) => el.id === selectedElementId)
+    : -1;
+  const isFrontmost = selectedIndex === page.elements.length - 1;
+  const isBackmost = selectedIndex === 0;
+
   // Canvas keyboard shortcuts (Moonpig-style direct editing): Delete/Backspace
   // removes the selected element, Escape deselects, the arrow keys nudge it
   // (Shift = a bigger step), and ⌘/Ctrl+D duplicates it. Ignored while typing in
@@ -284,6 +304,16 @@ export function DesignEditorClient({
         if (!selectedElement) return;
         event.preventDefault();
         duplicateSelected();
+        return;
+      }
+      // Layer order: ⌘/Ctrl+] forward, +[ backward; add Shift for front/back.
+      if ((event.metaKey || event.ctrlKey) && (event.key === "]" || event.key === "[")) {
+        if (!selectedElementId) return;
+        event.preventDefault();
+        const forward = event.key === "]";
+        reorderSelected(
+          event.shiftKey ? (forward ? "front" : "back") : forward ? "forward" : "backward",
+        );
         return;
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -944,6 +974,51 @@ export function DesignEditorClient({
 
           {selectedElement && (
             <div className="mt-2 flex flex-col gap-2">
+              {/* Layer order — the array order is the stacking order (later draws
+                  on top). Disabled at the ends so a no-op reads as unavailable. */}
+              {page.elements.length > 1 && (
+                <div className="flex flex-col gap-1 text-xs text-foreground/60">
+                  Layer
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => reorderSelected("back")}
+                      disabled={isBackmost}
+                      title="Send to back"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                    >
+                      To back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => reorderSelected("backward")}
+                      disabled={isBackmost}
+                      title="Send backward (⌘/Ctrl+[)"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => reorderSelected("forward")}
+                      disabled={isFrontmost}
+                      title="Bring forward (⌘/Ctrl+])"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                    >
+                      Forward
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => reorderSelected("front")}
+                      disabled={isFrontmost}
+                      title="Bring to front"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                    >
+                      To front
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -964,7 +1039,8 @@ export function DesignEditorClient({
               <p className="text-[11px] text-foreground/50">
                 Drag the handles to resize or rotate. Dragging snaps to the card centre, safe margins,
                 and other elements — hold Alt to move freely. Arrow keys nudge · Shift+arrows move
-                further · ⌘/Ctrl+D duplicates · Delete removes · Esc deselects.
+                further · ⌘/Ctrl+D duplicates · ⌘/Ctrl+]/[ change layer order · Delete removes · Esc
+                deselects.
               </p>
             </div>
           )}

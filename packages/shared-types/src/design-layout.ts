@@ -140,6 +140,43 @@ export function computeSnap(
   return { x: box.x + sx.delta, y: box.y + sy.delta, guides };
 }
 
+/** How to restack an element within its page: one step, or all the way. */
+export type LayerMove = "front" | "back" | "forward" | "backward";
+
+/**
+ * Reorder one element within a design page's element array to change its
+ * stacking. The array order *is* the z-order — the canvas and every preview
+ * draw elements in array order, so a later element sits on top. Returns a new
+ * array (the original is untouched); a no-op order when the element is missing
+ * or already at the relevant end. Generic over `{ id }` so it stays decoupled
+ * from the element union and easy to unit-test. Pure.
+ */
+export function reorderElement<T extends { id: string }>(
+  elements: T[],
+  id: string,
+  move: LayerMove,
+): T[] {
+  const index = elements.findIndex((el) => el.id === id);
+  if (index === -1) return elements;
+  const next = [...elements];
+  const [item] = next.splice(index, 1);
+  switch (move) {
+    case "front":
+      next.push(item!);
+      break;
+    case "back":
+      next.unshift(item!);
+      break;
+    case "forward":
+      next.splice(Math.min(index + 1, next.length), 0, item!);
+      break;
+    case "backward":
+      next.splice(Math.max(index - 1, 0), 0, item!);
+      break;
+  }
+  return next;
+}
+
 export interface Point {
   x: number;
   y: number;
