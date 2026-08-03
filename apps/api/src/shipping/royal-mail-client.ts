@@ -57,13 +57,19 @@ export class NoopRoyalMailClient implements RoyalMailClient {
   }
 }
 
-/** Maps our postage class to the RM v4 service code. */
-const SERVICE_CODES: Record<RoyalMailPostageClass, string> = {
-  // Royal Mail Tracked/So services — the exact codes are account-specific and
-  // must be confirmed against the live account before go-live (see ADR 0072).
+/** Default RM v4 service codes per postage class. Account-specific — confirm
+ * against the live account before go-live (see ADR 0072/0096). Overridable via
+ * ROYAL_MAIL_SERVICE_CODE_FIRST/SECOND without a redeploy. */
+const DEFAULT_SERVICE_CODES: Record<RoyalMailPostageClass, string> = {
   first_class: "TPN01",
   second_class: "TPS01",
 };
+
+/** Per-postage-class service-code overrides (from env). */
+export interface RoyalMailServiceCodes {
+  first_class?: string;
+  second_class?: string;
+}
 
 /** A card in a standard envelope: Large Letter weight band, in grams. */
 const CARD_WEIGHT_GRAMS = 100;
@@ -82,7 +88,14 @@ export class HttpRoyalMailClient implements RoyalMailClient {
   constructor(
     private readonly apiKey: string,
     private readonly baseUrl: string,
+    private readonly serviceCodes: RoyalMailServiceCodes = {},
   ) {}
+
+  /** The configured service code for a postage class, falling back to the
+   * account-specific default. */
+  private serviceCodeFor(postageClass: RoyalMailPostageClass): string {
+    return this.serviceCodes[postageClass] ?? DEFAULT_SERVICE_CODES[postageClass];
+  }
 
   async createShipment(input: CreateShipmentInput): Promise<CreateShipmentResult> {
     const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/api/v4/shipments`, {
@@ -94,7 +107,7 @@ export class HttpRoyalMailClient implements RoyalMailClient {
       },
       body: JSON.stringify({
         shipmentType: "Delivery",
-        serviceCode: SERVICE_CODES[input.postageClass],
+        serviceCode: this.serviceCodeFor(input.postageClass),
         shipmentReference: input.orderReference,
         recipientContact: { name: input.recipientName },
         recipientAddress: {

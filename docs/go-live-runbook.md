@@ -143,6 +143,10 @@ returns a clean 409 ("not yet configured") — no crash, just no upgrades.
 | `AIRTABLE_BASE_ID` | the cards base id (`app…`) — step 4b |
 | `AIRTABLE_CARDS_TABLE` | *(optional; defaults to `Card List`)* |
 | `PLATFORM_ADMIN_USER_IDS` | *(optional, step 4)* |
+| `CLICK_AND_DROP_API_KEY` | *(optional, step 4c-i)* Click & Drop API authorization key — enables auto-import of paid cards into the Click & Drop dashboard queue. Unset = off. |
+| `CLICK_AND_DROP_SERVICE_CODE_FIRST` / `_SECOND` | *(optional, step 4c-i)* Click & Drop service codes per postage class; unset = operator picks in the dashboard. |
+| `ROYAL_MAIL_API_KEY` | *(optional, step 4c-ii)* Shipping API v4 key — enables the in-Kudos "Dispatch (Royal Mail)" action. Unset = manual dispatch. |
+| `ROYAL_MAIL_SERVICE_CODE_FIRST` / `_SECOND` | *(optional, step 4c-ii)* Shipping API service-code overrides (defaults `TPN01`/`TPS01`) — confirm against your account. |
 | `SENTRY_DSN` | Sentry project DSN — enables API error monitoring (now wired). Leave unset to disable. |
 
 **Netlify (web) env vars** — same `NEXT_PUBLIC_*` as today, plus optionally:
@@ -208,6 +212,41 @@ the three seeded placeholders.
 If a sync errors, the ops screen shows the real reason (ADR 0011): a **403** means the token needs
 `data.records:read` and the base added under **Access** (the error also lists the base's real table
 names); a **"table not found"** means `AIRTABLE_CARDS_TABLE` is wrong — use the `tbl…` id.
+
+### 4c. Royal Mail dispatch — two independent integrations (ADR 0072/0095/0096)
+
+The platform can hand a paid card to Royal Mail two ways. They're independent — enable either, both,
+or neither. Both are **off until their key is set**, and both make live calls that can only be
+verified after deploy (this sandbox has no Royal Mail egress).
+
+**(i) Click & Drop order import** (ADR 0095) — each paid card auto-appears in your **Click & Drop
+dashboard** queue, where you batch, buy postage, print labels and dispatch as normal. This is the
+"orders show up for us to process" flow.
+
+- Set `CLICK_AND_DROP_API_KEY` in Railway (Settings → Integrations → your "Click & Drop API"
+  integration → the authorization key). Optionally `CLICK_AND_DROP_API_BASE_URL` (defaults to the
+  live host) and `CLICK_AND_DROP_SERVICE_CODE_FIRST` / `_SECOND` (leave unset to pick the service in
+  the dashboard).
+- A background sweep imports every paid card within ~5 minutes (nothing to trigger). The ops
+  `/fulfillment` queue shows **✓ In Click & Drop** per card, or **⚠️ import failed → Retry** with
+  the exact Royal Mail error.
+- **First live check:** run a test order → wait ~5 min → confirm it lands in Click & Drop. If it's
+  rejected, the reason is on the card in the ops queue (and in the Railway log line
+  `Click & Drop import failed for job …`); adjust the payload/service codes to match.
+
+**(ii) Shipping API v4 direct dispatch** (ADR 0072) — an operator clicks **Dispatch (Royal Mail)** on
+a *printed* card in `/fulfillment` and the platform creates the shipment server-side (buys postage,
+stores tracking + label, emails the buyer the tracking link). No Click & Drop dashboard involved.
+
+- Set `ROYAL_MAIL_API_KEY` in Railway. Optionally `ROYAL_MAIL_API_BASE_URL` (defaults to the live
+  host). The service codes default to `TPN01` (1st) / `TPS01` (2nd) and are **account-specific** —
+  override them **without a redeploy** via `ROYAL_MAIL_SERVICE_CODE_FIRST` /
+  `ROYAL_MAIL_SERVICE_CODE_SECOND` once you've confirmed your account's real codes.
+- The "Dispatch (Royal Mail)" action appears only when the key is set (`GET
+  /fulfillment/shipping-status`); until then ops mark cards posted manually.
+- **First live check:** on a printed card, click Dispatch and confirm a shipment is created with a
+  real tracking number + label. A wrong service code is the most likely first failure — the error
+  (status + Royal Mail's message) surfaces to the operator; fix it via the env override above.
 
 ---
 
