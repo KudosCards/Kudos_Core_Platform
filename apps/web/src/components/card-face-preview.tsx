@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type Konva from "konva";
-import { Stage, Layer, Rect, Text, Image as KonvaImage } from "react-konva";
+import { Stage, Layer, Rect, Text, Group, Image as KonvaImage } from "react-konva";
 import useImage from "use-image";
 import type { DesignDocument, DesignElement } from "@kudos/shared-types";
 import {
@@ -15,6 +15,7 @@ import {
 import { FontPreloader, resolveFontFamily } from "@/lib/editor-fonts";
 import { useFontsReady } from "@/lib/use-fonts-ready";
 import { PageBackground } from "@/components/page-background";
+import { ShapePrimitive } from "@/components/card-shape";
 
 // The card canvas is authored at 450×600 (see the editor's design-canvas). This
 // renders the front page read-only at an arbitrary display width, scaling the
@@ -103,6 +104,18 @@ export function CardFacePreview({
             }
             if (element.kind === "image") {
               return <ImageNode key={element.id} element={element} />;
+            }
+            if (element.kind === "shape") {
+              return (
+                <Group
+                  key={element.id}
+                  x={element.x}
+                  y={element.y}
+                  rotation={element.rotation}
+                >
+                  <ShapePrimitive element={element} />
+                </Group>
+              );
             }
             // QR placeholder — the real per-card code is minted at fulfilment; a
             // plain marked square keeps its position visible in previews.

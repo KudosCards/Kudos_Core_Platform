@@ -7,6 +7,7 @@ import type {
   DesignPage,
   PageBackground,
   SavedDesign,
+  ShapeKind,
 } from "@kudos/shared-types";
 import type { LayerMove } from "@kudos/shared-types";
 import {
@@ -111,6 +112,34 @@ function newQrElement(): Extract<DesignElement, { kind: "qr" }> {
   };
 }
 
+/** The shapes offered in the "Add shape" palette, with a glyph for the button. */
+const SHAPE_PALETTE: { shape: ShapeKind; glyph: string; label: string }[] = [
+  { shape: "rect", glyph: "▭", label: "Rectangle" },
+  { shape: "ellipse", glyph: "⬭", label: "Ellipse" },
+  { shape: "triangle", glyph: "△", label: "Triangle" },
+  { shape: "star", glyph: "★", label: "Star" },
+  { shape: "heart", glyph: "♥", label: "Heart" },
+  { shape: "line", glyph: "─", label: "Line" },
+];
+
+function newShapeElement(shape: ShapeKind): Extract<DesignElement, { kind: "shape" }> {
+  const isLine = shape === "line";
+  return {
+    kind: "shape",
+    id: crypto.randomUUID(),
+    shape,
+    x: 40,
+    y: 40,
+    width: 120,
+    height: isLine ? 8 : 120,
+    // A line is stroke-only; the other shapes get a soft default fill.
+    fill: isLine ? undefined : "#93c5fd",
+    stroke: isLine ? "#111111" : undefined,
+    strokeWidth: isLine ? 4 : undefined,
+    rotation: 0,
+  };
+}
+
 export function DesignEditorClient({
   savedDesign,
   returnTo,
@@ -209,6 +238,12 @@ export function DesignEditorClient({
 
   function addQrElement() {
     const element = newQrElement();
+    updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
+    selectElement(element.id);
+  }
+
+  function addShapeElement(shape: ShapeKind) {
+    const element = newShapeElement(shape);
     updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
     selectElement(element.id);
   }
@@ -712,6 +747,23 @@ export function DesignEditorClient({
             />
           </div>
 
+          {/* Shapes palette — native vector shapes, crisp and recolourable. */}
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-1 text-xs text-foreground/60">Shapes</span>
+            {SHAPE_PALETTE.map(({ shape, glyph, label }) => (
+              <button
+                key={shape}
+                type="button"
+                title={`Add ${label.toLowerCase()}`}
+                aria-label={`Add ${label.toLowerCase()}`}
+                onClick={() => addShapeElement(shape)}
+                className="flex size-9 items-center justify-center rounded-md border border-black/15 text-base leading-none hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+              >
+                {glyph}
+              </button>
+            ))}
+          </div>
+
           {assets.length > 0 && (
             <div className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 dark:border-white/10">
               <span className="text-xs font-medium text-foreground/70">
@@ -1145,6 +1197,76 @@ export function DesignEditorClient({
                 Rotate 90°
                 <span className="text-foreground/50">{selectedElement.rotation}°</span>
               </button>
+            </>
+          )}
+
+          {selectedElement?.kind === "shape" && (
+            <>
+              {selectedElement.shape !== "line" && (
+                <label className="flex flex-col gap-1 text-xs text-foreground/60">
+                  Fill
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      aria-label="Fill colour"
+                      value={selectedElement.fill ?? "#93c5fd"}
+                      onChange={(e) => updateElement({ ...selectedElement, fill: e.target.value })}
+                      className="h-8 flex-1 rounded-md border border-black/10 dark:border-white/10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateElement({ ...selectedElement, fill: undefined })}
+                      className="shrink-0 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                    >
+                      None
+                    </button>
+                  </div>
+                </label>
+              )}
+              <label className="flex flex-col gap-1 text-xs text-foreground/60">
+                {selectedElement.shape === "line" ? "Line colour" : "Border colour"}
+                <input
+                  type="color"
+                  aria-label="Stroke colour"
+                  value={selectedElement.stroke ?? "#111111"}
+                  onChange={(e) => updateElement({ ...selectedElement, stroke: e.target.value })}
+                  className="h-8 w-full rounded-md border border-black/10 dark:border-white/10"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-foreground/60">
+                {selectedElement.shape === "line" ? "Thickness" : "Border width"}
+                <input
+                  type="number"
+                  min={0}
+                  max={40}
+                  value={selectedElement.strokeWidth ?? (selectedElement.shape === "line" ? 4 : 0)}
+                  onChange={(e) =>
+                    updateElement({
+                      ...selectedElement,
+                      strokeWidth: Math.max(0, Number(e.target.value) || 0),
+                    })
+                  }
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                />
+              </label>
+              {selectedElement.shape === "rect" && (
+                <label className="flex flex-col gap-1 text-xs text-foreground/60">
+                  Corner radius
+                  <input
+                    type="number"
+                    min={0}
+                    max={120}
+                    value={selectedElement.cornerRadius ?? 0}
+                    onChange={(e) =>
+                      updateElement({
+                        ...selectedElement,
+                        cornerRadius: Math.max(0, Number(e.target.value) || 0),
+                      })
+                    }
+                    className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                  />
+                </label>
+              )}
             </>
           )}
 

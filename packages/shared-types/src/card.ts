@@ -67,8 +67,30 @@ export const designElementSchema = z.discriminatedUnion("kind", [
     size: z.number().positive(),
     rotation: z.number().default(0),
   }),
+  z.object({
+    /**
+     * A native vector shape (drawn with Konva primitives, not an image) — crisp
+     * at any size and recolourable. Additive kind, so existing designs are
+     * unaffected. Positioned by its top-left box (x/y/width/height) like an
+     * image; `fill`/`stroke`/`strokeWidth` style it (a `line` uses stroke only),
+     * `cornerRadius` rounds a `rect`.
+     */
+    kind: z.literal("shape"),
+    id: z.string(),
+    shape: z.enum(["rect", "ellipse", "triangle", "star", "heart", "line"]),
+    x: z.number(),
+    y: z.number(),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    fill: z.string().optional(),
+    stroke: z.string().optional(),
+    strokeWidth: z.number().nonnegative().optional(),
+    cornerRadius: z.number().nonnegative().optional(),
+    rotation: z.number().default(0),
+  }),
 ]);
 export type DesignElement = z.infer<typeof designElementSchema>;
+export type ShapeKind = Extract<DesignElement, { kind: "shape" }>["shape"];
 
 /**
  * A page's background fill, drawn behind its elements. Additive + optional on

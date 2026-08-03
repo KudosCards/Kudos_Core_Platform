@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type Konva from "konva";
-import { Stage, Layer, Text, Rect, Line, Image as KonvaImage, Transformer } from "react-konva";
+import { Stage, Layer, Text, Rect, Line, Group, Image as KonvaImage, Transformer } from "react-konva";
 import useImage from "use-image";
 import type { DesignElement, DesignPage, SnapLine } from "@kudos/shared-types";
 import {
@@ -25,6 +25,7 @@ import { qrDataUrl } from "@/lib/qr";
 import { resolveFontFamily } from "@/lib/editor-fonts";
 import { useFontsReady } from "@/lib/use-fonts-ready";
 import { PageBackground } from "@/components/page-background";
+import { ShapePrimitive } from "@/components/card-shape";
 
 // Kept as named exports for stability; the card geometry itself now lives in
 // shared-types so the editor, previews, and any server render stay in lockstep.
@@ -177,6 +178,62 @@ function ImageNode({
         });
       }}
     />
+  );
+}
+
+/** A native vector shape drawn in a Group at the element's box. The Group is the
+ * draggable / transformable node; a resize bakes into width/height (like an
+ * image), so the shape stays crisp. */
+function ShapeNode({
+  element,
+  scale,
+  drag,
+  onSelect,
+  onChange,
+}: {
+  element: Extract<DesignElement, { kind: "shape" }>;
+  scale: number;
+  drag: DragBridge;
+  onSelect: () => void;
+  onChange: (element: DesignElement) => void;
+}) {
+  return (
+    <Group
+      id={element.id}
+      name="element"
+      x={element.x}
+      y={element.y}
+      width={element.width}
+      height={element.height}
+      rotation={element.rotation}
+      draggable
+      dragBoundFunc={makeDragBound(scale, { width: element.width, height: element.height })}
+      onClick={onSelect}
+      onTap={onSelect}
+      onDragStart={drag.onStart}
+      onDragMove={drag.onMove}
+      onDragEnd={(e) => {
+        drag.onEnd();
+        onChange({ ...element, x: e.target.x(), y: e.target.y() });
+      }}
+      onTransformEnd={(e) => {
+        const node = e.target;
+        const scaleX = node.scaleX();
+        const scaleY = node.scaleY();
+        node.scaleX(1);
+        node.scaleY(1);
+        onChange({
+          ...element,
+          x: node.x(),
+          y: node.y(),
+          width: bakeScale(element.width, scaleX),
+          height: bakeScale(element.height, scaleY),
+          rotation: normaliseRotation(node.rotation()),
+        });
+      }}
+    >
+      <ShapePrimitive element={element} />
+    </Group>
   );
 }
 
@@ -489,6 +546,18 @@ export function DesignCanvas({
             if (element.kind === "qr") {
               return (
                 <QrNode
+                  key={element.id}
+                  element={element}
+                  scale={scale}
+                  drag={dragBridge}
+                  onSelect={() => onSelect(element.id)}
+                  onChange={onElementChange}
+                />
+              );
+            }
+            if (element.kind === "shape") {
+              return (
+                <ShapeNode
                   key={element.id}
                   element={element}
                   scale={scale}
