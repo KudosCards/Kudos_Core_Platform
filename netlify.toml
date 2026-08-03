@@ -5,3 +5,16 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# Force the free *.netlify.app subdomain to the canonical custom domain. Netlify
+# makes the site reachable at both, but the API's CORS allow-list only trusts the
+# custom domain (WEB_APP_URL), so any app loaded from the netlify.app mirror gets
+# its API calls blocked. Setting the primary domain does NOT auto-redirect the
+# netlify.app subdomain, so we do it explicitly. `force = true` makes this win
+# over the Next.js handler. Deploy previews (deploy-preview-*--…) are unaffected.
+# See ADR 0080.
+[[redirects]]
+  from = "https://kudos-cards.netlify.app/*"
+  to = "https://kudos-cards.co.uk/:splat"
+  status = 301
+  force = true
