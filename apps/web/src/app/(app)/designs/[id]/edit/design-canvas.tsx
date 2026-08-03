@@ -445,9 +445,11 @@ export function DesignCanvas({
   }, [fontsTick]);
 
   const selected = page.elements.find((el) => el.id === selectedElementId) ?? null;
-  // Text + QR scale uniformly (font/box together, square QR); an image resizes
-  // freely unless the panel's "lock aspect" is on.
-  const keepRatio = selected?.kind === "image" ? lockImageAspect : true;
+  // Text + QR scale uniformly (font/box together, square QR). A shape resizes
+  // freely, so a rectangle/ellipse/line can be stretched into any proportion. An
+  // image resizes freely too unless the panel's "lock aspect" is on.
+  const keepRatio =
+    selected?.kind === "image" ? lockImageAspect : selected?.kind === "shape" ? false : true;
 
   // Live alignment guides shown while dragging (Moonpig/Figma style). The snap
   // targets are gathered once at drag start (card lines + the other elements'

@@ -1255,7 +1255,15 @@ export function DesignEditorClient({
                   type="color"
                   aria-label="Stroke colour"
                   value={selectedElement.stroke ?? "#111111"}
-                  onChange={(e) => updateElement({ ...selectedElement, stroke: e.target.value })}
+                  onChange={(e) =>
+                    updateElement({
+                      ...selectedElement,
+                      stroke: e.target.value,
+                      // Give a border an actual width the first time a colour is
+                      // picked, so it shows immediately (and the width field agrees).
+                      strokeWidth: selectedElement.strokeWidth ?? 2,
+                    })
+                  }
                   className="h-8 w-full rounded-md border border-black/10 dark:border-white/10"
                 />
               </label>

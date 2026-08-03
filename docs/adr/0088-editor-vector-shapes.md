@@ -53,3 +53,18 @@ Add a new `shape` element kind rendered with native Konva primitives.
   defines how a shape looks — no parity drift.
 - Next: **image stickers** (a curated set of self-hosted SVG graphics placed as
   image elements), then canvas zoom.
+
+## Follow-up (post-review refinements)
+
+A consolidated review of the editor PRs flagged two shape refinements, fixed
+together:
+
+- **Free resize.** Shapes were resizing with `keepRatio` (corner-only,
+  proportional), so a rectangle/ellipse couldn't be stretched into a banner or
+  oval. Shapes now resize freely (like an image with aspect-lock off); the
+  existing scale-bake already handles independent `scaleX`/`scaleY`.
+- **Deterministic stroke width.** A shape with a border colour but no explicit
+  width rendered Konva's implicit 2px while the panel showed 0. The renderer now
+  pins `strokeWidth` to the stored value (0 when unset), and picking a border
+  colour defaults the width to 2 — so the border shows immediately and the panel
+  agrees.

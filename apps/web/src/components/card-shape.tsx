@@ -21,7 +21,10 @@ export function ShapePrimitive({
   element: Extract<DesignElement, { kind: "shape" }>;
 }) {
   const { width: w, height: h, fill, stroke, strokeWidth, cornerRadius, shape } = element;
-  const style = { fill, stroke, strokeWidth };
+  // Pin strokeWidth to the stored value (0 when unset) so the render matches the
+  // panel exactly, instead of falling back to Konva's implicit 2px default when a
+  // stroke colour is present without a width.
+  const style = { fill, stroke, strokeWidth: strokeWidth ?? 0 };
 
   let node: React.ReactNode = null;
   switch (shape) {
