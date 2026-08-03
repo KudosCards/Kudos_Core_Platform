@@ -795,7 +795,16 @@ export function RecipientsClient({
                 : "No recipients yet."}
           </p>
         ) : (
-          recipients.map((recipient) => {
+          <>
+            {/* Mobile counterpart to the table's header select-all checkbox. */}
+            <button
+              type="button"
+              onClick={toggleSelectAll}
+              className="inline-flex min-h-11 items-center self-start text-sm font-medium text-accent"
+            >
+              {allOnPageSelected ? "Clear selection" : "Select all on this page"}
+            </button>
+            {recipients.map((recipient) => {
             const fromIntegration =
               recipient.source !== "manual" && recipient.source !== "csv";
             return (
@@ -882,7 +891,8 @@ export function RecipientsClient({
                 </div>
               </div>
             );
-          })
+            })}
+          </>
         )}
       </div>
 

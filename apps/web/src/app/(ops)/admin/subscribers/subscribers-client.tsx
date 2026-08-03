@@ -227,6 +227,14 @@ export function AdminSubscribersClient({
           </div>
 
           <div className="flex flex-col gap-3 sm:hidden">
+            {/* Mobile counterpart to the table's header select-all checkbox. */}
+            <button
+              type="button"
+              onClick={toggleAll}
+              className="inline-flex min-h-11 items-center self-start text-sm font-medium text-accent"
+            >
+              {allSelected ? "Clear selection" : "Select all"}
+            </button>
             {filtered.map((row) => (
               <div key={row.id} className="rounded-xl border border-border p-4">
                 <div className="flex items-start gap-3">
@@ -257,7 +265,7 @@ export function AdminSubscribersClient({
                     </div>
                   </div>
                 </div>
-                <dl className="mt-3 grid grid-cols-4 gap-2 text-center">
+                <dl className="mt-3 grid grid-cols-2 gap-2 text-center min-[380px]:grid-cols-4">
                   <div>
                     <dt className="text-[11px] text-muted">Contacts</dt>
                     <dd className="text-sm tabular-nums">{row.recipientCount}</dd>
