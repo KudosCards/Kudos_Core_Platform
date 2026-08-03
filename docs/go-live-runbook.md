@@ -136,7 +136,9 @@ returns a clean 409 ("not yet configured") — no crash, just no upgrades.
 | `STRIPE_WEBHOOK_SECRET` | signing secret from 2b |
 | `STRIPE_PRICE_ID_PRO` | Pro plan's Stripe `price_...` id (test-mode first) — read by the seed, step 2a |
 | `STRIPE_PRICE_ID_CENTRE` | Centre plan's Stripe `price_...` id (test-mode first) — read by the seed, step 2a |
-| `WEB_APP_URL` | the live web app origin — the **custom domain** (e.g. `https://kudos-cards.co.uk`), used for CORS, Stripe redirects, and the auth-email links |
+| `WEB_APP_URL` | the live web app origin — the **custom domain** (e.g. `https://kudos-cards.co.uk`), used for CORS, Stripe redirects, and the auth-email links. **Must be a valid `http(s)://` URL** — a scheme typo now fails the boot loudly (ADR 0081) |
+| `CORS_ALLOWED_ORIGINS` | *(optional)* comma-separated extra browser origins allowed to call the API beyond `WEB_APP_URL` (e.g. `https://www.kudos-cards.co.uk`). The allow-list is `[WEB_APP_URL, …these]`, so one wrong value can't lock the whole app out (ADR 0081) |
+| `CORS_ALLOWED_ORIGIN_SUFFIXES` | *(optional)* comma-separated origin suffixes to allow, for dynamic hosts like Netlify deploy previews (e.g. `--kudos-cards.netlify.app`) |
 | `AIRTABLE_API_KEY` | read-only Airtable PAT (`data.records:read` on the cards base) — step 4b |
 | `AIRTABLE_BASE_ID` | the cards base id (`app…`) — step 4b |
 | `AIRTABLE_CARDS_TABLE` | *(optional; defaults to `Card List`)* |
