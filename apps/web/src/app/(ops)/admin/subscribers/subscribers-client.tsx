@@ -157,10 +157,15 @@ export function AdminSubscribersClient({
         </select>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-border">
-        {filtered.length === 0 ? (
-          <p className="p-6 text-sm text-muted">No accounts match your filters.</p>
-        ) : (
+      {filtered.length === 0 ? (
+        <p className="rounded-xl border border-border p-6 text-sm text-muted">
+          No accounts match your filters.
+        </p>
+      ) : (
+        <>
+          {/* Table on ≥sm; a stacked-card list replaces it on phones so this wide
+              9-column row never becomes a sideways-scrolling wall. */}
+          <div className="hidden overflow-x-auto rounded-xl border border-border sm:block">
           <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs tracking-wide text-muted uppercase">
@@ -219,8 +224,64 @@ export function AdminSubscribersClient({
               ))}
             </tbody>
           </table>
-        )}
-      </div>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:hidden">
+            {filtered.map((row) => (
+              <div key={row.id} className="rounded-xl border border-border p-4">
+                <div className="flex items-start gap-3">
+                  <label className="flex min-h-11 min-w-11 items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(row.id)}
+                      onChange={() => toggle(row.id)}
+                      aria-label={`Select ${row.name}`}
+                    />
+                  </label>
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/admin/subscribers/${row.id}`} className="group flex flex-col">
+                      <span className="font-medium group-hover:text-accent">{row.name}</span>
+                      <span className="text-xs text-muted capitalize">{row.type}</span>
+                    </Link>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                      <span>{planLabel(row.plan)}</span>
+                      {row.health !== "none" && (
+                        <span
+                          className={`inline-block rounded-full px-2 py-0.5 font-medium ${HEALTH_CLASSES[row.health]}`}
+                        >
+                          {HEALTH_LABELS[row.health]}
+                        </span>
+                      )}
+                      <span aria-hidden>·</span>
+                      <span>Joined {formatOrderDate(row.createdAt)}</span>
+                    </div>
+                  </div>
+                </div>
+                <dl className="mt-3 grid grid-cols-4 gap-2 text-center">
+                  <div>
+                    <dt className="text-[11px] text-muted">Contacts</dt>
+                    <dd className="text-sm tabular-nums">{row.recipientCount}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] text-muted">Orders</dt>
+                    <dd className="text-sm tabular-nums">{row.orderCount}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] text-muted">Cards</dt>
+                    <dd className="text-sm tabular-nums">{row.cardsSent}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] text-muted">Spent</dt>
+                    <dd className="text-sm font-semibold tabular-nums">
+                      {formatGbp(row.totalSpentMinor)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

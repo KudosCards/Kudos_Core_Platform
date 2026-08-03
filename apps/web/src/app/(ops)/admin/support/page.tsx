@@ -73,61 +73,106 @@ export default async function AdminSupportPage({
           Nothing here.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/10">
-          <table className="w-full min-w-[820px] text-sm">
-            <thead className="border-b border-black/10 text-left text-xs uppercase tracking-wide text-foreground/50 dark:border-white/10">
-              <tr>
-                <th className="px-4 py-3 font-medium">Ref</th>
-                <th className="px-4 py-3 font-medium">Business</th>
-                <th className="px-4 py-3 font-medium">Subject</th>
-                <th className="px-4 py-3 font-medium">Category</th>
-                <th className="px-4 py-3 font-medium">Priority</th>
-                <th className="px-4 py-3 font-medium">Last activity</th>
-                <th className="px-4 py-3 font-medium">Assignee</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black/5 dark:divide-white/5">
-              {items.map((t) => (
-                <tr key={t.id} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
-                  <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">
-                    <Link href={`/admin/support/${t.id}`} className="hover:underline">
-                      {ticketRef(t.ticketNumber)}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">{t.businessName}</td>
-                  <td className="px-4 py-3">
-                    <Link href={`/admin/support/${t.id}`} className="font-medium hover:underline">
-                      {t.subject}
-                    </Link>
-                    {t.lastMessageFrom === "customer" && t.status !== "closed" && (
-                      <span className="ml-2 inline-block size-2 rounded-full bg-accent align-middle" />
-                    )}
-                  </td>
-                  <td className="px-4 py-3">{SUPPORT_CATEGORY_LABELS[t.category]}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${SUPPORT_PRIORITY_CLASSES[t.priority]}`}
-                    >
-                      {SUPPORT_PRIORITY_LABELS[t.priority]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-foreground/70">
-                    {formatSupportDate(t.lastMessageAt)}
-                  </td>
-                  <td className="px-4 py-3 text-foreground/70">{t.assignee ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${SUPPORT_STATUS_CLASSES[t.status]}`}
-                    >
-                      {SUPPORT_STATUS_LABELS_OPS[t.status]}
-                    </span>
-                  </td>
+        <>
+          {/* Table on ≥sm; a stacked-card list replaces it on phones. */}
+          <div className="hidden overflow-x-auto rounded-xl border border-black/10 sm:block dark:border-white/10">
+            <table className="w-full min-w-[820px] text-sm">
+              <thead className="border-b border-black/10 text-left text-xs uppercase tracking-wide text-foreground/50 dark:border-white/10">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Ref</th>
+                  <th className="px-4 py-3 font-medium">Business</th>
+                  <th className="px-4 py-3 font-medium">Subject</th>
+                  <th className="px-4 py-3 font-medium">Category</th>
+                  <th className="px-4 py-3 font-medium">Priority</th>
+                  <th className="px-4 py-3 font-medium">Last activity</th>
+                  <th className="px-4 py-3 font-medium">Assignee</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                {items.map((t) => (
+                  <tr key={t.id} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
+                    <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">
+                      <Link href={`/admin/support/${t.id}`} className="hover:underline">
+                        {ticketRef(t.ticketNumber)}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">{t.businessName}</td>
+                    <td className="px-4 py-3">
+                      <Link href={`/admin/support/${t.id}`} className="font-medium hover:underline">
+                        {t.subject}
+                      </Link>
+                      {t.lastMessageFrom === "customer" && t.status !== "closed" && (
+                        <span className="ml-2 inline-block size-2 rounded-full bg-accent align-middle" />
+                      )}
+                    </td>
+                    <td className="px-4 py-3">{SUPPORT_CATEGORY_LABELS[t.category]}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${SUPPORT_PRIORITY_CLASSES[t.priority]}`}
+                      >
+                        {SUPPORT_PRIORITY_LABELS[t.priority]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-foreground/70">
+                      {formatSupportDate(t.lastMessageAt)}
+                    </td>
+                    <td className="px-4 py-3 text-foreground/70">{t.assignee ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${SUPPORT_STATUS_CLASSES[t.status]}`}
+                      >
+                        {SUPPORT_STATUS_LABELS_OPS[t.status]}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:hidden">
+            {items.map((t) => (
+              <Link
+                key={t.id}
+                href={`/admin/support/${t.id}`}
+                className="block rounded-xl border border-black/10 p-4 hover:bg-black/[0.02] dark:border-white/10 dark:hover:bg-white/[0.03]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {t.subject}
+                      {t.lastMessageFrom === "customer" && t.status !== "closed" && (
+                        <span className="ml-2 inline-block size-2 rounded-full bg-accent align-middle" />
+                      )}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-foreground/60">
+                      <span className="font-mono">{ticketRef(t.ticketNumber)}</span> ·{" "}
+                      {t.businessName}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${SUPPORT_STATUS_CLASSES[t.status]}`}
+                  >
+                    {SUPPORT_STATUS_LABELS_OPS[t.status]}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/70">
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${SUPPORT_PRIORITY_CLASSES[t.priority]}`}
+                  >
+                    {SUPPORT_PRIORITY_LABELS[t.priority]}
+                  </span>
+                  <span>{SUPPORT_CATEGORY_LABELS[t.category]}</span>
+                  <span aria-hidden>·</span>
+                  <span>{formatSupportDate(t.lastMessageAt)}</span>
+                  <span aria-hidden>·</span>
+                  <span>{t.assignee ?? "Unassigned"}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
