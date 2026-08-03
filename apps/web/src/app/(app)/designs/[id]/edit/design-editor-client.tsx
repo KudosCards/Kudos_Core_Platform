@@ -250,6 +250,72 @@ export function DesignEditorClient({
     selectElement(null);
   }
 
+  /** Duplicate the selected element in place (offset slightly so both are
+   * visible) and select the copy — the ⌘/Ctrl+D shortcut and a quick way to
+   * repeat a laid-out element without redoing it. */
+  function duplicateSelected() {
+    if (!selectedElement) return;
+    const copy = { ...selectedElement, id: crypto.randomUUID(), x: selectedElement.x + 16, y: selectedElement.y + 16 };
+    updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, copy] }));
+    selectElement(copy.id);
+  }
+
+  /** Move the selected element by (dx, dy) design units, keeping it on the card
+   * — the arrow-key nudge for pixel-precise placement. */
+  function nudgeSelected(dx: number, dy: number) {
+    if (!selectedElement) return;
+    updateElement({ ...selectedElement, x: selectedElement.x + dx, y: selectedElement.y + dy });
+  }
+
+  // Canvas keyboard shortcuts (Moonpig-style direct editing): Delete/Backspace
+  // removes the selected element, Escape deselects, the arrow keys nudge it
+  // (Shift = a bigger step), and ⌘/Ctrl+D duplicates it. Ignored while typing in
+  // a field so they never hijack normal text entry.
+  useEffect(() => {
+    function isEditableTarget(target: EventTarget | null): boolean {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (isEditableTarget(event.target)) return;
+      if ((event.metaKey || event.ctrlKey) && (event.key === "d" || event.key === "D")) {
+        if (!selectedElement) return;
+        event.preventDefault();
+        duplicateSelected();
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (!selectedElementId) return;
+        event.preventDefault();
+        deleteSelected();
+        return;
+      }
+      if (event.key === "Escape") {
+        if (!selectedElementId) return;
+        selectElement(null);
+        return;
+      }
+      const step = event.shiftKey ? 10 : 1;
+      const nudges: Record<string, [number, number]> = {
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step],
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+      };
+      const delta = nudges[event.key];
+      if (delta && selectedElement) {
+        event.preventDefault();
+        nudgeSelected(delta[0], delta[1]);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedElementId, selectedElement, activePage]);
+
   /** Place an image element on the active page, sized to preserve its aspect
    * ratio (natural dimensions when known, else a square fallback). Shared by a
    * fresh upload and the "Your uploads" library picker. */
@@ -601,6 +667,7 @@ export function DesignEditorClient({
           <DesignCanvas
             page={page}
             selectedElementId={selectedElementId}
+            lockImageAspect={lockImageAspect}
             onSelect={selectElement}
             onElementChange={updateElement}
             onDeselect={() => selectElement(null)}
@@ -876,13 +943,29 @@ export function DesignEditorClient({
           )}
 
           {selectedElement && (
-            <button
-              type="button"
-              onClick={deleteSelected}
-              className="mt-2 rounded-full border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
-            >
-              Delete
-            </button>
+            <div className="mt-2 flex flex-col gap-2">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={duplicateSelected}
+                  className="flex-1 rounded-full border border-black/15 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                >
+                  Duplicate
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteSelected}
+                  className="flex-1 rounded-full border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+                >
+                  Delete
+                </button>
+              </div>
+              {/* Discoverability for the on-canvas handles + shortcuts. */}
+              <p className="text-[11px] text-foreground/50">
+                Drag the handles to resize or rotate. Arrow keys nudge · Shift+arrows move further ·
+                ⌘/Ctrl+D duplicates · Delete removes · Esc deselects.
+              </p>
+            </div>
           )}
         </aside>
       </div>

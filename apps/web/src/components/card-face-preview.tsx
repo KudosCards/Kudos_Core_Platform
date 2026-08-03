@@ -66,6 +66,7 @@ export function CardFacePreview({
                 fontFamily={element.fontFamily}
                 fontSize={element.fontSize}
                 fill={element.color}
+                rotation={element.rotation}
               />
             );
           }
@@ -81,6 +82,7 @@ export function CardFacePreview({
               y={element.y}
               width={element.size}
               height={element.size}
+              rotation={element.rotation}
               fill="#0000000d"
               stroke="#00000026"
               strokeWidth={1}

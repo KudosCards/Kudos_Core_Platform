@@ -1,9 +1,14 @@
 import {
+  bakeScale,
   CARD_HEIGHT,
   CARD_SAFE_MARGIN,
   CARD_WIDTH,
   clampElementPosition,
+  designElementSchema,
   isOutsideSafeArea,
+  MIN_ELEMENT_SIZE,
+  MIN_FONT_SIZE,
+  normaliseRotation,
   textWrapWidth,
 } from "@kudos/shared-types";
 
@@ -70,6 +75,68 @@ describe("design layout guard rails", () => {
 
     it("never returns a width below the minimum, even near the right edge", () => {
       expect(textWrapWidth({ x: CARD_WIDTH })).toBe(40);
+    });
+  });
+
+  describe("bakeScale", () => {
+    it("folds a scale factor into a dimension and rounds", () => {
+      // A 100px box dragged to 1.5× → 150.
+      expect(bakeScale(100, 1.5)).toBe(150);
+      // Rounds to the nearest whole design unit.
+      expect(bakeScale(20, 1.234)).toBe(25);
+    });
+
+    it("floors at the default minimum so a handle-drag can't shrink to nothing", () => {
+      expect(bakeScale(20, 0.01)).toBe(MIN_ELEMENT_SIZE);
+    });
+
+    it("honours a custom minimum (e.g. font size)", () => {
+      expect(bakeScale(10, 0.1, MIN_FONT_SIZE)).toBe(MIN_FONT_SIZE);
+      // Above the floor it scales normally.
+      expect(bakeScale(20, 0.5, MIN_FONT_SIZE)).toBe(10);
+    });
+  });
+
+  describe("normaliseRotation", () => {
+    it("leaves an in-range angle unchanged", () => {
+      expect(normaliseRotation(0)).toBe(0);
+      expect(normaliseRotation(45)).toBe(45);
+      expect(normaliseRotation(359)).toBe(359);
+    });
+
+    it("wraps angles at or beyond a full turn back into [0, 360)", () => {
+      expect(normaliseRotation(360)).toBe(0);
+      expect(normaliseRotation(450)).toBe(90);
+    });
+
+    it("wraps negative angles up into range", () => {
+      expect(normaliseRotation(-90)).toBe(270);
+      expect(normaliseRotation(-360)).toBe(0);
+    });
+  });
+
+  describe("designElementSchema text rotation (additive/optional)", () => {
+    const baseText = {
+      kind: "text" as const,
+      id: "t1",
+      text: "Hi",
+      x: 10,
+      y: 10,
+      fontFamily: "Helvetica",
+      fontSize: 20,
+      color: "#111111",
+    };
+
+    it("accepts a text element without a rotation (existing designs unchanged)", () => {
+      const parsed = designElementSchema.parse(baseText);
+      expect(parsed.kind).toBe("text");
+      // Optional, so it stays undefined rather than being forced to a default.
+      expect((parsed as { rotation?: number }).rotation).toBeUndefined();
+    });
+
+    it("accepts a text element with a rotation", () => {
+      const parsed = designElementSchema.parse({ ...baseText, rotation: 15 });
+      expect((parsed as { rotation?: number }).rotation).toBe(15);
     });
   });
 });

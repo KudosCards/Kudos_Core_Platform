@@ -2,15 +2,19 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type Konva from "konva";
-import { Stage, Layer, Text, Rect, Image as KonvaImage } from "react-konva";
+import { Stage, Layer, Text, Rect, Image as KonvaImage, Transformer } from "react-konva";
 import useImage from "use-image";
 import type { DesignElement, DesignPage } from "@kudos/shared-types";
 import {
+  bakeScale,
   CARD_HEIGHT,
   CARD_SAFE_MARGIN,
   CARD_WIDTH,
   clampElementPosition,
   isOutsideSafeArea,
+  MIN_ELEMENT_SIZE,
+  MIN_FONT_SIZE,
+  normaliseRotation,
   textWrapWidth,
 } from "@kudos/shared-types";
 import { qrDataUrl } from "@/lib/qr";
@@ -25,6 +29,8 @@ export const CANVAS_HEIGHT = CARD_HEIGHT;
 // at any scale). Capped so the card never dominates the viewport; the container
 // max-width below is kept in step (450 × 1.42 ≈ 640px). See #12 (widescreen).
 const MAX_CANVAS_SCALE = 1.42;
+
+const CORNER_ANCHORS = ["top-left", "top-right", "bottom-left", "bottom-right"];
 
 /** Clamp a Konva drag to keep the element on the card. `scale` converts between
  * the on-screen (scaled) coordinates dragBoundFunc works in and the 450×600
@@ -44,16 +50,14 @@ function makeDragBound(
  * what it will look like and where it sits. */
 function QrNode({
   element,
-  isSelected,
   scale,
   onSelect,
-  onDragEnd,
+  onChange,
 }: {
   element: Extract<DesignElement, { kind: "qr" }>;
-  isSelected: boolean;
   scale: number;
   onSelect: () => void;
-  onDragEnd: (x: number, y: number) => void;
+  onChange: (element: DesignElement) => void;
 }) {
   const [dataUrl, setDataUrl] = useState<string>("");
   useEffect(() => {
@@ -70,6 +74,8 @@ function QrNode({
   const [image] = useImage(dataUrl);
   return (
     <KonvaImage
+      id={element.id}
+      name="element"
       image={image}
       x={element.x}
       y={element.y}
@@ -78,31 +84,42 @@ function QrNode({
       rotation={element.rotation}
       draggable
       dragBoundFunc={makeDragBound(scale, { width: element.size, height: element.size })}
-      stroke={isSelected ? "#2563eb" : "#00000022"}
-      strokeWidth={isSelected ? 2 : 1}
       onClick={onSelect}
       onTap={onSelect}
-      onDragEnd={(e) => onDragEnd(e.target.x(), e.target.y())}
+      onDragEnd={(e) => onChange({ ...element, x: e.target.x(), y: e.target.y() })}
+      onTransformEnd={(e) => {
+        const node = e.target;
+        const s = node.scaleX();
+        node.scaleX(1);
+        node.scaleY(1);
+        onChange({
+          ...element,
+          x: node.x(),
+          y: node.y(),
+          size: bakeScale(element.size, s),
+          rotation: normaliseRotation(node.rotation()),
+        });
+      }}
     />
   );
 }
 
 function ImageNode({
   element,
-  isSelected,
   scale,
   onSelect,
-  onDragEnd,
+  onChange,
 }: {
   element: Extract<DesignElement, { kind: "image" }>;
-  isSelected: boolean;
   scale: number;
   onSelect: () => void;
-  onDragEnd: (x: number, y: number) => void;
+  onChange: (element: DesignElement) => void;
 }) {
   const [image] = useImage(element.assetUrl, "anonymous");
   return (
     <KonvaImage
+      id={element.id}
+      name="element"
       image={image}
       x={element.x}
       y={element.y}
@@ -111,35 +128,48 @@ function ImageNode({
       rotation={element.rotation}
       draggable
       dragBoundFunc={makeDragBound(scale, { width: element.width, height: element.height })}
-      stroke={isSelected ? "#2563eb" : undefined}
-      strokeWidth={isSelected ? 2 : 0}
       onClick={onSelect}
       onTap={onSelect}
-      onDragEnd={(e) => onDragEnd(e.target.x(), e.target.y())}
+      onDragEnd={(e) => onChange({ ...element, x: e.target.x(), y: e.target.y() })}
+      onTransformEnd={(e) => {
+        const node = e.target;
+        const scaleX = node.scaleX();
+        const scaleY = node.scaleY();
+        node.scaleX(1);
+        node.scaleY(1);
+        onChange({
+          ...element,
+          x: node.x(),
+          y: node.y(),
+          width: bakeScale(element.width, scaleX),
+          height: bakeScale(element.height, scaleY),
+          rotation: normaliseRotation(node.rotation()),
+        });
+      }}
     />
   );
 }
 
 /**
  * A text element plus its guard rails: it word-wraps within its box (an
- * explicit `width`, or the card edge), and while selected shows a dashed
- * bounding box that turns red — and reports overflow up — when the text strays
- * outside the printer safe area. The box height is measured from the rendered
- * Konva node after layout.
+ * explicit `width`, or the card edge), and while selected reports overflow up —
+ * showing a red dashed box — when the text strays outside the printer safe
+ * area. Resizing via the Transformer scales the font + box together
+ * (`keepRatio`), and rotation is honoured.
  */
 function TextNode({
   element,
   isSelected,
   scale,
   onSelect,
-  onDragEnd,
+  onChange,
   onOverflowChange,
 }: {
   element: Extract<DesignElement, { kind: "text" }>;
   isSelected: boolean;
   scale: number;
   onSelect: () => void;
-  onDragEnd: (x: number, y: number) => void;
+  onChange: (element: DesignElement) => void;
   onOverflowChange: (overflowing: boolean) => void;
 }) {
   const textRef = useRef<Konva.Text>(null);
@@ -163,23 +193,29 @@ function TextNode({
 
   return (
     <>
-      {isSelected && height > 0 && (
+      {/* Only draw a box for the overflow warning now — the Transformer shows
+          the selection outline + handles, so a second blue box is redundant. */}
+      {isSelected && overflowing && height > 0 && (
         <Rect
           x={element.x}
           y={element.y}
           width={width}
           height={height}
+          rotation={element.rotation}
           listening={false}
-          stroke={overflowing ? "#dc2626" : "#2563eb"}
+          stroke="#dc2626"
           strokeWidth={1}
           dash={[6, 4]}
         />
       )}
       <Text
+        id={element.id}
+        name="element"
         ref={textRef}
         text={element.text}
         x={element.x}
         y={element.y}
+        rotation={element.rotation}
         // Bound the text to its box so multi-line / pasted text WORD-WRAPS
         // instead of running off the edge. Explicit "\n" breaks are honoured.
         width={width}
@@ -191,11 +227,26 @@ function TextNode({
         fill={element.color}
         draggable
         dragBoundFunc={makeDragBound(scale, { width, height: height || undefined })}
-        stroke={isSelected ? "#2563eb" : undefined}
-        strokeWidth={isSelected ? 0.5 : 0}
         onClick={onSelect}
         onTap={onSelect}
-        onDragEnd={(e) => onDragEnd(e.target.x(), e.target.y())}
+        onDragEnd={(e) => onChange({ ...element, x: e.target.x(), y: e.target.y() })}
+        onTransformEnd={(e) => {
+          // Uniform scale (the Transformer is keepRatio for text): fold it into
+          // the font size + wrap width so the text stays crisp instead of a
+          // stretched bitmap, and reset the node scale to 1.
+          const node = e.target;
+          const s = node.scaleX();
+          node.scaleX(1);
+          node.scaleY(1);
+          onChange({
+            ...element,
+            x: node.x(),
+            y: node.y(),
+            fontSize: bakeScale(element.fontSize, s, MIN_FONT_SIZE),
+            width: bakeScale(element.width ?? width, s, 40),
+            rotation: normaliseRotation(node.rotation()),
+          });
+        }}
       />
     </>
   );
@@ -203,15 +254,15 @@ function TextNode({
 
 /**
  * Client-only (dynamically imported with ssr: false — Konva touches the
- * canvas/window APIs and can't render on the server). No resize/rotate
- * handles (a Konva Transformer) in this pass — width/height/rotation are
- * edited via the side panel's numeric inputs instead. See
- * docs/adr/0006-phase-2-scope.md for the Konva-vs-Fabric tradeoff this
- * follows from.
+ * canvas/window APIs and can't render on the server). Direct manipulation: a
+ * Konva Transformer gives corner scale handles + a rotate handle on the
+ * selected element (Moonpig-style), on top of dragging. Numeric inputs in the
+ * side panel remain as an accessible alternative. See ADR 0083.
  */
 export function DesignCanvas({
   page,
   selectedElementId,
+  lockImageAspect,
   onSelect,
   onElementChange,
   onDeselect,
@@ -219,6 +270,8 @@ export function DesignCanvas({
 }: {
   page: DesignPage;
   selectedElementId: string | null;
+  /** Whether image resize keeps the photo's aspect ratio (mirrors the panel). */
+  lockImageAspect: boolean;
   onSelect: (id: string) => void;
   onElementChange: (element: DesignElement) => void;
   onDeselect: () => void;
@@ -246,6 +299,25 @@ export function DesignCanvas({
 
   const reportOverflow = onSelectedOverflowChange ?? (() => {});
 
+  // Attach the Transformer to whichever node is selected. Re-run when the
+  // selection changes or the elements change (e.g. after undo/redo), so it
+  // never points at a stale or removed node.
+  const layerRef = useRef<Konva.Layer>(null);
+  const trRef = useRef<Konva.Transformer>(null);
+  useEffect(() => {
+    const tr = trRef.current;
+    const layer = layerRef.current;
+    if (!tr || !layer) return;
+    const node = selectedElementId ? layer.findOne(`#${selectedElementId}`) : null;
+    tr.nodes(node ? [node] : []);
+    tr.getLayer()?.batchDraw();
+  }, [selectedElementId, page.elements]);
+
+  const selected = page.elements.find((el) => el.id === selectedElementId) ?? null;
+  // Text + QR scale uniformly (font/box together, square QR); an image resizes
+  // freely unless the panel's "lock aspect" is on.
+  const keepRatio = selected?.kind === "image" ? lockImageAspect : true;
+
   return (
     <div ref={containerRef} className="w-full max-w-[640px] overflow-hidden">
       <Stage
@@ -262,7 +334,7 @@ export function DesignCanvas({
         // element dragging) instead of the browser scrolling/zooming the page.
         className="touch-none rounded-md border border-black/10 bg-white dark:border-white/10"
       >
-        <Layer>
+        <Layer ref={layerRef}>
           <Rect
             x={0}
             y={0}
@@ -296,7 +368,7 @@ export function DesignCanvas({
                   isSelected={isSelected}
                   scale={scale}
                   onSelect={() => onSelect(element.id)}
-                  onDragEnd={(x, y) => onElementChange({ ...element, x, y })}
+                  onChange={onElementChange}
                   onOverflowChange={reportOverflow}
                 />
               );
@@ -306,10 +378,9 @@ export function DesignCanvas({
                 <QrNode
                   key={element.id}
                   element={element}
-                  isSelected={isSelected}
                   scale={scale}
                   onSelect={() => onSelect(element.id)}
-                  onDragEnd={(x, y) => onElementChange({ ...element, x, y })}
+                  onChange={onElementChange}
                 />
               );
             }
@@ -317,13 +388,30 @@ export function DesignCanvas({
               <ImageNode
                 key={element.id}
                 element={element}
-                isSelected={isSelected}
                 scale={scale}
                 onSelect={() => onSelect(element.id)}
-                onDragEnd={(x, y) => onElementChange({ ...element, x, y })}
+                onChange={onElementChange}
               />
             );
           })}
+          <Transformer
+            ref={trRef}
+            rotateEnabled
+            keepRatio={keepRatio}
+            enabledAnchors={keepRatio ? CORNER_ANCHORS : undefined}
+            anchorStroke="#2563eb"
+            anchorFill="#ffffff"
+            borderStroke="#2563eb"
+            anchorCornerRadius={6}
+            anchorSize={10}
+            rotationSnaps={[0, 90, 180, 270]}
+            // Don't let a resize collapse an element to nothing.
+            boundBoxFunc={(oldBox, newBox) => {
+              const min = MIN_ELEMENT_SIZE * scale;
+              if (newBox.width < min || newBox.height < min) return oldBox;
+              return newBox;
+            }}
+          />
         </Layer>
       </Stage>
     </div>
