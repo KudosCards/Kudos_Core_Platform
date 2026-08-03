@@ -11,6 +11,7 @@ import {
   MIN_ELEMENT_SIZE,
   MIN_FONT_SIZE,
   normaliseRotation,
+  reorderElement,
   SNAP_THRESHOLD,
   textWrapWidth,
 } from "@kudos/shared-types";
@@ -197,6 +198,47 @@ describe("design layout guard rails", () => {
       const result = computeSnap(box, { x: [100], y: [] });
       expect(result.x).toBe(box.x);
       expect(result.guides).toEqual([]);
+    });
+  });
+
+  describe("reorderElement", () => {
+    const ids = (els: { id: string }[]) => els.map((e) => e.id);
+    const list = () => [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+
+    it("brings an element one step forward (toward the top of the stack)", () => {
+      expect(ids(reorderElement(list(), "b", "forward"))).toEqual(["a", "c", "b", "d"]);
+    });
+
+    it("sends an element one step backward", () => {
+      expect(ids(reorderElement(list(), "c", "backward"))).toEqual(["a", "c", "b", "d"]);
+    });
+
+    it("brings an element to the very front (end of the array)", () => {
+      expect(ids(reorderElement(list(), "b", "front"))).toEqual(["a", "c", "d", "b"]);
+    });
+
+    it("sends an element to the very back (start of the array)", () => {
+      expect(ids(reorderElement(list(), "c", "back"))).toEqual(["c", "a", "b", "d"]);
+    });
+
+    it("is a no-op moving the top element further forward", () => {
+      expect(ids(reorderElement(list(), "d", "forward"))).toEqual(["a", "b", "c", "d"]);
+    });
+
+    it("is a no-op moving the bottom element further back", () => {
+      expect(ids(reorderElement(list(), "a", "backward"))).toEqual(["a", "b", "c", "d"]);
+    });
+
+    it("returns the original array untouched when the id is missing", () => {
+      const original = list();
+      const result = reorderElement(original, "zzz", "front");
+      expect(result).toBe(original);
+    });
+
+    it("does not mutate the input array", () => {
+      const original = list();
+      reorderElement(original, "a", "front");
+      expect(ids(original)).toEqual(["a", "b", "c", "d"]);
     });
   });
 });
