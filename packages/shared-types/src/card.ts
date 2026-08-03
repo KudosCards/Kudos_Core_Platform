@@ -26,6 +26,12 @@ export const designElementSchema = z.discriminatedUnion("kind", [
     width: z.number().positive().optional(),
     /** Horizontal alignment within the text box. Defaults to left. */
     align: z.enum(["left", "center", "right"]).optional(),
+    /**
+     * Rotation in degrees, clockwise. Additive + optional so existing designs
+     * (which have no rotation) render unchanged; the canvas Transformer's rotate
+     * handle and the read-only previews both honour it. Defaults to 0.
+     */
+    rotation: z.number().optional(),
   }),
   z.object({
     kind: z.literal("image"),

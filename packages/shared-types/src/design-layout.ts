@@ -44,6 +44,29 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Smallest side (design units) any resizable element may be scaled down to, so
+ * a handle-drag can't shrink something to nothing. */
+export const MIN_ELEMENT_SIZE = 12;
+/** Smallest font size (design units) a text element may be scaled down to. */
+export const MIN_FONT_SIZE = 6;
+
+/**
+ * Fold a Konva Transformer scale factor into a real dimension and reset the node
+ * scale to 1, so element geometry always stays in plain design units (never a
+ * lingering scaleX/scaleY). Rounded, and floored at `min`. Pure.
+ */
+export function bakeScale(value: number, scale: number, min: number = MIN_ELEMENT_SIZE): number {
+  return Math.max(min, Math.round(value * scale));
+}
+
+/** Normalise a rotation to [0, 360) degrees. Pure. */
+export function normaliseRotation(degrees: number): number {
+  const r = degrees % 360;
+  const normalised = r < 0 ? r + 360 : r;
+  // Collapse a signed -0 (e.g. -360 % 360) to a plain 0.
+  return normalised === 0 ? 0 : normalised;
+}
+
 export interface Point {
   x: number;
   y: number;
