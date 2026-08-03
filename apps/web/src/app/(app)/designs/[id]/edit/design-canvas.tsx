@@ -24,6 +24,7 @@ import {
 import { qrDataUrl } from "@/lib/qr";
 import { resolveFontFamily } from "@/lib/editor-fonts";
 import { useFontsReady } from "@/lib/use-fonts-ready";
+import { PageBackground } from "@/components/page-background";
 
 // Kept as named exports for stability; the card geometry itself now lives in
 // shared-types so the editor, previews, and any server render stay in lockstep.
@@ -453,6 +454,9 @@ export function DesignCanvas({
             onMouseDown={onDeselect}
             onTap={onDeselect}
           />
+          {/* The page's own background (colour / image) over the white base;
+              non-interactive, so a click still deselects via the base Rect. */}
+          <PageBackground background={page.background} />
           {/* Printer safe-area guide: keep content inside this dashed frame so
               nothing important is lost to bleed/trim. Non-interactive. */}
           <Rect

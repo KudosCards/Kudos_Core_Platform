@@ -14,6 +14,7 @@ import {
 } from "@kudos/shared-types";
 import { FontPreloader, resolveFontFamily } from "@/lib/editor-fonts";
 import { useFontsReady } from "@/lib/use-fonts-ready";
+import { PageBackground } from "@/components/page-background";
 
 // The card canvas is authored at 450×600 (see the editor's design-canvas). This
 // renders the front page read-only at an arbitrary display width, scaling the
@@ -78,6 +79,7 @@ export function CardFacePreview({
       >
         <Layer listening={false}>
           <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#ffffff" />
+          <PageBackground background={front?.background} />
           {elements.map((element) => {
             if (element.kind === "text") {
               return (

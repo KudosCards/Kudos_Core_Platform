@@ -177,6 +177,38 @@ export function reorderElement<T extends { id: string }>(
   return next;
 }
 
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The centre-crop rectangle (in the source image's own pixels) that makes an
+ * image *cover* a target box without distortion — the CSS `object-fit: cover`
+ * rule. Used for a page's background image, which fills the whole face. Returns
+ * a zero rect for a degenerate (zero-sized) input. Pure.
+ */
+export function coverCrop(
+  natural: { width: number; height: number },
+  box: { width: number; height: number },
+): Rect {
+  if (natural.width <= 0 || natural.height <= 0 || box.width <= 0 || box.height <= 0) {
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
+  const boxRatio = box.width / box.height;
+  const imgRatio = natural.width / natural.height;
+  if (imgRatio > boxRatio) {
+    // Image is wider than the box → crop the sides.
+    const width = natural.height * boxRatio;
+    return { x: (natural.width - width) / 2, y: 0, width, height: natural.height };
+  }
+  // Image is taller (or equal) → crop top and bottom.
+  const height = natural.width / boxRatio;
+  return { x: 0, y: (natural.height - height) / 2, width: natural.width, height };
+}
+
 export interface Point {
   x: number;
   y: number;

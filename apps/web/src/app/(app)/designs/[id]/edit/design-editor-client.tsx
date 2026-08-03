@@ -5,6 +5,7 @@ import type {
   DesignDocument,
   DesignElement,
   DesignPage,
+  PageBackground,
   SavedDesign,
 } from "@kudos/shared-types";
 import type { LayerMove } from "@kudos/shared-types";
@@ -127,6 +128,9 @@ export function DesignEditorClient({
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // Separate flag for a page-background image upload (distinct from an element
+  // image upload above), so only the relevant button shows "Uploading…".
+  const [bgUploading, setBgUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   // When on (the default), resizing an image keeps its aspect ratio so it can't
@@ -153,6 +157,7 @@ export function DesignEditorClient({
   // area — reported up from the canvas, which measures the rendered text.
   const [selectedOverflow, setSelectedOverflow] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bgFileInputRef = useRef<HTMLInputElement>(null);
   // The text-element editor's textarea, so "Insert merge field" can drop a token
   // at the caret. `pendingCaret` holds where to place the caret after the
   // controlled re-render that follows an insertion.
@@ -294,6 +299,69 @@ export function DesignEditorClient({
     : -1;
   const isFrontmost = selectedIndex === page.elements.length - 1;
   const isBackmost = selectedIndex === 0;
+
+  /** Set (or clear) the active page's background fill. */
+  function setPageBackground(background: PageBackground | undefined) {
+    updatePage(activePage, (p) => ({ ...p, background }));
+  }
+
+  /** Switch the active page's background between none / colour / image. Picking
+   * "image" opens the file picker; the background is set once the upload lands. */
+  function selectBackgroundType(type: "none" | "color" | "image") {
+    if (type === "none") {
+      setPageBackground(undefined);
+    } else if (type === "color") {
+      // Keep an existing colour; otherwise start from a soft neutral so the
+      // change is visible immediately (they can then pick any colour).
+      setPageBackground(
+        page.background?.type === "color" ? page.background : { type: "color", color: "#e5e7eb" },
+      );
+    } else {
+      bgFileInputRef.current?.click();
+    }
+  }
+
+  /** Upload an image and set it as the active page's background. Reuses the same
+   * signed-upload flow as element images and records it in the uploads library. */
+  async function handleBackgroundUpload(file: File) {
+    setError(null);
+    setBgUploading(true);
+    try {
+      const signed = await clientApiFetch<SignedUpload>("/uploads/design-assets", {
+        method: "POST",
+        body: JSON.stringify({ fileName: file.name, contentType: file.type }),
+      });
+      const supabase = createClient();
+      const { error: uploadError } = await supabase.storage
+        .from("design-assets")
+        .uploadToSignedUrl(signed.path, signed.token, file);
+      if (uploadError) throw new Error(uploadError.message);
+
+      setPageBackground({ type: "image", assetUrl: signed.publicUrl });
+
+      // Record it in the reusable-uploads library too (non-fatal on failure).
+      try {
+        const naturalSize = await readImageSize(file);
+        const asset = await clientApiFetch<DesignAsset>("/design-assets", {
+          method: "POST",
+          body: JSON.stringify({
+            url: signed.publicUrl,
+            fileName: file.name,
+            width: naturalSize.width,
+            height: naturalSize.height,
+          }),
+        });
+        setAssets((current) => [asset, ...current]);
+      } catch {
+        /* library is best-effort */
+      }
+    } catch (uploadCatchError) {
+      setError(uploadCatchError instanceof Error ? uploadCatchError.message : "Upload failed");
+    } finally {
+      setBgUploading(false);
+      if (bgFileInputRef.current) bgFileInputRef.current.value = "";
+    }
+  }
 
   // Canvas keyboard shortcuts (Moonpig-style direct editing): Delete/Backspace
   // removes the selected element, Escape deselects, the arrow keys nudge it
@@ -716,6 +784,68 @@ export function DesignEditorClient({
         </div>
 
         <aside className="flex w-full flex-col gap-3 rounded-lg border border-black/10 p-4 sm:w-64 lg:sticky lg:top-4 lg:w-72 lg:self-start dark:border-white/10">
+          {/* Page-level background (applies to the active face), independent of
+              any element selection. */}
+          <div className="flex flex-col gap-2 border-b border-black/10 pb-3 dark:border-white/10">
+            <span className="text-sm font-semibold">Background — {activePage}</span>
+            <div className="flex gap-1">
+              {(
+                [
+                  { type: "none", label: "None" },
+                  { type: "color", label: "Colour" },
+                  { type: "image", label: "Image" },
+                ] as const
+              ).map(({ type, label }) => {
+                const active = (page.background?.type ?? "none") === type;
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    aria-pressed={active}
+                    disabled={type === "image" && bgUploading}
+                    onClick={() => selectBackgroundType(type)}
+                    className={`flex-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50 ${
+                      active
+                        ? "border-accent bg-accent/10 font-semibold text-foreground"
+                        : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                    }`}
+                  >
+                    {type === "image" && bgUploading ? "Uploading…" : label}
+                  </button>
+                );
+              })}
+            </div>
+            {page.background?.type === "color" && (
+              <input
+                type="color"
+                aria-label="Background colour"
+                value={page.background.color}
+                onChange={(e) => setPageBackground({ type: "color", color: e.target.value })}
+                className="h-8 w-full rounded-md border border-black/10 dark:border-white/10"
+              />
+            )}
+            {page.background?.type === "image" && (
+              <button
+                type="button"
+                disabled={bgUploading}
+                onClick={() => bgFileInputRef.current?.click()}
+                className="rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5"
+              >
+                Replace background image
+              </button>
+            )}
+            <input
+              ref={bgFileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleBackgroundUpload(file);
+              }}
+            />
+          </div>
+
           <h2 className="text-sm font-semibold">
             {selectedElement ? "Selected element" : "Nothing selected"}
           </h2>
