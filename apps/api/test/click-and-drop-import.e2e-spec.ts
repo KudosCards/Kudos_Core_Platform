@@ -164,8 +164,16 @@ describe("Click & Drop import (e2e)", () => {
     const first = await service.sweep();
     expect(first.imported).toBeGreaterThanOrEqual(1);
 
-    const call = (createOrder.mock.calls as ClickAndDropOrderInput[][]).find((c) =>
-      c[0]!.orderReference.startsWith("ORD-"),
+    // The sweep is global, so it may also import paid jobs left by earlier
+    // suites in the shared test DB — scope the assertion to THIS job via its
+    // stored order id rather than the first "ORD-" call the mock happened to see.
+    const stored = await prisma.fulfillmentJob.findUniqueOrThrow({ where: { id: jobId } });
+    expect(stored.clickAndDropError).toBeNull();
+    expect(stored.clickAndDropOrderId).toMatch(/^cnd_ORD-\d+-[0-9a-f]{8}$/);
+
+    const orderReference = stored.clickAndDropOrderId!.slice("cnd_".length);
+    const call = (createOrder.mock.calls as ClickAndDropOrderInput[][]).find(
+      (c) => c[0]!.orderReference === orderReference,
     )![0]!;
     expect(call).toMatchObject({
       recipientName: "Ada Lovelace",
@@ -174,11 +182,6 @@ describe("Click & Drop import (e2e)", () => {
       postcode: "SW1A 1AA",
       postageClass: "first_class",
     });
-    expect(call.orderReference).toMatch(/^ORD-\d+-[0-9a-f]{8}$/);
-
-    const stored = await prisma.fulfillmentJob.findUniqueOrThrow({ where: { id: jobId } });
-    expect(stored.clickAndDropOrderId).toBe(`cnd_${call.orderReference}`);
-    expect(stored.clickAndDropError).toBeNull();
 
     // A second sweep must not re-import an already-imported card.
     createOrder.mockClear();
