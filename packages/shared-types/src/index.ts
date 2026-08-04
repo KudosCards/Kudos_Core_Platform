@@ -7,6 +7,7 @@ export * from "./csv-import";
 export * from "./occasion";
 export * from "./event";
 export * from "./pricing";
+export * from "./plans";
 export * from "./card";
 export * from "./design-layout";
 export * from "./design-fonts";

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useSyncExternalStore, type FormEvent } from "react";
+import { planDisplayName } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { clearPendingPlan, readPendingPlan, type PaidPlan } from "@/lib/pending-plan";
@@ -19,8 +20,6 @@ function usePendingPlan(): PaidPlan | null {
     () => null,
   );
 }
-
-const PLAN_LABEL: Record<PaidPlan, string> = { pro: "Pro", centre: "Centre" };
 
 /** A numbered step shell — coral when active/done, muted when still to-do. */
 function Step({
@@ -170,13 +169,13 @@ export function GetStartedClient({
       {plan && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent-soft/40 p-4">
           <div>
-            <p className="font-semibold">Activate your {PLAN_LABEL[plan]} plan</p>
+            <p className="font-semibold">Activate your {planDisplayName(plan)} plan</p>
             <p className="text-sm text-muted">
               Unlock more contacts, auto-send and a discount on every card. You can do this any time.
             </p>
           </div>
           <button type="button" onClick={() => void activatePlan()} disabled={activating} className="btn-accent">
-            {activating ? "Redirecting…" : `Activate ${PLAN_LABEL[plan]}`}
+            {activating ? "Redirecting…" : `Activate ${planDisplayName(plan)}`}
           </button>
         </div>
       )}

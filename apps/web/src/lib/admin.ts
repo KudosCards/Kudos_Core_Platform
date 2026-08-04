@@ -1,15 +1,14 @@
-import type { BatchOrderStatus } from "@kudos/shared-types";
+import { PLAN_CATALOG, planDisplayName, type BatchOrderStatus } from "@kudos/shared-types";
 
-/** Marketing plan labels shown in the admin (display only — the underlying plan
- * ids and Stripe products are unchanged: free / pro / centre). */
-export const PLAN_LABELS: Record<string, string> = {
-  free: "Free",
-  pro: "Starter",
-  centre: "Growth",
-};
+/** Plan labels shown in the admin. Sourced from the shared PLAN_CATALOG so the
+ * ops views name plans exactly as the customer-facing site does (Free / Pro /
+ * Centre) — one source of truth, no drift. */
+export const PLAN_LABELS: Record<string, string> = Object.fromEntries(
+  PLAN_CATALOG.map((plan) => [plan.id, plan.name]),
+);
 
 export function planLabel(planId: string): string {
-  return PLAN_LABELS[planId] ?? planId.charAt(0).toUpperCase() + planId.slice(1);
+  return planDisplayName(planId);
 }
 
 export type AccountHealth = "active" | "at_risk" | "churned" | "none";

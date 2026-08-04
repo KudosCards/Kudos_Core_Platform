@@ -2,32 +2,14 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import {
+  PLAN_CATALOG,
+  formatPlanPrice,
+  planCardPriceLabel,
+  type PaidPlanId,
+} from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
-
-interface PlanOption {
-  planId: "free" | "pro" | "centre";
-  name: string;
-  priceLabel: string;
-  description: string;
-}
-
-/** Real, confirmed pricing — see docs/adr/0008-checkout-pricing.md. */
-const PLANS: PlanOption[] = [
-  { planId: "free", name: "Starter", priceLabel: "£0/mo", description: "Get started for free." },
-  {
-    planId: "pro",
-    name: "Pro",
-    priceLabel: "£9.97/mo",
-    description: "More recipients, auto-send, a discount per card.",
-  },
-  {
-    planId: "centre",
-    name: "Centre",
-    priceLabel: "£19.97/mo",
-    description: "Unlimited recipients and the best per-card rate.",
-  },
-];
 
 export function BillingClient({
   currentPlanId,
@@ -78,7 +60,7 @@ export function BillingClient({
     }
   }
 
-  async function upgrade(planId: "pro" | "centre") {
+  async function upgrade(planId: PaidPlanId) {
     setError(null);
     setPendingPlan(planId);
     try {
@@ -123,35 +105,63 @@ export function BillingClient({
         </Link>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        {PLANS.map((plan) => {
-          const isCurrent = plan.planId === currentPlanId;
+      <div className="grid items-start gap-4 sm:grid-cols-3">
+        {PLAN_CATALOG.map((plan) => {
+          const isCurrent = plan.id === currentPlanId;
           return (
             <div
-              key={plan.planId}
+              key={plan.id}
               className={`flex flex-col gap-3 rounded-xl border p-5 ${
-                isCurrent ? "border-accent bg-accent-soft/40" : "border-border bg-surface"
+                isCurrent
+                  ? "border-accent bg-accent-soft/40"
+                  : plan.highlight
+                    ? "border-accent/40 bg-surface"
+                    : "border-border bg-surface"
               }`}
             >
-              <div>
-                <p className="font-semibold">{plan.name}</p>
-                <p className="text-2xl font-bold tracking-tight">{plan.priceLabel}</p>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold">{plan.name}</p>
+                  <p className="text-xs text-muted">{plan.tagline}</p>
+                </div>
+                {plan.highlight && !isCurrent && (
+                  <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent">
+                    Most popular
+                  </span>
+                )}
               </div>
-              <p className="flex-1 text-sm text-muted">{plan.description}</p>
+              <p>
+                <span className="text-2xl font-bold tracking-tight">
+                  {formatPlanPrice(plan.monthlyPriceMinor)}
+                </span>
+                <span className="text-sm text-muted">/mo</span>
+              </p>
+              <p className="text-sm font-medium text-emerald-600">{planCardPriceLabel(plan)}</p>
+              <ul className="flex flex-1 flex-col gap-1.5 text-sm text-muted">
+                {plan.inherits && <li className="font-medium text-foreground/70">{plan.inherits}</li>}
+                {plan.features.map((feature) => (
+                  <li key={feature} className="flex items-start gap-2">
+                    <span className="mt-0.5 text-emerald-500">✓</span>
+                    {feature}
+                  </li>
+                ))}
+              </ul>
               {isCurrent ? (
                 <span className="rounded-lg bg-surface px-4 py-1.5 text-center text-sm font-semibold text-accent">
                   Current plan
                 </span>
-              ) : plan.planId === "free" ? (
-                <span className="text-center text-sm text-muted">—</span>
+              ) : plan.id === "free" ? (
+                <span className="rounded-lg px-4 py-1.5 text-center text-sm text-muted">
+                  Downgrade in the billing portal
+                </span>
               ) : (
                 <button
                   type="button"
-                  disabled={pendingPlan === plan.planId}
-                  onClick={() => void upgrade(plan.planId as "pro" | "centre")}
+                  disabled={pendingPlan === plan.id}
+                  onClick={() => void upgrade(plan.id as PaidPlanId)}
                   className="btn-accent"
                 >
-                  {pendingPlan === plan.planId ? "Redirecting…" : `Switch to ${plan.name}`}
+                  {pendingPlan === plan.id ? "Redirecting…" : `Switch to ${plan.name}`}
                 </button>
               )}
             </div>

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import type { Account, NavBadges } from "@kudos/shared-types";
+import { planDisplayName, type Account, type NavBadges } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { cachedServerApiFetch, serverApiFetch } from "@/lib/api.server";
 import { formatGbp } from "@/lib/orders";
@@ -30,9 +30,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
     redirect("/login");
   }
   const account = accountResult;
-  const planLabel = account.planId
-    ? `${account.planId.charAt(0).toUpperCase()}${account.planId.slice(1)} plan`
-    : "No plan";
+  const planLabel = account.planId ? `${planDisplayName(account.planId)} plan` : "No plan";
 
   return (
     <AppShell
