@@ -169,6 +169,37 @@ describe("Segments (e2e)", () => {
     expect(result.total).toBe(2);
     expect(result.members).toHaveLength(2);
     expect(result.capped).toBe(false);
+    // Occasion-mode: each member carries their matched birthday for reconciliation.
+    expect(result.reconciliations).toHaveLength(2);
+    const memberIds = new Set(result.members.map((m) => m.id));
+    for (const r of result.reconciliations) {
+      expect(memberIds.has(r.recipientId)).toBe(true);
+      expect(r.occasionType).toBe("birthday");
+    }
+  });
+
+  it("returns no reconciliations for a contact-mode segment", async () => {
+    const token = await signUp();
+    await addMailable(token, { dateOfBirth: birthdayTodayDob() });
+
+    const created = (
+      await request(app.getHttpServer())
+        .post("/segments")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: "Everyone", definition: { contact: { status: "active" } } })
+        .expect(201)
+    ).body as SegmentSummary;
+
+    const members = segmentMembersSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .get(`/segments/members?segment=${created.id}`)
+          .set("Authorization", `Bearer ${token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(members.members.length).toBeGreaterThanOrEqual(1);
+    expect(members.reconciliations).toHaveLength(0);
   });
 
   it("resolves a saved segment's members by id", async () => {

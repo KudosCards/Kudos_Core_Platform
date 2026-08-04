@@ -81,6 +81,20 @@ export const segmentsOverviewSchema = z.object({
 export type SegmentsOverview = z.infer<typeof segmentsOverviewSchema>;
 
 /**
+ * The natural occasion a segment matched for one member — carried so a "send to
+ * segment" can consume it (mark it handled) and avoid a double-send. Only present
+ * for occasion-mode segments. See docs/adr/0107-occasion-reconciliation.md.
+ */
+export const segmentReconciliationSchema = z.object({
+  recipientId: z.string().uuid(),
+  /** The matched sendable occasion (soonest, per member). */
+  occasionId: z.string().uuid(),
+  occasionType: occasionTypeSchema,
+  occasionDate: z.coerce.date(),
+});
+export type SegmentReconciliation = z.infer<typeof segmentReconciliationSchema>;
+
+/**
  * A segment resolved to its full member recipients, for seeding the bulk-send
  * composer ("Send to this list"). Unlike the overview's `sample`, this carries
  * whole Recipient records so the composer can preview, fix addresses, and price
@@ -96,6 +110,10 @@ export const segmentMembersSchema = z.object({
   total: z.number().int().nonnegative(),
   /** True when `total` exceeds the plan cap, so `members` is a trimmed prefix. */
   capped: z.boolean(),
+  /** Per-member matched occasions for an occasion-mode segment — the composer
+   * offers to mark these handled so the natural occasion isn't sent twice.
+   * Empty for contact-mode segments. See ADR 0107. */
+  reconciliations: z.array(segmentReconciliationSchema),
 });
 export type SegmentMembers = z.infer<typeof segmentMembersSchema>;
 

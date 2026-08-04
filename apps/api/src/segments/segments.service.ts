@@ -12,6 +12,15 @@ import {
   type SegmentsOverview,
 } from "@kudos/shared-types";
 
+/** The natural occasion a segment matched for one member, so a "send to segment"
+ * can consume it and avoid a double-send. See docs/adr/0107. */
+export interface SegmentReconciliationResult {
+  recipientId: string;
+  occasionId: string;
+  occasionType: OccasionType;
+  occasionDate: Date;
+}
+
 /** A segment resolved to its full member recipients, capped for one order.
  * Mirrors shared-types' `SegmentMembers` at the API boundary (with Prisma's
  * Recipient); the web parses it back via `segmentMembersSchema`. */
@@ -20,7 +29,13 @@ export interface SegmentMembersResult {
   members: Recipient[];
   total: number;
   capped: boolean;
+  /** Per-member matched occasions (occasion-mode only; empty otherwise). */
+  reconciliations: SegmentReconciliationResult[];
 }
+
+/** Occasion statuses that can still be sent — the ones a segment send should
+ * consume so the natural occasion doesn't independently fire. */
+const RECONCILABLE_STATUSES = ["scheduled", "pending_approval", "approved"] as const;
 import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { MISSING_ADDRESS_WHERE } from "../recipients/recipients.service";
@@ -132,7 +147,48 @@ export class SegmentsService {
     const { name, definition } = await this.lookupDefinition(accountId, key);
     const { batchOrderMaxSize } = await this.entitlements.getForAccount(accountId);
     const { members, total, capped } = await this.members(accountId, definition, batchOrderMaxSize);
-    return { name, members, total, capped };
+    const reconciliations = await this.reconciliationsFor(accountId, definition, members);
+    return { name, members, total, capped, reconciliations };
+  }
+
+  /**
+   * For an occasion-mode segment, the soonest sendable natural occasion per
+   * member — so the composer can offer to mark it handled and avoid a
+   * double-send. Empty for contact-mode segments. Campaign occasions
+   * (`one_off_campaign`) are excluded: those are sends, not events to consume.
+   * See docs/adr/0107.
+   */
+  private async reconciliationsFor(
+    accountId: string,
+    definition: SegmentDefinition,
+    members: Recipient[],
+  ): Promise<SegmentReconciliationResult[]> {
+    if (!definition.occasion || members.length === 0) return [];
+
+    const rows = await this.prisma.occasion.findMany({
+      where: {
+        accountId,
+        recipientId: { in: members.map((m) => m.id) },
+        source: { not: "one_off_campaign" },
+        status: { in: [...RECONCILABLE_STATUSES] },
+        ...this.occasionMatch(definition),
+      },
+      orderBy: { occasionDate: "asc" },
+      select: { id: true, recipientId: true, type: true, occasionDate: true },
+    });
+
+    // Keep only the soonest match per recipient (rows are date-ascending).
+    const byRecipient = new Map<string, SegmentReconciliationResult>();
+    for (const row of rows) {
+      if (!row.recipientId || byRecipient.has(row.recipientId)) continue;
+      byRecipient.set(row.recipientId, {
+        recipientId: row.recipientId,
+        occasionId: row.id,
+        occasionType: row.type,
+        occasionDate: row.occasionDate,
+      });
+    }
+    return [...byRecipient.values()];
   }
 
   /** Look up a segment's name + definition from a preset key or a saved id. */

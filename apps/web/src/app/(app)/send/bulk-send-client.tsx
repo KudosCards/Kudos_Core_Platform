@@ -1,6 +1,12 @@
 "use client";
 
-import type { BatchOrder, Recipient, RecipientListSummary, SavedDesign } from "@kudos/shared-types";
+import type {
+  BatchOrder,
+  Recipient,
+  RecipientListSummary,
+  SavedDesign,
+  SegmentReconciliation,
+} from "@kudos/shared-types";
 import { applyMergeTokens, hasMergeTokens, ukPostcodeRegex } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -58,6 +64,22 @@ export type SeededSegment = {
   total: number;
   /** True when the plan's per-order cap trimmed the seeded selection. */
   capped: boolean;
+  /** Per-member matched occasions for an occasion-mode segment. When present,
+   * the composer offers to mark them handled so they aren't sent twice.
+   * Empty for contact-mode segments. See docs/adr/0107. */
+  reconciliations: SegmentReconciliation[];
+};
+
+/** Occasion-type labels for the reconcile toggle copy. */
+const OCCASION_TYPE_LABEL: Record<string, string> = {
+  birthday: "birthday",
+  renewal: "renewal",
+  anniversary: "anniversary",
+  achievement: "achievement",
+  leaver: "leaver",
+  staff_recognition: "staff recognition",
+  seasonal: "seasonal event",
+  bespoke_campaign: "occasion",
 };
 
 /**
@@ -95,14 +117,41 @@ export function BulkSendClient({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addressModalFor, setAddressModalFor] = useState<Recipient | null>(null);
+  // Default on: sending from an occasion-mode segment should consume the matched
+  // occasion so it isn't sent again. See docs/adr/0107.
+  const [markHandled, setMarkHandled] = useState(true);
 
   const selectedIds = useMemo(() => new Set(selected.keys()), [selected]);
   const selectedList = useMemo(() => [...selected.values()], [selected]);
+
+  // The segment's matched occasions, keyed by recipient — used to build the
+  // reconcile payload (scoped to who's actually still selected).
+  const reconcileByRecipient = useMemo(
+    () => new Map((seededSegment?.reconciliations ?? []).map((r) => [r.recipientId, r])),
+    [seededSegment],
+  );
   const sendable = useMemo(() => selectedList.filter(hasMailableAddress), [selectedList]);
   const needsAddress = useMemo(
     () => selectedList.filter((r) => !hasMailableAddress(r)),
     [selectedList],
   );
+
+  // The segment's matched occasions among the contacts actually being sent to —
+  // the reconcile set. A trimmed or manually-added contact contributes none.
+  const reconcileMatches = useMemo(
+    () =>
+      sendable
+        .map((r) => reconcileByRecipient.get(r.id))
+        .filter((m): m is SegmentReconciliation => m !== undefined),
+    [sendable, reconcileByRecipient],
+  );
+  // A noun for the toggle copy: the shared occasion type when they all match,
+  // else a generic "occasion" — pluralised by how many are being consumed.
+  const reconcileNoun = useMemo(() => {
+    const types = [...new Set(reconcileMatches.map((m) => m.occasionType))];
+    const singular = types.length === 1 ? (OCCASION_TYPE_LABEL[types[0]!] ?? "occasion") : "occasion";
+    return `${singular}${reconcileMatches.length === 1 ? "" : "s"}`;
+  }, [reconcileMatches]);
 
   const selectedDesign = useMemo(
     () => designs.find((d) => d.id === selectedDesignId),
@@ -164,6 +213,12 @@ export function BulkSendClient({
           savedDesignId: selectedDesignId,
           recipientIds: sendable.map((r) => r.id),
           postageClass,
+          // Consume the matched natural occasions (unless the sender opted out),
+          // so they aren't sent a second time. See docs/adr/0107.
+          reconcile:
+            markHandled && reconcileMatches.length > 0
+              ? reconcileMatches.map((m) => ({ recipientId: m.recipientId, occasionId: m.occasionId }))
+              : undefined,
         }),
       });
       // …then hand off to the same Stripe checkout every other order uses.
@@ -214,6 +269,24 @@ export function BulkSendClient({
               Everyone&apos;s pre-selected below — remove anyone you don&apos;t want, fix any missing
               addresses, then choose a design and pay.
             </p>
+          )}
+
+          {/* Occasion-mode segments: offer to consume the matched occasion so it
+              isn't also sent from approvals/auto-send. See docs/adr/0107. */}
+          {reconcileMatches.length > 0 && (
+            <label className="mt-3 flex items-start gap-2.5 border-t border-accent/20 pt-3 text-muted">
+              <input
+                type="checkbox"
+                checked={markHandled}
+                onChange={(e) => setMarkHandled(e.target.checked)}
+                className="mt-0.5 size-4 accent-accent"
+              />
+              <span>
+                Mark {reconcileMatches.length === 1 ? "this" : "these"} {reconcileNoun} as handled so
+                {reconcileMatches.length === 1 ? " it isn't" : " they aren't"} sent again from your
+                approvals or auto-send.
+              </span>
+            </label>
           )}
         </div>
       )}
