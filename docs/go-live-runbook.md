@@ -124,10 +124,12 @@ returns a clean 409 ("not yet configured") — no crash, just no upgrades.
 
 ### 2c. VAT receipts for card orders (ADR 0102)
 
-Card orders (and guest one-off purchases) now ask Stripe to generate a proper **VAT
-invoice** per purchase (`invoice_creation` on the Checkout Session), exactly like
-subscriber invoices — so Stripe is the single source of truth for the company/VAT
-details on every receipt. Nothing to switch on in code, but confirm on the Stripe account:
+Card orders, guest one-off purchases **and wallet top-ups** now ask Stripe to generate
+a proper **VAT invoice** per purchase (`invoice_creation` on the Checkout Session),
+exactly like subscriber invoices — so Stripe is the single source of truth for the
+company/VAT details on every receipt. (A wallet-paid *order* has no charge of its own —
+its VAT receipt is the **top-up** invoice, shown on `/wallet`; see ADR 0103.) Nothing to
+switch on in code, but confirm on the Stripe account:
 
 - **Business details + VAT number** are set under **Settings → Business details** (name,
   address, VAT registration number). These print on the invoice; without the VAT number it

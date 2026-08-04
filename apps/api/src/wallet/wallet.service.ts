@@ -79,6 +79,11 @@ export class WalletService {
           quantity: 1,
         },
       ],
+      // Have Stripe generate a VAT invoice for the top-up, using the account's
+      // business/VAT settings — the same source as every other receipt. Captured
+      // onto the ledger entry when the top-up is credited (see
+      // applyTopupFromSession). See docs/adr/0103-wallet-topup-receipts.md.
+      invoice_creation: { enabled: true },
       success_url: `${webAppUrl}/wallet?topup=success`,
       cancel_url: `${webAppUrl}/wallet?topup=cancelled`,
       metadata: { type: "wallet_topup", accountId, amountMinor: String(dto.amountMinor) },
@@ -111,6 +116,13 @@ export class WalletService {
     }
 
     const reference = `topup:${session.id}`;
+    // Capture Stripe's generated VAT invoice (PDF + hosted URL) for the top-up so
+    // the customer can download a receipt. Read here at credit time — the ledger
+    // entry is created lazily, so there's no pre-existing row for the invoice.paid
+    // webhook to update reliably; fetching it now is race-free. Best-effort: a
+    // retrieve failure just leaves the receipt unset (the Stripe email is the
+    // backstop) and never blocks the credit. See ADR 0103.
+    const receipt = await this.fetchTopupReceipt(session);
     const credited = await runSerializable(this.prisma, async (tx) => {
       const existing = await tx.walletLedgerEntry.findFirst({ where: { accountId, reference } });
       if (existing) {
@@ -124,6 +136,7 @@ export class WalletService {
           amountMinor,
           balanceAfterMinor: balance + amountMinor,
           reference,
+          ...receipt,
         },
       });
       return true;
@@ -138,6 +151,30 @@ export class WalletService {
         targetId: accountId,
         metadata: { amountMinor, stripeCheckoutSessionId: session.id },
       });
+    }
+  }
+
+  /** The top-up's Stripe VAT invoice (id + hosted URL + PDF), or an empty object
+   * when there's no invoice or the lookup fails. Best-effort — the caller stores
+   * whatever comes back and never fails the credit over a receipt. */
+  private async fetchTopupReceipt(
+    session: Stripe.Checkout.Session,
+  ): Promise<{ stripeInvoiceId?: string; receiptUrl?: string | null; receiptPdfUrl?: string | null }> {
+    const invoiceId = typeof session.invoice === "string" ? session.invoice : session.invoice?.id;
+    if (!invoiceId) {
+      return {};
+    }
+    try {
+      const invoice = await this.stripe.invoices.retrieve(invoiceId);
+      return {
+        stripeInvoiceId: invoice.id,
+        receiptUrl: invoice.hosted_invoice_url ?? null,
+        receiptPdfUrl: invoice.invoice_pdf ?? null,
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Top-up invoice lookup for session ${session.id} failed: ${reason}`);
+      return {};
     }
   }
 
