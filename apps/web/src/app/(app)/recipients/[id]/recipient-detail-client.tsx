@@ -61,10 +61,21 @@ export function RecipientDetailClient({
   const [adding, setAdding] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
 
-  // Details editing.
+  // Details editing. `openedForAddress` is set when the editor is opened from the
+  // "Add postal address" CTA, so the address line is focused straight away.
   const [editingDetails, setEditingDetails] = useState(false);
+  const [openedForAddress, setOpenedForAddress] = useState(false);
   const [savingDetails, setSavingDetails] = useState(false);
   const [archiving, setArchiving] = useState(false);
+
+  function openEditor(forAddress: boolean) {
+    setOpenedForAddress(forAddress);
+    setEditingDetails(true);
+  }
+  function closeEditor() {
+    setEditingDetails(false);
+    setOpenedForAddress(false);
+  }
 
   // Event editing (one row at a time).
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
@@ -84,6 +95,9 @@ export function RecipientDetailClient({
   const [savingFields, setSavingFields] = useState(false);
 
   const isArchived = recipient.status === "archived";
+  const hasPostalAddress = Boolean(
+    recipient.addressLine1?.trim() && recipient.addressCity?.trim() && recipient.addressPostcode?.trim(),
+  );
 
   function sortEvents(list: Occasion[]): Occasion[] {
     return [...list].sort(
@@ -113,7 +127,7 @@ export function RecipientDetailClient({
         body: JSON.stringify(body),
       });
       setRecipient(updated);
-      setEditingDetails(false);
+      closeEditor();
     } catch (saveError) {
       setError(saveError instanceof ApiError ? saveError.message : "Could not save the details");
     } finally {
@@ -272,7 +286,7 @@ export function RecipientDetailClient({
         </div>
         <div className="flex items-center gap-2">
           {!editingDetails && (
-            <button type="button" onClick={() => setEditingDetails(true)} className="btn-secondary text-sm">
+            <button type="button" onClick={() => openEditor(false)} className="btn-secondary text-sm">
               Edit details
             </button>
           )}
@@ -297,9 +311,95 @@ export function RecipientDetailClient({
         onRecipientChanged={(patch) => setRecipient((current) => ({ ...current, ...patch }))}
       />
 
+      {!editingDetails && (
+        <section className="card flex flex-col gap-4 p-6">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold">Contact details</h2>
+            <button
+              type="button"
+              onClick={() => openEditor(false)}
+              className="text-sm text-accent hover:underline"
+            >
+              Edit
+            </button>
+          </div>
+
+          {/* Address leads — it's the field that has to be present before a card can
+              be posted, so it gets the most visual weight and a prominent CTA when
+              it's missing. */}
+          {hasPostalAddress ? (
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-foreground/[0.02] p-4">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted">
+                  Postal address
+                </span>
+                <address className="not-italic text-sm leading-relaxed">
+                  {[
+                    recipient.addressLine1,
+                    recipient.addressLine2,
+                    recipient.addressCity,
+                    recipient.addressPostcode,
+                  ]
+                    .filter((line) => line?.trim())
+                    .map((line, index) => (
+                      <span key={index} className="block">
+                        {line}
+                      </span>
+                    ))}
+                </address>
+              </div>
+              <button
+                type="button"
+                onClick={() => openEditor(true)}
+                className="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-foreground/[0.03]"
+              >
+                Edit address
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-semibold text-amber-900">No postal address yet</span>
+                <span className="text-sm text-amber-800">
+                  Add one so {recipient.firstName} can be posted a card.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => openEditor(true)}
+                className="btn-accent shrink-0 self-start text-sm sm:self-auto"
+              >
+                Add postal address
+              </button>
+            </div>
+          )}
+
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-0.5">
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted">Date of birth</dt>
+              <dd className="text-sm">
+                {recipient.dateOfBirth ? (
+                  formatOccasionDate(recipient.dateOfBirth)
+                ) : (
+                  <span className="text-muted">Not on file</span>
+                )}
+              </dd>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted">Email</dt>
+              <dd className="text-sm">
+                {recipient.email ? recipient.email : <span className="text-muted">Not on file</span>}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
+
       {editingDetails && (
         <form onSubmit={(event) => void handleSaveDetails(event)} className="card flex flex-col gap-4 p-6">
-          <h2 className="text-lg font-semibold">Edit details</h2>
+          <h2 className="text-lg font-semibold">
+            {openedForAddress && !hasPostalAddress ? "Add postal address" : "Edit details"}
+          </h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">First name</span>
@@ -319,7 +419,12 @@ export function RecipientDetailClient({
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Address line 1</span>
-              <input name="addressLine1" defaultValue={recipient.addressLine1 ?? ""} className={inputClass} />
+              <input
+                name="addressLine1"
+                defaultValue={recipient.addressLine1 ?? ""}
+                autoFocus={openedForAddress}
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Address line 2</span>
@@ -340,7 +445,7 @@ export function RecipientDetailClient({
             </button>
             <button
               type="button"
-              onClick={() => setEditingDetails(false)}
+              onClick={closeEditor}
               className="rounded-md border border-border px-4 py-2 text-sm hover:bg-foreground/[0.03]"
             >
               Cancel
