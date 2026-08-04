@@ -65,6 +65,11 @@ export const Icons = {
       <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
     </Svg>
   ),
+  segments: (props: IconProps) => (
+    <Svg {...props}>
+      <path d="M22 3H2l8 9.46V19l4 2v-8.54z" />
+    </Svg>
+  ),
   designs: (props: IconProps) => (
     <Svg {...props}>
       <rect x="3" y="3" width="18" height="18" rx="2" />
