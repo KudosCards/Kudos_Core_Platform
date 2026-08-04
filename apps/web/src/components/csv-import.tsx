@@ -23,7 +23,7 @@ const SAMPLE_CSV = [
   "Ada,Lovelace,10/12/1815,12 Analytical Way,,London,SW1A 1AA,ada@example.com",
 ].join("\n");
 
-function downloadSampleCsv() {
+export function downloadSampleCsv() {
   const blob = new Blob([SAMPLE_CSV], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
