@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma, type PlanEntitlement, type Recipient } from "@prisma/client";
+import { Prisma, type KeyDateType, type PlanEntitlement, type Recipient, type RecipientKeyDate } from "@prisma/client";
 import { parse } from "csv-parse/sync";
 import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
@@ -22,6 +22,9 @@ import {
   buildScheduledBirthdayOccasion,
   startOfUtcDay,
 } from "../occasions/birthday-occasion.util";
+import { buildScheduledKeyDateOccasion } from "../occasions/key-date-occasion.util";
+import { keyDateTypeSchema } from "@kudos/shared-types";
+import type { UpsertKeyDateDto } from "./dto/upsert-key-date.dto";
 
 export type { Paginated };
 
@@ -802,5 +805,103 @@ export class RecipientsService {
       );
     }
     return error instanceof Error ? error : new Error("Unknown error");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Recurring key dates (renewal / anniversary) — see docs/adr/0104.
+  // ---------------------------------------------------------------------------
+
+  /** A recipient's key dates, guarded to the caller's account. */
+  async listKeyDates(accountId: string, recipientId: string): Promise<RecipientKeyDate[]> {
+    await this.assertRecipient(accountId, recipientId);
+    return this.prisma.recipientKeyDate.findMany({
+      where: { recipientId, accountId },
+      orderBy: { type: "asc" },
+    });
+  }
+
+  /**
+   * Set (create-or-update) a recipient's renewal/anniversary key date, and
+   * re-point its scheduled occasion at the new date — the same pattern the date
+   * of birth uses for birthdays: only a still-`scheduled` occasion is replaced,
+   * one already in the approval/dispatch pipeline is left alone.
+   */
+  async upsertKeyDate(
+    accountId: string,
+    actorUserId: string,
+    recipientId: string,
+    rawType: string,
+    dto: UpsertKeyDateDto,
+  ): Promise<RecipientKeyDate> {
+    await this.assertRecipient(accountId, recipientId);
+    const type = this.parseKeyDateType(rawType);
+    const anchor = new Date(`${dto.date}T00:00:00.000Z`);
+    const label = dto.label?.trim() || null;
+
+    const keyDate = await this.prisma.recipientKeyDate.upsert({
+      where: { recipient_key_date_type: { recipientId, type } },
+      create: { accountId, recipientId, type, date: anchor, label },
+      update: { date: anchor, label },
+    });
+
+    await this.prisma.occasion.deleteMany({ where: { recipientId, type, status: "scheduled" } });
+    await this.prisma.occasion.createMany({
+      data: [
+        buildScheduledKeyDateOccasion(
+          { accountId, recipientId, type, date: anchor, label },
+          startOfUtcDay(new Date()),
+        ),
+      ],
+      skipDuplicates: true,
+    });
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "key_date_set",
+      targetType: "Recipient",
+      targetId: recipientId,
+      metadata: { type, date: dto.date },
+    });
+    return keyDate;
+  }
+
+  /** Remove a key date and its not-yet-actionable (scheduled) occasion. */
+  async deleteKeyDate(
+    accountId: string,
+    actorUserId: string,
+    recipientId: string,
+    rawType: string,
+  ): Promise<void> {
+    await this.assertRecipient(accountId, recipientId);
+    const type = this.parseKeyDateType(rawType);
+    await this.prisma.recipientKeyDate.deleteMany({ where: { recipientId, accountId, type } });
+    await this.prisma.occasion.deleteMany({ where: { recipientId, type, status: "scheduled" } });
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "key_date_removed",
+      targetType: "Recipient",
+      targetId: recipientId,
+      metadata: { type },
+    });
+  }
+
+  private async assertRecipient(accountId: string, recipientId: string): Promise<void> {
+    const recipient = await this.prisma.recipient.findFirst({
+      where: { id: recipientId, accountId },
+      select: { id: true },
+    });
+    if (!recipient) {
+      throw new NotFoundException("Recipient not found");
+    }
+  }
+
+  private parseKeyDateType(raw: string): KeyDateType {
+    const parsed = keyDateTypeSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new BadRequestException("Key date type must be 'renewal' or 'anniversary'");
+    }
+    return parsed.data;
   }
 }

@@ -18,6 +18,8 @@ export type RecipientStatus = z.infer<typeof recipientStatusSchema>;
 
 export const occasionTypeSchema = z.enum([
   "birthday",
+  "renewal",
+  "anniversary",
   "achievement",
   "leaver",
   "staff_recognition",
@@ -25,6 +27,16 @@ export const occasionTypeSchema = z.enum([
   "bespoke_campaign",
 ]);
 export type OccasionType = z.infer<typeof occasionTypeSchema>;
+
+/** The recurring occasion types generated automatically from a dated anchor —
+ * birthdays from the DOB, renewals/anniversaries from a RecipientKeyDate. The
+ * scheduler owns their lifecycle; they aren't hand-created like the others. */
+export const RECURRING_OCCASION_TYPES = ["birthday", "renewal", "anniversary"] as const;
+
+/** The subset of recurring types driven by a RecipientKeyDate (birthday comes
+ * from Recipient.dateOfBirth instead). Mirrors the Prisma KeyDateType enum. */
+export const keyDateTypeSchema = z.enum(["renewal", "anniversary"]);
+export type KeyDateType = z.infer<typeof keyDateTypeSchema>;
 
 export const occasionSourceSchema = z.enum([
   "recurring_per_recipient",
