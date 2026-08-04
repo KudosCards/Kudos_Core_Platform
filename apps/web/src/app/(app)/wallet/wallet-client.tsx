@@ -151,6 +151,16 @@ export function WalletClient({
                 <div className="flex flex-col">
                   <span className="font-medium">{ENTRY_LABELS[entry.type]}</span>
                   <span className="text-xs text-muted">{formatDate(entry.createdAt)}</span>
+                  {entry.receiptPdfUrl && (
+                    <a
+                      href={entry.receiptPdfUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-0.5 text-xs font-medium text-accent hover:underline"
+                    >
+                      Download VAT receipt
+                    </a>
+                  )}
                 </div>
                 <span
                   className={

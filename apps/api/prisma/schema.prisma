@@ -708,6 +708,14 @@ model WalletLedgerEntry {
   amountMinor       Int             @map("amount_minor")
   balanceAfterMinor Int             @map("balance_after_minor")
   reference         String?
+  /// Stripe's generated VAT invoice for a top-up (Stripe holds the VAT/company
+  /// details, like every other receipt). Captured when the top-up is credited.
+  /// Only ever set on `topup` entries. See docs/adr/0103-wallet-topup-receipts.md.
+  stripeInvoiceId   String?         @map("stripe_invoice_id")
+  /// Stripe hosted invoice page (view online).
+  receiptUrl        String?         @map("receipt_url")
+  /// Stripe generated invoice PDF (the downloadable VAT receipt).
+  receiptPdfUrl     String?         @map("receipt_pdf_url")
   createdAt         DateTime        @default(now()) @map("created_at")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)

@@ -25,6 +25,10 @@ export const walletLedgerEntrySchema = z.object({
   amountMinor: z.number().int(), // positive for topup/refund, negative for charge
   balanceAfterMinor: z.number().int(),
   reference: z.string().nullable(),
+  /** Stripe hosted invoice page for a top-up ("view online"); null otherwise. */
+  receiptUrl: z.string().nullable(),
+  /** Stripe generated invoice PDF for a top-up (the downloadable VAT receipt). */
+  receiptPdfUrl: z.string().nullable(),
   createdAt: z.coerce.date(),
 });
 export type WalletLedgerEntry = z.infer<typeof walletLedgerEntrySchema>;
