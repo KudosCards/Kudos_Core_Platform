@@ -28,6 +28,13 @@ export const batchOrderSchema = z.object({
   totalMinor: z.number().int().nonnegative(),
   paymentMethod: paymentMethodSchema.nullable(),
   stripePaymentIntentId: z.string().nullable(),
+  /** Stripe's hosted VAT invoice/receipt for a card-paid order — "view online".
+   * Null until the invoice.paid webhook lands (and for wallet-paid orders, which
+   * have no Stripe charge of their own). See ADR 0102. */
+  receiptUrl: z.string().nullable(),
+  /** Direct link to Stripe's generated invoice PDF (the downloadable VAT
+   * receipt). Null until the invoice.paid webhook lands. */
+  receiptPdfUrl: z.string().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
   orderRecipients: z.array(z.lazy(() => orderRecipientSchema)),

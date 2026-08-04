@@ -105,6 +105,33 @@ export function OrderDetailClient({
             <span>{order.paymentMethod === "wallet" ? "Wallet" : "Card"}</span>
           </div>
         )}
+        {(order.receiptPdfUrl || order.receiptUrl) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2">
+            <span className="text-muted">VAT receipt</span>
+            <span className="flex items-center gap-3">
+              {order.receiptPdfUrl && (
+                <a
+                  href={order.receiptPdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-accent hover:underline"
+                >
+                  Download PDF
+                </a>
+              )}
+              {order.receiptUrl && (
+                <a
+                  href={order.receiptUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted hover:text-foreground hover:underline"
+                >
+                  View online
+                </a>
+              )}
+            </span>
+          </div>
+        )}
       </div>
 
       {payable && (
