@@ -1,4 +1,5 @@
 import {
+  addWorkingDays,
   computeDispatchDate,
   DEFAULT_SEASONAL_DISPATCH_RULES,
   getSeasonalDispatchRules,
@@ -7,6 +8,7 @@ import {
   setSeasonalDispatchRules,
   suggestFirstClass,
   UK_BANK_HOLIDAYS,
+  workingDaysUntil,
   type SeasonalDispatchRule,
 } from "@kudos/shared-types";
 
@@ -50,6 +52,39 @@ describe("computeDispatchDate — working days", () => {
 
   it("returns the occasion date itself when lead is zero", () => {
     expect(computeDispatchDate(utc(2026, 6, 15), 0)).toEqual(utc(2026, 6, 15));
+  });
+});
+
+describe("addWorkingDays", () => {
+  it("steps forward over a weekend", () => {
+    // Thu 9 Jul 2026 + 3 working days: Fri 10, (skip Sat/Sun), Mon 13, Tue 14.
+    expect(addWorkingDays(utc(2026, 6, 9), 3)).toEqual(utc(2026, 6, 14));
+  });
+
+  it("skips a bank holiday when stepping forward", () => {
+    // Fri 22 May 2026 + 1 working day: (skip Sat 23, Sun 24, Mon 25 holiday) → Tue 26.
+    expect(addWorkingDays(utc(2026, 4, 22), 1)).toEqual(utc(2026, 4, 26));
+  });
+
+  it("returns the same day for zero and steps backward for negatives", () => {
+    expect(addWorkingDays(utc(2026, 6, 15), 0)).toEqual(utc(2026, 6, 15));
+    // Mirrors computeDispatchDate's backward count: Wed 15 Jul, 5 back → 8 Jul.
+    expect(addWorkingDays(utc(2026, 6, 15), -5)).toEqual(utc(2026, 6, 8));
+  });
+});
+
+describe("workingDaysUntil", () => {
+  it("is zero for the same day, signed by direction", () => {
+    expect(workingDaysUntil(utc(2026, 6, 15), utc(2026, 6, 15))).toBe(0);
+    // From Wed 8 Jul to Wed 15 Jul = 5 working days ahead (skips one weekend).
+    expect(workingDaysUntil(utc(2026, 6, 15), utc(2026, 6, 8))).toBe(5);
+    // The reverse is negative (overdue).
+    expect(workingDaysUntil(utc(2026, 6, 8), utc(2026, 6, 15))).toBe(-5);
+  });
+
+  it("does not count a bank holiday between the two dates", () => {
+    // Fri 22 May to Tue 26 May crosses Sat/Sun + Mon 25 (holiday) = 1 working day.
+    expect(workingDaysUntil(utc(2026, 4, 26), utc(2026, 4, 22))).toBe(1);
   });
 });
 

@@ -311,6 +311,9 @@ export class BatchOrdersService {
   async settleFulfillment(tx: Prisma.TransactionClient, batchOrderId: string): Promise<void> {
     const orderRecipients = await tx.orderRecipient.findMany({
       where: { batchOrderId, status: "approved" },
+      // Pull the occasion's dispatch date so we can denormalise it onto the job
+      // as its posting deadline (dueDate) — the ops queue's sort/filter spine.
+      include: { occasion: { select: { dispatchDate: true } } },
     });
     await tx.orderRecipient.updateMany({
       where: { batchOrderId, status: "approved" },
@@ -320,6 +323,8 @@ export class BatchOrdersService {
       data: orderRecipients.map((recipient) => ({
         orderRecipientId: recipient.id,
         status: "pending" as const,
+        // Null when the card has no occasion — no date-driven deadline.
+        dueDate: recipient.occasion?.dispatchDate ?? null,
       })),
       skipDuplicates: true,
     });

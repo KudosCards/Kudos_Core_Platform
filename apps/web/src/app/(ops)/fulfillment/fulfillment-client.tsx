@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import type { DesignDocument } from "@kudos/shared-types";
+import type { DesignDocument, DueFilter, FulfillmentCounts } from "@kudos/shared-types";
 import { applyMergeTokens } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -52,6 +52,13 @@ export interface FulfillmentJob {
   status: FulfillmentStatus;
   trackingReference: string | null;
   labelUrl: string | null;
+  /** The date this card must be posted by (the occasion's dispatch date), or
+   * null when it has no dated deadline. See ADR 0108. */
+  dueDate: string | null;
+  /** Working days until it must post: negative = overdue, 0 = today, null =
+   * no dated deadline. Computed server-side (only the API holds the UK holiday
+   * calendar); the badge is rendered straight from this. */
+  workingDaysUntilDue: number | null;
   /** Royal Mail's id once this card is imported into Click & Drop; null until
    * the sweep pushes it (or if import is off). See ADR 0095. */
   clickAndDropOrderId: string | null;
@@ -97,6 +104,50 @@ const STATUS_TABS: FulfillmentStatus[] = [
   "returned_to_sender",
   "failed",
 ];
+
+/** The due-date urgency filters, in the order the print/post team works them.
+ * `key` matches the API's `due` param and the counts.due bucket; shown only on
+ * the actionable `pending` queue (where the buckets are computed). See ADR 0108. */
+const DUE_TABS: { key: DueFilter; label: string; bucket: keyof FulfillmentCounts["due"] | null }[] = [
+  { key: "all", label: "All", bucket: null },
+  { key: "overdue", label: "Overdue", bucket: "overdue" },
+  { key: "today", label: "Due today", bucket: "today" },
+  { key: "due_soon", label: "Due soon", bucket: "dueSoon" },
+  { key: "upcoming", label: "Upcoming", bucket: "upcoming" },
+  { key: "no_date", label: "No date", bucket: "noDate" },
+];
+
+/** The colour-coded deadline badge for a queue row, from the server-computed
+ * working-days-until-due. Red overdue, amber this week, neutral beyond, grey
+ * when the card has no dated deadline. */
+function dueBadge(workingDaysUntilDue: number | null): { label: string; className: string } {
+  if (workingDaysUntilDue === null) {
+    return { label: "No date", className: "bg-black/5 text-foreground/50 dark:bg-white/10" };
+  }
+  if (workingDaysUntilDue < 0) {
+    const n = Math.abs(workingDaysUntilDue);
+    return {
+      label: `Overdue ${n}wd`,
+      className: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+    };
+  }
+  if (workingDaysUntilDue === 0) {
+    return {
+      label: "Due today",
+      className: "bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-300",
+    };
+  }
+  if (workingDaysUntilDue <= 5) {
+    return {
+      label: `Due in ${workingDaysUntilDue}wd`,
+      className: "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200",
+    };
+  }
+  return {
+    label: `Due in ${workingDaysUntilDue}wd`,
+    className: "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300",
+  };
+}
 
 /** RTS reasons offered when marking a posted/delivered card returned. */
 const RETURN_REASONS: { value: string; label: string }[] = [
@@ -144,11 +195,13 @@ function downloadCsv(rows: ExportedAddress[]): void {
 export function FulfillmentClient({
   initialJobs,
   status,
+  due,
   counts,
 }: {
   initialJobs: FulfillmentJob[];
   status: FulfillmentStatus;
-  counts: Record<string, number>;
+  due: DueFilter;
+  counts: FulfillmentCounts;
 }) {
   const router = useRouter();
   const [jobs, setJobs] = useState(initialJobs);
@@ -389,11 +442,47 @@ export function FulfillmentClient({
             <span
               className={`tabular-nums ${tab === status ? "text-white/80" : "text-foreground/50"}`}
             >
-              {counts[tab] ?? 0}
+              {counts.status[tab] ?? 0}
             </span>
           </button>
         ))}
       </div>
+
+      {/* Dispatch-urgency filter — only on the actionable pending queue, where the
+          due buckets are computed. Sorted soonest-deadline-first regardless. */}
+      {status === "pending" && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-xs uppercase tracking-wide text-foreground/40">By dispatch date</span>
+          {DUE_TABS.map((tab) => {
+            const count = tab.bucket ? counts.due[tab.bucket] : null;
+            const active = tab.key === due;
+            const urgent = tab.key === "overdue" && (count ?? 0) > 0;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => router.push(`/fulfillment?status=pending&due=${tab.key}`)}
+                className={`flex items-center gap-2 rounded-full px-3 py-1 ${
+                  active
+                    ? "bg-foreground text-background"
+                    : urgent
+                      ? "border border-red-300 bg-red-50 text-red-800 hover:bg-red-100 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300"
+                      : "border border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                }`}
+              >
+                <span>{tab.label}</span>
+                {count !== null && (
+                  <span
+                    className={`tabular-nums ${active ? "text-background/70" : "text-foreground/50"}`}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -448,6 +537,17 @@ export function FulfillmentClient({
                     onChange={() => toggle(job.id)}
                   />
                   <div>
+                    {["pending", "in_progress", "printed"].includes(job.status) &&
+                      (() => {
+                        const badge = dueBadge(job.workingDaysUntilDue);
+                        return (
+                          <span
+                            className={`mb-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
+                          >
+                            {badge.label}
+                          </span>
+                        );
+                      })()}
                     <p className="font-medium">
                       {r.recipient.firstName} {r.recipient.lastName}
                       {r.occasion && (
