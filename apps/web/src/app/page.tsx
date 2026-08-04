@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { PLAN_CATALOG, formatPlanPrice, planCardPriceLabel } from "@kudos/shared-types";
+import { ENTERPRISE_PLAN, PLAN_CATALOG, formatPlanPrice, planCardPriceLabel } from "@kudos/shared-types";
 import { PublicHeader } from "@/components/public-header";
 import { SocialLinks } from "@/components/social-links";
 
@@ -430,6 +430,28 @@ export default function HomePage() {
               </Link>
             </div>
           ))}
+        </div>
+
+        {/* Enterprise — a "Contact us" tier, distinct from the self-serve plans. */}
+        <div className="mt-6 flex flex-col items-start justify-between gap-5 rounded-2xl bg-slate-900 p-6 text-white sm:flex-row sm:items-center sm:p-8">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-3">
+              <h3 className="text-xl font-bold">{ENTERPRISE_PLAN.name}</h3>
+              <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-slate-200">
+                {ENTERPRISE_PLAN.priceLabel} pricing
+              </span>
+            </div>
+            <p className="max-w-xl text-sm text-slate-300">
+              {ENTERPRISE_PLAN.tagline} — volume card pricing, multiple sites and unlimited seats,
+              onboarding and a dedicated account manager.
+            </p>
+          </div>
+          <Link
+            href={ENTERPRISE_PLAN.ctaHref}
+            className="shrink-0 rounded-full bg-white px-6 py-3 font-semibold text-slate-900 transition-opacity hover:opacity-90"
+          >
+            {ENTERPRISE_PLAN.ctaLabel} →
+          </Link>
         </div>
       </section>
 

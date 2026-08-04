@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import {
+  ENTERPRISE_PLAN,
   PLAN_CATALOG,
   formatPlanPrice,
   planCardPriceLabel,
@@ -167,6 +168,23 @@ export function BillingClient({
             </div>
           );
         })}
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-foreground/[0.03] p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <p className="font-semibold">{ENTERPRISE_PLAN.name}</p>
+            <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-xs font-medium text-muted">
+              {ENTERPRISE_PLAN.priceLabel} pricing
+            </span>
+          </div>
+          <p className="text-sm text-muted">
+            Multiple sites, volume pricing and a dedicated account manager for larger organisations.
+          </p>
+        </div>
+        <Link href={ENTERPRISE_PLAN.ctaHref} className="btn-secondary shrink-0 text-sm">
+          {ENTERPRISE_PLAN.ctaLabel}
+        </Link>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4">

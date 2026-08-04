@@ -39,6 +39,11 @@ describe("planDisplayName", () => {
     expect(planDisplayName("centre")).toBe("Centre");
   });
 
+  it("names Enterprise, even though it sits outside the self-serve catalog", () => {
+    expect(planDisplayName("enterprise")).toBe("Enterprise");
+    expect(PLAN_CATALOG.map((p) => p.id)).not.toContain("enterprise");
+  });
+
   it("falls back to a capitalised id for anything unknown, and handles null", () => {
     expect(planDisplayName("legacy")).toBe("Legacy");
     expect(planDisplayName(null)).toBe("No plan");

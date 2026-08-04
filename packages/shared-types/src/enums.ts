@@ -127,6 +127,10 @@ export const supportTicketStatusSchema = z.enum([
 ]);
 export type SupportTicketStatus = z.infer<typeof supportTicketStatusSchema>;
 
+/** Triage state of an Enterprise "Contact us" lead. Mirrors EnterpriseEnquiryStatus. */
+export const enterpriseEnquiryStatusSchema = z.enum(["new", "in_progress", "closed"]);
+export type EnterpriseEnquiryStatus = z.infer<typeof enterpriseEnquiryStatusSchema>;
+
 /** The topic a subscriber picks when raising a ticket. Mirrors SupportTicketCategory. */
 export const supportTicketCategorySchema = z.enum([
   "billing",
