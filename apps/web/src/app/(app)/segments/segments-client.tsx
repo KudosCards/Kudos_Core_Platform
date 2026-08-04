@@ -6,7 +6,19 @@ import type { SegmentSummary, SegmentsOverview } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 
-/** One segment card: name, live count, a small member preview, and its action. */
+/** The primary action on every segment card: send a card to its members. Seeds
+ * the bulk-send composer with the segment's people (`?segment=` — preset key or
+ * saved id). Hidden when the segment is empty. See ADR 0106. */
+function SendToListLink({ segment }: { segment: SegmentSummary }) {
+  if (segment.count === 0) return null;
+  return (
+    <Link href={`/send?segment=${encodeURIComponent(segment.key)}`} className="btn-accent text-sm">
+      Send to this list →
+    </Link>
+  );
+}
+
+/** One segment card: name, live count, a small member preview, and its actions. */
 function SegmentCard({
   segment,
   action,
@@ -53,8 +65,9 @@ function SegmentCard({
 
 /**
  * The Segments (smart lists) page. Suggested presets resolve live and can be
- * saved as a reusable smart list; saved segments can be removed. Sending from a
- * segment lands in a later slice. See docs/adr/0105-segments-smart-lists.md.
+ * saved as a reusable smart list; saved segments can be removed. Each card's
+ * primary action sends a card to its members (seeds the bulk-send composer via
+ * `?segment=`). See docs/adr/0105-segments-smart-lists.md and 0106-send-to-segment.md.
  */
 export function SegmentsClient({ initial }: { initial: SegmentsOverview }) {
   const [saved, setSaved] = useState<SegmentSummary[]>(initial.saved);
@@ -114,14 +127,17 @@ export function SegmentsClient({ initial }: { initial: SegmentsOverview }) {
               key={segment.key}
               segment={segment}
               action={
-                <button
-                  type="button"
-                  disabled={pendingKey === segment.key}
-                  onClick={() => void saveSegment(segment)}
-                  className="btn-secondary text-sm disabled:opacity-50"
-                >
-                  {pendingKey === segment.key ? "Saving…" : "Save as list"}
-                </button>
+                <>
+                  <SendToListLink segment={segment} />
+                  <button
+                    type="button"
+                    disabled={pendingKey === segment.key}
+                    onClick={() => void saveSegment(segment)}
+                    className="btn-secondary text-sm disabled:opacity-50"
+                  >
+                    {pendingKey === segment.key ? "Saving…" : "Save as list"}
+                  </button>
+                </>
               }
             />
           ))}
@@ -141,14 +157,17 @@ export function SegmentsClient({ initial }: { initial: SegmentsOverview }) {
                 key={segment.key}
                 segment={segment}
                 action={
-                  <button
-                    type="button"
-                    disabled={pendingKey === segment.id}
-                    onClick={() => segment.id && void removeSegment(segment.id)}
-                    className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-foreground/[0.03] disabled:opacity-50"
-                  >
-                    {pendingKey === segment.id ? "Removing…" : "Remove"}
-                  </button>
+                  <>
+                    <SendToListLink segment={segment} />
+                    <button
+                      type="button"
+                      disabled={pendingKey === segment.id}
+                      onClick={() => segment.id && void removeSegment(segment.id)}
+                      className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-foreground/[0.03] disabled:opacity-50"
+                    >
+                      {pendingKey === segment.id ? "Removing…" : "Remove"}
+                    </button>
+                  </>
                 }
               />
             ))}

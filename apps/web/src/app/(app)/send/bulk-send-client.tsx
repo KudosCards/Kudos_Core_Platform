@@ -50,12 +50,23 @@ function addressSummary(recipient: Recipient): string {
     .join(", ");
 }
 
+/** A segment whose members seeded the selection — drives the "Sending to …"
+ * heading note and a plan-cap notice. See docs/adr/0106-send-to-segment.md. */
+export type SeededSegment = {
+  name: string;
+  /** The segment's true (uncapped) member count. */
+  total: number;
+  /** True when the plan's per-order cap trimmed the seeded selection. */
+  capped: boolean;
+};
+
 /**
  * Bulk-send composer: pick the contacts, pick a design, fix any missing
  * addresses inline, then pay — all on one page, no dead-ends. Contacts that
- * arrive pre-selected (from the Recipients page's multi-select, via
- * `?recipients=`) seed the selection; everything else is chosen here. Editing a
- * design hands off to the editor with a `returnTo` back to this exact state.
+ * arrive pre-selected (from the Recipients page's multi-select via `?recipients=`,
+ * or a segment's members via `?segment=`) seed the selection; everything else is
+ * chosen here. Editing a design hands off to the editor with a `returnTo` back to
+ * this exact state.
  */
 export function BulkSendClient({
   initialSelected,
@@ -63,12 +74,14 @@ export function BulkSendClient({
   designs,
   lists,
   initialDesignId,
+  seededSegment,
 }: {
   initialSelected: Recipient[];
   initialRecipientsPage: Paginated<Recipient>;
   designs: SavedDesign[];
   lists: RecipientListSummary[];
   initialDesignId: string;
+  seededSegment?: SeededSegment | null;
 }) {
   // The chosen contacts, keyed by id and holding the full record, so a selected
   // contact keeps its address/preview even when it's off the current picker page.
@@ -184,6 +197,26 @@ export function BulkSendClient({
           same go.
         </p>
       </div>
+
+      {seededSegment && (
+        <div className="rounded-lg border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
+          <p className="font-medium text-accent">
+            Sending to <span className="font-semibold">{seededSegment.name}</span> —{" "}
+            {seededSegment.total} contact{seededSegment.total === 1 ? "" : "s"}.
+          </p>
+          {seededSegment.capped ? (
+            <p className="mt-0.5 text-muted">
+              Your plan sends up to {selectedList.length} per order, so we&apos;ve added the first{" "}
+              {selectedList.length}. Remove anyone below, or send the rest in a second order.
+            </p>
+          ) : (
+            <p className="mt-0.5 text-muted">
+              Everyone&apos;s pre-selected below — remove anyone you don&apos;t want, fix any missing
+              addresses, then choose a design and pay.
+            </p>
+          )}
+        </div>
+      )}
 
       {error && (
         <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">

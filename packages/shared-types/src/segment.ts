@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { occasionTypeSchema, recipientStatusSchema } from "./enums";
+import { recipientSchema } from "./recipient";
 
 /**
  * Segments (smart lists) — a saved, live-resolving filter over the contact book.
@@ -78,6 +79,25 @@ export const segmentsOverviewSchema = z.object({
   saved: z.array(segmentSummarySchema),
 });
 export type SegmentsOverview = z.infer<typeof segmentsOverviewSchema>;
+
+/**
+ * A segment resolved to its full member recipients, for seeding the bulk-send
+ * composer ("Send to this list"). Unlike the overview's `sample`, this carries
+ * whole Recipient records so the composer can preview, fix addresses, and price
+ * without re-fetching. Capped at the plan's per-order limit; `total` is the true
+ * (uncapped) member count and `capped` says the cap trimmed the set.
+ * See docs/adr/0106-send-to-segment.md.
+ */
+export const segmentMembersSchema = z.object({
+  /** The segment's name, for the composer's "Sending to …" heading. */
+  name: z.string(),
+  members: z.array(recipientSchema),
+  /** Distinct member count before the per-order cap was applied. */
+  total: z.number().int().nonnegative(),
+  /** True when `total` exceeds the plan cap, so `members` is a trimmed prefix. */
+  capped: z.boolean(),
+});
+export type SegmentMembers = z.infer<typeof segmentMembersSchema>;
 
 /** Save a new segment. */
 export const createSegmentInputSchema = z.object({
