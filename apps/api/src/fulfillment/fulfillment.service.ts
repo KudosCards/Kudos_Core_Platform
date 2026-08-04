@@ -18,7 +18,9 @@ import { royalMailTrackingUrl, type RoyalMailClient } from "../shipping/royal-ma
 import { ClickAndDropService } from "../shipping/click-and-drop.service";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
+import { isoDay } from "@kudos/shared-types";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
+import { dueCutoffs, workingDaysUntilDue } from "./fulfillment-due.util";
 import type { TransitionFulfillmentDto, TransitionableStatus } from "./dto/transition-fulfillment.dto";
 import type { BulkTransitionFulfillmentDto } from "./dto/bulk-transition-fulfillment.dto";
 import type { ExportAddressesDto } from "./dto/export-addresses.dto";
@@ -43,6 +45,7 @@ const QUEUE_SELECT = {
   labelUrl: true,
   clickAndDropOrderId: true,
   clickAndDropError: true,
+  dueDate: true,
   createdAt: true,
   orderRecipient: {
     select: {
@@ -81,6 +84,18 @@ const DETAIL_SELECT = {
 
 export type FulfillmentQueueJob = Prisma.FulfillmentJobGetPayload<{ select: typeof QUEUE_SELECT }>;
 export type FulfillmentJob = Prisma.FulfillmentJobGetPayload<{ select: typeof DETAIL_SELECT }>;
+
+/** A queue row plus its server-computed urgency: working days until the card
+ * must post (negative = overdue, 0 = today, null = no dated deadline). The web
+ * renders the badge from this rather than recomputing the UK holiday calendar. */
+export type FulfillmentQueueRow = FulfillmentQueueJob & { workingDaysUntilDue: number | null };
+
+/** Queue counts for the ops filters: per-status (all statuses) plus the due-date
+ * urgency buckets within the actionable `pending` queue. See ADR 0108. */
+export interface FulfillmentCounts {
+  status: Record<FulfillmentJobStatus, number>;
+  due: { overdue: number; today: number; dueSoon: number; upcoming: number; noDate: number };
+}
 
 /** One personalised card in a print run — the design + who it's for. The
  * `document` is a design JSON (Prisma.JsonValue); the web types it as a
@@ -151,11 +166,19 @@ export class FulfillmentService {
     return this.clickAndDrop.enabled();
   }
 
+  /** Attach the server-computed urgency (working days until due) to a queue row,
+   * so every path that returns a row — the list and each single-row action the
+   * web patches in place — carries the same shape. */
+  private enrichRow(job: FulfillmentQueueJob, now: Date = new Date()): FulfillmentQueueRow {
+    return { ...job, workingDaysUntilDue: workingDaysUntilDue(job.dueDate, now) };
+  }
+
   /** Retry importing a single card into Click & Drop (an ops action), returning
    * the refreshed queue row so the UI can patch it in place. */
-  async retryClickAndDrop(id: string): Promise<FulfillmentQueueJob> {
+  async retryClickAndDrop(id: string): Promise<FulfillmentQueueRow> {
     await this.clickAndDrop.retryJob(id);
-    return this.prisma.fulfillmentJob.findUniqueOrThrow({ where: { id }, select: QUEUE_SELECT });
+    const job = await this.prisma.fulfillmentJob.findUniqueOrThrow({ where: { id }, select: QUEUE_SELECT });
+    return this.enrichRow(job);
   }
 
   /** Whether Royal Mail shipping automation is wired (drives the ops UI). */
@@ -176,7 +199,7 @@ export class FulfillmentService {
    * record; that's surfaced as a conflict for the operator to reconcile rather
    * than silently dropped.
    */
-  async dispatch(actorUserId: string, id: string): Promise<FulfillmentQueueJob> {
+  async dispatch(actorUserId: string, id: string): Promise<FulfillmentQueueRow> {
     if (!this.royalMail.enabled) {
       throw new BadRequestException(
         "Royal Mail shipping isn't configured — mark the card posted manually instead.",
@@ -217,7 +240,11 @@ export class FulfillmentService {
       }
     });
     await this.notifyDispatched([id]);
-    return this.prisma.fulfillmentJob.findUniqueOrThrow({ where: { id }, select: QUEUE_SELECT });
+    const refreshed = await this.prisma.fulfillmentJob.findUniqueOrThrow({
+      where: { id },
+      select: QUEUE_SELECT,
+    });
+    return this.enrichRow(refreshed);
   }
 
   /** Bulk auto-dispatch: dispatch each printed job in turn. A per-job failure
@@ -255,12 +282,25 @@ export class FulfillmentService {
     return order.orderNumber;
   }
 
-  async list(query: ListFulfillmentQueryDto): Promise<Paginated<FulfillmentQueueJob>> {
+  async list(query: ListFulfillmentQueryDto): Promise<Paginated<FulfillmentQueueRow>> {
     const page = parsePage(query.page);
     const perPage = parsePerPage(query.perPage, 50);
+    const now = new Date();
+    const { today, dueSoon } = dueCutoffs(now);
+
     const where: Prisma.FulfillmentJobWhereInput = {
       status: query.status ?? FulfillmentJobStatus.pending,
     };
+    const dueFilter = this.dueWhere(query.due, today, dueSoon);
+    if (dueFilter !== undefined) where.dueDate = dueFilter;
+
+    // Default: soonest deadline first. Postgres sorts NULLs last on ASC, so
+    // undated cards (no occasion) naturally trail the dated, urgency-ordered
+    // ones; createdAt breaks ties. `sort=created_at` keeps the old arrival order.
+    const orderBy: Prisma.FulfillmentJobOrderByWithRelationInput[] =
+      query.sort === "created_at"
+        ? [{ createdAt: "asc" }]
+        : [{ dueDate: "asc" }, { createdAt: "asc" }];
 
     // Two plain queries, not a $transaction — a paginated total needn't be a
     // consistent snapshot with the page, and an explicit read transaction is
@@ -269,23 +309,48 @@ export class FulfillmentService {
       where,
       skip: (page - 1) * perPage,
       take: perPage,
-      // Oldest first: the queue is worked front-to-back, and dispatchDate
-      // is what actually determines send urgency.
-      orderBy: [{ createdAt: "asc" }],
+      orderBy,
       select: QUEUE_SELECT,
     });
     const total = await this.prisma.fulfillmentJob.count({ where });
 
-    return { items, total, page, perPage };
+    return { items: items.map((job) => this.enrichRow(job, now)), total, page, perPage };
   }
 
-  /** Job counts per status, for the queue's filter chips. */
-  async counts(): Promise<Record<FulfillmentJobStatus, number>> {
+  /** Translate a due-date urgency filter into a `dueDate` where-clause against
+   * the precomputed calendar cutoffs. `undefined` means no constraint (all);
+   * `null` means "no dated deadline" (dueDate IS NULL). See ADR 0108. */
+  private dueWhere(
+    due: ListFulfillmentQueryDto["due"],
+    today: Date,
+    dueSoon: Date,
+  ): Prisma.DateTimeNullableFilter | Date | null | undefined {
+    switch (due) {
+      case "overdue":
+        return { lt: today };
+      case "today":
+        return { equals: today };
+      case "due_soon":
+        return { gt: today, lte: dueSoon };
+      case "upcoming":
+        return { gt: dueSoon };
+      case "no_date":
+        return null;
+      default:
+        return undefined; // "all" or unset
+    }
+  }
+
+  /** Queue counts for the ops filters: per-status across all statuses, plus the
+   * due-date urgency buckets within the actionable `pending` queue. The buckets
+   * come from one filtered-aggregate round-trip against the same cutoffs the
+   * list uses, so the chip totals and the filtered lists always agree. */
+  async counts(): Promise<FulfillmentCounts> {
     const grouped = await this.prisma.fulfillmentJob.groupBy({
       by: ["status"],
       _count: { _all: true },
     });
-    const result: Record<FulfillmentJobStatus, number> = {
+    const status: Record<FulfillmentJobStatus, number> = {
       pending: 0,
       in_progress: 0,
       printed: 0,
@@ -295,9 +360,36 @@ export class FulfillmentService {
       failed: 0,
     };
     for (const row of grouped) {
-      result[row.status] = row._count._all;
+      status[row.status] = row._count._all;
     }
-    return result;
+
+    const { today, dueSoon } = dueCutoffs();
+    const todayIso = isoDay(today);
+    const dueSoonIso = isoDay(dueSoon);
+    const rows = await this.prisma.$queryRaw<
+      Array<{ overdue: number; today: number; due_soon: number; upcoming: number; no_date: number }>
+    >(Prisma.sql`
+      SELECT
+        count(*) FILTER (WHERE due_date < ${todayIso}::date)::int AS overdue,
+        count(*) FILTER (WHERE due_date = ${todayIso}::date)::int AS today,
+        count(*) FILTER (WHERE due_date > ${todayIso}::date AND due_date <= ${dueSoonIso}::date)::int AS due_soon,
+        count(*) FILTER (WHERE due_date > ${dueSoonIso}::date)::int AS upcoming,
+        count(*) FILTER (WHERE due_date IS NULL)::int AS no_date
+      FROM fulfillment_jobs
+      WHERE status::text = 'pending'
+    `);
+    const due = rows[0];
+
+    return {
+      status,
+      due: {
+        overdue: due?.overdue ?? 0,
+        today: due?.today ?? 0,
+        dueSoon: due?.due_soon ?? 0,
+        upcoming: due?.upcoming ?? 0,
+        noDate: due?.no_date ?? 0,
+      },
+    };
   }
 
   async findOne(actorUserId: string, id: string): Promise<FulfillmentJob> {
@@ -321,7 +413,7 @@ export class FulfillmentService {
   }
 
   /** Optional "I'm working on this" assignment: pending → in_progress. */
-  async claim(actorUserId: string, id: string): Promise<FulfillmentQueueJob> {
+  async claim(actorUserId: string, id: string): Promise<FulfillmentQueueRow> {
     const { count } = await this.prisma.fulfillmentJob.updateMany({
       where: { id, status: "pending" },
       data: { status: "in_progress", assignedToUserId: actorUserId },
@@ -335,17 +427,18 @@ export class FulfillmentService {
     }
     // Returns the queue view (no street address) — a status change shouldn't
     // leak the full address back; that only comes via the audited paths.
-    return this.prisma.fulfillmentJob.findUniqueOrThrow({
+    const job = await this.prisma.fulfillmentJob.findUniqueOrThrow({
       where: { id },
       select: QUEUE_SELECT,
     });
+    return this.enrichRow(job);
   }
 
   async transition(
     actorUserId: string,
     id: string,
     dto: TransitionFulfillmentDto,
-  ): Promise<FulfillmentQueueJob> {
+  ): Promise<FulfillmentQueueRow> {
     await this.prisma.$transaction(async (tx) => {
       const applied = await this.applyTransition(tx, actorUserId, id, dto.toStatus, {
         trackingReference: dto.trackingReference,
@@ -366,10 +459,11 @@ export class FulfillmentService {
     if (dto.toStatus === "posted") {
       await this.notifyDispatched([id]);
     }
-    return this.prisma.fulfillmentJob.findUniqueOrThrow({
+    const job = await this.prisma.fulfillmentJob.findUniqueOrThrow({
       where: { id },
       select: QUEUE_SELECT,
     });
+    return this.enrichRow(job);
   }
 
   /**

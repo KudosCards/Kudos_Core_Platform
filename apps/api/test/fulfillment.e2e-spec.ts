@@ -443,4 +443,111 @@ describe("Fulfillment (e2e)", () => {
     const jobB = await prisma.fulfillmentJob.findUniqueOrThrow({ where: { id: orderB.jobId } });
     expect(jobB.status).toBe("printed");
   });
+
+  // --- Dispatch-date queue (ADR 0108) -------------------------------------
+
+  it("denormalises the occasion's dispatch date onto the job at settlement", async () => {
+    const { token } = await signUp();
+    const order = await createPaidOrder(token);
+
+    const job = await prisma.fulfillmentJob.findUniqueOrThrow({ where: { id: order.jobId } });
+    const occasion = await prisma.occasion.findUniqueOrThrow({ where: { id: order.occasionId } });
+    expect(job.dueDate).not.toBeNull();
+    // Same calendar day as the occasion's dispatch date.
+    expect(job.dueDate!.toISOString().slice(0, 10)).toBe(
+      occasion.dispatchDate!.toISOString().slice(0, 10),
+    );
+  });
+
+  /** UTC-midnight date `offsetDays` from today — for planting controlled deadlines. */
+  function utcDay(offsetDays: number): Date {
+    const d = new Date();
+    d.setUTCHours(0, 0, 0, 0);
+    d.setUTCDate(d.getUTCDate() + offsetDays);
+    return d;
+  }
+
+  it("filters and orders the queue by dispatch deadline, with server-computed urgency", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+
+    const overdue = await createPaidOrder(token);
+    const today = await createPaidOrder(token);
+    const soon = await createPaidOrder(token);
+    const upcoming = await createPaidOrder(token);
+    const noDate = await createPaidOrder(token);
+
+    // Plant controlled deadlines. `soon` at +1 day is inside the 5-working-day
+    // window whatever weekday the suite runs; `upcoming` at +60 is well beyond.
+    await prisma.fulfillmentJob.update({ where: { id: overdue.jobId }, data: { dueDate: utcDay(-10) } });
+    await prisma.fulfillmentJob.update({ where: { id: today.jobId }, data: { dueDate: utcDay(0) } });
+    await prisma.fulfillmentJob.update({ where: { id: soon.jobId }, data: { dueDate: utcDay(1) } });
+    await prisma.fulfillmentJob.update({ where: { id: upcoming.jobId }, data: { dueDate: utcDay(60) } });
+    await prisma.fulfillmentJob.update({ where: { id: noDate.jobId }, data: { dueDate: null } });
+
+    const list = async (due: string) => {
+      const res = await request(app.getHttpServer())
+        .get(`/fulfillment/jobs?status=pending&due=${due}&perPage=200`)
+        .set("Authorization", `Bearer ${opsToken}`)
+        .expect(200);
+      return (res.body as { items: { id: string; workingDaysUntilDue: number | null }[] }).items;
+    };
+
+    const overdueItems = await list("overdue");
+    const overdueIds = overdueItems.map((j) => j.id);
+    expect(overdueIds).toContain(overdue.jobId);
+    expect(overdueIds).not.toContain(today.jobId);
+    expect(overdueIds).not.toContain(upcoming.jobId);
+    expect(overdueIds).not.toContain(noDate.jobId);
+    // Server-computed urgency: overdue is negative.
+    expect(overdueItems.find((j) => j.id === overdue.jobId)!.workingDaysUntilDue).toBeLessThan(0);
+
+    const todayItems = await list("today");
+    expect(todayItems.map((j) => j.id)).toContain(today.jobId);
+    expect(todayItems.find((j) => j.id === today.jobId)!.workingDaysUntilDue).toBe(0);
+
+    const soonIds = (await list("due_soon")).map((j) => j.id);
+    expect(soonIds).toContain(soon.jobId);
+    expect(soonIds).not.toContain(overdue.jobId);
+    expect(soonIds).not.toContain(upcoming.jobId);
+
+    const upcomingItems = await list("upcoming");
+    expect(upcomingItems.map((j) => j.id)).toContain(upcoming.jobId);
+    expect(upcomingItems.map((j) => j.id)).not.toContain(soon.jobId);
+    expect(upcomingItems.find((j) => j.id === upcoming.jobId)!.workingDaysUntilDue).toBeGreaterThan(0);
+
+    const noDateItems = await list("no_date");
+    expect(noDateItems.map((j) => j.id)).toContain(noDate.jobId);
+    expect(noDateItems.find((j) => j.id === noDate.jobId)!.workingDaysUntilDue).toBeNull();
+    expect(noDateItems.map((j) => j.id)).not.toContain(overdue.jobId);
+
+    // Default (all, sorted by due date): overdue precedes upcoming; undated trails.
+    const all = await list("all");
+    const ids = all.map((j) => j.id);
+    expect(ids.indexOf(overdue.jobId)).toBeLessThan(ids.indexOf(upcoming.jobId));
+    expect(ids.indexOf(upcoming.jobId)).toBeLessThan(ids.indexOf(noDate.jobId));
+  });
+
+  it("reports due-date urgency buckets in the counts, within pending", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+
+    const overdue = await createPaidOrder(token);
+    const today = await createPaidOrder(token);
+    await prisma.fulfillmentJob.update({ where: { id: overdue.jobId }, data: { dueDate: utcDay(-3) } });
+    await prisma.fulfillmentJob.update({ where: { id: today.jobId }, data: { dueDate: utcDay(0) } });
+
+    const res = await request(app.getHttpServer())
+      .get("/fulfillment/counts")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .expect(200);
+    const body = res.body as {
+      status: Record<string, number>;
+      due: { overdue: number; today: number; dueSoon: number; upcoming: number; noDate: number };
+    };
+    // Shape: status map + due buckets. Our two planted jobs guarantee a floor.
+    expect(body.status.pending).toBeGreaterThanOrEqual(2);
+    expect(body.due.overdue).toBeGreaterThanOrEqual(1);
+    expect(body.due.today).toBeGreaterThanOrEqual(1);
+  });
 });

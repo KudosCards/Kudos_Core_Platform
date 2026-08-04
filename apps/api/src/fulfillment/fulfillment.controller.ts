@@ -7,7 +7,8 @@ import type { Paginated } from "../common/paginated";
 import {
   FulfillmentService,
   type FulfillmentJob,
-  type FulfillmentQueueJob,
+  type FulfillmentQueueRow,
+  type FulfillmentCounts,
   type BulkTransitionSummary,
   type ExportedAddress,
   type PrintRunCard,
@@ -37,13 +38,14 @@ export class FulfillmentController {
   }
 
   @Get("jobs")
-  list(@Query() query: ListFulfillmentQueryDto): Promise<Paginated<FulfillmentQueueJob>> {
+  list(@Query() query: ListFulfillmentQueryDto): Promise<Paginated<FulfillmentQueueRow>> {
     return this.fulfillmentService.list(query);
   }
 
-  /** Per-status job counts for the queue's filter chips. */
+  /** Per-status job counts plus due-date urgency buckets for the queue's filter
+   * chips (see ADR 0108). */
   @Get("counts")
-  counts(): Promise<Record<string, number>> {
+  counts(): Promise<FulfillmentCounts> {
     return this.fulfillmentService.counts();
   }
 
@@ -79,7 +81,7 @@ export class FulfillmentController {
   claim(
     @CurrentPlatformAdmin() admin: PlatformAdminContext,
     @Param("id", ParseUUIDPipe) id: string,
-  ): Promise<FulfillmentQueueJob> {
+  ): Promise<FulfillmentQueueRow> {
     return this.fulfillmentService.claim(admin.userId, id);
   }
 
@@ -88,7 +90,7 @@ export class FulfillmentController {
     @CurrentPlatformAdmin() admin: PlatformAdminContext,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: TransitionFulfillmentDto,
-  ): Promise<FulfillmentQueueJob> {
+  ): Promise<FulfillmentQueueRow> {
     return this.fulfillmentService.transition(admin.userId, id, dto);
   }
 
@@ -113,7 +115,7 @@ export class FulfillmentController {
   dispatch(
     @CurrentPlatformAdmin() admin: PlatformAdminContext,
     @Param("id", ParseUUIDPipe) id: string,
-  ): Promise<FulfillmentQueueJob> {
+  ): Promise<FulfillmentQueueRow> {
     return this.fulfillmentService.dispatch(admin.userId, id);
   }
 
@@ -138,7 +140,7 @@ export class FulfillmentController {
   @Post("jobs/:id/click-and-drop")
   retryClickAndDrop(
     @Param("id", ParseUUIDPipe) id: string,
-  ): Promise<FulfillmentQueueJob> {
+  ): Promise<FulfillmentQueueRow> {
     return this.fulfillmentService.retryClickAndDrop(id);
   }
 }

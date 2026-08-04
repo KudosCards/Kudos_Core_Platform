@@ -20,6 +20,32 @@ export const fulfillmentJobSchema = z.object({
 });
 export type FulfillmentJob = z.infer<typeof fulfillmentJobSchema>;
 
+/** Urgency filter over a job's dispatch deadline, and the queue sort key.
+ * The ops queue's spine — see docs/adr/0108-dispatch-date-queue.md. */
+export const DUE_FILTERS = ["overdue", "today", "due_soon", "upcoming", "no_date", "all"] as const;
+export type DueFilter = (typeof DUE_FILTERS)[number];
+
+export const QUEUE_SORTS = ["due_date", "created_at"] as const;
+export type QueueSort = (typeof QUEUE_SORTS)[number];
+
+/**
+ * The queue's counts payload: per-status across every status, plus the due-date
+ * urgency buckets computed within the actionable `pending` queue. `dueSoon`
+ * counts cards due within the working-day window (excluding today and overdue,
+ * which have their own buckets). Drives the ops filter chips.
+ */
+export const fulfillmentCountsSchema = z.object({
+  status: z.record(fulfillmentJobStatusSchema, z.number()),
+  due: z.object({
+    overdue: z.number(),
+    today: z.number(),
+    dueSoon: z.number(),
+    upcoming: z.number(),
+    noDate: z.number(),
+  }),
+});
+export type FulfillmentCounts = z.infer<typeof fulfillmentCountsSchema>;
+
 export interface FulfillmentProvider {
   submit(job: FulfillmentJob): Promise<{ providerReference: string }>;
   getStatus(providerReference: string): Promise<FulfillmentJobStatusUpdate>;

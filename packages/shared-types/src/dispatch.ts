@@ -154,8 +154,55 @@ export function isoDay(date: Date): string {
 }
 
 /** UTC midnight of a date — dispatch maths is all date-only. */
-function startOfUtcDay(date: Date): Date {
+export function startOfUtcDay(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+/**
+ * Step `n` working days forward from `from` (or backward when `n` is negative),
+ * skipping weekends and bank holidays. Returns UTC midnight of the landing day.
+ * `n === 0` returns the same calendar day (never snapped to a working day).
+ * The forward counterpart of computeDispatchDate's backward count — used to turn
+ * "5 working days from today" into a concrete calendar cutoff. See ADR 0108.
+ */
+export function addWorkingDays(
+  from: Date,
+  n: number,
+  holidays: ReadonlySet<string> = UK_BANK_HOLIDAYS,
+): Date {
+  const cursor = startOfUtcDay(from);
+  const step = n >= 0 ? 1 : -1;
+  let remaining = Math.abs(n);
+  while (remaining > 0) {
+    cursor.setUTCDate(cursor.getUTCDate() + step);
+    if (isWorkingDay(cursor, holidays)) remaining--;
+  }
+  return cursor;
+}
+
+/**
+ * Signed count of working days from `from` to `target`: 0 when they're the same
+ * calendar day, positive when `target` is ahead, negative when it's behind.
+ * Only working days are counted, so a `target` that is itself a weekend/holiday
+ * is reached but not tallied (dispatch dates are always working days, so this is
+ * a defensive edge, not the norm). Drives the queue's "due in N working days"
+ * badge — computed server-side because only the server holds the holiday set.
+ */
+export function workingDaysUntil(
+  target: Date,
+  from: Date,
+  holidays: ReadonlySet<string> = UK_BANK_HOLIDAYS,
+): number {
+  const end = startOfUtcDay(target);
+  const cursor = startOfUtcDay(from);
+  if (cursor.getTime() === end.getTime()) return 0;
+  const step = end.getTime() > cursor.getTime() ? 1 : -1;
+  let count = 0;
+  while (cursor.getTime() !== end.getTime()) {
+    cursor.setUTCDate(cursor.getUTCDate() + step);
+    if (isWorkingDay(cursor, holidays)) count += step;
+  }
+  return count;
 }
 
 /** True when a card can be printed and posted on this date: a weekday that

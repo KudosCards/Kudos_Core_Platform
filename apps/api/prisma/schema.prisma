@@ -852,12 +852,20 @@ model FulfillmentJob {
   /// The last Click & Drop import error for this card, if the push failed — shown
   /// in the ops queue so an operator can retry. Cleared on a successful push.
   clickAndDropError String?              @map("click_and_drop_error")
+  /// The date this card must be POSTED by — denormalised from the occasion's
+  /// dispatchDate at settlement (see batchOrders.settleFulfillment), so the ops
+  /// queue can sort and bucket by send-urgency with an indexed range scan rather
+  /// than joining through order_recipients → occasions on every read. Null when
+  /// the card has no occasion (a bespoke send with no date-driven deadline);
+  /// those sort last. See docs/adr/0108-dispatch-date-queue.md.
+  dueDate           DateTime?            @map("due_date") @db.Date
   createdAt         DateTime             @default(now()) @map("created_at")
   updatedAt         DateTime             @updatedAt @map("updated_at")
 
   orderRecipient OrderRecipient @relation(fields: [orderRecipientId], references: [id], onDelete: Cascade)
 
-  @@index([status])
+  // The queue's spine: filter by status, order/range by dueDate. See ADR 0108.
+  @@index([status, dueDate])
   @@map("fulfillment_jobs")
 }
 
