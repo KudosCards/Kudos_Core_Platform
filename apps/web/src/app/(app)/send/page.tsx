@@ -57,7 +57,12 @@ export default async function SendPage({
   const initialSelected = [...byId.values()];
 
   const seededSegment: SeededSegment | null = segmentMembers
-    ? { name: segmentMembers.name, total: segmentMembers.total, capped: segmentMembers.capped }
+    ? {
+        name: segmentMembers.name,
+        total: segmentMembers.total,
+        capped: segmentMembers.capped,
+        reconciliations: segmentMembers.reconciliations,
+      }
     : null;
 
   const emptyPage: Paginated<Recipient> = {

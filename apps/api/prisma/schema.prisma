@@ -472,6 +472,12 @@ model Occasion {
   /// calendar groups all members under one collapsible entry. Null for
   /// standalone occasions. See docs/adr/0057-shared-events.md.
   eventId        String?        @map("event_id")
+  /// Set on a one_off_campaign occasion created by a "send to segment" bulk send:
+  /// points at the recipient's natural occasion (e.g. their birthday this month)
+  /// that this send stands in for. At payment settlement the referenced occasion
+  /// is marked `skipped` so it can't independently fire and double-send. Null for
+  /// every other occasion. See docs/adr/0107-occasion-reconciliation.md.
+  supersedesOccasionId String?   @map("supersedes_occasion_id")
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
@@ -482,6 +488,11 @@ model Occasion {
   // Deleting the parent Event removes its still-scheduled member occasions.
   event           Event?           @relation(fields: [eventId], references: [id], onDelete: Cascade)
   orderRecipients OrderRecipient[]
+  // Self-relation: a campaign occasion supersedes the natural occasion it replaces.
+  // SetNull, not Cascade — deleting the campaign occasion must never delete the
+  // real birthday/renewal it stood in for.
+  supersedes      Occasion?        @relation("OccasionSupersedes", fields: [supersedesOccasionId], references: [id], onDelete: SetNull)
+  supersededBy    Occasion[]       @relation("OccasionSupersedes")
 
   // Prevents the scheduler from double-creating the same occasion instance on retry.
   @@unique([recipientId, type, occasionDate], name: "occasion_idempotency_key")

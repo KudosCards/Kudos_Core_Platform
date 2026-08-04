@@ -31,6 +31,11 @@ const ORDER_RECIPIENTS_INCLUDE = { orderRecipients: true } as const;
 
 export type BatchOrder = Prisma.BatchOrderGetPayload<{ include: typeof ORDER_RECIPIENTS_INCLUDE }>;
 
+/** Occasion statuses that can still be sent — a segment send only supersedes a
+ * natural occasion still in one of these, so it never un-does an in-flight send.
+ * See docs/adr/0107-occasion-reconciliation.md. */
+const RECONCILABLE_OCCASION_STATUSES = ["scheduled", "pending_approval", "approved"] as const;
+
 /** A card can only be posted to a contact with a complete, valid UK address. */
 function hasMailableAddress(recipient: Prisma.RecipientGetPayload<object>): boolean {
   return (
@@ -198,15 +203,62 @@ export class BatchOrdersService {
       );
     }
 
+    // Which natural occasion (if any) each recipient's campaign occasion should
+    // supersede, so a segment send doesn't double-send. Validated + account-scoped.
+    const supersedesByRecipient = await this.resolveReconcile(accountId, dto);
+
     // Preserve the caller's selection order (findMany doesn't guarantee it).
     const byId = new Map(recipients.map((r) => [r.id, r]));
     const lines: CreateBatchOrderLineDto[] = [];
     for (const id of dto.recipientIds) {
       lines.push(
-        await this.buildBulkSendLine(accountId, byId.get(id)!, savedDesign.id, dto.postageClass, dto.occasionType),
+        await this.buildBulkSendLine(
+          accountId,
+          byId.get(id)!,
+          savedDesign.id,
+          dto.postageClass,
+          dto.occasionType,
+          supersedesByRecipient.get(id),
+        ),
       );
     }
     return this.create(accountId, actorUserId, { lines });
+  }
+
+  /**
+   * Resolve `dto.reconcile` to a validated recipientId → naturalOccasionId map.
+   * Only occasions that are on this account, belong to the paired recipient (who
+   * must also be in `recipientIds`), are natural (not a `one_off_campaign` send),
+   * and are still sendable survive — anything else is silently dropped rather
+   * than failing the whole send. See docs/adr/0107.
+   */
+  private async resolveReconcile(
+    accountId: string,
+    dto: BulkSendDto,
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    if (!dto.reconcile?.length) return result;
+
+    const selected = new Set(dto.recipientIds);
+    const requested = dto.reconcile.filter((r) => selected.has(r.recipientId));
+    if (requested.length === 0) return result;
+
+    const valid = await this.prisma.occasion.findMany({
+      where: {
+        accountId,
+        id: { in: requested.map((r) => r.occasionId) },
+        recipientId: { in: requested.map((r) => r.recipientId) },
+        source: { not: "one_off_campaign" },
+        status: { in: [...RECONCILABLE_OCCASION_STATUSES] },
+      },
+      select: { id: true, recipientId: true },
+    });
+    const validByPair = new Set(valid.map((o) => `${o.recipientId}:${o.id}`));
+
+    for (const { recipientId, occasionId } of requested) {
+      if (validByPair.has(`${recipientId}:${occasionId}`)) result.set(recipientId, occasionId);
+    }
+    return result;
   }
 
   /** Create the approved one-off occasion for one existing contact in a bulk
@@ -217,6 +269,7 @@ export class BatchOrdersService {
     savedDesignId: string,
     postageClass: PostageClass,
     occasionType: OccasionType | undefined,
+    supersedesOccasionId: string | undefined,
   ): Promise<CreateBatchOrderLineDto> {
     const occasionDate = new Date();
     const occasion = await this.prisma.occasion.create({
@@ -231,6 +284,7 @@ export class BatchOrdersService {
         savedDesignId,
         dispatchOption: "asap",
         postageClass,
+        supersedesOccasionId,
       },
     });
 
@@ -273,6 +327,30 @@ export class BatchOrdersService {
       tx,
       orderRecipients.map((recipient) => recipient.id),
     );
+
+    // Reconciliation (ADR 0107): now that this order is actually paid + queued,
+    // consume the natural occasions its campaign occasions supersede so they
+    // can't independently fire and double-send. Status-guarded (only still
+    // sendable occasions) so an in-flight send is never un-done, and idempotent
+    // — a redelivered webhook re-runs this over already-skipped rows as a no-op.
+    const occasionIds = orderRecipients
+      .map((r) => r.occasionId)
+      .filter((id): id is string => id !== null);
+    if (occasionIds.length > 0) {
+      const superseding = await tx.occasion.findMany({
+        where: { id: { in: occasionIds }, supersedesOccasionId: { not: null } },
+        select: { supersedesOccasionId: true },
+      });
+      const supersededIds = superseding
+        .map((o) => o.supersedesOccasionId)
+        .filter((id): id is string => id !== null);
+      if (supersededIds.length > 0) {
+        await tx.occasion.updateMany({
+          where: { id: { in: supersededIds }, status: { in: [...RECONCILABLE_OCCASION_STATUSES] } },
+          data: { status: "skipped" },
+        });
+      }
+    }
   }
 
   async create(

@@ -1,6 +1,30 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { OccasionType, PostageClass } from "@prisma/client";
-import { ArrayMinSize, ArrayUnique, IsEnum, IsOptional, IsUUID } from "class-validator";
+import { Type } from "class-transformer";
+import {
+  ArrayMinSize,
+  ArrayUnique,
+  IsEnum,
+  IsOptional,
+  IsUUID,
+  ValidateNested,
+} from "class-validator";
+
+/**
+ * One "mark this occasion as handled" instruction: when sending to an
+ * occasion-mode segment, the recipient's matched natural occasion (e.g. their
+ * birthday this month) is consumed at payment settlement so it can't also fire
+ * from approvals/auto-send. See docs/adr/0107-occasion-reconciliation.md.
+ */
+export class BulkSendReconcileDto {
+  @ApiProperty()
+  @IsUUID()
+  recipientId!: string;
+
+  @ApiProperty()
+  @IsUUID()
+  occasionId!: string;
+}
 
 /**
  * Bulk send: pick one saved design and a set of EXISTING contacts, and post the
@@ -28,4 +52,14 @@ export class BulkSendDto {
   @IsOptional()
   @IsEnum(OccasionType)
   occasionType?: OccasionType;
+
+  @ApiPropertyOptional({
+    type: [BulkSendReconcileDto],
+    description:
+      "Natural occasions to mark handled (consumed at payment) so a segment send doesn't double-send. Entries for recipients not in recipientIds are ignored.",
+  })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => BulkSendReconcileDto)
+  reconcile?: BulkSendReconcileDto[];
 }
