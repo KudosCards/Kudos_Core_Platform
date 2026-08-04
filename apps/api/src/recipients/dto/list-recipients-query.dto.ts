@@ -33,6 +33,13 @@ export class ListRecipientsQueryDto {
   listId?: string;
 
   @ApiPropertyOptional({
+    description: 'Filter by where the contact came from (e.g. "manual", "brevo")',
+  })
+  @IsOptional()
+  @IsString()
+  source?: string;
+
+  @ApiPropertyOptional({
     enum: ["recent", "name_asc", "name_desc", "dob_asc", "dob_desc"],
     description: "Column sort; defaults to most-recently-added",
   })

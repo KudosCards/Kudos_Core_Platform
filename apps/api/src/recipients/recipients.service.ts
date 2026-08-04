@@ -187,6 +187,7 @@ export class RecipientsService {
       // with ?status=archived. An explicit status filter always wins.
       ...(query.status ? { status: query.status } : { status: { not: "archived" } }),
       ...(query.listId && { listMemberships: { some: { listId: query.listId } } }),
+      ...(query.source && { source: query.source }),
       ...(query.missingAddress === "true" && MISSING_ADDRESS_WHERE),
       ...(birthMonthIds && { id: { in: birthMonthIds } }),
       ...(query.search && {

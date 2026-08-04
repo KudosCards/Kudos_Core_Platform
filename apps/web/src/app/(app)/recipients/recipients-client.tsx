@@ -5,9 +5,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
-import { ConnectCrmCallout } from "@/components/connect-crm-callout";
 import { AddressFields } from "@/components/address-fields";
-import { CsvImport } from "@/components/csv-import";
+import { CsvImport, downloadSampleCsv } from "@/components/csv-import";
+import { Modal } from "@/components/modal";
 
 /** A contact is mailable only with line 1, city, and postcode — mirrors the
  * API's MISSING_ADDRESS_WHERE so the badge agrees with the server filter/count. */
@@ -26,18 +26,8 @@ export const PER_PAGE = 30;
 
 /** Month labels for the birthday-month filter; index 0 = January. */
 const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
 ];
 
 /** Friendly labels for where a recipient came from (see the integrations spine). */
@@ -52,6 +42,8 @@ const SOURCE_LABELS: Record<string, string> = {
 function sourceLabel(source: string): string {
   return SOURCE_LABELS[source] ?? source;
 }
+/** The source options offered in the filter — the known integration spine. */
+const SOURCE_OPTIONS = ["manual", "csv", "api", "brevo", "hubspot", "gohighlevel"];
 
 export interface Paginated<T> {
   items: T[];
@@ -61,6 +53,35 @@ export interface Paginated<T> {
 }
 
 type SortKey = "recent" | "name_asc" | "name_desc" | "dob_asc" | "dob_desc";
+
+/** The recipient's next upcoming birthday (year-agnostic) + a friendly countdown,
+ * or null when no date of birth is set. */
+function nextBirthday(dob: string | Date | null): { label: string; countdown: string } | null {
+  if (!dob) return null;
+  const d = new Date(dob);
+  if (Number.isNaN(d.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const next = new Date(today.getFullYear(), d.getMonth(), d.getDate());
+  if (next.getTime() < today.getTime()) next.setFullYear(today.getFullYear() + 1);
+  const inDays = Math.round((next.getTime() - today.getTime()) / 86_400_000);
+  const label = next.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const countdown = inDays === 0 ? "Today" : inDays === 1 ? "Tomorrow" : `In ${inDays} days`;
+  return { label, countdown };
+}
+
+/** "12 Coniscliffe Road, Darlington" — the one-line address shown under a name. */
+function addressLine(r: Recipient): string {
+  return [r.addressLine1, r.addressCity].filter((part) => part?.trim()).join(", ");
+}
+
+/** "Ann and Bob" / "Ann, Bob and 3 more" — for the missing-address banner. */
+function joinNames(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0]!;
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names[0]}, ${names[1]} and ${names.length - 2} more`;
+}
 
 /** A clickable column header that cycles asc → desc for its column, showing the
  * active direction with an arrow. Clicking a different column starts at asc. */
@@ -122,37 +143,57 @@ export function RecipientsClient({
   // Bumped on a successful add to remount AddressFields (controlled inputs that
   // formEl.reset() can't clear).
   const [addFormKey, setAddFormKey] = useState(0);
+  // Header-action modals: the add form and CSV import moved off the page into
+  // dialogs so the contact list is the primary focus (see ADR 0097).
+  const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   // "Needs address" worklist filter. Kept in a ref too so the shared reload()
   // can read it without every call site having to thread it through.
   const [missingOnly, setMissingOnly] = useState(initialMissingOnly);
   const missingOnlyRef = useRef(initialMissingOnly);
-  // "Archived" folder view. Off by default, so archived recipients are out of
-  // sight in the main list; toggling it on asks the API for status=archived and
-  // shows only them (where they can be restored). Kept in a ref too so the
-  // shared reload() reads it without threading it through every call site.
   const [archivedView, setArchivedView] = useState(false);
   const archivedViewRef = useRef(false);
-  // Birthday-month filter ("" = all months). Kept in a ref too so the shared
-  // reload() picks it up without threading it through the call signature.
   const [birthMonth, setBirthMonth] = useState("");
   const birthMonthRef = useRef("");
+  const [source, setSource] = useState("");
+  const sourceRef = useRef("");
   const [rowBusyId, setRowBusyId] = useState<string | null>(null);
+
+  // Unfiltered tab counts + the missing-address worklist, refreshed independently
+  // of the (filtered) table so the tabs and banner stay accurate.
+  const [activeCount, setActiveCount] = useState(initialMissingOnly ? 0 : initialTotal);
+  const [archivedCount, setArchivedCount] = useState(0);
+  const [missing, setMissing] = useState<Recipient[]>([]);
+  const [missingTotal, setMissingTotal] = useState(0);
 
   // Lists state.
   const [lists, setLists] = useState<RecipientListSummary[]>(initialLists);
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [addToListId, setAddToListId] = useState<string>("");
-  const [creatingList, setCreatingList] = useState(false);
   const [listBusy, setListBusy] = useState(false);
 
   const reloadLists = useCallback(async () => {
     try {
-      const next = await clientApiFetch<RecipientListSummary[]>("/recipient-lists");
-      setLists(next);
+      setLists(await clientApiFetch<RecipientListSummary[]>("/recipient-lists"));
     } catch {
-      // Non-fatal: the recipients table is still usable if the list counts
-      // fail to refresh — the next full navigation will reconcile them.
+      // Non-fatal: the table is still usable if the counts fail to refresh.
+    }
+  }, []);
+
+  /** Refresh the tab counts + the missing-address worklist (all unfiltered). */
+  const refreshMeta = useCallback(async () => {
+    try {
+      const [active, archived, miss] = await Promise.all([
+        clientApiFetch<Paginated<Recipient>>("/recipients?perPage=1"),
+        clientApiFetch<Paginated<Recipient>>("/recipients?perPage=1&status=archived"),
+        clientApiFetch<Paginated<Recipient>>("/recipients?missingAddress=true&perPage=100"),
+      ]);
+      setActiveCount(active.total);
+      setArchivedCount(archived.total);
+      setMissing(miss.items);
+      setMissingTotal(miss.total);
+    } catch {
+      // Non-fatal — the tabs/banner just keep their last values.
     }
   }, []);
 
@@ -169,6 +210,7 @@ export function RecipientsClient({
         if (sortKey !== "recent") params.set("sort", sortKey);
         if (missingOnlyRef.current) params.set("missingAddress", "true");
         if (birthMonthRef.current) params.set("birthMonth", birthMonthRef.current);
+        if (sourceRef.current) params.set("source", sourceRef.current);
         if (archivedViewRef.current) params.set("status", "archived");
         const result = await clientApiFetch<Paginated<Recipient>>(
           `/recipients?${params.toString()}`,
@@ -185,6 +227,14 @@ export function RecipientsClient({
     },
     [],
   );
+
+  useEffect(() => {
+    // Mount-only fetch of the tab counts + missing-address worklist. The setState
+    // calls land in refreshMeta's async body (after the fetch resolves), not
+    // synchronously in this effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshMeta();
+  }, [refreshMeta]);
 
   // Debounce the search box; a settled term (or a cleared one) reloads page 1.
   useEffect(() => {
@@ -222,10 +272,24 @@ export function RecipientsClient({
     void reload(1, activeListId, debouncedSearch, sort);
   }
 
+  function changeSource(value: string) {
+    setSource(value);
+    sourceRef.current = value;
+    setSelected(new Set());
+    void reload(1, activeListId, debouncedSearch, sort);
+  }
+
   function switchArchivedView(next: boolean) {
     if (next === archivedView) return;
     setArchivedView(next);
     archivedViewRef.current = next;
+    setSelected(new Set());
+    void reload(1, activeListId, debouncedSearch, sort);
+  }
+
+  function setMissingFilter(next: boolean) {
+    setMissingOnly(next);
+    missingOnlyRef.current = next;
     setSelected(new Set());
     void reload(1, activeListId, debouncedSearch, sort);
   }
@@ -257,8 +321,6 @@ export function RecipientsClient({
           firstName,
           lastName,
           ...(dateOfBirth && { dateOfBirth }),
-          // The form requires these, so they're present; guard anyway so we never
-          // send an empty string (which the API's @Length would reject).
           ...(addressLine1 && { addressLine1 }),
           ...(addressLine2 && { addressLine2 }),
           ...(addressCity && { addressCity }),
@@ -267,17 +329,23 @@ export function RecipientsClient({
       });
       formEl.reset();
       setAddFormKey((k) => k + 1);
+      setAddOpen(false);
       // New recipients sort first (createdAt desc) — jump to page 1, clearing
-      // the list filter, search, and sort so the just-added recipient is visible.
+      // filters/search so the just-added recipient is visible.
       setActiveListId(null);
       setSearch("");
       setDebouncedSearch("");
       setSort("recent");
-      // New recipients are active — make sure we're on the main list, not the
-      // archived folder, so the just-added contact is actually visible.
       setArchivedView(false);
       archivedViewRef.current = false;
+      setMissingOnly(false);
+      missingOnlyRef.current = false;
+      setBirthMonth("");
+      birthMonthRef.current = "";
+      setSource("");
+      sourceRef.current = "";
       await reload(1, null, "", "recent");
+      void refreshMeta();
     } catch (submitError) {
       setError(submitError instanceof ApiError ? submitError.message : "Could not add recipient");
     } finally {
@@ -286,46 +354,55 @@ export function RecipientsClient({
   }
 
   // After a CSV import completes, surface the just-added contacts: jump to the
-  // main (non-archived) list, clear filters/search, and refresh the table + list
-  // counts. The CsvImport component owns the file/mapping/summary UI itself.
+  // main (non-archived) list, clear filters/search, and refresh table + counts.
   function handleImported() {
+    setImportOpen(false);
     setActiveListId(null);
     setSearch("");
     setDebouncedSearch("");
     setSort("recent");
     setArchivedView(false);
     archivedViewRef.current = false;
+    setMissingOnly(false);
+    missingOnlyRef.current = false;
     void reload(1, null, "", "recent");
     void reloadLists();
+    void refreshMeta();
   }
 
-  async function handleCreateList(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    const formEl = event.currentTarget;
-    const name = String(new FormData(formEl).get("name") || "").trim();
-    if (!name) return;
-    setCreatingList(true);
+  /** Create a list and return it (used by both list-filter and add-to-list). */
+  async function createList(name: string): Promise<RecipientListSummary | null> {
     try {
       const created = await clientApiFetch<RecipientListSummary>("/recipient-lists", {
         method: "POST",
         body: JSON.stringify({ name }),
       });
       setLists((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
-      formEl.reset();
+      return created;
     } catch (createError) {
       setError(createError instanceof ApiError ? createError.message : "Could not create the list");
-    } finally {
-      setCreatingList(false);
+      return null;
     }
   }
 
-  async function addSelectedToList() {
-    if (!addToListId || selected.size === 0) return;
+  /** The list-filter dropdown, with a "＋ New list…" escape hatch. */
+  async function handleListFilterChange(value: string) {
+    if (value === "__new__") {
+      const name = window.prompt("New list name")?.trim();
+      if (!name) return;
+      const created = await createList(name);
+      if (created) selectList(created.id);
+      return;
+    }
+    selectList(value || null);
+  }
+
+  async function addSelectedToList(listId: string) {
+    if (!listId || selected.size === 0) return;
     setError(null);
     setListBusy(true);
     try {
-      await clientApiFetch(`/recipient-lists/${addToListId}/members`, {
+      await clientApiFetch(`/recipient-lists/${listId}/members`, {
         method: "POST",
         body: JSON.stringify({ recipientIds: [...selected] }),
       });
@@ -336,6 +413,18 @@ export function RecipientsClient({
     } finally {
       setListBusy(false);
     }
+  }
+
+  async function handleAddToList(value: string) {
+    if (!value) return;
+    if (value === "__new__") {
+      const name = window.prompt("New list name")?.trim();
+      if (!name) return;
+      const created = await createList(name);
+      if (created) await addSelectedToList(created.id);
+      return;
+    }
+    await addSelectedToList(value);
   }
 
   async function renameActiveList() {
@@ -386,20 +475,27 @@ export function RecipientsClient({
     });
   }
 
-  // Select-all toggles every recipient on the current page. When some but not
-  // all are selected, the first click selects the rest.
-  const allOnPageSelected =
-    recipients.length > 0 && recipients.every((r) => selected.has(r.id));
+  const allOnPageSelected = recipients.length > 0 && recipients.every((r) => selected.has(r.id));
   function toggleSelectAll() {
     setSelected((current) => {
       const next = new Set(current);
-      if (allOnPageSelected) {
-        recipients.forEach((r) => next.delete(r.id));
-      } else {
-        recipients.forEach((r) => next.add(r.id));
-      }
+      if (allOnPageSelected) recipients.forEach((r) => next.delete(r.id));
+      else recipients.forEach((r) => next.add(r.id));
       return next;
     });
+  }
+
+  /** Drop a row from the current view once its status no longer matches the
+   * folder (archived out of Active, restored out of Archived). */
+  function dropFromView(id: string) {
+    setRecipients((current) => current.filter((r) => r.id !== id));
+    setSelected((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+    setTotal((current) => Math.max(0, current - 1));
   }
 
   async function toggleArchive(recipient: Recipient) {
@@ -413,24 +509,14 @@ export function RecipientsClient({
               body: JSON.stringify({ status: "active" }),
             })
           : await clientApiFetch<Recipient>(`/recipients/${recipient.id}`, { method: "DELETE" });
-      // A row belongs in the current view only while its status still matches it:
-      // the active list shows non-archived, the archived folder shows archived.
-      // Once it flips (archive/restore), drop it from view instead of leaving a
-      // stale row behind — it reappears in the other folder.
       const stillInView =
         archivedViewRef.current ? updated.status === "archived" : updated.status !== "archived";
       if (stillInView) {
         setRecipients((current) => current.map((r) => (r.id === recipient.id ? updated : r)));
       } else {
-        setRecipients((current) => current.filter((r) => r.id !== recipient.id));
-        setSelected((current) => {
-          if (!current.has(recipient.id)) return current;
-          const next = new Set(current);
-          next.delete(recipient.id);
-          return next;
-        });
-        setTotal((current) => Math.max(0, current - 1));
+        dropFromView(recipient.id);
       }
+      void refreshMeta();
     } catch (archiveError) {
       setError(archiveError instanceof ApiError ? archiveError.message : "Could not update the recipient");
     } finally {
@@ -438,181 +524,168 @@ export function RecipientsClient({
     }
   }
 
+  /** Bulk archive (Active view) or restore (Archived view) the selection. */
+  async function bulkArchiveOrRestore() {
+    const ids = recipients.filter((r) => selected.has(r.id)).map((r) => r.id);
+    if (ids.length === 0) return;
+    setError(null);
+    setListBusy(true);
+    try {
+      for (const id of ids) {
+        if (archivedViewRef.current) {
+          await clientApiFetch(`/recipients/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "active" }),
+          });
+        } else {
+          await clientApiFetch(`/recipients/${id}`, { method: "DELETE" });
+        }
+        dropFromView(id);
+      }
+      setSelected(new Set());
+      void refreshMeta();
+    } catch (bulkError) {
+      setError(bulkError instanceof ApiError ? bulkError.message : "Could not update the recipients");
+    } finally {
+      setListBusy(false);
+    }
+  }
+
+  /** Export the selected recipients (current page) to a CSV file. */
+  function exportSelected() {
+    const rows = recipients.filter((r) => selected.has(r.id));
+    if (rows.length === 0) return;
+    const header = [
+      "First name", "Last name", "Date of birth",
+      "Address line 1", "Address line 2", "City", "Postcode", "Source",
+    ];
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = rows.map((r) =>
+      [
+        r.firstName,
+        r.lastName,
+        r.dateOfBirth ? new Date(r.dateOfBirth).toLocaleDateString("en-GB") : "",
+        r.addressLine1 ?? "",
+        r.addressLine2 ?? "",
+        r.addressCity ?? "",
+        r.addressPostcode ?? "",
+        sourceLabel(r.source),
+      ]
+        .map(esc)
+        .join(","),
+    );
+    const csv = [header.map(esc).join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `recipients-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
   const activeList = activeListId ? lists.find((l) => l.id === activeListId) : null;
+  const emptyMessage = archivedView
+    ? "No archived recipients."
+    : missingOnly
+      ? "Every recipient has a mailable address. 🎉"
+      : activeList
+        ? "No recipients on this list yet."
+        : search || birthMonth || source
+          ? "No recipients match your filters."
+          : "No recipients yet — add one or import a CSV to get started.";
+  // The true people count for the header (unfiltered), not the filtered table total.
+  const peopleCount = archivedView ? archivedCount : activeCount;
+  const showMissingBanner = !missingOnly && !archivedView && missingTotal > 0;
+  const footerLabel =
+    total === 0
+      ? null
+      : total <= recipients.length
+        ? `Showing all ${total} ${archivedView ? "archived" : "active"} recipient${total === 1 ? "" : "s"}`
+        : `Showing ${recipients.length} of ${total}`;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold tracking-tight">Recipients</h1>
-        <p className="text-muted">{total} total</p>
+    <div className="flex flex-col gap-5">
+      {/* Header: title + intent on the left, the primary actions on the right —
+          the add form + CSV import live in dialogs so the list stays the focus. */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-3xl font-bold tracking-tight">Recipients</h1>
+          <p className="max-w-md text-sm text-muted">
+            {peopleCount} {peopleCount === 1 ? "person" : "people"}. We post real cards, so every
+            recipient needs a full postal address.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href="/integrations" className="text-sm font-semibold text-accent hover:underline">
+            Sync a CRM
+          </Link>
+          <button type="button" onClick={() => setImportOpen(true)} className="btn-secondary">
+            Import CSV
+          </button>
+          <button type="button" onClick={() => setAddOpen(true)} className="btn-accent">
+            Add recipient
+          </button>
+        </div>
       </div>
 
       {error && (
         <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
       )}
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <form
-          onSubmit={(event) => void handleAddRecipient(event)}
-          className="card flex flex-col gap-3 p-6"
-        >
-          <h2 className="font-semibold">Add a recipient</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <input name="firstName" placeholder="First name" required className={inputClass} />
-            <input name="lastName" placeholder="Last name" required className={inputClass} />
-            <input type="date" name="dateOfBirth" aria-label="Date of birth" className={inputClass} />
-          </div>
-          <AddressFields key={addFormKey} />
-          <p className="text-xs text-muted">
-            We post real cards, so a full address is required. Add a date of birth and their birthday
-            lands on the calendar automatically.
+      {/* Missing-address banner — the worklist nudge, front and centre. */}
+      {showMissingBanner && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
+          <p className="text-accent">
+            <span className="font-semibold">
+              {missingTotal} recipient{missingTotal === 1 ? "" : "s"} can&apos;t be posted to.
+            </span>{" "}
+            {joinNames(missing.slice(0, 3).map((r) => `${r.firstName} ${r.lastName}`))}{" "}
+            {missingTotal === 1 ? "is" : "are"} missing an address.
           </p>
-          <button type="submit" disabled={addingRecipient} className="btn-accent self-start">
-            {addingRecipient ? "Adding…" : "Add recipient"}
-          </button>
-        </form>
-
-        <div className="card flex flex-col gap-3 p-6">
-          <h2 className="font-semibold">Import from CSV</h2>
-          <CsvImport onImported={handleImported} />
-        </div>
-      </section>
-
-      {/* CRM awareness: the "there's a faster way than CSV" nudge. */}
-      <ConnectCrmCallout />
-
-      {/* Lists: organise recipients into named groups (e.g. "Year 4 class"). */}
-      <section className="card flex flex-col gap-3 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-semibold">Lists</h2>
-          <form onSubmit={(event) => void handleCreateList(event)} className="flex items-center gap-2">
-            <input name="name" placeholder="New list, e.g. Year 4 class" className={`${inputClass} w-56`} />
-            <button type="submit" disabled={creatingList} className="btn-secondary">
-              {creatingList ? "Creating…" : "Create"}
-            </button>
-          </form>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => selectList(null)}
-            className={`rounded-full px-3 py-1 text-sm ${
-              activeListId === null
-                ? "bg-accent text-white"
-                : "border border-border hover:bg-foreground/[0.03]"
-            }`}
+            onClick={() => setMissingFilter(true)}
+            className="btn-secondary shrink-0"
           >
-            All recipients
+            Show these {missingTotal}
           </button>
-          {lists.map((list) => (
-            <button
-              key={list.id}
-              type="button"
-              onClick={() => selectList(list.id)}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-sm ${
-                activeListId === list.id
-                  ? "bg-accent text-white"
-                  : "border border-border hover:bg-foreground/[0.03]"
-              }`}
-            >
-              <span>{list.name}</span>
-              <span className={activeListId === list.id ? "text-white/80" : "text-muted"}>
-                {list.memberCount}
-              </span>
-            </button>
-          ))}
-          {lists.length === 0 && (
-            <span className="text-sm text-muted">No lists yet — create one to group recipients.</span>
-          )}
-        </div>
-
-        {activeList && (
-          <div className="flex flex-wrap items-center gap-3 text-sm text-muted">
-            <span>
-              Showing <span className="font-medium text-foreground">{activeList.name}</span>
-            </span>
-            <button type="button" onClick={() => void renameActiveList()} disabled={listBusy} className="underline hover:text-foreground">
-              Rename
-            </button>
-            <button type="button" onClick={() => void deleteActiveList()} disabled={listBusy} className="underline hover:text-accent">
-              Delete list
-            </button>
-          </div>
-        )}
-      </section>
-
-      {selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm">
-          <span className="text-muted">{selected.size} selected</span>
-          <Link
-            href={`/send?recipients=${[...selected].join(",")}`}
-            className="btn-accent"
-          >
-            Send a card →
-          </Link>
-          {lists.length > 0 && (
-            <>
-              <span className="text-border">|</span>
-              <select
-                value={addToListId}
-                onChange={(e) => setAddToListId(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">Add to list…</option>
-                {lists.map((list) => (
-                  <option key={list.id} value={list.id}>
-                    {list.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                disabled={!addToListId || listBusy}
-                onClick={() => void addSelectedToList()}
-                className="rounded-full border border-border px-4 py-2 font-medium hover:bg-foreground/[0.03] disabled:opacity-40"
-              >
-                {listBusy ? "Adding…" : "Add"}
-              </button>
-            </>
-          )}
         </div>
       )}
 
-      {/* Active vs Archived "folders": archived recipients are kept out of the
-          main list and live here, where they can be restored. */}
-      <div className="inline-flex self-start rounded-full border border-border p-1 text-sm">
-        <button
-          type="button"
-          onClick={() => switchArchivedView(false)}
-          aria-pressed={!archivedView}
-          className={`rounded-full px-4 py-1 transition-colors ${
-            !archivedView ? "bg-accent text-white" : "text-muted hover:text-foreground"
-          }`}
-        >
-          Active
-        </button>
-        <button
-          type="button"
-          onClick={() => switchArchivedView(true)}
-          aria-pressed={archivedView}
-          className={`rounded-full px-4 py-1 transition-colors ${
-            archivedView ? "bg-accent text-white" : "text-muted hover:text-foreground"
-          }`}
-        >
-          🗄 Archived
-        </button>
-      </div>
-
+      {/* Filters: folder toggle, search, list, birthday month, source. */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 sm:max-w-xs">
+        <div className="inline-flex rounded-lg border border-border p-0.5 text-sm">
+          <button
+            type="button"
+            onClick={() => switchArchivedView(false)}
+            aria-pressed={!archivedView}
+            className={`rounded-md px-3 py-1.5 transition-colors ${
+              !archivedView ? "bg-foreground text-background" : "text-muted hover:text-foreground"
+            }`}
+          >
+            Active <span className="tabular-nums opacity-70">{activeCount}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => switchArchivedView(true)}
+            aria-pressed={archivedView}
+            className={`rounded-md px-3 py-1.5 transition-colors ${
+              archivedView ? "bg-foreground text-background" : "text-muted hover:text-foreground"
+            }`}
+          >
+            Archived <span className="tabular-nums opacity-70">{archivedCount}</span>
+          </button>
+        </div>
+
+        <div className="relative min-w-[12rem] flex-1">
           <input
             value={search}
             onChange={(e) => changeSearch(e.target.value)}
-            placeholder="Search by name…"
+            placeholder="Search by name, postcode or town…"
             className={`${inputClass} w-full pr-8`}
-            aria-label="Search recipients by name"
+            aria-label="Search recipients"
           />
           {search && (
             <button
@@ -625,47 +698,134 @@ export function RecipientsClient({
             </button>
           )}
         </div>
+
+        <select
+          value={activeListId ?? ""}
+          onChange={(e) => void handleListFilterChange(e.target.value)}
+          aria-label="Filter by list"
+          className={inputClass}
+        >
+          <option value="">All recipients</option>
+          {lists.map((list) => (
+            <option key={list.id} value={list.id}>
+              {list.name} ({list.memberCount})
+            </option>
+          ))}
+          <option value="__new__">＋ New list…</option>
+        </select>
+
         <select
           value={birthMonth}
           onChange={(e) => changeBirthMonth(e.target.value)}
           aria-label="Filter by birthday month"
           className={`${inputClass} ${birthMonth ? "border-accent font-medium text-accent" : ""}`}
         >
-          <option value="">🎂 All birthdays</option>
+          <option value="">All birthdays</option>
           {MONTH_NAMES.map((name, index) => (
             <option key={name} value={String(index + 1)}>
               {name}
             </option>
           ))}
         </select>
-        <button
-          type="button"
-          onClick={() => {
-            const next = !missingOnly;
-            setMissingOnly(next);
-            missingOnlyRef.current = next;
-            void reload(1, activeListId, debouncedSearch, sort);
-          }}
-          aria-pressed={missingOnly}
-          className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
-            missingOnly
-              ? "border-amber-400 bg-amber-100 font-medium text-amber-800"
-              : "border-border text-muted hover:bg-foreground/[0.03]"
-          }`}
+
+        <select
+          value={source}
+          onChange={(e) => changeSource(e.target.value)}
+          aria-label="Filter by source"
+          className={`${inputClass} ${source ? "border-accent font-medium text-accent" : ""}`}
         >
-          ⚠️ Needs address
-        </button>
-        {debouncedSearch && (
-          <span className="text-sm text-muted">
-            {total} match{total === 1 ? "" : "es"} for “{debouncedSearch}”
-          </span>
-        )}
+          <option value="">Any source</option>
+          {SOURCE_OPTIONS.map((s) => (
+            <option key={s} value={s}>
+              {sourceLabel(s)}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {/* Table on ≥sm; a stacked-card list replaces it on phones (below) so the
-          data never becomes a sideways-scrolling 7-column table. */}
+      {/* Active-list management + the "needs address" filter's clear affordance. */}
+      {(activeList || missingOnly) && (
+        <div className="flex flex-wrap items-center gap-3 text-sm text-muted">
+          {activeList && (
+            <>
+              <span>
+                Showing <span className="font-medium text-foreground">{activeList.name}</span>
+              </span>
+              <button type="button" onClick={() => void renameActiveList()} disabled={listBusy} className="underline hover:text-foreground">
+                Rename
+              </button>
+              <button type="button" onClick={() => void deleteActiveList()} disabled={listBusy} className="underline hover:text-accent">
+                Delete list
+              </button>
+            </>
+          )}
+          {missingOnly && (
+            <button type="button" onClick={() => setMissingFilter(false)} className="underline hover:text-foreground">
+              Showing only recipients that need an address — show all
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Bulk-action bar (dark), shown when rows are selected. */}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-foreground px-4 py-2.5 text-sm text-background">
+          <div className="flex items-center gap-3">
+            <span className="font-medium">{selected.size} selected</span>
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="text-background/70 hover:text-background"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value=""
+              onChange={(e) => void handleAddToList(e.target.value)}
+              disabled={listBusy}
+              aria-label="Add selected to a list"
+              className="rounded-md border border-background/25 bg-transparent px-2 py-1 text-background hover:bg-background/10"
+            >
+              <option value="">Add to list</option>
+              {lists.map((list) => (
+                <option key={list.id} value={list.id} className="text-foreground">
+                  {list.name}
+                </option>
+              ))}
+              <option value="__new__" className="text-foreground">
+                ＋ New list…
+              </option>
+            </select>
+            <button
+              type="button"
+              onClick={exportSelected}
+              className="rounded-md border border-background/25 px-3 py-1 hover:bg-background/10"
+            >
+              Export
+            </button>
+            <button
+              type="button"
+              disabled={listBusy}
+              onClick={() => void bulkArchiveOrRestore()}
+              className="rounded-md border border-background/25 px-3 py-1 hover:bg-background/10 disabled:opacity-50"
+            >
+              {archivedView ? "Restore" : "Archive"}
+            </button>
+            <Link
+              href={`/send?recipients=${[...selected].join(",")}`}
+              className="rounded-md bg-accent px-3 py-1 font-semibold text-white hover:bg-accent-hover"
+            >
+              Send a card to {selected.size} →
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Table on ≥sm; a stacked-card list replaces it on phones (below). */}
       <div className="card hidden overflow-x-auto sm:block">
-        <table className="w-full min-w-[820px] text-left text-sm">
+        <table className="w-full min-w-[880px] text-left text-sm">
           <thead>
             <tr className="border-b border-border">
               <th className="w-10 px-5 py-3">
@@ -677,35 +837,33 @@ export function RecipientsClient({
                 />
               </th>
               <th className="section-label px-5 py-3">
-                <SortHeader label="Name" ascKey="name_asc" descKey="name_desc" sort={sort} onSort={changeSort} />
+                <SortHeader label="Name & address" ascKey="name_asc" descKey="name_desc" sort={sort} onSort={changeSort} />
               </th>
               <th className="section-label px-5 py-3">
                 <SortHeader label="Date of birth" ascKey="dob_asc" descKey="dob_desc" sort={sort} onSort={changeSort} />
               </th>
+              <th className="section-label px-5 py-3">Next birthday</th>
               <th className="section-label px-5 py-3">Postcode</th>
               <th className="section-label px-5 py-3">Source</th>
-              <th className="section-label px-5 py-3">Status</th>
               <th className="section-label px-5 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {recipients.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-5 py-6 text-muted">
-                  {archivedView
-                    ? "No archived recipients."
-                    : activeList
-                      ? "No recipients on this list yet."
-                      : "No recipients yet."}
+                <td colSpan={7} className="px-5 py-8 text-center text-muted">
+                  {emptyMessage}
                 </td>
               </tr>
             ) : (
               recipients.map((recipient) => {
                 const fromIntegration =
                   recipient.source !== "manual" && recipient.source !== "csv";
+                const mailable = isMailable(recipient);
+                const birthday = nextBirthday(recipient.dateOfBirth);
                 return (
-                  <tr key={recipient.id} className="border-b border-border last:border-0">
-                    <td className="px-5 py-3">
+                  <tr key={recipient.id} className="border-b border-border last:border-0 hover:bg-foreground/[0.02]">
+                    <td className="px-5 py-3 align-top">
                       <input
                         type="checkbox"
                         checked={selected.has(recipient.id)}
@@ -713,36 +871,58 @@ export function RecipientsClient({
                         aria-label={`Select ${recipient.firstName} ${recipient.lastName}`}
                       />
                     </td>
-                    <td className="px-5 py-3 font-medium">
-                      <Link href={`/recipients/${recipient.id}`} className="hover:text-accent hover:underline">
-                        {recipient.firstName} {recipient.lastName}
-                      </Link>
-                      {recipient.addressVerificationRequired && (
-                        <span
-                          title="A card was returned — address needs updating"
-                          className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 align-middle"
-                        >
-                          ⚠️ Address returned
+                    <td className="px-5 py-3">
+                      <div className="flex flex-col">
+                        <span className="font-medium">
+                          <Link href={`/recipients/${recipient.id}`} className="hover:text-accent hover:underline">
+                            {recipient.firstName} {recipient.lastName}
+                          </Link>
+                          {recipient.addressVerificationRequired && (
+                            <span
+                              title="A card was returned — address needs updating"
+                              className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 align-middle"
+                            >
+                              ⚠️ Address returned
+                            </span>
+                          )}
                         </span>
-                      )}
+                        {mailable ? (
+                          <span className="text-xs text-muted">{addressLine(recipient)}</span>
+                        ) : (
+                          <Link
+                            href={`/recipients/${recipient.id}`}
+                            className="text-xs font-medium text-accent hover:underline"
+                          >
+                            Needs an address before we can post
+                          </Link>
+                        )}
+                      </div>
                     </td>
                     <td className="px-5 py-3 text-muted">
                       {recipient.dateOfBirth
                         ? new Date(recipient.dateOfBirth).toLocaleDateString("en-GB")
                         : "—"}
                     </td>
-                    <td className="px-5 py-3 text-muted">
-                      {isMailable(recipient) ? (
-                        recipient.addressPostcode
+                    <td className="px-5 py-3">
+                      {birthday ? (
+                        <div className="flex flex-col">
+                          <span className="font-medium">{birthday.label}</span>
+                          <span className="text-xs text-muted uppercase">{birthday.countdown}</span>
+                        </div>
                       ) : (
-                        <Link
-                          href={`/recipients/${recipient.id}`}
-                          title="No mailable address — add one before sending a card"
-                          className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
-                        >
-                          ⚠️ Needs address
-                        </Link>
+                        <div className="flex flex-col">
+                          <span className="text-muted">Not set</span>
+                          <Link
+                            href={`/recipients/${recipient.id}`}
+                            className="text-xs text-accent uppercase hover:underline"
+                          >
+                            Add a date
+                          </Link>
+                        </div>
                       )}
+                    </td>
+                    <td className="px-5 py-3 text-muted">
+                      {mailable ? recipient.addressPostcode : "—"}
                     </td>
                     <td className="px-5 py-3">
                       <span className={`pill ${fromIntegration ? "pill-accent" : "pill-muted"}`}>
@@ -750,21 +930,15 @@ export function RecipientsClient({
                       </span>
                     </td>
                     <td className="px-5 py-3">
-                      <span className="pill pill-muted capitalize">{recipient.status}</span>
-                    </td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center justify-end gap-1.5 text-xs">
-                        <Link
-                          href={`/recipients/${recipient.id}`}
-                          className="rounded-md border border-border px-2 py-1 hover:bg-foreground/[0.03]"
-                        >
+                      <div className="flex items-center justify-end gap-3 text-sm">
+                        <Link href={`/recipients/${recipient.id}`} className="text-accent hover:underline">
                           Edit
                         </Link>
                         <button
                           type="button"
                           disabled={rowBusyId === recipient.id}
                           onClick={() => void toggleArchive(recipient)}
-                          className="rounded-md border border-border px-2 py-1 hover:bg-foreground/[0.03] disabled:opacity-40"
+                          className="text-muted hover:text-foreground disabled:opacity-40"
                         >
                           {rowBusyId === recipient.id
                             ? "…"
@@ -782,21 +956,12 @@ export function RecipientsClient({
         </table>
       </div>
 
-      {/* Mobile stacked-card list (below sm). Same data as the table above, but
-          each recipient is a self-contained card so phones never sideways-scroll
-          a 7-column table. Touch targets (select, edit, archive) are ≥44px. */}
+      {/* Mobile stacked-card list (below sm). Same data as the table above. */}
       <div className="flex flex-col gap-3 sm:hidden">
         {recipients.length === 0 ? (
-          <p className="card px-4 py-6 text-sm text-muted">
-            {archivedView
-              ? "No archived recipients."
-              : activeList
-                ? "No recipients on this list yet."
-                : "No recipients yet."}
-          </p>
+          <p className="card px-4 py-6 text-sm text-muted">{emptyMessage}</p>
         ) : (
           <>
-            {/* Mobile counterpart to the table's header select-all checkbox. */}
             <button
               type="button"
               onClick={toggleSelectAll}
@@ -805,95 +970,109 @@ export function RecipientsClient({
               {allOnPageSelected ? "Clear selection" : "Select all on this page"}
             </button>
             {recipients.map((recipient) => {
-            const fromIntegration =
-              recipient.source !== "manual" && recipient.source !== "csv";
-            return (
-              <div key={recipient.id} className="card flex flex-col gap-3 p-4">
-                <div className="flex items-start gap-3">
-                  <label className="flex min-h-11 min-w-11 items-center justify-center">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(recipient.id)}
-                      onChange={() => toggleSelect(recipient.id)}
-                      aria-label={`Select ${recipient.firstName} ${recipient.lastName}`}
-                    />
-                  </label>
-                  <div className="min-w-0 flex-1">
-                    <Link
-                      href={`/recipients/${recipient.id}`}
-                      className="font-medium hover:text-accent hover:underline"
-                    >
-                      {recipient.firstName} {recipient.lastName}
-                    </Link>
-                    {recipient.addressVerificationRequired && (
-                      <span
-                        title="A card was returned — address needs updating"
-                        className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 align-middle"
+              const fromIntegration =
+                recipient.source !== "manual" && recipient.source !== "csv";
+              const mailable = isMailable(recipient);
+              const birthday = nextBirthday(recipient.dateOfBirth);
+              return (
+                <div key={recipient.id} className="card flex flex-col gap-3 p-4">
+                  <div className="flex items-start gap-3">
+                    <label className="flex min-h-11 min-w-11 items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(recipient.id)}
+                        onChange={() => toggleSelect(recipient.id)}
+                        aria-label={`Select ${recipient.firstName} ${recipient.lastName}`}
+                      />
+                    </label>
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/recipients/${recipient.id}`}
+                        className="font-medium hover:text-accent hover:underline"
                       >
-                        ⚠️ Address returned
-                      </span>
-                    )}
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <span className={`pill ${fromIntegration ? "pill-accent" : "pill-muted"}`}>
-                        {sourceLabel(recipient.source)}
-                      </span>
-                      <span className="pill pill-muted capitalize">{recipient.status}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-                  <div className="flex flex-col">
-                    <dt className="section-label">Date of birth</dt>
-                    <dd className="text-muted">
-                      {recipient.dateOfBirth
-                        ? new Date(recipient.dateOfBirth).toLocaleDateString("en-GB")
-                        : "—"}
-                    </dd>
-                  </div>
-                  <div className="flex flex-col">
-                    <dt className="section-label">Postcode</dt>
-                    <dd className="text-muted">
-                      {isMailable(recipient) ? (
-                        recipient.addressPostcode
+                        {recipient.firstName} {recipient.lastName}
+                      </Link>
+                      {recipient.addressVerificationRequired && (
+                        <span
+                          title="A card was returned — address needs updating"
+                          className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 align-middle"
+                        >
+                          ⚠️ Address returned
+                        </span>
+                      )}
+                      {mailable ? (
+                        <p className="text-xs text-muted">{addressLine(recipient)}</p>
                       ) : (
                         <Link
                           href={`/recipients/${recipient.id}`}
-                          title="No mailable address — add one before sending a card"
-                          className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
+                          className="text-xs font-medium text-accent hover:underline"
                         >
-                          ⚠️ Needs address
+                          Needs an address before we can post
                         </Link>
                       )}
-                    </dd>
+                      <div className="mt-1">
+                        <span className={`pill ${fromIntegration ? "pill-accent" : "pill-muted"}`}>
+                          {sourceLabel(recipient.source)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </dl>
 
-                <div className="flex items-center gap-2 border-t border-border pt-3 text-sm">
-                  <Link
-                    href={`/recipients/${recipient.id}`}
-                    className="inline-flex min-h-11 flex-1 items-center justify-center rounded-md border border-border px-3 hover:bg-foreground/[0.03]"
-                  >
-                    Edit
-                  </Link>
-                  <button
-                    type="button"
-                    disabled={rowBusyId === recipient.id}
-                    onClick={() => void toggleArchive(recipient)}
-                    className="inline-flex min-h-11 flex-1 items-center justify-center rounded-md border border-border px-3 hover:bg-foreground/[0.03] disabled:opacity-40"
-                  >
-                    {rowBusyId === recipient.id
-                      ? "…"
-                      : recipient.status === "archived"
-                        ? "Restore"
-                        : "Archive"}
-                  </button>
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                    <div className="flex flex-col">
+                      <dt className="section-label">Date of birth</dt>
+                      <dd className="text-muted">
+                        {recipient.dateOfBirth
+                          ? new Date(recipient.dateOfBirth).toLocaleDateString("en-GB")
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div className="flex flex-col">
+                      <dt className="section-label">Next birthday</dt>
+                      <dd className="text-muted">
+                        {birthday ? `${birthday.label} · ${birthday.countdown}` : "Not set"}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="flex items-center gap-2 border-t border-border pt-3 text-sm">
+                    <Link
+                      href={`/recipients/${recipient.id}`}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-md border border-border px-3 hover:bg-foreground/[0.03]"
+                    >
+                      Edit
+                    </Link>
+                    <button
+                      type="button"
+                      disabled={rowBusyId === recipient.id}
+                      onClick={() => void toggleArchive(recipient)}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-md border border-border px-3 hover:bg-foreground/[0.03] disabled:opacity-40"
+                    >
+                      {rowBusyId === recipient.id
+                        ? "…"
+                        : recipient.status === "archived"
+                          ? "Restore"
+                          : "Archive"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
+              );
             })}
           </>
         )}
+      </div>
+
+      {/* Footer: count on the left, low-emphasis entry points on the right. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <span className="text-muted">{footerLabel}</span>
+        <div className="flex flex-wrap items-center gap-4">
+          <button type="button" onClick={downloadSampleCsv} className="text-accent hover:underline">
+            Download a sample CSV
+          </button>
+          <Link href="/integrations" className="text-accent hover:underline">
+            Connect Brevo, HubSpot or Zapier
+          </Link>
+        </div>
       </div>
 
       {total > PER_PAGE && (
@@ -919,6 +1098,35 @@ export function RecipientsClient({
           </button>
         </div>
       )}
+
+      {/* Add-recipient dialog. */}
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add a recipient">
+        <form onSubmit={(event) => void handleAddRecipient(event)} className="flex flex-col gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <input name="firstName" placeholder="First name" required className={inputClass} />
+            <input name="lastName" placeholder="Last name" required className={inputClass} />
+            <input type="date" name="dateOfBirth" aria-label="Date of birth" className={`${inputClass} sm:col-span-2`} />
+          </div>
+          <AddressFields key={addFormKey} />
+          <p className="text-xs text-muted">
+            We post real cards, so a full address is required. Add a date of birth and their birthday
+            lands on the calendar automatically.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setAddOpen(false)} className="btn-secondary">
+              Cancel
+            </button>
+            <button type="submit" disabled={addingRecipient} className="btn-accent">
+              {addingRecipient ? "Adding…" : "Add recipient"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Import-CSV dialog. */}
+      <Modal open={importOpen} onClose={() => setImportOpen(false)} title="Import from CSV">
+        <CsvImport onImported={handleImported} />
+      </Modal>
     </div>
   );
 }
