@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { Prisma, type Recipient } from "@prisma/client";
 import {
   createSegmentInputSchema,
   segmentDefinitionSchema,
@@ -11,7 +11,18 @@ import {
   type SegmentWindow,
   type SegmentsOverview,
 } from "@kudos/shared-types";
+
+/** A segment resolved to its full member recipients, capped for one order.
+ * Mirrors shared-types' `SegmentMembers` at the API boundary (with Prisma's
+ * Recipient); the web parses it back via `segmentMembersSchema`. */
+export interface SegmentMembersResult {
+  name: string;
+  members: Recipient[];
+  total: number;
+  capped: boolean;
+}
 import { PrismaService } from "../prisma/prisma.service";
+import { EntitlementsService } from "../entitlements/entitlements.service";
 import { MISSING_ADDRESS_WHERE } from "../recipients/recipients.service";
 import { SEGMENT_PRESETS } from "./segment-presets";
 
@@ -56,7 +67,10 @@ function windowRange(window: SegmentWindow, today: Date): { from: Date; to: Date
 
 @Injectable()
 export class SegmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly entitlements: EntitlementsService,
+  ) {}
 
   /** Suggested presets + the account's saved segments, each resolved live. */
   async overview(accountId: string): Promise<SegmentsOverview> {
@@ -109,16 +123,81 @@ export class SegmentsService {
       : this.resolveContacts(accountId, definition);
   }
 
+  /**
+   * Resolve a segment (by preset key or saved id) to its full member recipients,
+   * capped at the account's per-order limit, for seeding the bulk-send composer.
+   * Throws NotFoundException if neither a preset nor a saved segment matches.
+   */
+  async membersForKey(accountId: string, key: string): Promise<SegmentMembersResult> {
+    const { name, definition } = await this.lookupDefinition(accountId, key);
+    const { batchOrderMaxSize } = await this.entitlements.getForAccount(accountId);
+    const { members, total, capped } = await this.members(accountId, definition, batchOrderMaxSize);
+    return { name, members, total, capped };
+  }
+
+  /** Look up a segment's name + definition from a preset key or a saved id. */
+  private async lookupDefinition(
+    accountId: string,
+    key: string,
+  ): Promise<{ name: string; definition: SegmentDefinition }> {
+    // Guard an empty key — Prisma reads `id: undefined` as "no filter" and would
+    // otherwise return an arbitrary saved segment.
+    if (!key) throw new NotFoundException("Segment not found");
+
+    const preset = SEGMENT_PRESETS.find((p) => p.key === key);
+    if (preset) return { name: preset.name, definition: preset.definition };
+
+    const row = await this.prisma.segment.findFirst({ where: { id: key, accountId } });
+    if (row) return { name: row.name, definition: segmentDefinitionSchema.parse(row.definition) };
+
+    throw new NotFoundException("Segment not found");
+  }
+
+  /**
+   * Resolve a definition to its distinct member recipients (full records), for
+   * the composer. A recipient-centric query, so each person appears once even
+   * when several of their occasions match; `total` is the uncapped member count
+   * and `capped` says the `limit` trimmed the returned set. Members are returned
+   * regardless of postal address — the composer handles fixing/removing gaps.
+   */
+  async members(
+    accountId: string,
+    definition: SegmentDefinition,
+    limit: number,
+  ): Promise<{ members: Recipient[]; total: number; capped: boolean }> {
+    const where: Prisma.RecipientWhereInput = {
+      accountId,
+      ...this.recipientFilter(definition),
+      ...(definition.occasion && { occasions: { some: this.occasionMatch(definition) } }),
+    };
+
+    const [total, members] = await this.prisma.$transaction([
+      this.prisma.recipient.count({ where }),
+      this.prisma.recipient.findMany({
+        where,
+        take: limit,
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { createdAt: "desc" }],
+      }),
+    ]);
+    return { members, total, capped: total > members.length };
+  }
+
+  /** The Occasion-side predicate (type + date window) an occasion-mode segment
+   * matches — shared by the preview count and the member query so they can't
+   * drift. Recipient-side facets are applied separately via `recipientFilter`. */
+  private occasionMatch(definition: SegmentDefinition): Prisma.OccasionWhereInput {
+    const { types, window } = definition.occasion!;
+    const { from, to } = windowRange(window, new Date());
+    return { type: { in: types }, occasionDate: { gte: from, lte: to } };
+  }
+
   private async resolveOccasions(
     accountId: string,
     definition: SegmentDefinition,
   ): Promise<{ count: number; sample: SegmentMember[] }> {
-    const { types, window } = definition.occasion!;
-    const { from, to } = windowRange(window, new Date());
     const where: Prisma.OccasionWhereInput = {
       accountId,
-      type: { in: types },
-      occasionDate: { gte: from, lte: to },
+      ...this.occasionMatch(definition),
       // A `recipient` filter implicitly excludes campaign occasions (null recipient).
       recipient: this.recipientFilter(definition),
     };

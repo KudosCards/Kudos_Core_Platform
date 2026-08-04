@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
@@ -14,7 +15,7 @@ import type { SegmentSummary, SegmentsOverview } from "@kudos/shared-types";
 import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentMembership } from "../auth/current-membership.decorator";
 import type { CurrentMembershipContext } from "../auth/types";
-import { SegmentsService } from "./segments.service";
+import { SegmentsService, type SegmentMembersResult } from "./segments.service";
 import { CreateSegmentDto } from "./dto/create-segment.dto";
 
 /**
@@ -32,6 +33,19 @@ export class SegmentsController {
   @Get()
   overview(@CurrentMembership() membership: CurrentMembershipContext): Promise<SegmentsOverview> {
     return this.segments.overview(membership.accountId);
+  }
+
+  /**
+   * A segment (by preset key or saved id) resolved to its full member recipients,
+   * capped at the plan's per-order limit — seeds the bulk-send composer's "Send
+   * to this list". 404 if neither a preset nor a saved segment matches.
+   */
+  @Get("members")
+  members(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Query("segment") segment: string,
+  ): Promise<SegmentMembersResult> {
+    return this.segments.membersForKey(membership.accountId, segment);
   }
 
   @Post()

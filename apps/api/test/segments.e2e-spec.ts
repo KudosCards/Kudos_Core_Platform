@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import { segmentsOverviewSchema, type SegmentSummary } from "@kudos/shared-types";
+import {
+  segmentMembersSchema,
+  segmentsOverviewSchema,
+  type SegmentSummary,
+} from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { PrismaService } from "../src/prisma/prisma.service";
@@ -35,12 +39,54 @@ describe("Segments (e2e)", () => {
     return token;
   }
 
-  async function addRecipient(token: string, body: Record<string, unknown>): Promise<void> {
-    await request(app.getHttpServer())
+  async function addRecipient(
+    token: string,
+    body: Record<string, unknown>,
+  ): Promise<{ id: string; accountId: string }> {
+    const res = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
       .send({ firstName: "Seg", lastName: randomUUID().slice(0, 8), ...body })
       .expect(201);
+    return res.body as { id: string; accountId: string };
+  }
+
+  /**
+   * Seed a contact with no postal address — the manual-add DTO requires one
+   * (docs/adr/0067), so unmailable contacts only ever arrive via CSV/CRM import.
+   * Tests reproduce that by inserting directly, the way ingest does.
+   */
+  async function addUnmailable(accountId: string): Promise<void> {
+    await prisma.recipient.create({
+      data: {
+        accountId,
+        firstName: "No",
+        lastName: `Address ${randomUUID().slice(0, 8)}`,
+        source: "csv",
+      },
+    });
+  }
+
+  /** A mailable contact (the manual-add DTO requires a full UK address). */
+  function addMailable(
+    token: string,
+    body: Record<string, unknown> = {},
+  ): Promise<{ id: string; accountId: string }> {
+    return addRecipient(token, {
+      addressLine1: "1 Test Street",
+      addressCity: "London",
+      addressPostcode: "SW1A 1AA",
+      ...body,
+    });
+  }
+
+  /** A DOB (yyyy-mm-dd) whose birthday lands today — always inside the current
+   * month's window, so "birthdays this month" matches it deterministically. */
+  function birthdayTodayDob(): string {
+    const now = new Date();
+    const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(now.getUTCDate()).padStart(2, "0");
+    return `2015-${mm}-${dd}`;
   }
 
   function preset(overview: { suggested: SegmentSummary[] }, key: string): SegmentSummary {
@@ -51,16 +97,10 @@ describe("Segments (e2e)", () => {
 
   it("resolves suggested presets — birthdays this month, and missing-address", async () => {
     const token = await signUp();
-    const thisMonth = new Date().getUTCMonth() + 1;
     // A mailable contact with a birthday this month → counts for the birthday preset.
-    await addRecipient(token, {
-      dateOfBirth: `2015-${String(thisMonth).padStart(2, "0")}-15`,
-      addressLine1: "1 Test Street",
-      addressCity: "London",
-      addressPostcode: "SW1A 1AA",
-    });
+    const { accountId } = await addMailable(token, { dateOfBirth: birthdayTodayDob() });
     // A contact with no address → counts for the missing-address preset only.
-    await addRecipient(token, { dateOfBirth: null });
+    await addUnmailable(accountId);
 
     const res = await request(app.getHttpServer())
       .get("/segments")
@@ -110,6 +150,82 @@ describe("Segments (e2e)", () => {
       .expect(204);
     const rows = await prisma.segment.findMany({ where: { id: savedId } });
     expect(rows).toHaveLength(0);
+  });
+
+  it("resolves a preset's members (distinct recipients) for the composer", async () => {
+    const token = await signUp();
+    // Two contacts with a birthday this month → members; one with no birthday is not.
+    await addMailable(token, { dateOfBirth: birthdayTodayDob() });
+    await addMailable(token, { dateOfBirth: birthdayTodayDob() });
+    await addMailable(token, { dateOfBirth: null });
+
+    const res = await request(app.getHttpServer())
+      .get("/segments/members?segment=birthdays-this-month")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const result = segmentMembersSchema.parse(res.body);
+
+    expect(result.name).toBe("Birthdays this month");
+    expect(result.total).toBe(2);
+    expect(result.members).toHaveLength(2);
+    expect(result.capped).toBe(false);
+  });
+
+  it("resolves a saved segment's members by id", async () => {
+    const token = await signUp();
+    await addMailable(token, { dateOfBirth: birthdayTodayDob() });
+
+    const overview = segmentsOverviewSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .get("/segments")
+          .set("Authorization", `Bearer ${token}`)
+          .expect(200)
+      ).body,
+    );
+    const created = (
+      await request(app.getHttpServer())
+        .post("/segments")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: "My birthdays", definition: preset(overview, "birthdays-this-month").definition })
+        .expect(201)
+    ).body as SegmentSummary;
+
+    const res = await request(app.getHttpServer())
+      .get(`/segments/members?segment=${created.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const result = segmentMembersSchema.parse(res.body);
+    expect(result.name).toBe("My birthdays");
+    expect(result.total).toBe(1);
+    expect(result.members).toHaveLength(1);
+  });
+
+  it("caps members at the plan's per-order limit and flags it", async () => {
+    const token = await signUp();
+    // The free plan's batchOrderMaxSize is 10 (seed.ts). 11 contacts with a
+    // birthday this month all match → the set is capped at 10 and flagged.
+    for (let i = 0; i < 11; i++) {
+      await addMailable(token, { dateOfBirth: birthdayTodayDob() });
+    }
+
+    const res = await request(app.getHttpServer())
+      .get("/segments/members?segment=birthdays-this-month")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const result = segmentMembersSchema.parse(res.body);
+
+    expect(result.total).toBe(11);
+    expect(result.members).toHaveLength(10);
+    expect(result.capped).toBe(true);
+  });
+
+  it("404s for an unknown segment", async () => {
+    const token = await signUp();
+    await request(app.getHttpServer())
+      .get("/segments/members?segment=not-a-real-segment")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(404);
   });
 
   it("rejects an invalid definition and a duplicate name", async () => {
