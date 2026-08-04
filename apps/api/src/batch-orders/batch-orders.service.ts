@@ -516,6 +516,15 @@ export class BatchOrdersService {
         // Prefill the buyer's email for guest checkout (Stripe also uses it for
         // the receipt). Account holders leave it unset — Stripe collects it.
         ...(options?.customerEmail && { customer_email: options.customerEmail }),
+        // Have Stripe generate a proper VAT invoice for this one-off card
+        // purchase, using the account's business/VAT settings — the same source
+        // that makes subscriber invoices VAT invoices. The batchOrderId on the
+        // invoice metadata lets the invoice.paid webhook attach the PDF back to
+        // this order. See docs/adr/0102-vat-receipts.md.
+        invoice_creation: {
+          enabled: true,
+          invoice_data: { metadata: { batchOrderId: existing.id } },
+        },
         success_url: `${webAppUrl}${successPath}?${successQuery.toString()}`,
         cancel_url: `${webAppUrl}${cancelPath}?batchOrderId=${existing.id}`,
         metadata: { batchOrderId: existing.id, accountId },

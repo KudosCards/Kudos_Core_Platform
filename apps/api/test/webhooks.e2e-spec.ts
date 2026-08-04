@@ -373,4 +373,33 @@ describe("Webhooks (e2e)", () => {
     });
     await postWebhook(payload).expect(201);
   });
+
+  it("attaches the Stripe VAT invoice (PDF + hosted URL) to the order on invoice.paid", async () => {
+    const { token } = await signUp();
+    const { batchOrderId } = await createPendingPaymentBatchOrder(token);
+    const invoiceId = `in_test_${randomUUID()}`;
+
+    const payload = buildStripeEventPayload("invoice.paid", {
+      id: invoiceId,
+      hosted_invoice_url: "https://invoice.stripe.com/i/test_hosted",
+      invoice_pdf: "https://invoice.stripe.com/i/test_hosted/pdf",
+      metadata: { batchOrderId },
+    });
+    await postWebhook(payload).expect(201);
+
+    const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+    expect(order.stripeInvoiceId).toBe(invoiceId);
+    expect(order.receiptPdfUrl).toBe("https://invoice.stripe.com/i/test_hosted/pdf");
+    expect(order.receiptUrl).toBe("https://invoice.stripe.com/i/test_hosted");
+  });
+
+  it("ignores an invoice.paid that carries no batchOrderId (e.g. a subscription invoice)", async () => {
+    const payload = buildStripeEventPayload("invoice.paid", {
+      id: `in_test_${randomUUID()}`,
+      hosted_invoice_url: "https://invoice.stripe.com/i/sub",
+      invoice_pdf: "https://invoice.stripe.com/i/sub/pdf",
+      metadata: {},
+    });
+    await postWebhook(payload).expect(201);
+  });
 });

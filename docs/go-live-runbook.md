@@ -117,9 +117,29 @@ returns a clean 409 ("not yet configured") — no crash, just no upgrades.
 
 - Add a webhook endpoint pointing at `https://<live-api-url>/webhooks/stripe`.
 - Subscribe it to at least: `checkout.session.completed`, `checkout.session.expired`,
-  `payment_intent.payment_failed`, `customer.subscription.created`,
+  `payment_intent.payment_failed`, `invoice.paid`, `customer.subscription.created`,
   `customer.subscription.updated`, `customer.subscription.deleted`.
+  (`invoice.paid` is what attaches the card order's VAT invoice PDF — see 2c.)
 - Copy the endpoint's **signing secret** (`whsec_...`) → Railway `STRIPE_WEBHOOK_SECRET`.
+
+### 2c. VAT receipts for card orders (ADR 0102)
+
+Card orders (and guest one-off purchases) now ask Stripe to generate a proper **VAT
+invoice** per purchase (`invoice_creation` on the Checkout Session), exactly like
+subscriber invoices — so Stripe is the single source of truth for the company/VAT
+details on every receipt. Nothing to switch on in code, but confirm on the Stripe account:
+
+- **Business details + VAT number** are set under **Settings → Business details** (name,
+  address, VAT registration number). These print on the invoice; without the VAT number it
+  won't be a valid VAT receipt.
+- `invoice.paid` is enabled on the webhook endpoint (step 2b). On that event we store the
+  invoice's hosted URL + **PDF** on the order; the buyer downloads it from the order page
+  ("VAT receipt → Download PDF").
+- *(Optional)* Turn on **Settings → Customer emails → "Successful payments / invoices"** so
+  Stripe also emails the receipt/invoice — this is how **guest** buyers (no account, no order
+  page) receive theirs.
+- Subscribers are unchanged: they still download their VAT invoices from the Stripe
+  **billing portal** ("Manage billing" on `/billing`).
 
 ---
 

@@ -58,6 +58,9 @@ export class WebhooksService {
       case "payment_intent.payment_failed":
         await this.handlePaymentFailed(event.data.object);
         break;
+      case "invoice.paid":
+        await this.handleInvoicePaid(event.data.object);
+        break;
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted":
@@ -139,6 +142,32 @@ export class WebhooksService {
       await this.maybeSendOrderEmail(batchOrderId);
       await this.notifyOrderPaid(batchOrderId);
     }
+  }
+
+  /**
+   * Attach Stripe's generated VAT invoice to a card order so the buyer can
+   * download it as their receipt. Fired when `invoice_creation` (enabled on the
+   * card-order Checkout Session) produces an invoice — the event carries the
+   * whole invoice, including the finalized PDF + hosted URL, so there's no extra
+   * Stripe call. The `batchOrderId` we set on the invoice metadata links it back.
+   * Subscription invoices also emit invoice.paid but carry no batchOrderId, so
+   * they're ignored here (plan state is driven by customer.subscription.*).
+   * updateMany makes an unknown/absent order a safe no-op and the write
+   * idempotent under Stripe's at-least-once redelivery. See ADR 0102.
+   */
+  private async handleInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
+    const batchOrderId = invoice.metadata?.batchOrderId;
+    if (!batchOrderId) {
+      return;
+    }
+    await this.prisma.batchOrder.updateMany({
+      where: { id: batchOrderId },
+      data: {
+        stripeInvoiceId: invoice.id,
+        receiptUrl: invoice.hosted_invoice_url ?? null,
+        receiptPdfUrl: invoice.invoice_pdf ?? null,
+      },
+    });
   }
 
   /** Drop a persisted inbox note to the whole team that a paid order is now in
