@@ -3,6 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../prisma/prisma.service";
 import { BIRTHDAY_LOOKAHEAD_DAYS } from "./occasion-scheduling.constants";
 import { buildScheduledBirthdayOccasion, startOfUtcDay } from "./birthday-occasion.util";
+import { buildScheduledKeyDateOccasion } from "./key-date-occasion.util";
 
 /**
  * Only birthdays are auto-scheduled — see docs/adr/0006-phase-2-scope.md for
@@ -52,23 +53,38 @@ export class OccasionSchedulerService {
       });
     }
 
-    // 2. Promote the ones now within the lookahead window into the approvals
-    //    queue. A birthday occasion's occasionDate is always today-or-later
-    //    (nextBirthdayOccurrence never returns a past date), so an upper bound
-    //    is all that's needed.
+    // 1b. Same for renewal/anniversary key dates — ensure each has a scheduled
+    //     occasion for its next annual occurrence. Recipients created/edited
+    //     through the app get this eagerly (recipients.service); this is the
+    //     catch-all + the yearly roll-forward once a date has passed.
+    const keyDates = await this.prisma.recipientKeyDate.findMany({
+      where: { recipient: { status: "active" } },
+      select: { accountId: true, recipientId: true, type: true, date: true, label: true },
+    });
+    if (keyDates.length > 0) {
+      await this.prisma.occasion.createMany({
+        data: keyDates.map((keyDate) => buildScheduledKeyDateOccasion(keyDate, today)),
+        skipDuplicates: true,
+      });
+    }
+
+    // 2. Promote the recurring occasions now within the lookahead window into the
+    //    approvals queue. Their occasionDate is always today-or-later
+    //    (nextBirthdayOccurrence never returns a past date), so an upper bound is
+    //    all that's needed.
     const { count } = await this.prisma.occasion.updateMany({
       where: {
-        type: "birthday",
+        type: { in: ["birthday", "renewal", "anniversary"] },
         status: "scheduled",
         occasionDate: { lte: lookaheadEnd },
-        // Don't pull an archived recipient's birthday into the approvals queue.
+        // Don't pull an archived recipient's occasion into the approvals queue.
         recipient: { status: "active" },
       },
       data: { status: "pending_approval" },
     });
 
     this.logger.log(
-      `Birthday scheduler: ${recipients.length} active recipient(s) with a DOB, ${count} occasion(s) promoted into the ${BIRTHDAY_LOOKAHEAD_DAYS}-day approval window`,
+      `Recurring scheduler: ${recipients.length} recipient(s) with a DOB, ${keyDates.length} key date(s), ${count} occasion(s) promoted into the ${BIRTHDAY_LOOKAHEAD_DAYS}-day approval window`,
     );
     return count;
   }

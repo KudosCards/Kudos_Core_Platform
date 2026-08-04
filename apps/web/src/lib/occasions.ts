@@ -1,5 +1,7 @@
 export const OCCASION_TYPE_LABELS: Record<string, string> = {
   birthday: "Birthday",
+  renewal: "Renewal",
+  anniversary: "Anniversary",
   achievement: "Achievement",
   leaver: "Leaver",
   staff_recognition: "Staff recognition",

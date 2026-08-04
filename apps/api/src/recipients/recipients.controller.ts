@@ -4,10 +4,12 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   UploadedFile,
   UseGuards,
@@ -15,7 +17,7 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
-import type { Recipient } from "@prisma/client";
+import type { Recipient, RecipientKeyDate } from "@prisma/client";
 import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { CurrentMembership } from "../auth/current-membership.decorator";
@@ -24,6 +26,7 @@ import { RecipientsService, type ImportSummary, type Paginated } from "./recipie
 import { CreateRecipientDto } from "./dto/create-recipient.dto";
 import { UpdateRecipientDto } from "./dto/update-recipient.dto";
 import { ListRecipientsQueryDto } from "./dto/list-recipients-query.dto";
+import { UpsertKeyDateDto } from "./dto/upsert-key-date.dto";
 import {
   csvColumnMappingSchema,
   type CsvColumnMapping,
@@ -81,6 +84,38 @@ export class RecipientsController {
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<Recipient> {
     return this.recipientsService.archive(membership.accountId, user.id, id);
+  }
+
+  // Recurring key dates (renewal / anniversary). See docs/adr/0104.
+
+  @Get(":id/key-dates")
+  listKeyDates(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<RecipientKeyDate[]> {
+    return this.recipientsService.listKeyDates(membership.accountId, id);
+  }
+
+  @Put(":id/key-dates/:type")
+  upsertKeyDate(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("type") type: string,
+    @Body() dto: UpsertKeyDateDto,
+  ): Promise<RecipientKeyDate> {
+    return this.recipientsService.upsertKeyDate(membership.accountId, user.id, id, type, dto);
+  }
+
+  @Delete(":id/key-dates/:type")
+  @HttpCode(204)
+  deleteKeyDate(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("type") type: string,
+  ): Promise<void> {
+    return this.recipientsService.deleteKeyDate(membership.accountId, user.id, id, type);
   }
 
   @ApiConsumes("multipart/form-data")

@@ -1,6 +1,12 @@
 "use client";
 
-import type { Occasion, Recipient, ReturnCase } from "@kudos/shared-types";
+import type {
+  KeyDateType,
+  Occasion,
+  Recipient,
+  RecipientKeyDate,
+  ReturnCase,
+} from "@kudos/shared-types";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
@@ -64,17 +70,27 @@ function countdownLabel(days: number): string {
 
 const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
 
+/** The recurring key-date types a user can set, in display order. */
+const KEY_DATE_TYPES: { type: KeyDateType; label: string }[] = [
+  { type: "renewal", label: "Renewal" },
+  { type: "anniversary", label: "Anniversary" },
+];
+
 export function RecipientDetailClient({
   recipient: initialRecipient,
   initialEvents,
   initialReturnCases,
+  initialKeyDates,
 }: {
   recipient: Recipient;
   initialEvents: Occasion[];
   initialReturnCases: ReturnCase[];
+  initialKeyDates: RecipientKeyDate[];
 }) {
   const [recipient, setRecipient] = useState<Recipient>(initialRecipient);
   const [events, setEvents] = useState<Occasion[]>(initialEvents);
+  const [keyDates, setKeyDates] = useState<RecipientKeyDate[]>(initialKeyDates);
+  const [pendingKeyDate, setPendingKeyDate] = useState<KeyDateType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -285,6 +301,51 @@ export function RecipientDetailClient({
       setError(removeError instanceof ApiError ? removeError.message : "Could not remove the event");
     } finally {
       setPendingId(null);
+    }
+  }
+
+  /** Reload the recipient's occasions after a key date changes, so the new/removed
+   * renewal/anniversary shows up in the Events list. Best-effort. */
+  async function refreshEvents() {
+    try {
+      const result = await clientApiFetch<{ items: Occasion[] }>(
+        `/occasions?recipientId=${recipient.id}&perPage=100`,
+      );
+      setEvents(sortEvents(result.items));
+    } catch {
+      // The key date saved regardless; a stale Events list self-heals on reload.
+    }
+  }
+
+  async function saveKeyDate(type: KeyDateType, date: string) {
+    if (!date) return;
+    setError(null);
+    setPendingKeyDate(type);
+    try {
+      const updated = await clientApiFetch<RecipientKeyDate>(
+        `/recipients/${recipient.id}/key-dates/${type}`,
+        { method: "PUT", body: JSON.stringify({ date }) },
+      );
+      setKeyDates((current) => [...current.filter((k) => k.type !== type), updated]);
+      await refreshEvents();
+    } catch (saveError) {
+      setError(saveError instanceof ApiError ? saveError.message : "Could not save the key date");
+    } finally {
+      setPendingKeyDate(null);
+    }
+  }
+
+  async function removeKeyDate(type: KeyDateType) {
+    setError(null);
+    setPendingKeyDate(type);
+    try {
+      await clientApiFetch(`/recipients/${recipient.id}/key-dates/${type}`, { method: "DELETE" });
+      setKeyDates((current) => current.filter((k) => k.type !== type));
+      await refreshEvents();
+    } catch (removeError) {
+      setError(removeError instanceof ApiError ? removeError.message : "Could not remove the key date");
+    } finally {
+      setPendingKeyDate(null);
     }
   }
 
@@ -590,6 +651,54 @@ export function RecipientDetailClient({
           </div>
         </form>
       )}
+
+      <section className="card flex flex-col gap-4 p-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold">Key dates</h2>
+          <p className="text-sm text-muted">
+            Recurring renewal and anniversary dates. We&apos;ll schedule a card for each one every
+            year — just like birthdays.
+          </p>
+        </div>
+        <div className="flex flex-col divide-y divide-border">
+          {KEY_DATE_TYPES.map(({ type, label }) => {
+            const existing = keyDates.find((k) => k.type === type);
+            return (
+              <form
+                key={`${type}-${existing?.id ?? "none"}`}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const date = String(new FormData(event.currentTarget).get("date") ?? "");
+                  void saveKeyDate(type, date);
+                }}
+                className="flex flex-wrap items-center gap-2 py-3"
+              >
+                <span className="w-28 shrink-0 font-medium">{label}</span>
+                <input
+                  type="date"
+                  name="date"
+                  aria-label={`${label} date`}
+                  defaultValue={existing ? toDateInput(existing.date) : ""}
+                  className={inputClass}
+                />
+                <button type="submit" disabled={pendingKeyDate === type} className="btn-accent text-sm">
+                  {pendingKeyDate === type ? "Saving…" : existing ? "Update" : "Set"}
+                </button>
+                {existing && (
+                  <button
+                    type="button"
+                    onClick={() => void removeKeyDate(type)}
+                    disabled={pendingKeyDate === type}
+                    className="rounded-md border border-border px-3 py-2 text-sm hover:bg-foreground/[0.03] disabled:opacity-40"
+                  >
+                    Remove
+                  </button>
+                )}
+              </form>
+            );
+          })}
+        </div>
+      </section>
 
       <section className="card flex flex-col gap-4 p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">

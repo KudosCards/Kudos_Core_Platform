@@ -291,6 +291,7 @@ model Recipient {
   orderRecipients OrderRecipient[]
   listMemberships RecipientListMembership[]
   returnCases     ReturnCase[]
+  keyDates        RecipientKeyDate[]
 
   // Mirrors the legacy CSV-import dedupe rule: same name + postcode + DOB = same person.
   @@unique([accountId, firstName, lastName, addressPostcode, dateOfBirth], name: "recipient_dedupe_key")
@@ -303,6 +304,30 @@ model Recipient {
   // Without this, Postgres filters by account then sorts every time. See ADR 0046.
   @@index([accountId, createdAt])
   @@map("recipients")
+}
+
+/// A recurring "key date" for a recipient — a renewal or anniversary anchored on
+/// a month/day, from which the scheduler materialises a dated occasion each year
+/// (exactly like a birthday from the date of birth). One per type per recipient.
+/// See docs/adr/0104-recurring-key-dates.md.
+model RecipientKeyDate {
+  id          String      @id @default(uuid())
+  accountId   String      @map("account_id")
+  recipientId String      @map("recipient_id")
+  type        KeyDateType
+  /// The anchor date; the occasion recurs annually on this month/day.
+  date        DateTime    @db.Date
+  /// Optional human label shown on the occasion/calendar (e.g. "Membership renewal").
+  label       String?
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  recipient Recipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  // One renewal date + one anniversary date per recipient.
+  @@unique([recipientId, type], name: "recipient_key_date_type")
+  @@index([accountId])
+  @@map("recipient_key_dates")
 }
 
 /// A named grouping of recipients a subscriber curates by hand — e.g. a teacher's
@@ -346,11 +371,21 @@ model RecipientListMembership {
 
 enum OccasionType {
   birthday
+  renewal
+  anniversary
   achievement
   leaver
   staff_recognition
   seasonal
   bespoke_campaign
+}
+
+/// The recurring key-date types anchored per recipient (birthdays come from
+/// Recipient.dateOfBirth instead). Drives auto-generated renewal/anniversary
+/// occasions. See docs/adr/0104-recurring-key-dates.md.
+enum KeyDateType {
+  renewal
+  anniversary
 }
 
 enum OccasionSource {

@@ -6,6 +6,7 @@ export * from "./recipient-list";
 export * from "./csv-import";
 export * from "./occasion";
 export * from "./event";
+export * from "./key-date";
 export * from "./pricing";
 export * from "./plans";
 export * from "./enterprise";

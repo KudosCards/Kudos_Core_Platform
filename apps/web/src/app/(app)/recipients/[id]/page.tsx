@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import type { Occasion, Recipient, ReturnCase } from "@kudos/shared-types";
+import type { Occasion, Recipient, RecipientKeyDate, ReturnCase } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { ApiError } from "@/lib/api";
 import { RecipientDetailClient } from "./recipient-detail-client";
@@ -22,7 +22,7 @@ export default async function RecipientDetailPage({
   // keyed by the same id), so fetch them in one parallel round-trip instead of
   // three serial ones. The recipient's 404 becomes null → notFound(); the other
   // two are only wasted in that rare not-found case. See docs/adr/0042.
-  const [recipient, events, allReturns] = await Promise.all([
+  const [recipient, events, allReturns, keyDates] = await Promise.all([
     serverApiFetch<Recipient>(`/recipients/${id}`).catch((error: unknown) => {
       // A wrong/foreign id is a 404 from the account-scoped lookup — render the
       // app's not-found rather than leaking the API error.
@@ -33,6 +33,9 @@ export default async function RecipientDetailPage({
     // Any Returned-to-Sender cases for this contact, so the recovery panel can
     // show the alert + Update-Address flow. Account-scoped; filtered to this one.
     serverApiFetch<ReturnCase[]>("/returns"),
+    // The recipient's recurring key dates (renewal / anniversary). Best-effort:
+    // an empty list just means none set. See docs/adr/0104.
+    serverApiFetch<RecipientKeyDate[]>(`/recipients/${id}/key-dates`).catch(() => []),
   ]);
 
   if (!recipient) {
@@ -46,6 +49,7 @@ export default async function RecipientDetailPage({
       recipient={recipient}
       initialEvents={events?.items ?? []}
       initialReturnCases={returnCases}
+      initialKeyDates={keyDates ?? []}
     />
   );
 }
