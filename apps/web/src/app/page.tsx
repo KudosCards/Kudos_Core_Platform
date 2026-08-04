@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { PLAN_CATALOG, formatPlanPrice, planCardPriceLabel } from "@kudos/shared-types";
 import { PublicHeader } from "@/components/public-header";
 import { SocialLinks } from "@/components/social-links";
 
@@ -84,43 +85,6 @@ const reviews = [
   {
     name: "Sarah T. — Tuition Centre Owner, Manchester",
     body: "Set it up in 10 minutes. Cards just go out. Parents message us to say thank you — that never happened before.",
-  },
-];
-
-const plans = [
-  {
-    name: "Free",
-    price: "£0",
-    cadence: "/mo",
-    cardPrice: "£2.50 / card",
-    features: ["Up to 50 contacts", "Full card designer", "Manual approve & send", "Community support"],
-    highlight: false,
-  },
-  {
-    name: "Pro",
-    price: "£9.97",
-    cadence: "/mo",
-    cardPrice: "£2.25 / card (10% off)",
-    features: [
-      "Up to 200 contacts",
-      "10% off every card",
-      "Auto-send birthdays",
-      "Priority support",
-    ],
-    highlight: true,
-  },
-  {
-    name: "Centre",
-    price: "£19.97",
-    cadence: "/mo",
-    cardPrice: "£2.13 / card (15% off)",
-    features: [
-      "Unlimited contacts",
-      "15% off every card",
-      "Full automation & scale",
-      "Dedicated support",
-    ],
-    highlight: false,
   },
 ];
 
@@ -414,10 +378,10 @@ export default function HomePage() {
             order (card price incl. VAT + a stamp per card: 1st class £1.80, 2nd class £0.91).
           </p>
         </div>
-        <div className="mt-10 grid gap-6 md:grid-cols-3">
-          {plans.map((plan) => (
+        <div className="mt-10 grid items-start gap-6 md:grid-cols-3">
+          {PLAN_CATALOG.map((plan) => (
             <div
-              key={plan.name}
+              key={plan.id}
               className={`flex flex-col gap-4 rounded-2xl p-6 ring-1 ${
                 plan.highlight
                   ? "bg-white shadow-xl ring-2"
@@ -426,7 +390,10 @@ export default function HomePage() {
               style={plan.highlight ? { borderColor: CORAL, boxShadow: "0 10px 40px rgba(239,91,82,0.15)" } : undefined}
             >
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold">{plan.name}</h3>
+                <div>
+                  <h3 className="text-lg font-bold">{plan.name}</h3>
+                  <p className="text-xs text-slate-500">{plan.tagline}</p>
+                </div>
                 {plan.highlight && (
                   <span
                     className="rounded-full px-2 py-0.5 text-xs font-semibold text-white"
@@ -437,26 +404,29 @@ export default function HomePage() {
                 )}
               </div>
               <p>
-                <span className="text-3xl font-extrabold">{plan.price}</span>
-                <span className="text-slate-500">{plan.cadence}</span>
+                <span className="text-3xl font-extrabold">{formatPlanPrice(plan.monthlyPriceMinor)}</span>
+                <span className="text-slate-500">/mo</span>
               </p>
-              <p className="text-sm font-medium text-emerald-600">{plan.cardPrice}</p>
+              <p className="text-sm font-medium text-emerald-600">{planCardPriceLabel(plan)}</p>
               <ul className="flex flex-col gap-2 text-sm text-slate-600">
+                {plan.inherits && (
+                  <li className="font-medium text-slate-500">{plan.inherits}</li>
+                )}
                 {plan.features.map((f) => (
-                  <li key={f} className="flex items-center gap-2">
-                    <span className="text-emerald-500">✓</span>
+                  <li key={f} className="flex items-start gap-2">
+                    <span className="mt-0.5 text-emerald-500">✓</span>
                     {f}
                   </li>
                 ))}
               </ul>
               <Link
-                href={plan.name === "Free" ? "/register" : `/register?plan=${plan.name.toLowerCase()}`}
+                href={plan.id === "free" ? "/register" : `/register?plan=${plan.id}`}
                 className={`mt-auto rounded-full px-5 py-2.5 text-center font-semibold transition-opacity hover:opacity-90 ${
                   plan.highlight ? "text-white" : "border border-slate-200 text-slate-900"
                 }`}
                 style={plan.highlight ? { backgroundColor: CORAL } : undefined}
               >
-                {plan.name === "Free" ? "Start free" : `Choose ${plan.name}`}
+                {plan.id === "free" ? "Start free" : `Choose ${plan.name}`}
               </Link>
             </div>
           ))}
