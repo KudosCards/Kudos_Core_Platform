@@ -1041,3 +1041,37 @@ model SupportTicketMessageAttachment {
   @@index([messageId])
   @@map("support_ticket_message_attachments")
 }
+
+/// Triage state of an Enterprise "Contact us" lead.
+enum EnterpriseEnquiryStatus {
+  new
+  in_progress
+  closed
+}
+
+/// A sales lead from the public Enterprise pricing option ("Contact us"). Kudos
+/// Enterprise isn't self-serve — no Stripe object — so a visitor submits an
+/// enquiry here, ops get emailed and work it from the admin portal, then set the
+/// account up by hand. Submitted by unauthenticated visitors, so it holds only
+/// what the form collects (no account relation). See
+/// docs/adr/0101-enterprise-plan-enquiries.md.
+model EnterpriseEnquiry {
+  id              String                  @id @default(uuid())
+  name            String
+  email           String
+  organisation    String
+  phone           String?
+  /// Rough size the visitor typed, e.g. "500 students" — free text, optional.
+  teamSize        String?                 @map("team_size")
+  message         String
+  status          EnterpriseEnquiryStatus @default(new)
+  /// The ops user (PlatformAdmin.userId) who last changed the status — a light
+  /// audit trail. Null until someone works it.
+  handledByUserId String?                 @map("handled_by_user_id")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+
+  // The ops queue: status filter, newest first.
+  @@index([status, createdAt])
+  @@map("enterprise_enquiries")
+}

@@ -103,17 +103,54 @@ export const PLAN_CATALOG: readonly PlanMarketing[] = [
   },
 ];
 
+/**
+ * Enterprise sits outside PLAN_CATALOG because it isn't self-serve: there's no
+ * Stripe price, no card discount and no checkout — it's a "Contact us" tier that
+ * ops price and provision by hand. Kept here so its name and pitch live in the
+ * one plan-marketing module, but modelled separately so the checkout/billing
+ * code (and the price guard test) only ever iterate the three real plans.
+ */
+export interface EnterprisePlanMarketing {
+  id: "enterprise";
+  name: string;
+  tagline: string;
+  /** Shown where the other plans show a price — Enterprise is quote-based. */
+  priceLabel: string;
+  features: string[];
+  /** The contact route the CTA points at. */
+  ctaLabel: string;
+  ctaHref: string;
+}
+
+export const ENTERPRISE_PLAN: EnterprisePlanMarketing = {
+  id: "enterprise",
+  name: "Enterprise",
+  tagline: "For multi-site groups & franchises",
+  priceLabel: "Custom",
+  features: [
+    "Everything in Centre, plus:",
+    "Volume card pricing",
+    "Multiple sites & unlimited seats",
+    "Onboarding & a dedicated account manager",
+    "Invoicing, SSO & custom integrations on request",
+  ],
+  ctaLabel: "Contact us",
+  ctaHref: "/enterprise",
+};
+
 /** Look up a plan's marketing entry by id. */
 export function getPlan(planId: string): PlanMarketing | undefined {
   return PLAN_CATALOG.find((plan) => plan.id === planId);
 }
 
 /**
- * The canonical display name for a plan id — Free / Pro / Centre — with a safe
- * capitalised fallback for any unknown id. Use this everywhere a plan is named.
+ * The canonical display name for a plan id — Free / Pro / Centre / Enterprise —
+ * with a safe capitalised fallback for any unknown id. Use this everywhere a
+ * plan is named.
  */
 export function planDisplayName(planId: string | null | undefined): string {
   if (!planId) return "No plan";
+  if (planId === ENTERPRISE_PLAN.id) return ENTERPRISE_PLAN.name;
   return getPlan(planId)?.name ?? planId.charAt(0).toUpperCase() + planId.slice(1);
 }
 

@@ -35,6 +35,7 @@ import { TeamModule } from "./team/team.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { ReturnsModule } from "./returns/returns.module";
 import { SupportModule } from "./support/support.module";
+import { EnterpriseModule } from "./enterprise/enterprise.module";
 import { SupabaseAdminModule } from "./supabase/supabase-admin.module";
 import { StorageMaintenanceModule } from "./storage-maintenance/storage-maintenance.module";
 
@@ -84,6 +85,7 @@ import { StorageMaintenanceModule } from "./storage-maintenance/storage-maintena
     NotificationsModule,
     ReturnsModule,
     SupportModule,
+    EnterpriseModule,
     SupabaseAdminModule,
     StorageMaintenanceModule,
   ],
