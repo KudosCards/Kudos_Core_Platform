@@ -1,5 +1,6 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { BatchOrderStatus, Prisma, SubscriptionStatus } from "@prisma/client";
+import type { AdminOrderDetail, OrderFulfillmentProgress } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
@@ -60,6 +61,42 @@ export interface AdminOrderRow {
   cardCount: number;
   paymentMethod: string | null;
   createdAt: Date;
+  /** Real fulfilment progress (job-status counts + Click & Drop tally), so the
+   * list shows "340/2,000 posted" not a status label. See ADR 0109. */
+  progress: OrderFulfillmentProgress;
+}
+
+/** Raw row from the per-order fulfilment-progress aggregate (snake_case as the
+ * SQL returns it). */
+interface RawProgressRow {
+  orderId: string;
+  total: number;
+  pending: number;
+  in_progress: number;
+  printed: number;
+  posted: number;
+  delivered: number;
+  returned_to_sender: number;
+  failed: number;
+  imported: number;
+  import_errors: number;
+}
+
+/** A zeroed progress record — the default for an order with no fulfilment jobs
+ * yet (not paid), and the accumulator base for the detail view. */
+function emptyProgress(): OrderFulfillmentProgress {
+  return {
+    total: 0,
+    pending: 0,
+    inProgress: 0,
+    printed: 0,
+    posted: 0,
+    delivered: 0,
+    returnedToSender: 0,
+    failed: 0,
+    imported: 0,
+    importErrors: 0,
+  };
 }
 
 export interface AdminSubscriberRow {
@@ -236,6 +273,9 @@ export class AdminService {
       this.prisma.batchOrder.count({ where }),
     ]);
 
+    // Real fulfilment progress for just this page's orders, in one aggregate.
+    const progressByOrder = await this.progressForOrders(rows.map((row) => row.id));
+
     return {
       items: rows.map((row) => ({
         id: row.id,
@@ -248,10 +288,162 @@ export class AdminService {
         cardCount: row._count.orderRecipients,
         paymentMethod: row.paymentMethod,
         createdAt: row.createdAt,
+        progress: progressByOrder.get(row.id) ?? emptyProgress(),
       })),
       total,
       page,
       perPage,
+    };
+  }
+
+  /**
+   * Fulfilment-job status counts + Click & Drop tally for a set of orders, in
+   * one round-trip. FulfillmentJob's order lives one hop away (via
+   * OrderRecipient), which Prisma's `groupBy` can't group across — so this is a
+   * filtered aggregate over the join, scoped to the page's order ids. Orders
+   * with no jobs yet (unpaid) simply don't appear and default to all-zeros.
+   */
+  private async progressForOrders(
+    orderIds: string[],
+  ): Promise<Map<string, OrderFulfillmentProgress>> {
+    if (orderIds.length === 0) return new Map();
+    const rows = await this.prisma.$queryRaw<RawProgressRow[]>(Prisma.sql`
+      SELECT
+        r.batch_order_id AS "orderId",
+        count(*)::int AS total,
+        count(*) FILTER (WHERE fj.status::text = 'pending')::int AS pending,
+        count(*) FILTER (WHERE fj.status::text = 'in_progress')::int AS in_progress,
+        count(*) FILTER (WHERE fj.status::text = 'printed')::int AS printed,
+        count(*) FILTER (WHERE fj.status::text = 'posted')::int AS posted,
+        count(*) FILTER (WHERE fj.status::text = 'delivered')::int AS delivered,
+        count(*) FILTER (WHERE fj.status::text = 'returned_to_sender')::int AS returned_to_sender,
+        count(*) FILTER (WHERE fj.status::text = 'failed')::int AS failed,
+        count(*) FILTER (WHERE fj.click_and_drop_order_id IS NOT NULL)::int AS imported,
+        count(*) FILTER (WHERE fj.click_and_drop_error IS NOT NULL)::int AS import_errors
+      FROM fulfillment_jobs fj
+      JOIN order_recipients r ON r.id = fj.order_recipient_id
+      WHERE r.batch_order_id IN (${Prisma.join(orderIds)})
+      GROUP BY r.batch_order_id
+    `);
+    const map = new Map<string, OrderFulfillmentProgress>();
+    for (const row of rows) {
+      map.set(row.orderId, {
+        total: row.total,
+        pending: row.pending,
+        inProgress: row.in_progress,
+        printed: row.printed,
+        posted: row.posted,
+        delivered: row.delivered,
+        returnedToSender: row.returned_to_sender,
+        failed: row.failed,
+        imported: row.imported,
+        importErrors: row.import_errors,
+      });
+    }
+    return map;
+  }
+
+  /**
+   * One order worked as a unit: header (with the VAT-inclusive money breakdown),
+   * real fulfilment progress, and every card line. Deliberately name + occasion
+   * + postage + status per line — never the street address, which stays behind
+   * the audited fulfilment export (mirroring the queue's data minimisation).
+   */
+  async getOrder(id: string): Promise<AdminOrderDetail> {
+    const order = await this.prisma.batchOrder.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        orderNumber: true,
+        accountId: true,
+        status: true,
+        currency: true,
+        subtotalMinor: true,
+        postageMinor: true,
+        totalMinor: true,
+        paymentMethod: true,
+        receiptUrl: true,
+        receiptPdfUrl: true,
+        createdAt: true,
+        updatedAt: true,
+        account: { select: { name: true } },
+        orderRecipients: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            postageClass: true,
+            dispatchOption: true,
+            recipient: { select: { firstName: true, lastName: true } },
+            savedDesign: { select: { name: true } },
+            occasion: { select: { type: true, occasionDate: true } },
+            fulfillmentJob: {
+              select: {
+                id: true,
+                status: true,
+                dueDate: true,
+                trackingReference: true,
+                clickAndDropOrderId: true,
+                clickAndDropError: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!order) {
+      throw new NotFoundException("Order not found");
+    }
+
+    const lines = order.orderRecipients.map((r) => ({
+      orderRecipientId: r.id,
+      jobId: r.fulfillmentJob?.id ?? null,
+      recipientName: `${r.recipient.firstName} ${r.recipient.lastName}`.trim(),
+      designName: r.savedDesign.name,
+      postageClass: r.postageClass,
+      dispatchOption: r.dispatchOption,
+      occasionType: r.occasion?.type ?? null,
+      occasionDate: r.occasion?.occasionDate ?? null,
+      dueDate: r.fulfillmentJob?.dueDate ?? null,
+      jobStatus: r.fulfillmentJob?.status ?? null,
+      trackingReference: r.fulfillmentJob?.trackingReference ?? null,
+      clickAndDropImported: r.fulfillmentJob?.clickAndDropOrderId != null,
+      clickAndDropError: r.fulfillmentJob?.clickAndDropError ?? null,
+    }));
+
+    // Progress from the lines we already have — no extra round-trip.
+    const progress = emptyProgress();
+    for (const line of lines) {
+      if (!line.jobStatus) continue;
+      progress.total += 1;
+      if (line.jobStatus === "pending") progress.pending += 1;
+      else if (line.jobStatus === "in_progress") progress.inProgress += 1;
+      else if (line.jobStatus === "printed") progress.printed += 1;
+      else if (line.jobStatus === "posted") progress.posted += 1;
+      else if (line.jobStatus === "delivered") progress.delivered += 1;
+      else if (line.jobStatus === "returned_to_sender") progress.returnedToSender += 1;
+      else if (line.jobStatus === "failed") progress.failed += 1;
+      if (line.clickAndDropImported) progress.imported += 1;
+      if (line.clickAndDropError) progress.importErrors += 1;
+    }
+
+    return {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      accountId: order.accountId,
+      accountName: order.account.name,
+      status: order.status,
+      currency: order.currency,
+      subtotalMinor: order.subtotalMinor,
+      postageMinor: order.postageMinor,
+      totalMinor: order.totalMinor,
+      paymentMethod: order.paymentMethod,
+      receiptUrl: order.receiptUrl,
+      receiptPdfUrl: order.receiptPdfUrl,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      cardCount: order.orderRecipients.length,
+      progress,
+      lines,
     };
   }
 

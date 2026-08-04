@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import type { Customer360, SeasonalDispatchRule } from "@kudos/shared-types";
+import type { AdminOrderDetail, Customer360, SeasonalDispatchRule } from "@kudos/shared-types";
 import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import type { Paginated } from "../common/paginated";
 import { SeatBillingService, type SeatPriceStatus } from "../billing/seat-billing.service";
@@ -51,6 +51,13 @@ export class AdminController {
   @Get("orders")
   orders(@Query() query: ListAdminOrdersQueryDto): Promise<Paginated<AdminOrderRow>> {
     return this.adminService.listOrders(query);
+  }
+
+  /** One order worked as a unit: header, real fulfilment progress, and card
+   * lines (name + occasion + status — no street address). See ADR 0109. */
+  @Get("orders/:id")
+  order(@Param("id", ParseUUIDPipe) id: string): Promise<AdminOrderDetail> {
+    return this.adminService.getOrder(id);
   }
 
   @Get("subscribers")

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { accountSchema } from "@kudos/shared-types";
+import { accountSchema, adminOrderDetailSchema } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import Stripe from "stripe";
@@ -34,6 +34,19 @@ const overviewSchema = z.object({
   ),
 });
 
+const progressSchema = z.object({
+  total: z.number(),
+  pending: z.number(),
+  inProgress: z.number(),
+  printed: z.number(),
+  posted: z.number(),
+  delivered: z.number(),
+  returnedToSender: z.number(),
+  failed: z.number(),
+  imported: z.number(),
+  importErrors: z.number(),
+});
+
 const orderRowSchema = z.object({
   id: z.string(),
   orderNumber: z.number(),
@@ -45,6 +58,7 @@ const orderRowSchema = z.object({
   cardCount: z.number(),
   paymentMethod: z.string().nullable(),
   createdAt: z.coerce.date(),
+  progress: progressSchema,
 });
 
 const subscriberRowSchema = z.object({
@@ -297,6 +311,88 @@ describe("Admin — super admin dashboard (e2e)", () => {
     expect(mine!.accountId).toBe(accountId);
     expect(mine!.status).toBe("paid");
     expect(mine!.cardCount).toBe(1);
+    // Real fulfilment progress, not a status label: a freshly-paid order has one
+    // pending job, nothing posted yet.
+    expect(mine!.progress.total).toBe(1);
+    expect(mine!.progress.pending).toBe(1);
+    expect(mine!.progress.posted).toBe(0);
+  });
+
+  it("filters orders server-side by search + paginates (no 100-order cap)", async () => {
+    const adminToken = await createAdmin();
+    const { batchOrderId } = await createPaidOrder();
+    const orderNumber = (
+      await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } })
+    ).orderNumber;
+
+    // Search by the human order number resolves in SQL — it finds the order even
+    // if it's far past the newest 100 (the old in-memory filter would miss it).
+    const found = await request(app.getHttpServer())
+      .get(`/admin/orders?search=${orderNumber}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    const foundBody = paginated(orderRowSchema).parse(found.body);
+    expect(foundBody.items.some((o) => o.id === batchOrderId)).toBe(true);
+
+    // A search that can't match excludes it.
+    const none = await request(app.getHttpServer())
+      .get("/admin/orders?search=zzz-no-such-account-xyz")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    const noneBody = paginated(orderRowSchema).parse(none.body);
+    expect(noneBody.items.some((o) => o.id === batchOrderId)).toBe(false);
+
+    // Pagination metadata is honoured.
+    const paged = await request(app.getHttpServer())
+      .get("/admin/orders?perPage=1&page=1")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    const pagedBody = paginated(orderRowSchema).parse(paged.body);
+    expect(pagedBody.items).toHaveLength(1);
+    expect(pagedBody.perPage).toBe(1);
+    expect(pagedBody.total).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns one order's detail: header, real progress, and card lines (no address)", async () => {
+    const adminToken = await createAdmin();
+    const { accountId, batchOrderId } = await createPaidOrder();
+
+    const res = await request(app.getHttpServer())
+      .get(`/admin/orders/${batchOrderId}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    const detail = adminOrderDetailSchema.parse(res.body);
+
+    expect(detail.id).toBe(batchOrderId);
+    expect(detail.accountId).toBe(accountId);
+    expect(detail.cardCount).toBe(1);
+    expect(detail.progress.total).toBe(1);
+    expect(detail.progress.pending).toBe(1);
+    expect(detail.lines).toHaveLength(1);
+    const line = detail.lines[0]!;
+    expect(line.recipientName).toBe("Ada Lovelace");
+    expect(line.jobStatus).toBe("pending");
+    expect(line.dueDate).not.toBeNull();
+
+    // Data minimisation: the line must NOT carry the street address — that stays
+    // behind the audited fulfilment export.
+    expect(line).not.toHaveProperty("shippingAddressLine1");
+    expect(JSON.stringify(res.body)).not.toContain("1 Test Street");
+  });
+
+  it("404s an unknown order detail and 403s a non-admin", async () => {
+    const adminToken = await createAdmin();
+    const { token } = await signUp();
+    const { batchOrderId } = await createPaidOrder();
+
+    await request(app.getHttpServer())
+      .get(`/admin/orders/${randomUUID()}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`/admin/orders/${batchOrderId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(403);
   });
 
   it("lists subscribers with per-account order count and spend", async () => {
