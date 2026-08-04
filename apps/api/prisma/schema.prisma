@@ -66,6 +66,7 @@ model Account {
   apiKeys        AccountApiKey[]
   crmConnections CrmConnection[]
   recipientLists RecipientList[]
+  segments       Segment[]
   notifications  Notification[]
   returnCases    ReturnCase[]
   events         Event[]
@@ -328,6 +329,28 @@ model RecipientKeyDate {
   @@unique([recipientId, type], name: "recipient_key_date_type")
   @@index([accountId])
   @@map("recipient_key_dates")
+}
+
+/// A saved "smart list" — a named, live-resolving filter over the contact book.
+/// Unlike RecipientList (frozen hand-picked membership), a Segment stores only a
+/// filter definition and resolves to its members on demand: occasion-mode
+/// ("birthdays this month") or contact-mode ("missing an address"). System
+/// presets are code-defined; these are the user's own. See
+/// docs/adr/0105-segments-smart-lists.md.
+model Segment {
+  id         String   @id @default(uuid())
+  accountId  String   @map("account_id")
+  name       String
+  /// The SegmentDefinition (shared-types) — occasion/contact filter, as JSON.
+  definition Json
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, name], name: "segment_name_key")
+  @@index([accountId, createdAt])
+  @@map("segments")
 }
 
 /// A named grouping of recipients a subscriber curates by hand — e.g. a teacher's
