@@ -44,6 +44,24 @@ function toDateInput(value: string | Date | null): string {
   return new Date(value).toISOString().slice(0, 10);
 }
 
+/** Whole days from today to `value` (negative = in the past), day-boundary aligned. */
+function daysUntil(value: string | Date): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(value);
+  target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+/** A friendly countdown for an upcoming date — "Today", "Tomorrow", "In 3 weeks". */
+function countdownLabel(days: number): string {
+  if (days <= 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days < 14) return `In ${days} days`;
+  if (days < 60) return `In ${Math.round(days / 7)} weeks`;
+  return `In ${Math.round(days / 30)} months`;
+}
+
 const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
 
 export function RecipientDetailClient({
@@ -77,8 +95,9 @@ export function RecipientDetailClient({
     setOpenedForAddress(false);
   }
 
-  // Event editing (one row at a time).
+  // Event editing (one row at a time) + the collapsible "add an event" form.
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [showAddEvent, setShowAddEvent] = useState(false);
 
   // Custom fields — arbitrary key→value pairs that become {key} merge tokens on
   // a card. Edited as an ordered list of rows, saved as a whole map. Each row
@@ -104,6 +123,12 @@ export function RecipientDetailClient({
       (a, b) => new Date(a.occasionDate).getTime() - new Date(b.occasionDate).getTime(),
     );
   }
+
+  // Split events into what's coming up (soonest first) and what's been and gone
+  // (most recent first), so the list leads with the dates that still need action.
+  const sortedEvents = sortEvents(events);
+  const upcomingEvents = sortedEvents.filter((e) => daysUntil(e.occasionDate) >= 0);
+  const pastEvents = sortedEvents.filter((e) => daysUntil(e.occasionDate) < 0).reverse();
 
   async function handleSaveDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -208,6 +233,7 @@ export function RecipientDetailClient({
       });
       setEvents((current) => sortEvents([...current, created]));
       form.reset();
+      setShowAddEvent(false);
     } catch (addError) {
       setError(addError instanceof ApiError ? addError.message : "Could not add the event");
     } finally {
@@ -260,6 +286,117 @@ export function RecipientDetailClient({
     } finally {
       setPendingId(null);
     }
+  }
+
+  /** One event row — the inline edit form when it's the row being edited, else the read row. */
+  function renderEvent(occasion: Occasion) {
+    if (editingEventId === occasion.id) {
+      return (
+        <li key={occasion.id} className="py-3">
+          <form
+            onSubmit={(event) => void handleSaveEvent(event, occasion.id)}
+            className="flex flex-col gap-3 sm:flex-row sm:items-end"
+          >
+            <label className="flex flex-[2] flex-col gap-1 text-sm">
+              <span className="text-muted">Name</span>
+              <input name="title" defaultValue={occasion.title ?? ""} placeholder={eventKind(occasion)} className={inputClass} />
+            </label>
+            <label className="flex flex-1 flex-col gap-1 text-sm">
+              <span className="text-muted">Date</span>
+              <input type="date" name="occasionDate" defaultValue={toDateInput(occasion.occasionDate)} required className={inputClass} />
+            </label>
+            <div className="flex items-center gap-2">
+              <button type="submit" disabled={pendingId === occasion.id} className="btn-accent">
+                {pendingId === occasion.id ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingEventId(null)}
+                className="rounded-md border border-border px-3 py-2 text-sm hover:bg-foreground/[0.03]"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </li>
+      );
+    }
+
+    const days = daysUntil(occasion.occasionDate);
+    return (
+      <li
+        key={occasion.id}
+        className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="flex flex-col gap-0.5">
+          <span className="flex items-center gap-1.5 font-medium">
+            {occasion.type === "birthday" && <span aria-hidden="true">🎂</span>}
+            {eventKind(occasion)}
+          </span>
+          <span className="flex flex-wrap items-center gap-2 text-sm text-muted">
+            {formatOccasionDate(occasion.occasionDate)}
+            {days >= 0 && (
+              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">
+                {countdownLabel(days)}
+              </span>
+            )}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+              STATUS_STYLES[occasion.status] ?? "bg-foreground/[0.06] text-muted"
+            }`}
+          >
+            {STATUS_LABELS[occasion.status] ?? occasion.status}
+          </span>
+          {occasion.order && (
+            <Link
+              href={`/orders/${occasion.order.id}`}
+              className="rounded-md border border-border px-2.5 py-1 text-xs text-accent hover:bg-accent-soft"
+            >
+              ORD-{occasion.order.orderNumber} →
+            </Link>
+          )}
+          {occasion.status === "scheduled" && (
+            <>
+              <button
+                type="button"
+                disabled={pendingId === occasion.id}
+                onClick={() => setEditingEventId(occasion.id)}
+                className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-foreground/[0.03] disabled:opacity-40"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                disabled={pendingId === occasion.id}
+                onClick={() => void prepareEvent(occasion.id)}
+                className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-foreground/[0.03] disabled:opacity-40"
+              >
+                Prepare card
+              </button>
+              <button
+                type="button"
+                disabled={pendingId === occasion.id}
+                onClick={() => void removeEvent(occasion.id)}
+                className="rounded-md border border-border px-2.5 py-1 text-xs text-accent hover:bg-accent-soft disabled:opacity-40"
+              >
+                Remove
+              </button>
+            </>
+          )}
+          {occasion.status === "pending_approval" && (
+            <Link
+              href="/approvals"
+              className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-foreground/[0.03]"
+            >
+              Review
+            </Link>
+          )}
+        </div>
+      </li>
+    );
   }
 
   return (
@@ -455,141 +592,104 @@ export function RecipientDetailClient({
       )}
 
       <section className="card flex flex-col gap-4 p-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold">Events</h2>
-          <p className="text-sm text-muted">
-            Every date worth a card. Birthdays are added automatically from the date of birth; add
-            graduations, the end of exams, or anything else here.
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold">
+              Events
+              {events.length > 0 && (
+                <span className="ml-2 text-sm font-normal text-muted">{events.length}</span>
+              )}
+            </h2>
+            <p className="text-sm text-muted">
+              Every date worth a card. Birthdays are added automatically from the date of birth; add
+              graduations, the end of exams, or anything else here.
+            </p>
+          </div>
+          {!showAddEvent && (
+            <button
+              type="button"
+              onClick={() => setShowAddEvent(true)}
+              className="btn-secondary shrink-0 text-sm"
+            >
+              ＋ Add an event
+            </button>
+          )}
         </div>
 
-        {events.length === 0 ? (
-          <p className="text-sm text-muted">No events yet.</p>
-        ) : (
-          <ul className="flex flex-col divide-y divide-border">
-            {events.map((occasion) =>
-              editingEventId === occasion.id ? (
-                <li key={occasion.id} className="py-3">
-                  <form
-                    onSubmit={(event) => void handleSaveEvent(event, occasion.id)}
-                    className="flex flex-col gap-3 sm:flex-row sm:items-end"
-                  >
-                    <label className="flex flex-[2] flex-col gap-1 text-sm">
-                      <span className="text-muted">Name</span>
-                      <input name="title" defaultValue={occasion.title ?? ""} placeholder={eventKind(occasion)} className={inputClass} />
-                    </label>
-                    <label className="flex flex-1 flex-col gap-1 text-sm">
-                      <span className="text-muted">Date</span>
-                      <input type="date" name="occasionDate" defaultValue={toDateInput(occasion.occasionDate)} required className={inputClass} />
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <button type="submit" disabled={pendingId === occasion.id} className="btn-accent">
-                        {pendingId === occasion.id ? "Saving…" : "Save"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingEventId(null)}
-                        className="rounded-md border border-border px-3 py-2 text-sm hover:bg-foreground/[0.03]"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                </li>
-              ) : (
-                <li
-                  key={occasion.id}
-                  className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium">{eventKind(occasion)}</span>
-                    <span className="text-sm text-muted">{formatOccasionDate(occasion.occasionDate)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        STATUS_STYLES[occasion.status] ?? "bg-foreground/[0.06] text-muted"
-                      }`}
-                    >
-                      {STATUS_LABELS[occasion.status] ?? occasion.status}
-                    </span>
-                    {occasion.order && (
-                      <Link
-                        href={`/orders/${occasion.order.id}`}
-                        className="rounded-md border border-border px-2.5 py-1 text-xs text-accent hover:bg-accent-soft"
-                      >
-                        ORD-{occasion.order.orderNumber} →
-                      </Link>
-                    )}
-                    {occasion.status === "scheduled" && (
-                      <>
-                        <button
-                          type="button"
-                          disabled={pendingId === occasion.id}
-                          onClick={() => setEditingEventId(occasion.id)}
-                          className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-foreground/[0.03] disabled:opacity-40"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          disabled={pendingId === occasion.id}
-                          onClick={() => void prepareEvent(occasion.id)}
-                          className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-foreground/[0.03] disabled:opacity-40"
-                        >
-                          Prepare card
-                        </button>
-                        <button
-                          type="button"
-                          disabled={pendingId === occasion.id}
-                          onClick={() => void removeEvent(occasion.id)}
-                          className="rounded-md border border-border px-2.5 py-1 text-xs text-accent hover:bg-accent-soft disabled:opacity-40"
-                        >
-                          Remove
-                        </button>
-                      </>
-                    )}
-                    {occasion.status === "pending_approval" && (
-                      <Link
-                        href="/approvals"
-                        className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-foreground/[0.03]"
-                      >
-                        Review
-                      </Link>
-                    )}
-                  </div>
-                </li>
-              ),
-            )}
-          </ul>
+        {showAddEvent && (
+          <form
+            onSubmit={(event) => void handleAddEvent(event)}
+            className="flex flex-col gap-3 rounded-lg border border-border bg-foreground/[0.02] p-4 sm:flex-row sm:items-end"
+          >
+            <label className="flex flex-1 flex-col gap-1 text-sm">
+              <span className="text-muted">Type</span>
+              <select name="type" className={inputClass} defaultValue="achievement">
+                {EVENT_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {OCCASION_TYPE_LABELS[type]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-[2] flex-col gap-1 text-sm">
+              <span className="text-muted">Name (optional)</span>
+              <input name="title" placeholder="e.g. Graduation" className={inputClass} />
+            </label>
+            <label className="flex flex-1 flex-col gap-1 text-sm">
+              <span className="text-muted">Date</span>
+              <input type="date" name="occasionDate" required className={inputClass} />
+            </label>
+            <div className="flex items-center gap-2">
+              <button type="submit" disabled={adding} className="btn-accent">
+                {adding ? "Adding…" : "Add event"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAddEvent(false)}
+                className="rounded-md border border-border px-3 py-2 text-sm hover:bg-foreground/[0.03]"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
         )}
 
-        <form
-          onSubmit={(event) => void handleAddEvent(event)}
-          className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-end"
-        >
-          <label className="flex flex-1 flex-col gap-1 text-sm">
-            <span className="text-muted">Type</span>
-            <select name="type" className={inputClass} defaultValue="achievement">
-              {EVENT_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {OCCASION_TYPE_LABELS[type]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-[2] flex-col gap-1 text-sm">
-            <span className="text-muted">Name (optional)</span>
-            <input name="title" placeholder="e.g. Graduation" className={inputClass} />
-          </label>
-          <label className="flex flex-1 flex-col gap-1 text-sm">
-            <span className="text-muted">Date</span>
-            <input type="date" name="occasionDate" required className={inputClass} />
-          </label>
-          <button type="submit" disabled={adding} className="btn-accent">
-            {adding ? "Adding…" : "Add event"}
-          </button>
-        </form>
+        {events.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+            <p className="text-sm font-medium">No events yet</p>
+            <p className="mt-1 text-sm text-muted">
+              Add a graduation, work anniversary, or any date worth a card.
+            </p>
+            {!showAddEvent && (
+              <button
+                type="button"
+                onClick={() => setShowAddEvent(true)}
+                className="btn-accent mt-3 text-sm"
+              >
+                Add the first event
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-5">
+            {upcomingEvents.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Upcoming</h3>
+                <ul className="flex flex-col divide-y divide-border">
+                  {upcomingEvents.map(renderEvent)}
+                </ul>
+              </div>
+            )}
+            {pastEvents.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Past</h3>
+                <ul className="flex flex-col divide-y divide-border opacity-70">
+                  {pastEvents.map(renderEvent)}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="card flex flex-col gap-4 p-6">
