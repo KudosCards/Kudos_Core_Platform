@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
+import { PlatformNotificationService } from "../platform-notifications/platform-notification.service";
 import { FulfillmentService, type MustShipCard, type MustShipSummary } from "./fulfillment.service";
 
 /** What one reminder run did — returned for tests + logging. */
@@ -29,6 +30,7 @@ export class DispatchReminderService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService<EnvConfig, true>,
     private readonly fulfillment: FulfillmentService,
+    private readonly platformNotifications: PlatformNotificationService,
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
   ) {}
 
@@ -44,6 +46,24 @@ export class DispatchReminderService {
       // Nothing to post — a clean send-by-5 board, so no email. Suppress-when-empty
       // keeps the digest a signal, not daily noise.
       return { adminsEmailed: 0, overdue: 0, today: 0, dueSoon: 0 };
+    }
+
+    // The in-app notification centre (ADR 0116) — written regardless of email, so
+    // every operator sees it in the ops bell even without an email set. One entry
+    // per day (entityId = today) keeps a re-fired cron from duplicating.
+    try {
+      const isoToday = new Date().toISOString().slice(0, 10);
+      await this.platformNotifications.notifyAllAdmins({
+        kind: "dispatch_reminder",
+        title: this.notificationTitle(summary),
+        body: this.notificationBody(summary),
+        href: "/fulfillment",
+        entityType: "dispatch_reminder",
+        entityId: isoToday,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Dispatch reminder in-app notification failed: ${reason}`);
     }
 
     const admins = await this.prisma.platformAdmin.findMany({
@@ -92,6 +112,18 @@ export class DispatchReminderService {
       today: summary.today,
       dueSoon: summary.dueSoon,
     };
+  }
+
+  /** Concise in-app notification title — overdue-led. */
+  private notificationTitle(s: MustShipSummary): string {
+    if (s.overdue > 0) {
+      return `${s.overdue} card${s.overdue === 1 ? "" : "s"} overdue to post`;
+    }
+    return `${s.total} card${s.total === 1 ? "" : "s"} to post today`;
+  }
+
+  private notificationBody(s: MustShipSummary): string {
+    return `${s.overdue} overdue · ${s.today} due today · ${s.dueSoon} due within 5 working days`;
   }
 
   /** Lead with overdue when there is any — that's the line that must not be missed. */

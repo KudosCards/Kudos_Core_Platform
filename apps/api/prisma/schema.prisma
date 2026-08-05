@@ -957,6 +957,33 @@ model PlatformAdmin {
   @@map("platform_admins")
 }
 
+/// An in-app notification for the Kudos HQ ops team — the platform-admin
+/// equivalent of the account Notification inbox (ADR 0034), but scoped to
+/// operators rather than an account's members. A platform-wide event (e.g. the
+/// daily send-by-5 dispatch reminder, ADR 0115) fans out one row per operator so
+/// read state (readAt) is per-user. `userId` is the operator's Supabase auth user
+/// id — not a Prisma FK, same as PlatformAdmin.userId / Notification.userId.
+/// entityType/entityId keep a producer idempotent under retries (a re-fired cron
+/// records the same real-world event once). See ADR 0116.
+model PlatformNotification {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  kind       String
+  title      String
+  body       String
+  href       String?
+  entityType String?   @map("entity_type")
+  entityId   String?   @map("entity_id")
+  readAt     DateTime? @map("read_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  // The unread badge + each operator's inbox list, both newest-first per user.
+  @@index([userId, createdAt])
+  // Idempotency lookup: has this event already been fanned out to operators?
+  @@index([kind, entityId])
+  @@map("platform_notifications")
+}
+
 /// An email allow-listed by a super admin to become an operator. When a user
 /// signs in at the admin login with a matching *verified* Supabase email, they
 /// are provisioned as a PlatformAdmin (role copied from here) and this row is

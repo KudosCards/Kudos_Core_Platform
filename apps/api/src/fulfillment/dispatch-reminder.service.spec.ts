@@ -2,6 +2,7 @@ import type { ConfigService } from "@nestjs/config";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { EmailClient } from "../email/email.client";
 import type { EnvConfig } from "../config/env.schema";
+import type { PlatformNotificationService } from "../platform-notifications/platform-notification.service";
 import { DispatchReminderService } from "./dispatch-reminder.service";
 import type { FulfillmentService, MustShipSummary } from "./fulfillment.service";
 
@@ -26,8 +27,18 @@ describe("DispatchReminderService", () => {
         findMany: jest.fn().mockResolvedValue(adminEmails.map((e) => ({ email: e }))),
       },
     } as unknown as PrismaService;
-    const service = new DispatchReminderService(prisma, config, fulfillment, email);
-    return { service, sendTransactional };
+    const notifyAllAdmins = jest.fn().mockResolvedValue(undefined);
+    const platformNotifications = {
+      notifyAllAdmins,
+    } as unknown as PlatformNotificationService;
+    const service = new DispatchReminderService(
+      prisma,
+      config,
+      fulfillment,
+      platformNotifications,
+      email,
+    );
+    return { service, sendTransactional, notifyAllAdmins };
   }
 
   const emptySummary: MustShipSummary = { overdue: 0, today: 0, dueSoon: 0, total: 0, cards: [] };
@@ -51,15 +62,16 @@ describe("DispatchReminderService", () => {
     ],
   };
 
-  it("sends nothing when the board is clear", async () => {
-    const { service, sendTransactional } = build(emptySummary, ["ops@kudos.test"]);
+  it("sends nothing (email or in-app) when the board is clear", async () => {
+    const { service, sendTransactional, notifyAllAdmins } = build(emptySummary, ["ops@kudos.test"]);
     const result = await service.runDispatchReminder();
     expect(result.adminsEmailed).toBe(0);
     expect(sendTransactional).not.toHaveBeenCalled();
+    expect(notifyAllAdmins).not.toHaveBeenCalled();
   });
 
-  it("emails each distinct admin once, overdue-led, listing the cards", async () => {
-    const { service, sendTransactional } = build(busySummary, [
+  it("emails each distinct admin once, overdue-led, and writes one in-app entry", async () => {
+    const { service, sendTransactional, notifyAllAdmins } = build(busySummary, [
       "ops@kudos.test",
       "OPS@kudos.test", // same address, different case — deduped
       "boss@kudos.test",
@@ -76,12 +88,20 @@ describe("DispatchReminderService", () => {
     expect(call.subject).toContain("2");
     expect(call.html).toContain("Ada Lovelace");
     expect(call.html).toContain("ORD-1042");
+    // The in-app notification centre entry is written once, keyed by today's date.
+    expect(notifyAllAdmins).toHaveBeenCalledTimes(1);
+    const [notifyArgs] = notifyAllAdmins.mock.calls as { kind: string; entityId: string }[][];
+    const notify = notifyArgs![0]!;
+    expect(notify.kind).toBe("dispatch_reminder");
+    expect(notify.entityId).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("does not send (and does not throw) when no admin has an email", async () => {
-    const { service, sendTransactional } = build(busySummary, [null, null]);
+  it("still writes the in-app entry (and doesn't throw) when no admin has an email", async () => {
+    const { service, sendTransactional, notifyAllAdmins } = build(busySummary, [null, null]);
     const result = await service.runDispatchReminder();
     expect(result.adminsEmailed).toBe(0);
     expect(sendTransactional).not.toHaveBeenCalled();
+    // In-app reaches all operators regardless of email, so it's still written.
+    expect(notifyAllAdmins).toHaveBeenCalledTimes(1);
   });
 });

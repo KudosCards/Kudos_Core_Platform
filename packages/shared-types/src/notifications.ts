@@ -78,3 +78,30 @@ export const unreadCountSchema = z.object({
   unreadCount: z.number().int().nonnegative(),
 });
 export type UnreadCount = z.infer<typeof unreadCountSchema>;
+
+/**
+ * The Kudos HQ ops notification centre — the platform-admin equivalent of the
+ * account inbox above, scoped to operators. A platform-wide event (e.g. the daily
+ * send-by-5 dispatch reminder) fans out one row per operator, each with its own
+ * read/unread. `kind` is left open (a plain string) so new operator alert types
+ * — Click & Drop errors, returns — don't need a client change. See ADR 0116.
+ */
+export const platformNotificationSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.string(),
+  title: z.string(),
+  body: z.string(),
+  href: z.string().nullable(),
+  readAt: z.coerce.date().nullable(),
+  createdAt: z.coerce.date(),
+});
+export type PlatformNotification = z.infer<typeof platformNotificationSchema>;
+
+export const platformNotificationPageSchema = z.object({
+  items: z.array(platformNotificationSchema),
+  unreadCount: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  perPage: z.number().int().positive(),
+});
+export type PlatformNotificationPage = z.infer<typeof platformNotificationPageSchema>;

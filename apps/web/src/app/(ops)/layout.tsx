@@ -4,6 +4,7 @@ import type { AdminIdentity, MustShipSummary } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { serverApiFetch } from "@/lib/api.server";
 import { LogoutButton } from "../(app)/logout-button";
+import { OpsNotificationBell } from "./ops-notification-bell";
 
 /**
  * The internal ops shell — a separate surface from the customer app, with its
@@ -91,16 +92,19 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
           ))}
         </div>
         <div className="flex flex-col gap-2 border-t border-black/10 pt-4 text-sm dark:border-white/10">
-          <div className="px-3">
-            <p
-              className="truncate text-xs font-medium text-foreground/80"
-              title={me.email ?? undefined}
-            >
-              {me.email ?? "Operator"}
-            </p>
-            <p className="text-xs text-foreground/40">
-              {me.role === "super_admin" ? "Super admin" : "Operator"}
-            </p>
+          <div className="flex items-center justify-between gap-2 px-3">
+            <div className="min-w-0">
+              <p
+                className="truncate text-xs font-medium text-foreground/80"
+                title={me.email ?? undefined}
+              >
+                {me.email ?? "Operator"}
+              </p>
+              <p className="text-xs text-foreground/40">
+                {me.role === "super_admin" ? "Super admin" : "Operator"}
+              </p>
+            </div>
+            <OpsNotificationBell />
           </div>
           <LogoutButton redirectTo="/admin-login" />
         </div>
@@ -110,7 +114,10 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
       <div className="flex flex-col border-b border-black/10 bg-surface lg:hidden dark:border-white/10">
         <div className="flex items-center justify-between px-4 py-3">
           <span className="text-sm font-semibold">Kudos Ops</span>
-          <LogoutButton redirectTo="/admin-login" />
+          <div className="flex items-center gap-1">
+            <OpsNotificationBell />
+            <LogoutButton redirectTo="/admin-login" />
+          </div>
         </div>
         <nav className="flex gap-1.5 overflow-x-auto px-4 pb-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {navItems.map((item) => (
