@@ -245,7 +245,12 @@ describe("Click & Drop import (e2e)", () => {
       imported: number;
       errored: number;
       awaiting: number;
-      recentImports: { jobId: string; orderReference: string; orderIdentifier: string | null }[];
+      recentImports: {
+        jobId: string;
+        orderReference: string;
+        orderIdentifier: string | null;
+        importedAt: string | null;
+      }[];
     };
 
     expect(status.enabled).toBe(true);
@@ -256,6 +261,9 @@ describe("Click & Drop import (e2e)", () => {
     expect(sample).toBeDefined();
     expect(sample!.orderReference).toMatch(/^ORD-\d+-[0-9a-f]{8}$/);
     expect(stored.clickAndDropOrderId).toBe(`cnd_${sample!.orderReference}`);
+    // The precise import timestamp is stored and surfaced (not a proxy).
+    expect(stored.clickAndDropImportedAt).not.toBeNull();
+    expect(sample!.importedAt).toBe(stored.clickAndDropImportedAt!.toISOString());
   });
 
   it("import-status readout bands a failed card as errored with its message", async () => {

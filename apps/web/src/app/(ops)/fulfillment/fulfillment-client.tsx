@@ -210,7 +210,7 @@ function formatDueOn(dueOn: string): string {
   });
 }
 
-/** A concise date+time for an import sample's `updatedAt` (arrives as an ISO
+/** A concise date+time for an import sample's timestamp (arrives as an ISO
  * string over the wire). */
 function formatSampleDate(value: Date | string): string {
   const date = new Date(value);
@@ -616,9 +616,11 @@ export function FulfillmentClient({
                       {sample.orderReference}
                     </code>
                     <span className="text-foreground/50">→ RM order {sample.orderIdentifier}</span>
-                    <span className="text-foreground/40">
-                      · {formatSampleDate(sample.updatedAt)}
-                    </span>
+                    {sample.importedAt && (
+                      <span className="text-foreground/40">
+                        · imported {formatSampleDate(sample.importedAt)}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>

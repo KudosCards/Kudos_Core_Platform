@@ -432,54 +432,54 @@ enum OccasionStatus {
 }
 
 model Occasion {
-  id             String         @id @default(uuid())
-  accountId      String         @map("account_id")
+  id                     String         @id @default(uuid())
+  accountId              String         @map("account_id")
   /// Null for one_off_campaign occasions (e.g. an org-wide "Student of the Month" send).
-  recipientId    String?        @map("recipient_id")
-  type           OccasionType
-  source         OccasionSource
+  recipientId            String?        @map("recipient_id")
+  type                   OccasionType
+  source                 OccasionSource
   /// Optional human label for a hand-added recipient event ("Graduation", "End
   /// of exams") — lets the calendar show the real name rather than just the
   /// broad `type`. Null for auto-scheduled birthdays and campaign occasions.
-  title          String?
-  occasionDate   DateTime       @map("occasion_date") @db.Date
-  dispatchDate   DateTime?      @map("dispatch_date") @db.Date
+  title                  String?
+  occasionDate           DateTime       @map("occasion_date") @db.Date
+  dispatchDate           DateTime?      @map("dispatch_date") @db.Date
   /// True when a human manually placed the dispatch date (dragged it on the
   /// calendar), so the working-day recompute doesn't silently undo it. Cleared
   /// when the occasion date changes (the timing baseline moved). See
   /// docs/adr/0058-drag-dispatch.md.
-  dispatchDateOverridden Boolean @default(false) @map("dispatch_date_overridden")
-  status         OccasionStatus @default(scheduled)
+  dispatchDateOverridden Boolean        @default(false) @map("dispatch_date_overridden")
+  status                 OccasionStatus @default(scheduled)
   /// How this occasion is sent once approved. `asap` (default) means a human
   /// checks it out manually; `auto_send` means the auto-send cron creates the
   /// order, pays it from the wallet, and posts it timed to the dispatchDate —
   /// no manual checkout. See docs/adr/0013-auto-send.md.
-  dispatchOption DispatchOption @default(asap) @map("dispatch_option")
+  dispatchOption         DispatchOption @default(asap) @map("dispatch_option")
   /// Postage class chosen at approval for auto_send occasions; drives both the
   /// stamp cost and the dispatchDate lead time. Ignored for `asap` occasions
   /// (postage is chosen per line at manual checkout).
-  postageClass   PostageClass   @default(second_class) @map("postage_class")
+  postageClass           PostageClass   @default(second_class) @map("postage_class")
   /// Set when an admin approves the occasion (see docs/adr/0006-phase-2-scope.md). Copied
   /// into OrderRecipient.savedDesignId by Phase 3's checkout flow — the design choice
   /// travels with the occasion instead of being re-selected at checkout.
-  savedDesignId  String?        @map("saved_design_id")
+  savedDesignId          String?        @map("saved_design_id")
   /// When a birthday-reminder email covering this occasion was sent, so the
   /// daily reminder cron never emails the same upcoming occasion twice. Null
   /// until reminded. See docs/adr/0025.
-  reminderSentAt DateTime?      @map("reminder_sent_at")
+  reminderSentAt         DateTime?      @map("reminder_sent_at")
   /// Set when this occasion is one member of a shared Event (source =
   /// shared_event). The parent Event owns the title, date, and type; the
   /// calendar groups all members under one collapsible entry. Null for
   /// standalone occasions. See docs/adr/0057-shared-events.md.
-  eventId        String?        @map("event_id")
+  eventId                String?        @map("event_id")
   /// Set on a one_off_campaign occasion created by a "send to segment" bulk send:
   /// points at the recipient's natural occasion (e.g. their birthday this month)
   /// that this send stands in for. At payment settlement the referenced occasion
   /// is marked `skipped` so it can't independently fire and double-send. Null for
   /// every other occasion. See docs/adr/0107-occasion-reconciliation.md.
-  supersedesOccasionId String?   @map("supersedes_occasion_id")
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
+  supersedesOccasionId   String?        @map("supersedes_occasion_id")
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
 
   recipient       Recipient?       @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   // Restrict, not the nullable-relation default of SetNull — an approved occasion
@@ -833,34 +833,38 @@ enum FulfillmentJobStatus {
 }
 
 model FulfillmentJob {
-  id                String               @id @default(uuid())
-  orderRecipientId  String               @unique @map("order_recipient_id")
-  status            FulfillmentJobStatus @default(pending)
-  assignedToUserId  String?              @map("assigned_to_user_id")
-  printedAt         DateTime?            @map("printed_at")
-  postedAt          DateTime?            @map("posted_at")
-  deliveredAt       DateTime?            @map("delivered_at")
-  trackingReference String?              @map("tracking_reference")
+  id                     String               @id @default(uuid())
+  orderRecipientId       String               @unique @map("order_recipient_id")
+  status                 FulfillmentJobStatus @default(pending)
+  assignedToUserId       String?              @map("assigned_to_user_id")
+  printedAt              DateTime?            @map("printed_at")
+  postedAt               DateTime?            @map("posted_at")
+  deliveredAt            DateTime?            @map("delivered_at")
+  trackingReference      String?              @map("tracking_reference")
   /// The printable Royal Mail label/QR URL, when a shipment was auto-created via
   /// the Shipping API. Null for manually-dispatched jobs. See ADR 0072.
-  labelUrl          String?              @map("label_url")
+  labelUrl               String?              @map("label_url")
   /// Royal Mail's identifier for this card once it's been imported into the
   /// operator's Click & Drop dashboard queue. Null until pushed (or if Click &
   /// Drop import is off). Its presence is the idempotency guard — a card is never
   /// pushed twice. See ADR 0095.
-  clickAndDropOrderId String?            @map("click_and_drop_order_id")
+  clickAndDropOrderId    String?              @map("click_and_drop_order_id")
   /// The last Click & Drop import error for this card, if the push failed — shown
   /// in the ops queue so an operator can retry. Cleared on a successful push.
-  clickAndDropError String?              @map("click_and_drop_error")
+  clickAndDropError      String?              @map("click_and_drop_error")
+  /// When this card was imported into Click & Drop (the moment clickAndDropOrderId
+  /// was stored). A precise import timestamp for the ops readout, distinct from
+  /// updatedAt which any later change would move. Null until imported. See ADR 0114.
+  clickAndDropImportedAt DateTime?            @map("click_and_drop_imported_at")
   /// The date this card must be POSTED by — denormalised from the occasion's
   /// dispatchDate at settlement (see batchOrders.settleFulfillment), so the ops
   /// queue can sort and bucket by send-urgency with an indexed range scan rather
   /// than joining through order_recipients → occasions on every read. Null when
   /// the card has no occasion (a bespoke send with no date-driven deadline);
   /// those sort last. See docs/adr/0108-dispatch-date-queue.md.
-  dueDate           DateTime?            @map("due_date") @db.Date
-  createdAt         DateTime             @default(now()) @map("created_at")
-  updatedAt         DateTime             @updatedAt @map("updated_at")
+  dueDate                DateTime?            @map("due_date") @db.Date
+  createdAt              DateTime             @default(now()) @map("created_at")
+  updatedAt              DateTime             @updatedAt @map("updated_at")
 
   orderRecipient OrderRecipient @relation(fields: [orderRecipientId], references: [id], onDelete: Cascade)
 
@@ -1056,32 +1060,32 @@ enum SupportAttachmentKind {
 /// team in the ops portal. The thread of back-and-forth lives in
 /// SupportTicketMessage. See docs/adr/0066-support-ticketing.md.
 model SupportTicket {
-  id           String  @id @default(uuid())
+  id               String                @id @default(uuid())
   /// Human-friendly sequential reference (rendered as TKT-1000). Sequence starts
   /// at 1000 (see the migration), mirroring BatchOrder.orderNumber.
-  ticketNumber Int     @unique @default(autoincrement()) @map("ticket_number")
-  accountId    String  @map("account_id")
+  ticketNumber     Int                   @unique @default(autoincrement()) @map("ticket_number")
+  accountId        String                @map("account_id")
   /// The Supabase auth user (a member of the account) who opened the ticket.
-  createdByUserId String @map("created_by_user_id")
-  subject      String
-  category     SupportTicketCategory @default(other)
-  priority     SupportTicketPriority @default(normal)
-  status       SupportTicketStatus   @default(open)
+  createdByUserId  String                @map("created_by_user_id")
+  subject          String
+  category         SupportTicketCategory @default(other)
+  priority         SupportTicketPriority @default(normal)
+  status           SupportTicketStatus   @default(open)
   /// The ops user (PlatformAdmin.userId) currently handling it, if claimed.
-  assignedToUserId String? @map("assigned_to_user_id")
+  assignedToUserId String?               @map("assigned_to_user_id")
   /// Best-effort technical context captured silently from the browser when the
   /// ticket was raised (page URL, user agent, viewport, app version, plan). Ops-
   /// only — never shown to the customer. Speeds up triage so support doesn't have
   /// to ask "which page? which browser?". See docs/adr/0079-support-attachments.md.
-  diagnostics  Json?     @map("diagnostics")
+  diagnostics      Json?                 @map("diagnostics")
   /// Denormalised so the queue can sort by "most recent activity" and show
   /// "whose turn" without loading the whole message thread.
-  lastMessageAt   DateTime             @default(now()) @map("last_message_at")
-  lastMessageFrom SupportMessageAuthor @default(customer) @map("last_message_from")
-  resolvedAt   DateTime? @map("resolved_at")
-  closedAt     DateTime? @map("closed_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  lastMessageAt    DateTime              @default(now()) @map("last_message_at")
+  lastMessageFrom  SupportMessageAuthor  @default(customer) @map("last_message_from")
+  resolvedAt       DateTime?             @map("resolved_at")
+  closedAt         DateTime?             @map("closed_at")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
 
   account  Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
   messages SupportTicketMessage[]
@@ -1107,7 +1111,7 @@ model SupportTicketMessage {
   internalNote Boolean              @default(false) @map("internal_note")
   createdAt    DateTime             @default(now()) @map("created_at")
 
-  ticket      SupportTicket                     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket      SupportTicket                    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   attachments SupportTicketMessageAttachment[]
 
   @@index([ticketId, createdAt])

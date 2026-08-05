@@ -86,6 +86,9 @@ export const clickAndDropImportSampleSchema = z.object({
   orderReference: z.string(),
   orderIdentifier: z.string().nullable(),
   error: z.string().nullable(),
+  /** The precise import time (imported samples); null on error samples. */
+  importedAt: z.coerce.date().nullable(),
+  /** The row's last-changed time — used for error samples (last-failed). */
   updatedAt: z.coerce.date(),
 });
 export type ClickAndDropImportSample = z.infer<typeof clickAndDropImportSampleSchema>;

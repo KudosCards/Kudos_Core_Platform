@@ -44,7 +44,10 @@ export interface ClickAndDropImportSample {
   orderIdentifier: string | null;
   /** The stored import error (only on error samples). */
   error: string | null;
-  /** When the row last changed — a proxy for when it imported / last failed. */
+  /** The precise moment this card imported into Click & Drop (null on error
+   * samples, which never imported). */
+  importedAt: Date | null;
+  /** When the row last changed — the timestamp for error samples (last-failed). */
   updatedAt: Date;
 }
 
@@ -69,6 +72,7 @@ const SAMPLE_SELECT = {
   id: true,
   clickAndDropOrderId: true,
   clickAndDropError: true,
+  clickAndDropImportedAt: true,
   updatedAt: true,
   orderRecipient: { select: { batchOrder: { select: { orderNumber: true } } } },
 } satisfies Prisma.FulfillmentJobSelect;
@@ -141,7 +145,7 @@ export class ClickAndDropService {
       }),
       this.prisma.fulfillmentJob.findMany({
         where: { clickAndDropOrderId: { not: null } },
-        orderBy: { updatedAt: "desc" },
+        orderBy: { clickAndDropImportedAt: "desc" },
         take: SAMPLE_LIMIT,
         select: SAMPLE_SELECT,
       }),
@@ -169,6 +173,7 @@ export class ClickAndDropService {
       orderReference: orderReferenceFor(row.id, row.orderRecipient.batchOrder.orderNumber),
       orderIdentifier: row.clickAndDropOrderId,
       error: row.clickAndDropError,
+      importedAt: row.clickAndDropImportedAt,
       updatedAt: row.updatedAt,
     };
   }
@@ -259,7 +264,11 @@ export class ClickAndDropService {
       });
       await this.prisma.fulfillmentJob.update({
         where: { id: job.id },
-        data: { clickAndDropOrderId: result.orderIdentifier, clickAndDropError: null },
+        data: {
+          clickAndDropOrderId: result.orderIdentifier,
+          clickAndDropError: null,
+          clickAndDropImportedAt: new Date(),
+        },
       });
       return null;
     } catch (error) {
