@@ -609,7 +609,7 @@ describe("Batch orders (e2e)", () => {
         .expect(201);
     });
 
-    it("retains the birthday classification (and dates the send to today) when sending via a reconciled occasion", async () => {
+    it("reuses the natural birthday occasion as the send record when reconciled", async () => {
       const { token, accountId } = await signUp();
       const savedDesignId = await createSavedDesign(token);
       const contactId = await createRecipientWithAddress(token);
@@ -643,23 +643,30 @@ describe("Batch orders (e2e)", () => {
         })
         .expect(201);
 
-      // The created send occasion inherits the birthday *classification* (not a
-      // bespoke event) and supersedes the natural one. Its own date stays the
-      // send moment — the unique (recipient, type, occasionDate) index means we
-      // can't put a second birthday occasion on the birthday's own date, which
-      // the natural one already holds. And, being an asap send paid now, it
-      // dispatches TODAY, so it never reads as overdue.
-      const sent = await prisma.occasion.findFirstOrThrow({
-        where: { accountId, source: "one_off_campaign" },
-      });
-      expect(sent.type).toBe("birthday");
-      expect(sent.supersedesOccasionId).toBe(birthday.id);
-      expect(sent.dispatchDate?.getTime()).toBe(startOfUtcDay(new Date()).getTime());
-      // Dated to the send moment (today), not the future birthday.
-      expect(sent.occasionDate.getTime()).toBeGreaterThanOrEqual(
-        startOfUtcDay(new Date()).getTime(),
+      // No superseding one-off is minted: the natural birthday occasion itself
+      // becomes the send record. So there's still exactly ONE occasion for the
+      // account, and no one_off_campaign send occasion exists.
+      const occasions = await prisma.occasion.findMany({ where: { accountId } });
+      expect(occasions).toHaveLength(1);
+      expect(await prisma.occasion.count({ where: { accountId, source: "one_off_campaign" } })).toBe(
+        0,
       );
-      expect(sent.occasionDate.getTime()).not.toBe(birthday.occasionDate.getTime());
+
+      // The reused occasion keeps its birthday classification AND its own
+      // birthday date — the card's calendar event sits on the real birthday, not
+      // the send day. It now carries the bulk design, was checked out (queued),
+      // and — being an asap send paid now — dispatches TODAY so it never reads as
+      // overdue.
+      const sent = occasions[0]!;
+      expect(sent.id).toBe(birthday.id);
+      expect(sent.type).toBe("birthday");
+      expect(sent.source).toBe("recurring_per_recipient");
+      expect(sent.supersedesOccasionId).toBeNull();
+      expect(sent.savedDesignId).toBe(savedDesignId);
+      expect(sent.dispatchOption).toBe("asap");
+      expect(sent.status).toBe("queued");
+      expect(sent.occasionDate.getTime()).toBe(startOfUtcDay(birthdayDate).getTime());
+      expect(sent.dispatchDate?.getTime()).toBe(startOfUtcDay(new Date()).getTime());
     });
 
     it("blocks the send and names contacts missing a postal address (no order created)", async () => {

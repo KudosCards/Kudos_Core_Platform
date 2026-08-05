@@ -18,9 +18,11 @@ Two pieces of pre-launch user feedback turned out to be live bugs:
 2. **A birthday send lost its birthday classification and looked overdue.**
    Sending via the birthday segment (remove all but one contact, pay, send)
    created a `bespoke_campaign` occasion dated **today**. Two root causes:
-   - the bulk-send never inherited the matched natural (birthday) occasion's
+   - the bulk-send never carried the matched natural (birthday) occasion's
      `type`/`occasionDate` — it only *superseded* it (ADR 0107), so the send
-     record was bespoke, not birthday;
+     record was a bespoke event dated today, not the birthday itself. The
+     calendar showed a bespoke campaign on the send day instead of a birthday on
+     the birthday;
    - the send occasion's `occasionDate` was `now`, and `computeDispatchDate(now)`
      returns ~5 working days in the **past**, so its fulfilment `dueDate` landed
      last week and the ops queue flagged it overdue — for a card being produced
@@ -34,29 +36,40 @@ Two pieces of pre-launch user feedback turned out to be live bugs:
    postcode); the checkout line is pre-filled from it (still editable) instead of
    starting blank. An address already on file is never re-keyed.
 
-2. **A one-off send inherits the campaign's classification, and ships "today".**
-   When a bulk-send supersedes a natural occasion (e.g. a birthday from the
-   birthday segment), the created send occasion **inherits that occasion's
-   `type`** — so it stays a *birthday*, not a bespoke event. It keeps the send
-   moment as its own `occasionDate`, deliberately: the DB enforces a unique
-   `(recipientId, type, occasionDate)`, so there can only ever be one birthday
-   occasion per person per date, and the superseded natural one already holds the
-   birthday's own date — a second on that date is impossible (and a full timestamp
-   keeps repeat same-day sends collision-free too). Because an `asap` one-off send
-   is **paid and produced now**, its `dispatchDate` is set to **today** (not
-   back-computed from the occasion date), so the ops queue reads it as due now,
-   never overdue. The same "dispatch today" rule is applied to the guided single
-   send (`quickSend`), which had the identical back-dating bug.
+2. **A segment send reuses the natural occasion as its send record, and ships
+   "today".** When a bulk-send is reconciled against a natural occasion (e.g. a
+   birthday picked from the birthday segment), it no longer mints a superseding
+   one-off. Instead it **reuses that occasion as the send record**: it attaches
+   the chosen design, flips it to an `asap` send, and checks it out through the
+   same `create()` path as any other line. Crucially it keeps the occasion's own
+   `type` **and** `occasionDate`, so the card's calendar event sits on the
+   *actual birthday*, keeps its birthday classification, and no duplicate
+   occasion is created — which also sidesteps the unique
+   `(recipientId, type, occasionDate)` index that previously blocked dating a new
+   send occasion to the birthday. Because an `asap` send is **paid and produced
+   now**, its `dispatchDate` is set to **today** (not back-computed from the
+   occasion date), so the ops queue reads it as due now, never overdue.
 
-   (Putting the send's calendar event *on the birthday itself* would need a
-   larger rework — reusing the natural occasion as the send record rather than
-   creating a superseding one-off — because of that uniqueness rule; deferred.)
+   Recipients *not* reconciled against a natural occasion (an ordinary bulk send
+   to contacts) still get a fresh `one_off_campaign` occasion, dated at the send
+   moment and dispatched today. The same "dispatch today" rule is applied to the
+   guided single send (`quickSend`), which had the identical back-dating bug.
+
+   The pre-existing supersede-and-skip settlement (ADR 0107) is retained only as
+   a safety net for any order created before this change; new reconciled sends
+   set no `supersedesOccasionId`, so it is a no-op for them.
 
 ## Consequences
 
 - The two most-reported friction points in the ordering flow are gone: no
-  address re-entry, and a birthday card sent via the segment stays a birthday and
-  isn't wrongly flagged overdue.
+  address re-entry, and a birthday card sent via the segment stays a birthday,
+  sits on the recipient's real birthday in the calendar, and isn't wrongly
+  flagged overdue.
+- Reconciling a segment send now *consumes* the natural occasion directly
+  (it moves `scheduled`/`pending_approval`/`approved` → `queued` with the design
+  attached) instead of leaving it to be skipped at settlement — so the calendar
+  shows one occasion on the right date, not a bespoke duplicate plus a skipped
+  natural one.
 - `computeDispatchDate` is now used only for genuinely *scheduled* occasions
   (the auto/birthday scheduler), where back-computing from a future date is
   correct. Immediate one-off sends date their dispatch to the day they're made.
