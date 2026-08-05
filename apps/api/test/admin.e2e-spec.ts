@@ -353,6 +353,16 @@ describe("Admin — super admin dashboard (e2e)", () => {
     expect(pagedBody.total).toBeGreaterThanOrEqual(1);
   });
 
+  it("does not 500 when the order-number search overflows int4 range", async () => {
+    const adminToken = await createAdmin();
+    // A 21-digit numeric term exceeds int4 — the search must skip the
+    // orderNumber clause rather than let Postgres reject the value.
+    await request(app.getHttpServer())
+      .get("/admin/orders?search=999999999999999999999")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+  });
+
   it("returns one order's detail: header, real progress, and card lines (no address)", async () => {
     const adminToken = await createAdmin();
     const { accountId, batchOrderId } = await createPaidOrder();

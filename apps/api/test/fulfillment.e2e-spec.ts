@@ -664,4 +664,44 @@ describe("Fulfillment (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(403);
   });
+
+  it("counts overdueBefore relative to today, not the viewed window (ADR 0110)", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+
+    const offsetDay = (days: number): Date => {
+      const d = new Date();
+      d.setUTCHours(0, 0, 0, 0);
+      d.setUTCDate(d.getUTCDate() + days);
+      return d;
+    };
+    const isoOf = (d: Date) => d.toISOString().slice(0, 10);
+    // A window well in the future, so its cards never fall in [from, to].
+    const fromIso = isoOf(offsetDay(30));
+    const toIso = isoOf(offsetDay(60));
+    const overdueBefore = async (): Promise<number> => {
+      const res = await request(app.getHttpServer())
+        .get(`/fulfillment/calendar?from=${fromIso}&to=${toIso}`)
+        .set("Authorization", `Bearer ${opsToken}`)
+        .expect(200);
+      return (res.body as { overdueBefore: number }).overdueBefore;
+    };
+
+    const job = await createPaidOrder(token);
+    // Due in 3 days: before the future window but NOT overdue → must not count.
+    await prisma.fulfillmentJob.update({
+      where: { id: job.jobId },
+      data: { dueDate: offsetDay(3) },
+    });
+    const notOverdue = await overdueBefore();
+
+    // Move it to 3 days ago: now genuinely overdue → counts exactly once more.
+    await prisma.fulfillmentJob.update({
+      where: { id: job.jobId },
+      data: { dueDate: offsetDay(-3) },
+    });
+    const overdue = await overdueBefore();
+
+    expect(overdue).toBe(notOverdue + 1);
+  });
 });

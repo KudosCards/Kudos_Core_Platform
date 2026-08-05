@@ -5,6 +5,10 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
 
+/** Largest value a Postgres int4 column (e.g. BatchOrder.orderNumber) can hold —
+ * an upper bound for numeric search terms so they can't overflow the column. */
+const MAX_INT4 = 2_147_483_647;
+
 /** Order statuses that count as real revenue (a draft is a cart; a cancelled or
  * pending-payment order never collected money). */
 export const PAID_STATUSES: BatchOrderStatus[] = [
@@ -244,9 +248,13 @@ export class AdminService {
       const or: Prisma.BatchOrderWhereInput[] = [
         { account: { name: { contains: search, mode: "insensitive" } } },
       ];
-      // "ORD-1035" or "1035" → match the order number.
+      // "ORD-1035" or "1035" → match the order number. Bounded to the int4 range
+      // so a long numeric search (e.g. a pasted card number) can't overflow the
+      // orderNumber column and 500 the request.
       const digits = Number(search.replace(/[^0-9]/g, ""));
-      if (Number.isInteger(digits) && digits > 0) or.push({ orderNumber: digits });
+      if (Number.isInteger(digits) && digits > 0 && digits <= MAX_INT4) {
+        or.push({ orderNumber: digits });
+      }
       filters.push({ OR: or });
     }
     const where: Prisma.BatchOrderWhereInput = { AND: filters };

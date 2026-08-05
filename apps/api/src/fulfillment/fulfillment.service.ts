@@ -18,7 +18,7 @@ import { royalMailTrackingUrl, type RoyalMailClient } from "../shipping/royal-ma
 import { ClickAndDropService } from "../shipping/click-and-drop.service";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
-import { isoDay } from "@kudos/shared-types";
+import { isoDay, startOfUtcDay } from "@kudos/shared-types";
 import type { FulfillmentCalendar, FulfillmentCalendarDay } from "@kudos/shared-types";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { dueCutoffs, isoDayToUtc, workingDaysUntilDue } from "./fulfillment-due.util";
@@ -451,8 +451,15 @@ export class FulfillmentService {
     }
     const days = [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
 
+    // "Overdue carried in": open cards due before this window that aren't shown
+    // in it. Cut off at min(from, today) so browsing a *future* month doesn't
+    // count cards that are merely not-yet-due (before the window) as overdue —
+    // the banner then always means genuinely overdue, agreeing with the queue's
+    // `due=overdue` filter it links to. See ADR 0110.
+    const today = startOfUtcDay(new Date());
+    const overdueCutoff = from.getTime() < today.getTime() ? from : today;
     const overdueBefore = await this.prisma.fulfillmentJob.count({
-      where: { status: { in: OPEN_STATUSES }, dueDate: { lt: from } },
+      where: { status: { in: OPEN_STATUSES }, dueDate: { lt: overdueCutoff } },
     });
 
     return { days, overdueBefore };
