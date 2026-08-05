@@ -47,7 +47,13 @@ describe("HttpClickAndDropClient", () => {
   it("sends the raw API key in Authorization by default and posts to /api/v1/orders", async () => {
     fetchSpy = jest
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(fakeResponse({ ok: true, status: 200, json: { createdOrders: [{ orderIdentifier: 987 }] } }));
+      .mockResolvedValue(
+        fakeResponse({
+          ok: true,
+          status: 200,
+          json: { createdOrders: [{ orderIdentifier: 987 }] },
+        }),
+      );
     const client = new HttpClickAndDropClient("secret-key", "https://api.parcel.royalmail.com");
 
     const result = await client.createOrder(ORDER);
@@ -62,8 +68,15 @@ describe("HttpClickAndDropClient", () => {
   it("prefixes Bearer when the auth scheme is 'bearer'", async () => {
     fetchSpy = jest
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(fakeResponse({ ok: true, status: 200, json: { createdOrders: [{ orderIdentifier: 1 }] } }));
-    const client = new HttpClickAndDropClient("secret-key", "https://api.parcel.royalmail.com", {}, "bearer");
+      .mockResolvedValue(
+        fakeResponse({ ok: true, status: 200, json: { createdOrders: [{ orderIdentifier: 1 }] } }),
+      );
+    const client = new HttpClickAndDropClient(
+      "secret-key",
+      "https://api.parcel.royalmail.com",
+      {},
+      "bearer",
+    );
 
     await client.createOrder(ORDER);
 
@@ -92,6 +105,41 @@ describe("HttpClickAndDropClient", () => {
     const client = new HttpClickAndDropClient("secret-key", "https://api.parcel.royalmail.com");
 
     await expect(client.createOrder(ORDER)).rejects.toThrow(/duplicate order reference/);
+  });
+
+  it("reads Royal Mail's errorCode/errorMessage fields (the real rejection shape)", async () => {
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(
+      fakeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          failedOrders: [
+            {
+              orderReference: ORDER.orderReference,
+              errors: [{ errorCode: "1001", errorMessage: "Postcode is not valid" }],
+            },
+          ],
+        },
+      }),
+    );
+    const client = new HttpClickAndDropClient("secret-key", "https://api.parcel.royalmail.com");
+
+    // The message and the code both surface — no more "unknown error".
+    await expect(client.createOrder(ORDER)).rejects.toThrow(/Postcode is not valid \(1001\)/);
+  });
+
+  it("falls back to the raw rejection JSON when no known field is present", async () => {
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(
+      fakeResponse({
+        ok: true,
+        status: 200,
+        json: { failedOrders: [{ somethingNew: "unexpected shape" }] },
+      }),
+    );
+    const client = new HttpClickAndDropClient("secret-key", "https://api.parcel.royalmail.com");
+
+    // Even an unrecognised shape surfaces its raw content rather than "unknown error".
+    await expect(client.createOrder(ORDER)).rejects.toThrow(/unexpected shape/);
   });
 
   it("probe() does a read-only GET and reports status + body + endpoint + scheme", async () => {
