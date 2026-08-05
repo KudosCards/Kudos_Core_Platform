@@ -206,6 +206,24 @@ describe("Fulfillment (e2e)", () => {
       .expect(403);
   });
 
+  it("exposes a Click & Drop connection probe to ops (not to customers)", async () => {
+    const { token } = await signUp();
+    // Ops-gated like the rest of the controller.
+    await request(app.getHttpServer())
+      .post("/fulfillment/click-and-drop/test")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(403);
+
+    // With no API key in the test env the client is the no-op, so the probe
+    // reports not-configured without making a network call — deterministic.
+    const opsToken = await createOpsAdmin();
+    const res = await request(app.getHttpServer())
+      .post("/fulfillment/click-and-drop/test")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .expect(201);
+    expect(res.body).toMatchObject({ enabled: false, ok: false, status: 0 });
+  });
+
   it("lets a platform admin see pending jobs across different accounts", async () => {
     const opsToken = await createOpsAdmin();
     const accountA = await signUp();

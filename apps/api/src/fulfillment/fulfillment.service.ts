@@ -175,6 +175,12 @@ export class FulfillmentService {
     return this.clickAndDrop.enabled();
   }
 
+  /** Ops diagnostic: fire one real read-only Click & Drop call and return the raw
+   * status + body, so a bad key or base URL is diagnosable without the sweep. */
+  testClickAndDrop() {
+    return this.clickAndDrop.testConnection();
+  }
+
   /** Attach the server-computed urgency (working days until due) to a queue row,
    * so every path that returns a row — the list and each single-row action the
    * web patches in place — carries the same shape. */

@@ -39,10 +39,36 @@ export interface ClickAndDropOrderResult {
   orderIdentifier: string;
 }
 
+/** How the API key is presented in the Authorization header. Royal Mail's own
+ * cURL example uses the raw key with no scheme; some SDK docs prefix "Bearer".
+ * Configurable so the scheme can be flipped without a code change if an account
+ * needs the other form. See docs/adr/0095-click-and-drop-import.md. */
+export type ClickAndDropAuthScheme = "raw" | "bearer";
+
+/** The result of a live connectivity/auth probe — a real HTTP round-trip to the
+ * Click & Drop API that reads (never writes), so an operator can validate a key
+ * and see the exact status + body rather than waiting for the sweep to fail. */
+export interface ClickAndDropProbeResult {
+  /** Whether the probe request itself succeeded (HTTP 2xx). */
+  ok: boolean;
+  /** The HTTP status returned (0 if the request never completed / not configured). */
+  status: number;
+  /** The raw response body, truncated — a 401 body pinpoints an auth problem. */
+  body: string;
+  /** The exact URL hit (reveals the configured base URL). */
+  endpoint: string;
+  /** The Authorization scheme used for the probe. */
+  authScheme: ClickAndDropAuthScheme;
+  /** Set when the request threw before a response (DNS/TLS/network). */
+  error?: string;
+}
+
 export interface ClickAndDropClient {
   /** True when a real, credentialled client is wired (vs the no-op). */
   readonly enabled: boolean;
   createOrder(input: ClickAndDropOrderInput): Promise<ClickAndDropOrderResult>;
+  /** A live read-only call to validate connectivity + auth (never creates an order). */
+  probe(): Promise<ClickAndDropProbeResult>;
 }
 
 /**
@@ -56,6 +82,15 @@ export class NoopClickAndDropClient implements ClickAndDropClient {
     return Promise.reject(
       new Error("Click & Drop import is not configured (CLICK_AND_DROP_API_KEY unset)"),
     );
+  }
+  probe(): Promise<ClickAndDropProbeResult> {
+    return Promise.resolve({
+      ok: false,
+      status: 0,
+      body: "Click & Drop import is not configured (CLICK_AND_DROP_API_KEY unset)",
+      endpoint: "",
+      authScheme: "raw",
+    });
   }
 }
 
@@ -84,15 +119,60 @@ export class HttpClickAndDropClient implements ClickAndDropClient {
     private readonly apiKey: string,
     private readonly baseUrl: string,
     private readonly serviceCodes: ClickAndDropServiceCodes = {},
+    private readonly authScheme: ClickAndDropAuthScheme = "raw",
   ) {}
+
+  private ordersUrl(): string {
+    return `${this.baseUrl.replace(/\/$/, "")}/api/v1/orders`;
+  }
+
+  /** The Authorization header value — the raw key, or "Bearer <key>" when the
+   * account needs the scheme prefix (see CLICK_AND_DROP_AUTH_SCHEME). */
+  private authHeader(): string {
+    return this.authScheme === "bearer" ? `Bearer ${this.apiKey}` : this.apiKey;
+  }
+
+  /**
+   * A read-only GET to the orders resource: validates the base URL, network path
+   * and API key without creating anything. A 401/403 body pinpoints an auth key
+   * problem; a 2xx confirms the credential works. Never throws — surfaces the
+   * status + body for the operator to read.
+   */
+  async probe(): Promise<ClickAndDropProbeResult> {
+    const endpoint = this.ordersUrl();
+    try {
+      const response = await fetch(endpoint, {
+        method: "GET",
+        headers: { Authorization: this.authHeader(), Accept: "application/json" },
+      });
+      const body = await response.text().catch(() => "");
+      return {
+        ok: response.ok,
+        status: response.status,
+        body: body.slice(0, 1000),
+        endpoint,
+        authScheme: this.authScheme,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        status: 0,
+        body: "",
+        endpoint,
+        authScheme: this.authScheme,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
 
   async createOrder(input: ClickAndDropOrderInput): Promise<ClickAndDropOrderResult> {
     const serviceCode = this.serviceCodes[input.postageClass];
     const subtotal = Math.max(0, input.subtotalPence) / 100;
-    const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/api/v1/orders`, {
+    const endpoint = this.ordersUrl();
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
-        Authorization: this.apiKey,
+        Authorization: this.authHeader(),
         "Content-Type": "application/json",
         Accept: "application/json",
       },
@@ -126,7 +206,10 @@ export class HttpClickAndDropClient implements ClickAndDropClient {
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
       throw new Error(
-        `Click & Drop order import failed (${response.status}): ${detail.slice(0, 500)}`,
+        `Click & Drop order import failed — POST ${endpoint} (${response.status}): ${detail.slice(
+          0,
+          500,
+        )}`,
       );
     }
 
