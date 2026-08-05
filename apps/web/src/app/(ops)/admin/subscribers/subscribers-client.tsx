@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { formatGbp, formatOrderDate } from "@/lib/orders";
 import {
   HEALTH_CLASSES,
@@ -66,27 +67,61 @@ function toCsv(rows: AdminSubscriberRow[]): string {
 export function AdminSubscribersClient({
   initialSubscribers,
   total,
+  page,
+  perPage,
+  search,
+  plan,
+  health,
 }: {
   initialSubscribers: AdminSubscriberRow[];
   total: number;
+  page: number;
+  perPage: number;
+  search: string;
+  plan: string;
+  health: AccountHealth | "all";
 }) {
-  const [search, setSearch] = useState("");
-  const [plan, setPlan] = useState<string>("all");
-  const [health, setHealth] = useState<AccountHealth | "all">("all");
+  const router = useRouter();
+  // The current page's rows are exactly what the server returned; no in-memory
+  // filtering — search/plan/health/pagination are all resolved server-side.
+  const rows = initialSubscribers;
+  const [searchInput, setSearchInput] = useState(search);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const firstRender = useRef(true);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return initialSubscribers.filter((row) => {
-      if (plan !== "all" && row.plan !== plan) return false;
-      if (health !== "all" && row.health !== health) return false;
-      if (q && !row.name.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [initialSubscribers, search, plan, health]);
+  // Push the search term into the URL (server re-queries) after the user pauses,
+  // resetting to page 1. Guarded so seeding the input doesn't fire a navigation.
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    const handle = setTimeout(() => navigate({ search: searchInput, page: 1 }), 350);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
 
-  const selectedRows = filtered.filter((r) => selected.has(r.id));
-  const allSelected = filtered.length > 0 && filtered.every((r) => selected.has(r.id));
+  function navigate(next: {
+    search?: string;
+    plan?: string;
+    health?: AccountHealth | "all";
+    page?: number;
+  }) {
+    const params = new URLSearchParams();
+    const nextSearch = next.search ?? searchInput;
+    const nextPlan = next.plan ?? plan;
+    const nextHealth = next.health ?? health;
+    const nextPage = next.page ?? page;
+    if (nextSearch.trim()) params.set("search", nextSearch.trim());
+    if (nextPlan && nextPlan !== "all") params.set("plan", nextPlan);
+    if (nextHealth && nextHealth !== "all") params.set("health", nextHealth);
+    if (nextPage > 1) params.set("page", String(nextPage));
+    const qs = params.toString();
+    router.push(qs ? `/admin/subscribers?${qs}` : "/admin/subscribers");
+  }
+
+  const selectedRows = rows.filter((r) => selected.has(r.id));
+  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
 
   function toggle(id: string) {
     setSelected((current) => {
@@ -98,12 +133,13 @@ export function AdminSubscribersClient({
   }
 
   function toggleAll() {
-    setSelected(allSelected ? new Set() : new Set(filtered.map((r) => r.id)));
+    setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.id)));
   }
 
   function exportCsv() {
-    const rows = selectedRows.length > 0 ? selectedRows : filtered;
-    const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });
+    // Export the current selection, or this page's rows if nothing is selected.
+    const out = selectedRows.length > 0 ? selectedRows : rows;
+    const blob = new Blob([toCsv(out)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -112,15 +148,23 @@ export function AdminSubscribersClient({
     URL.revokeObjectURL(url);
   }
 
+  const from = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const to = Math.min(page * perPage, total);
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Customers</h1>
           <p className="text-sm text-muted">
-            Every account on the platform · {total.toLocaleString("en-GB")} total,{" "}
-            {filtered.length.toLocaleString("en-GB")} shown. Select a customer to see their
-            engagement.
+            Every account on the platform · {total.toLocaleString("en-GB")} total
+            {total > 0 && (
+              <>
+                , showing {from.toLocaleString("en-GB")}–{to.toLocaleString("en-GB")}
+              </>
+            )}
+            . Select a customer to see their engagement.
           </p>
         </div>
         <button type="button" onClick={exportCsv} className="btn-secondary text-sm">
@@ -130,12 +174,16 @@ export function AdminSubscribersClient({
 
       <div className="flex flex-col gap-3 sm:flex-row">
         <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search by name"
           className={`${inputClass} sm:max-w-xs`}
         />
-        <select value={plan} onChange={(e) => setPlan(e.target.value)} className={`${inputClass} sm:max-w-40`}>
+        <select
+          value={plan}
+          onChange={(e) => navigate({ plan: e.target.value, page: 1 })}
+          className={`${inputClass} sm:max-w-40`}
+        >
           <option value="all">All plans</option>
           {PLAN_OPTIONS.map(([value, labelText]) => (
             <option key={value} value={value}>
@@ -145,7 +193,7 @@ export function AdminSubscribersClient({
         </select>
         <select
           value={health}
-          onChange={(e) => setHealth(e.target.value as AccountHealth | "all")}
+          onChange={(e) => navigate({ health: e.target.value as AccountHealth | "all", page: 1 })}
           className={`${inputClass} sm:max-w-40`}
         >
           <option value="all">All statuses</option>
@@ -157,7 +205,7 @@ export function AdminSubscribersClient({
         </select>
       </div>
 
-      {filtered.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="rounded-xl border border-border p-6 text-sm text-muted">
           No accounts match your filters.
         </p>
@@ -183,7 +231,7 @@ export function AdminSubscribersClient({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map((row) => (
+              {rows.map((row) => (
                 <tr key={row.id} className="hover:bg-foreground/[0.02]">
                   <td className="px-4 py-3.5">
                     <input
@@ -235,7 +283,7 @@ export function AdminSubscribersClient({
             >
               {allSelected ? "Clear selection" : "Select all"}
             </button>
-            {filtered.map((row) => (
+            {rows.map((row) => (
               <div key={row.id} className="rounded-xl border border-border p-4">
                 <div className="flex items-start gap-3">
                   <label className="flex min-h-11 min-w-11 items-center justify-center">
@@ -288,6 +336,30 @@ export function AdminSubscribersClient({
               </div>
             ))}
           </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between text-sm">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => navigate({ page: page - 1 })}
+                className="rounded-lg border border-border px-4 py-1.5 hover:bg-foreground/[0.03] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="text-muted tabular-nums">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => navigate({ page: page + 1 })}
+                className="rounded-lg border border-border px-4 py-1.5 hover:bg-foreground/[0.03] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
