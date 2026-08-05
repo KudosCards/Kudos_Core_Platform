@@ -108,6 +108,65 @@ const CARD_WEIGHT_GRAMS = 100;
 const PACKAGE_FORMAT = "largeLetter";
 
 /**
+ * A rejected line in a Click & Drop `failedOrders` response. Royal Mail's field
+ * naming is inconsistent across accounts/versions — some responses use
+ * `errorCode`/`errorMessage`, others `code`/`message`, and the error may sit at
+ * the top level or nested under `errors[]`. We accept them all (loosely typed on
+ * purpose) so `describeFailedOrder` can find *some* human-readable reason rather
+ * than collapsing to "unknown error". See docs/adr/0095-click-and-drop-import.md.
+ */
+export interface ClickAndDropFailedOrderError {
+  errorCode?: string | number;
+  errorMessage?: string;
+  code?: string | number;
+  message?: string;
+  fields?: string[];
+}
+
+export interface ClickAndDropFailedOrder extends ClickAndDropFailedOrderError {
+  orderReference?: string;
+  errors?: ClickAndDropFailedOrderError[];
+}
+
+/** The first non-empty of a set of candidate strings, trimmed. */
+function firstNonEmpty(...candidates: (string | number | undefined)[]): string | undefined {
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const text = String(candidate).trim();
+    if (text) return text;
+  }
+  return undefined;
+}
+
+/**
+ * Turn a Click & Drop failure into the most useful message we can. Prefers a
+ * human-readable `errorMessage`/`message` (top-level or nested), appends the
+ * error code when present, and — critically — falls back to the raw JSON of the
+ * failure so the operator always sees *something* concrete, never a bare
+ * "unknown error", even if Royal Mail changes the field names again.
+ */
+export function describeFailedOrder(failure: ClickAndDropFailedOrder): string {
+  const nested = failure.errors?.[0];
+  const message = firstNonEmpty(
+    failure.errorMessage,
+    failure.message,
+    nested?.errorMessage,
+    nested?.message,
+  );
+  const code = firstNonEmpty(failure.errorCode, failure.code, nested?.errorCode, nested?.code);
+
+  if (message) {
+    return code ? `${message} (${code})` : message;
+  }
+  if (code) {
+    return `error code ${code}`;
+  }
+  // No recognised field — surface the raw rejection rather than hide it.
+  const raw = JSON.stringify(failure);
+  return raw && raw !== "{}" ? raw.slice(0, 400) : "unknown error";
+}
+
+/**
  * Real Click & Drop Orders API client. Posts a single order per call to
  * `/api/v1/orders`. The auth key is passed in the Authorization header exactly
  * as the Click & Drop "Edit integration" screen instructs.
@@ -215,13 +274,12 @@ export class HttpClickAndDropClient implements ClickAndDropClient {
 
     const data = (await response.json()) as {
       createdOrders?: { orderIdentifier?: number | string; orderReference?: string }[];
-      failedOrders?: { errors?: { code?: string; message?: string }[] }[];
+      failedOrders?: ClickAndDropFailedOrder[];
     };
 
     const failure = data.failedOrders?.[0];
     if (failure) {
-      const message = failure.errors?.map((e) => e.message).filter(Boolean).join("; ");
-      throw new Error(`Click & Drop rejected the order: ${message || "unknown error"}`);
+      throw new Error(`Click & Drop rejected the order: ${describeFailedOrder(failure)}`);
     }
 
     const created = data.createdOrders?.[0];
