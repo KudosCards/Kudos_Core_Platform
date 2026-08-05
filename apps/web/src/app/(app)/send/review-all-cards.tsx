@@ -1,10 +1,22 @@
 "use client";
 
-import type { Recipient, SavedDesign } from "@kudos/shared-types";
+import type { BatchOrderPreflight, Recipient, SavedDesign } from "@kudos/shared-types";
 import { applyMergeTokens, CARD_HEIGHT, CARD_WIDTH } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CardPreviewLightbox, insideFacesHint } from "@/components/card-preview-lightbox";
+import { formatGbp } from "@/lib/orders";
+
+/** The deliberate confirm step for a large run (ADR 0118): the exact total, a
+ * summary of the pre-send check, and a Pay CTA gated behind an explicit "I've
+ * reviewed everything" tick — so nobody pays for thousands of cards on a stray
+ * click. Absent for the plain "review" open, which is just a look-through. */
+export interface ReviewConfirm {
+  preflight: BatchOrderPreflight | null;
+  /** True while the pay request is in flight / redirecting to Stripe. */
+  paying: boolean;
+  onPay: () => void;
+}
 
 const CardFacePreview = dynamic(
   () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
@@ -92,13 +104,20 @@ export function ReviewAllCards({
   design,
   recipients,
   onClose,
+  confirm,
 }: {
   design: SavedDesign;
   recipients: Recipient[];
   onClose: () => void;
+  /** When present, the overlay becomes the deliberate "Review & confirm" gate
+   * with a pay footer; otherwise it's a plain look-through. */
+  confirm?: ReviewConfirm;
 }) {
   const [query, setQuery] = useState("");
   const [previewFor, setPreviewFor] = useState<Recipient | null>(null);
+  // The gate's "I've checked everything" acknowledgement — pay stays disabled
+  // until it's ticked, so a large run is never charged on a stray click.
+  const [acknowledged, setAcknowledged] = useState(false);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -122,7 +141,7 @@ export function ReviewAllCards({
     <div className="fixed inset-0 z-40 flex flex-col bg-surface">
       <header className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex flex-col">
-          <h2 className="font-semibold">Review every card</h2>
+          <h2 className="font-semibold">{confirm ? "Review & confirm" : "Review every card"}</h2>
           <p className="text-xs text-muted">
             {filtered.length === recipients.length
               ? `${recipients.length} card${recipients.length === 1 ? "" : "s"} — click any to flip through all faces`
@@ -142,7 +161,7 @@ export function ReviewAllCards({
             onClick={onClose}
             className="shrink-0 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-foreground/[0.04]"
           >
-            Done
+            {confirm ? "Back" : "Done"}
           </button>
         </div>
       </header>
@@ -164,6 +183,15 @@ export function ReviewAllCards({
         )}
       </div>
 
+      {confirm && (
+        <ConfirmFooter
+          confirm={confirm}
+          cardCount={recipients.length}
+          acknowledged={acknowledged}
+          onAcknowledge={setAcknowledged}
+        />
+      )}
+
       {previewFor && (
         <CardPreviewLightbox
           document={applyMergeTokens(design.document, previewFor)}
@@ -174,6 +202,85 @@ export function ReviewAllCards({
           onClose={() => setPreviewFor(null)}
         />
       )}
+    </div>
+  );
+}
+
+/** The sticky pay bar for the confirm gate: pre-send-check summary, the exact
+ * total, the acknowledgement tick, and the Pay CTA. */
+function ConfirmFooter({
+  confirm,
+  cardCount,
+  acknowledged,
+  onAcknowledge,
+}: {
+  confirm: ReviewConfirm;
+  cardCount: number;
+  acknowledged: boolean;
+  onAcknowledge: (v: boolean) => void;
+}) {
+  const { preflight, paying, onPay } = confirm;
+  const total = preflight?.price.totalMinor ?? null;
+  const chargeCount = preflight?.price.cardCount ?? cardCount;
+  const needsAttention = preflight ? preflight.total - preflight.ready : 0;
+  const canPay = !!preflight && !paying && acknowledged;
+
+  return (
+    <div className="border-t border-border bg-surface px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
+      <div className="mx-auto flex max-w-6xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-1.5">
+          {preflight ? (
+            needsAttention === 0 ? (
+              <p className="text-sm font-medium text-emerald-700">
+                ✓ All {preflight.total} cards ready to print, personalise and post.
+              </p>
+            ) : (
+              <p className="text-sm">
+                <span className="font-semibold text-emerald-700">{preflight.ready} ready</span>
+                <span className="text-muted"> · </span>
+                <span className="font-semibold text-accent">
+                  {needsAttention} need{needsAttention === 1 ? "s" : ""} attention
+                </span>
+                <span className="text-muted"> — only ready cards are charged and sent.</span>
+              </p>
+            )
+          ) : (
+            <p className="text-sm text-muted">Running the final check…</p>
+          )}
+          <label className="flex items-start gap-2 text-sm text-muted">
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={(e) => onAcknowledge(e.target.checked)}
+              className="mt-0.5 size-4 accent-accent"
+            />
+            <span>
+              I&apos;ve reviewed the {chargeCount} card{chargeCount === 1 ? "" : "s"} and the
+              addresses they post to.
+            </span>
+          </label>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex flex-col leading-tight">
+            <span className="text-xs text-muted">
+              {chargeCount} card{chargeCount === 1 ? "" : "s"} · total
+            </span>
+            <span className="text-lg font-semibold">
+              {total === null ? "—" : formatGbp(total)}
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={!canPay}
+            onClick={onPay}
+            className="btn-accent whitespace-nowrap disabled:opacity-50"
+          >
+            {paying
+              ? "Taking you to payment…"
+              : `Pay & send ${chargeCount} card${chargeCount === 1 ? "" : "s"} →`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

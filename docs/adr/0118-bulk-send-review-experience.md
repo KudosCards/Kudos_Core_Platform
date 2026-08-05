@@ -82,6 +82,16 @@ mounts a face's Konva canvas only while near the viewport) so a run of thousands
 stays responsive. "Review all N cards" is promoted to a primary action at/above
 the `REVIEW_ALL_THRESHOLD` (50) scale-adaptive cutover.
 
+P3a adds the scale-adaptive **Review & confirm** gate. A small run keeps the
+one-tap "Pay & send"; a run at/above `REVIEW_ALL_THRESHOLD` (50) changes the
+primary CTA to "Review & confirm", which opens the full-screen review overlay in
+a confirm mode — the same virtualized every-card grid, now with a sticky pay
+footer carrying the pre-send-check summary, the exact total, and a Pay button
+gated behind an explicit "I've reviewed the N cards and the addresses" tick. So a
+five-figure run can only be charged after a deliberate look, never a stray click.
+Still to come in P3: the downloadable proof / contact sheet and the post-payment
+per-card record on the order detail.
+
 P2 shipped the server preflight endpoint plus its web surface: the `/send`
 composer runs the check automatically (debounced, sequence-guarded) whenever the
 design, postage or selection — including an inline address fix — changes, and
