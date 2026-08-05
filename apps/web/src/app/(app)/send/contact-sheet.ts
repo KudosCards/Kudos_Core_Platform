@@ -1,5 +1,12 @@
-import type { DesignDocument, Recipient, SavedDesign } from "@kudos/shared-types";
+import type {
+  BatchOrderDetail,
+  DesignDocument,
+  OrderRecipientLine,
+  Recipient,
+  SavedDesign,
+} from "@kudos/shared-types";
 import { applyMergeText } from "@kudos/shared-types";
+import { ORDER_RECIPIENT_STATUS_LABELS, formatGbp } from "@/lib/orders";
 
 /**
  * The bulk-send **proof / contact sheet** (ADR 0118): a self-contained,
@@ -18,6 +25,81 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+/** Shared page chrome for every sheet, so the pre-send proof and the order
+ * receipt look like one document. `theadHtml`/`bodyHtml` are trusted callers'
+ * markup; all recipient-supplied text within them is escaped at the row level. */
+const SHEET_STYLES = `
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #111; margin: 0; padding: 32px; background: #fff; }
+  header { margin-bottom: 20px; border-bottom: 2px solid #111; padding-bottom: 12px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .meta { color: #555; font-size: 12px; }
+  .actions { margin: 16px 0; }
+  button { font: inherit; padding: 8px 14px; border: 1px solid #111; background: #111; color: #fff; border-radius: 6px; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid #ddd; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #555; border-bottom: 1.5px solid #999; }
+  td.num { color: #999; width: 40px; }
+  td.name { font-weight: 600; white-space: nowrap; }
+  td.addr { width: 30%; }
+  .muted { color: #aaa; }
+  tr { break-inside: avoid; }
+  @media print {
+    body { padding: 0; }
+    .actions { display: none; }
+    thead { display: table-header-group; }
+  }
+`;
+
+function wrapSheet(title: string, meta: string, theadHtml: string, bodyHtml: string): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<style>${SHEET_STYLES}</style>
+</head>
+<body>
+<header>
+  <h1>${escapeHtml(title)}</h1>
+  <p class="meta">${meta}</p>
+</header>
+<div class="actions">
+  <button onclick="window.print()">Print / Save as PDF</button>
+</div>
+<table>
+  <thead>${theadHtml}</thead>
+  <tbody>
+${bodyHtml}
+  </tbody>
+</table>
+</body>
+</html>`;
+}
+
+/** Turn a design name into a filesystem-safe slug for the download filename. */
+function fileSlug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "run";
+}
+
+/** Hand the browser a downloadable .html file (which the recipient can open and
+ * Print → Save as PDF). */
+function downloadHtml(html: string, filename: string): string {
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  // Give the download a tick to start before revoking the object URL.
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  return filename;
 }
 
 /** The recipient's full postal address as printed lines. */
@@ -82,55 +164,14 @@ export function buildContactSheetHtml(
     .join("\n");
 
   const total = meta.totalLabel ? ` · ${escapeHtml(meta.totalLabel)}` : "";
+  const metaLine = `${recipients.length} card${recipients.length === 1 ? "" : "s"} · ${escapeHtml(meta.postageLabel)}${total} · generated ${escapeHtml(generatedOn)}`;
 
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kudos proof sheet — ${escapeHtml(design.name)}</title>
-<style>
-  :root { color-scheme: light; }
-  * { box-sizing: border-box; }
-  body { font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #111; margin: 0; padding: 32px; background: #fff; }
-  header { margin-bottom: 20px; border-bottom: 2px solid #111; padding-bottom: 12px; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  .meta { color: #555; font-size: 12px; }
-  .actions { margin: 16px 0; }
-  button { font: inherit; padding: 8px 14px; border: 1px solid #111; background: #111; color: #fff; border-radius: 6px; cursor: pointer; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid #ddd; }
-  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #555; border-bottom: 1.5px solid #999; }
-  td.num { color: #999; width: 40px; }
-  td.name { font-weight: 600; white-space: nowrap; }
-  td.addr { width: 30%; }
-  .muted { color: #aaa; }
-  tr { break-inside: avoid; }
-  @media print {
-    body { padding: 0; }
-    .actions { display: none; }
-    thead { display: table-header-group; }
-  }
-</style>
-</head>
-<body>
-<header>
-  <h1>Proof sheet — ${escapeHtml(design.name)}</h1>
-  <p class="meta">${recipients.length} card${recipients.length === 1 ? "" : "s"} · ${escapeHtml(meta.postageLabel)}${total} · generated ${escapeHtml(generatedOn)}</p>
-</header>
-<div class="actions">
-  <button onclick="window.print()">Print / Save as PDF</button>
-</div>
-<table>
-  <thead>
-    <tr><th class="num">#</th><th>Recipient</th><th>Posts to</th><th>Personalised message</th></tr>
-  </thead>
-  <tbody>
-${rows}
-  </tbody>
-</table>
-</body>
-</html>`;
+  return wrapSheet(
+    `Proof sheet — ${design.name}`,
+    metaLine,
+    `<tr><th class="num">#</th><th>Recipient</th><th>Posts to</th><th>Personalised message</th></tr>`,
+    rows,
+  );
 }
 
 /** Generate the sheet and hand the browser a downloadable .html file (which the
@@ -141,18 +182,80 @@ export function downloadContactSheet(
   meta: ContactSheetMeta,
 ): string {
   const html = buildContactSheetHtml(design, recipients, meta);
-  const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const slug = design.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "run";
   const date = new Date().toISOString().slice(0, 10);
-  const filename = `kudos-proof-${slug}-${date}.html`;
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  // Give the download a tick to start before revoking the object URL.
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-  return filename;
+  return downloadHtml(html, `kudos-proof-${fileSlug(design.name)}-${date}.html`);
+}
+
+const POSTAGE_LABEL: Record<string, string> = {
+  first_class: "First class",
+  second_class: "Second class",
+};
+
+/** The full posting address (snapshot) for an order line, as printed lines. */
+function orderLineAddress(line: OrderRecipientLine): string {
+  return [
+    line.shippingAddressLine1,
+    line.shippingAddressLine2,
+    line.shippingAddressCity,
+    line.shippingAddressPostcode,
+    line.shippingAddressCountry && line.shippingAddressCountry !== "GB"
+      ? line.shippingAddressCountry
+      : null,
+  ]
+    .filter((part): part is string => !!part && part.trim().length > 0)
+    .map(escapeHtml)
+    .join("<br>");
+}
+
+/**
+ * The **order proof sheet** (ADR 0118): the post-payment receipt of a bulk run —
+ * every card with the recipient, the exact snapshot address it was posted to, the
+ * postage, price, current fulfilment stage and Royal Mail tracking. A permanent,
+ * printable record of what was ordered, built from the order detail (which already
+ * carries the address snapshot), all recipient data HTML-escaped.
+ */
+export function buildOrderProofSheetHtml(order: BatchOrderDetail): string {
+  const generatedOn = new Date().toLocaleString("en-GB", {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
+  const reference = `Order ${order.id.slice(0, 8).toUpperCase()}`;
+
+  const rows = order.orderRecipients
+    .map((line, index) => {
+      const name = `${line.recipientFirstName} ${line.recipientLastName}`.trim();
+      const status = ORDER_RECIPIENT_STATUS_LABELS[line.status] ?? line.status;
+      const postage = POSTAGE_LABEL[line.postageClass] ?? line.postageClass;
+      const price = formatGbp(line.priceMinor + line.postageMinor);
+      const tracking = line.trackingReference
+        ? escapeHtml(line.trackingReference)
+        : '<span class="muted">—</span>';
+      return `<tr>
+        <td class="num">${index + 1}</td>
+        <td class="name">${escapeHtml(name)}</td>
+        <td class="addr">${orderLineAddress(line)}</td>
+        <td>${escapeHtml(postage)}</td>
+        <td>${escapeHtml(price)}</td>
+        <td>${escapeHtml(status)}</td>
+        <td>${tracking}</td>
+      </tr>`;
+    })
+    .join("\n");
+
+  const count = order.orderRecipients.length;
+  const metaLine = `${reference ? escapeHtml(reference) + " · " : ""}${count} card${count === 1 ? "" : "s"} · ${escapeHtml(formatGbp(order.totalMinor))} · generated ${escapeHtml(generatedOn)}`;
+
+  return wrapSheet(
+    `${reference} — proof sheet`,
+    metaLine,
+    `<tr><th class="num">#</th><th>Recipient</th><th>Posted to</th><th>Postage</th><th>Price</th><th>Status</th><th>Tracking</th></tr>`,
+    rows,
+  );
+}
+
+/** Download the order proof sheet as a printable .html receipt. */
+export function downloadOrderProofSheet(order: BatchOrderDetail): string {
+  const html = buildOrderProofSheetHtml(order);
+  const date = new Date().toISOString().slice(0, 10);
+  return downloadHtml(html, `kudos-order-${order.id.slice(0, 8)}-${date}.html`);
 }
