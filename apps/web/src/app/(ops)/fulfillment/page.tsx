@@ -56,6 +56,7 @@ export default async function FulfillmentPage({
       failed: 0,
     },
     due: { overdue: 0, today: 0, dueSoon: 0, upcoming: 0, noDate: 0 },
+    clickAndDropErrors: 0,
   };
 
   return (
