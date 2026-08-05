@@ -7,7 +7,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma, type OccasionType, type PostageClass } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
@@ -254,21 +255,48 @@ export class BatchOrdersService {
     // supersede, so a segment send doesn't double-send. Validated + account-scoped.
     const supersedesByRecipient = await this.resolveReconcile(accountId, dto);
 
-    // Preserve the caller's selection order (findMany doesn't guarantee it).
+    // One approved one-off occasion per contact, carrying the design. Build them
+    // all up front with client-generated ids and insert in a SINGLE createMany,
+    // so a 10,000-card send is one round-trip — not one INSERT per recipient
+    // (the old per-line loop). The ids link each occasion to its order line
+    // below; the shared create() then transitions them approved → queued. See
+    // docs/adr/0118.
     const byId = new Map(recipients.map((r) => [r.id, r]));
-    const lines: CreateBatchOrderLineDto[] = [];
-    for (const id of dto.recipientIds) {
-      lines.push(
-        await this.buildBulkSendLine(
-          accountId,
-          byId.get(id)!,
-          savedDesign.id,
-          dto.postageClass,
-          dto.occasionType,
-          supersedesByRecipient.get(id),
-        ),
-      );
-    }
+    const occasionDate = new Date();
+    const dispatchDate = computeDispatchDate(occasionDate);
+    const occasionIdByRecipient = new Map<string, string>(
+      dto.recipientIds.map((id) => [id, randomUUID()]),
+    );
+    await this.prisma.occasion.createMany({
+      data: dto.recipientIds.map((id) => ({
+        id: occasionIdByRecipient.get(id)!,
+        accountId,
+        recipientId: id,
+        type: dto.occasionType ?? "bespoke_campaign",
+        source: "one_off_campaign",
+        occasionDate,
+        dispatchDate,
+        status: "approved",
+        savedDesignId: savedDesign.id,
+        dispatchOption: "asap",
+        postageClass: dto.postageClass,
+        supersedesOccasionId: supersedesByRecipient.get(id),
+      })),
+    });
+
+    const lines: CreateBatchOrderLineDto[] = dto.recipientIds.map((id) => {
+      const recipient = byId.get(id)!;
+      return {
+        occasionId: occasionIdByRecipient.get(id)!,
+        // Non-null asserted: the missing-address guard above proved these set.
+        shippingAddressLine1: recipient.addressLine1!,
+        shippingAddressLine2: recipient.addressLine2 ?? undefined,
+        shippingAddressCity: recipient.addressCity!,
+        shippingAddressPostcode: recipient.addressPostcode!,
+        dispatchOption: "asap",
+        postageClass: dto.postageClass,
+      };
+    });
     return this.create(accountId, actorUserId, { lines });
   }
 
@@ -300,7 +328,11 @@ export class BatchOrdersService {
       where: { id: { in: dto.recipientIds }, accountId },
     });
 
-    // Recipients recently ordered this same design — a likely double-send.
+    // Recipients recently ordered this same design — a likely double-send. Only
+    // orders that actually reached payment count: a draft or pending_payment
+    // order was never sent, so warning about it would be a false alarm (and a
+    // cancelled order deletes its lines, so it can't match anyway). Scoping to
+    // paid/fulfilling/completed keeps "recently sent" meaning genuinely sent.
     const cutoff = new Date(
       Date.now() - BatchOrdersService.DUPLICATE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
@@ -309,6 +341,7 @@ export class BatchOrdersService {
         recipientId: { in: recipients.map((r) => r.id) },
         savedDesignId: dto.savedDesignId,
         createdAt: { gt: cutoff },
+        batchOrder: { status: { in: ["paid", "fulfilling", "completed"] } },
       },
       select: { recipientId: true },
     });
@@ -458,43 +491,6 @@ export class BatchOrdersService {
 
   /** Create the approved one-off occasion for one existing contact in a bulk
    * send, returning the order line addressed from that contact's own record. */
-  private async buildBulkSendLine(
-    accountId: string,
-    recipient: Prisma.RecipientGetPayload<object>,
-    savedDesignId: string,
-    postageClass: PostageClass,
-    occasionType: OccasionType | undefined,
-    supersedesOccasionId: string | undefined,
-  ): Promise<CreateBatchOrderLineDto> {
-    const occasionDate = new Date();
-    const occasion = await this.prisma.occasion.create({
-      data: {
-        accountId,
-        recipientId: recipient.id,
-        type: occasionType ?? "bespoke_campaign",
-        source: "one_off_campaign",
-        occasionDate,
-        dispatchDate: computeDispatchDate(occasionDate),
-        status: "approved",
-        savedDesignId,
-        dispatchOption: "asap",
-        postageClass,
-        supersedesOccasionId,
-      },
-    });
-
-    return {
-      occasionId: occasion.id,
-      // Non-null asserted: hasMailableAddress() above guaranteed these are set.
-      shippingAddressLine1: recipient.addressLine1!,
-      shippingAddressLine2: recipient.addressLine2 ?? undefined,
-      shippingAddressCity: recipient.addressCity!,
-      shippingAddressPostcode: recipient.addressPostcode!,
-      dispatchOption: "asap",
-      postageClass,
-    };
-  }
-
   /**
    * The post-payment fulfillment step, shared by every way an order gets paid
    * (Stripe webhook and wallet debit): move the order's approved recipients to

@@ -70,8 +70,18 @@ with the business:
 - **P3 — Confirm & proof.** The Review & confirm gate with the checks summary,
   exact total, and a downloadable proof/contact sheet; the same per-card + address
   record kept on the order detail as a post-payment receipt.
-- **P4 — Scale & guard rails.** Server-rendered thumbnails if needed; duplicate
-  window tuning; performance pass.
+- **P4 — Scale & guard rails.** Performance pass and duplicate-window tuning
+  shipped; server-rendered thumbnails deferred. The bulk-send **N+1 was removed**:
+  `bulkSend` created one occasion per contact in a serial loop (10,000 round-trips
+  for a 10,000-card run) — it now builds all occasions with client-generated ids
+  and inserts them in a single `createMany`. The **duplicate check was tightened**:
+  it only counts orders that actually reached payment (`paid`/`fulfilling`/
+  `completed`), so an abandoned unpaid draft no longer false-flags a recipient as
+  "recently sent" (a cancelled order already deletes its lines). Server-rendered
+  thumbnails stay **deferred**: the virtualized live render mounts only a few
+  dozen canvases at a time regardless of run size, so there's no measured heaviness
+  to justify a server rendering pipeline yet — the ADR's original "later, only if"
+  bar hasn't been met.
 
 P1a shipped items 1–2 of the review: the `face` prop and the flip lightbox,
 wired into the `/send` composer (each preview tile opens the whole card + its
