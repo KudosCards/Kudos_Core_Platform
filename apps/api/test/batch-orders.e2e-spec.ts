@@ -767,23 +767,37 @@ describe("Batch orders (e2e)", () => {
         },
       });
 
-      // A prior bulk-send of the same design to this contact.
-      await request(app.getHttpServer())
+      // A prior bulk-send of the same design to this contact — but only a draft,
+      // not yet paid.
+      const prior = await request(app.getHttpServer())
         .post("/batch-orders/bulk-send")
         .set("Authorization", `Bearer ${token}`)
         .send({ savedDesignId, recipientIds: [contact.id], postageClass: "second_class" })
         .expect(201);
+      const priorOrderId = (prior.body as { id: string }).id;
 
-      const res = await request(app.getHttpServer())
-        .post("/batch-orders/preflight")
-        .set("Authorization", `Bearer ${token}`)
-        .send({ savedDesignId, recipientIds: [contact.id], postageClass: "second_class" })
-        .expect(201);
-      const body = res.body as BatchOrderPreflight;
+      const preflight = () =>
+        request(app.getHttpServer())
+          .post("/batch-orders/preflight")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ savedDesignId, recipientIds: [contact.id], postageClass: "second_class" })
+          .expect(201);
 
-      expect(body.duplicate.count).toBe(1);
-      expect(body.duplicate.sample[0]!.name).toBe("Dee Repeat");
-      expect(body.ready).toBe(0);
+      // An unpaid draft was never actually sent, so it must NOT flag as duplicate.
+      const draftBody = (await preflight()).body as BatchOrderPreflight;
+      expect(draftBody.duplicate.count).toBe(0);
+      expect(draftBody.ready).toBe(1);
+
+      // Once that order reaches payment, the same design to the same contact is a
+      // genuine recent send and IS flagged.
+      await prisma.batchOrder.update({
+        where: { id: priorOrderId },
+        data: { status: "paid" },
+      });
+      const paidBody = (await preflight()).body as BatchOrderPreflight;
+      expect(paidBody.duplicate.count).toBe(1);
+      expect(paidBody.duplicate.sample[0]!.name).toBe("Dee Repeat");
+      expect(paidBody.ready).toBe(0);
     });
   });
 });
