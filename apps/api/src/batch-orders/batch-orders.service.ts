@@ -18,6 +18,14 @@ import { parsePage, parsePerPage } from "../common/pagination";
 import type { CheckoutResult } from "../common/checkout-result";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.constants";
+import {
+  computePricingBreakdown,
+  unresolvedMergeTokens,
+  type BatchOrderPreflight,
+  type DesignDocument,
+  type MergeContext,
+  type PreflightIssue,
+} from "@kudos/shared-types";
 import { MessagesService } from "../messages/messages.service";
 import { RecipientsService } from "../recipients/recipients.service";
 import { computeDispatchDate } from "../occasions/occasion-scheduling.constants";
@@ -26,6 +34,7 @@ import type { CreateBatchOrderDto, CreateBatchOrderLineDto } from "./dto/create-
 import type { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
 import type { QuickSendDto } from "./dto/quick-send.dto";
 import type { BulkSendDto } from "./dto/bulk-send.dto";
+import type { PreflightBatchOrderDto } from "./dto/preflight-batch-order.dto";
 
 const ORDER_RECIPIENTS_INCLUDE = { orderRecipients: true } as const;
 
@@ -261,6 +270,143 @@ export class BatchOrdersService {
       );
     }
     return this.create(accountId, actorUserId, { lines });
+  }
+
+  /** How far back a prior order of the same design counts as a possible
+   * accidental re-send in the preflight duplicate check. */
+  private static readonly DUPLICATE_WINDOW_DAYS = 30;
+  /** Per bucket, how many affected recipients to return for drill-in (the true
+   * count is always returned in full). Keeps the payload small on huge runs. */
+  private static readonly PREFLIGHT_SAMPLE_CAP = 100;
+
+  /**
+   * Pre-send check for a bulk run (ADR 0118): validate the whole selection —
+   * address quality, unresolved merge tokens per recipient, and recent duplicate
+   * sends of the same design — and return the exact price, *before* any order or
+   * payment. Advisory and read-only: it creates nothing, so it never blocks; the
+   * real guards still run at bulkSend().
+   */
+  async preflight(accountId: string, dto: PreflightBatchOrderDto): Promise<BatchOrderPreflight> {
+    const entitlement = await this.entitlements.getForAccount(accountId);
+    const design = await this.prisma.savedDesign.findFirst({
+      where: { id: dto.savedDesignId, accountId },
+    });
+    if (!design) throw new NotFoundException("Design not found");
+    const document = design.document as unknown as DesignDocument;
+
+    // Account-scoped: ids that aren't on this account are silently ignored (the
+    // check is advisory; bulkSend() is the one that fails on a mismatch).
+    const recipients = await this.prisma.recipient.findMany({
+      where: { id: { in: dto.recipientIds }, accountId },
+    });
+
+    // Recipients recently ordered this same design — a likely double-send.
+    const cutoff = new Date(
+      Date.now() - BatchOrdersService.DUPLICATE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    );
+    const recentRows = await this.prisma.orderRecipient.findMany({
+      where: {
+        recipientId: { in: recipients.map((r) => r.id) },
+        savedDesignId: dto.savedDesignId,
+        createdAt: { gt: cutoff },
+      },
+      select: { recipientId: true },
+    });
+    const recentlySent = new Set(recentRows.map((r) => r.recipientId));
+
+    type BucketKey = "missingAddress" | "invalidPostcode" | "unresolvedTokens" | "duplicate";
+    const sample: Record<BucketKey, PreflightIssue[]> = {
+      missingAddress: [],
+      invalidPostcode: [],
+      unresolvedTokens: [],
+      duplicate: [],
+    };
+    const count: Record<BucketKey, number> = {
+      missingAddress: 0,
+      invalidPostcode: 0,
+      unresolvedTokens: 0,
+      duplicate: 0,
+    };
+    const flag = (key: BucketKey, issue: PreflightIssue) => {
+      count[key] += 1;
+      if (sample[key].length < BatchOrdersService.PREFLIGHT_SAMPLE_CAP) sample[key].push(issue);
+    };
+
+    const now = new Date();
+    // The occasion each card will carry (bulkSend creates a one-off occasion), so
+    // {occasion}/{occasionDate} resolve exactly as they will in production — only
+    // genuinely missing custom-field tokens are flagged.
+    const occasionLabel = dto.occasionType ?? "bespoke_campaign";
+    let ready = 0;
+
+    for (const r of recipients) {
+      const name = `${r.firstName} ${r.lastName}`.trim();
+      let clean = true;
+
+      const hasParts =
+        !!r.addressLine1?.trim() && !!r.addressCity?.trim() && !!r.addressPostcode?.trim();
+      if (!hasParts) {
+        flag("missingAddress", { recipientId: r.id, name, detail: "No postal address" });
+        clean = false;
+      } else if ((r.addressCountry ?? "GB") !== "GB") {
+        flag("invalidPostcode", {
+          recipientId: r.id,
+          name,
+          detail: `Non-UK address (${r.addressCountry})`,
+        });
+        clean = false;
+      } else if (!UK_POSTCODE_REGEX.test(r.addressPostcode!)) {
+        flag("invalidPostcode", {
+          recipientId: r.id,
+          name,
+          detail: `Postcode “${r.addressPostcode}” looks invalid`,
+        });
+        clean = false;
+      }
+
+      const ctx: MergeContext = {
+        firstName: r.firstName,
+        lastName: r.lastName,
+        occasion: occasionLabel,
+        occasionDate: now,
+        customFields: (r.customFields as Record<string, string> | null) ?? null,
+      };
+      const unresolved = unresolvedMergeTokens(document, ctx);
+      if (unresolved.length > 0) {
+        flag("unresolvedTokens", { recipientId: r.id, name, detail: unresolved.join(", ") });
+        clean = false;
+      }
+
+      if (recentlySent.has(r.id)) {
+        flag("duplicate", {
+          recipientId: r.id,
+          name,
+          detail: `Sent this design in the last ${BatchOrdersService.DUPLICATE_WINDOW_DAYS} days`,
+        });
+        clean = false;
+      }
+
+      if (clean) ready += 1;
+    }
+
+    const total = recipients.length;
+    const cardPer = computeCardPriceMinor(entitlement.cardDiscountPercent);
+    const postagePer = computePostageMinor(dto.postageClass);
+    const price = computePricingBreakdown({
+      cardCount: total,
+      cardSubtotalInclVatMinor: cardPer * total,
+      postageMinor: postagePer * total,
+    });
+
+    return {
+      total,
+      ready,
+      missingAddress: { count: count.missingAddress, sample: sample.missingAddress },
+      invalidPostcode: { count: count.invalidPostcode, sample: sample.invalidPostcode },
+      unresolvedTokens: { count: count.unresolvedTokens, sample: sample.unresolvedTokens },
+      duplicate: { count: count.duplicate, sample: sample.duplicate },
+      price,
+    };
   }
 
   /**
@@ -576,14 +722,16 @@ export class BatchOrdersService {
     const { orderRecipients, ...rest } = order;
     return {
       ...rest,
-      orderRecipients: orderRecipients.map(({ recipient, fulfillmentJob, messagePage, ...line }) => ({
-        ...line,
-        recipientFirstName: recipient.firstName,
-        recipientLastName: recipient.lastName,
-        jobStatus: fulfillmentJob?.status ?? null,
-        trackingReference: fulfillmentJob?.trackingReference ?? null,
-        messagePageSlug: messagePage?.slug ?? null,
-      })),
+      orderRecipients: orderRecipients.map(
+        ({ recipient, fulfillmentJob, messagePage, ...line }) => ({
+          ...line,
+          recipientFirstName: recipient.firstName,
+          recipientLastName: recipient.lastName,
+          jobStatus: fulfillmentJob?.status ?? null,
+          trackingReference: fulfillmentJob?.trackingReference ?? null,
+          messagePageSlug: messagePage?.slug ?? null,
+        }),
+      ),
     };
   }
 
@@ -629,7 +777,10 @@ export class BatchOrdersService {
     const successPath = options?.successPath ?? "/batch-orders/success";
     const cancelPath = options?.cancelPath ?? "/batch-orders/cancelled";
     // e.g. the guest claim token, so the success page can offer account-claiming.
-    const successQuery = new URLSearchParams({ batchOrderId: existing.id, ...options?.successExtraParams });
+    const successQuery = new URLSearchParams({
+      batchOrderId: existing.id,
+      ...options?.successExtraParams,
+    });
     let session: Stripe.Checkout.Session;
     try {
       session = await this.stripe.checkout.sessions.create({

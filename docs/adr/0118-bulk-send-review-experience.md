@@ -51,9 +51,14 @@ with the business:
   Then a searchable, virtualized "review all" grid replaces the 8-card cap, with
   scale-adaptive routing to the dedicated review step.
 - **P2 — Server preflight check.** `POST /batch-orders/preflight` returns
-  ready / needs-address / unresolved-token / duplicate buckets (with the exact
-  people, paginated) and the exact price breakdown, surfaced as a checks banner
-  with inline fixes.
+  ready / needs-address / invalid-postcode / unresolved-token / duplicate buckets
+  (each a total `count` plus a bounded `sample` for drill-in) and the exact,
+  VAT-decomposed price for the whole selection — read-only, creating nothing.
+  Unresolved tokens are found with the shared `unresolvedMergeTokens` util
+  (built on the merge engine); duplicates are recipients who ordered the same
+  design in the last 30 days. The web surfaces this as a checks banner with
+  inline fixes (P2 web slice). This also corrects the composer's rough estimate,
+  which used the wrong card price.
 - **P3 — Confirm & proof.** The Review & confirm gate with the checks summary,
   exact total, and a downloadable proof/contact sheet; the same per-card + address
   record kept on the order detail as a post-payment receipt.
