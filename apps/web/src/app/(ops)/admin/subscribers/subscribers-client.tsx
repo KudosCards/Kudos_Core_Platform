@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ApiError } from "@/lib/api";
+import { clientApiFetch } from "@/lib/api.client";
 import { formatGbp, formatOrderDate } from "@/lib/orders";
 import {
   HEALTH_CLASSES,
@@ -87,6 +89,7 @@ export function AdminSubscribersClient({
   const rows = initialSubscribers;
   const [searchInput, setSearchInput] = useState(search);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
   const firstRender = useRef(true);
 
   // Push the search term into the URL (server re-queries) after the user pauses,
@@ -136,9 +139,28 @@ export function AdminSubscribersClient({
     setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.id)));
   }
 
-  function exportCsv() {
-    // Export the current selection, or this page's rows if nothing is selected.
-    const out = selectedRows.length > 0 ? selectedRows : rows;
+  /** Pull every account matching the *current* filters (search / plan / health),
+   * paging past the 100-row API cap, so the export isn't silently truncated to
+   * the visible page. */
+  async function fetchAllFiltered(): Promise<AdminSubscriberRow[]> {
+    const base = new URLSearchParams({ perPage: "100" });
+    if (search) base.set("search", search);
+    if (plan && plan !== "all") base.set("plan", plan);
+    if (health && health !== "all") base.set("health", health);
+
+    const all: AdminSubscriberRow[] = [];
+    for (let p = 1; ; p += 1) {
+      base.set("page", String(p));
+      const res = await clientApiFetch<{ items: AdminSubscriberRow[]; total: number }>(
+        `/admin/subscribers?${base.toString()}`,
+      );
+      all.push(...res.items);
+      if (res.items.length === 0 || all.length >= res.total) break;
+    }
+    return all;
+  }
+
+  function downloadCsv(out: AdminSubscriberRow[]): void {
     const blob = new Blob([toCsv(out)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -146,6 +168,25 @@ export function AdminSubscribersClient({
     a.download = `kudos-subscribers-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function exportCsv() {
+    // A selection exports exactly those rows; otherwise export every account
+    // matching the current filters — not just the page in view.
+    if (selectedRows.length > 0) {
+      downloadCsv(selectedRows);
+      return;
+    }
+    setExporting(true);
+    try {
+      downloadCsv(await fetchAllFiltered());
+    } catch (error) {
+      window.alert(
+        error instanceof ApiError ? error.message : "Could not export the customer list.",
+      );
+    } finally {
+      setExporting(false);
+    }
   }
 
   const from = total === 0 ? 0 : (page - 1) * perPage + 1;
@@ -167,8 +208,15 @@ export function AdminSubscribersClient({
             . Select a customer to see their engagement.
           </p>
         </div>
-        <button type="button" onClick={exportCsv} className="btn-secondary text-sm">
-          Export CSV{selectedRows.length > 0 ? ` (${selectedRows.length})` : ""}
+        <button
+          type="button"
+          onClick={() => void exportCsv()}
+          disabled={exporting}
+          className="btn-secondary text-sm disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {exporting
+            ? "Exporting…"
+            : `Export CSV${selectedRows.length > 0 ? ` (${selectedRows.length})` : ` (${total.toLocaleString("en-GB")})`}`}
         </button>
       </div>
 

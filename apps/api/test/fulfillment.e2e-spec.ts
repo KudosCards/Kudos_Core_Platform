@@ -639,6 +639,44 @@ describe("Fulfillment (e2e)", () => {
     expect(ids).not.toContain(otherDay.jobId);
   });
 
+  it("dueOn with no status shows every open card for the day (matches the calendar badge)", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+
+    // Three open cards in different states + one posted, all due the same day.
+    const pending = await createPaidOrder(token);
+    const inProgress = await createPaidOrder(token);
+    const printed = await createPaidOrder(token);
+    const posted = await createPaidOrder(token);
+    const DAY = "2027-03-25";
+    await prisma.fulfillmentJob.update({ where: { id: pending.jobId }, data: { dueDate: dayUtc(DAY) } });
+    await prisma.fulfillmentJob.update({
+      where: { id: inProgress.jobId },
+      data: { dueDate: dayUtc(DAY), status: "in_progress" },
+    });
+    await prisma.fulfillmentJob.update({
+      where: { id: printed.jobId },
+      data: { dueDate: dayUtc(DAY), status: "printed" },
+    });
+    await prisma.fulfillmentJob.update({
+      where: { id: posted.jobId },
+      data: { dueDate: dayUtc(DAY), status: "posted" },
+    });
+
+    // No status param: the drill-in should return all still-open statuses for
+    // the day (pending + in_progress + printed) — the same set the calendar
+    // badge counts — and exclude the posted card.
+    const res = await request(app.getHttpServer())
+      .get(`/fulfillment/jobs?dueOn=${DAY}&perPage=200`)
+      .set("Authorization", `Bearer ${opsToken}`)
+      .expect(200);
+    const ids = (res.body as { items: { id: string }[] }).items.map((j) => j.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([pending.jobId, inProgress.jobId, printed.jobId]),
+    );
+    expect(ids).not.toContain(posted.jobId);
+  });
+
   it("validates the calendar window and refuses non-admins", async () => {
     const opsToken = await createOpsAdmin();
     const { token } = await signUp();
