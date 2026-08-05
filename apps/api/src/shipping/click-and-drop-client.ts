@@ -250,6 +250,13 @@ export class HttpClickAndDropClient implements ClickAndDropClient {
   async createOrder(input: ClickAndDropOrderInput): Promise<ClickAndDropOrderResult> {
     const serviceCode = this.serviceCodes[input.postageClass];
     const subtotal = Math.max(0, input.subtotalPence) / 100;
+    // Click & Drop requires `shippingCostCharged` on every order line. Our flat
+    // card price is postage-inclusive — nothing is billed to the customer as a
+    // separate shipping line — so it's 0, and the order total is just the
+    // subtotal. (Omitting it made Click & Drop reject the order outright:
+    // "Required property 'shippingCostCharged' not found in JSON".)
+    const shippingCostCharged = 0;
+    const total = subtotal + shippingCostCharged;
     const endpoint = this.ordersUrl();
     const response = await fetch(endpoint, {
       method: "POST",
@@ -277,7 +284,8 @@ export class HttpClickAndDropClient implements ClickAndDropClient {
             ],
             orderDate: input.orderDate,
             subtotal,
-            total: subtotal,
+            shippingCostCharged,
+            total,
             currencyCode: "GBP",
             ...(serviceCode ? { postageDetails: { serviceCode } } : {}),
           },
