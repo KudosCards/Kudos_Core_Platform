@@ -1,3 +1,5 @@
+import Link from "next/link";
+import type { FulfillmentCounts } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { formatGbp } from "@/lib/orders";
 import { planLabel } from "@/lib/admin";
@@ -26,6 +28,41 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub?:
       </p>
       {sub && <p className="mt-1 text-xs text-muted">{sub}</p>}
     </div>
+  );
+}
+
+/** A clickable operations stat that links into the filtered fulfilment queue.
+ * `tone` colours the number by urgency; muted to grey when the count is zero so
+ * a clear board reads calm. See ADR 0111. */
+function OpsTile({
+  label,
+  value,
+  href,
+  tone,
+}: {
+  label: string;
+  value: number;
+  href: string;
+  tone?: "red" | "amber";
+}) {
+  const active = value > 0;
+  const numberClass = !active
+    ? "text-muted"
+    : tone === "red"
+      ? "text-red-600 dark:text-red-400"
+      : tone === "amber"
+        ? "text-amber-600 dark:text-amber-400"
+        : "";
+  return (
+    <Link
+      href={href}
+      className="rounded-xl border border-border bg-surface p-5 transition-colors hover:border-foreground/25"
+    >
+      <p className="text-xs font-medium tracking-wide text-muted uppercase">{label}</p>
+      <p className={`mt-1 text-3xl font-bold tracking-tight tabular-nums ${numberClass}`}>
+        {value.toLocaleString("en-GB")}
+      </p>
+    </Link>
   );
 }
 
@@ -83,7 +120,10 @@ function Meter({ label, value, max }: { label: string; value: number; max: numbe
 }
 
 export default async function AdminOverviewPage() {
-  const overview = await serverApiFetch<AdminOverview>("/admin/overview");
+  const [overview, counts] = await Promise.all([
+    serverApiFetch<AdminOverview>("/admin/overview"),
+    serverApiFetch<FulfillmentCounts>("/fulfillment/counts"),
+  ]);
   if (!overview) {
     return <p className="text-sm text-muted">Couldn&apos;t load the dashboard.</p>;
   }
@@ -102,6 +142,43 @@ export default async function AdminOverviewPage() {
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Dashboard</h1>
         <p className="text-sm text-muted">A live view of the whole Kudos Cards platform.</p>
       </div>
+
+      {/* Operations first: what has to ship, before the business metrics. Each
+          tile drops into the filtered dispatch queue. See ADR 0111. */}
+      {counts && (
+        <section className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <h2 className="text-xs font-semibold tracking-wide text-muted uppercase">
+              Must ship
+            </h2>
+            <Link href="/fulfillment/calendar" className="text-sm text-muted hover:text-accent">
+              Dispatch calendar →
+            </Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-5">
+            <OpsTile
+              label="Overdue"
+              value={counts.due.overdue}
+              href="/fulfillment?due=overdue"
+              tone="red"
+            />
+            <OpsTile
+              label="Due today"
+              value={counts.due.today}
+              href="/fulfillment?due=today"
+              tone="amber"
+            />
+            <OpsTile label="Due this week" value={counts.due.dueSoon} href="/fulfillment?due=due_soon" />
+            <OpsTile label="Awaiting print" value={counts.status.pending ?? 0} href="/fulfillment?status=pending" />
+            <OpsTile
+              label="Click & Drop errors"
+              value={counts.clickAndDropErrors}
+              href="/fulfillment"
+              tone="red"
+            />
+          </div>
+        </section>
+      )}
 
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

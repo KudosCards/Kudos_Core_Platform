@@ -536,6 +536,12 @@ describe("Fulfillment (e2e)", () => {
     const today = await createPaidOrder(token);
     await prisma.fulfillmentJob.update({ where: { id: overdue.jobId }, data: { dueDate: utcDay(-3) } });
     await prisma.fulfillmentJob.update({ where: { id: today.jobId }, data: { dueDate: utcDay(0) } });
+    // A failed Click & Drop import on an open card — the "must ship" attention
+    // signal (ADR 0111).
+    await prisma.fulfillmentJob.update({
+      where: { id: overdue.jobId },
+      data: { clickAndDropError: "boom" },
+    });
 
     const res = await request(app.getHttpServer())
       .get("/fulfillment/counts")
@@ -544,11 +550,13 @@ describe("Fulfillment (e2e)", () => {
     const body = res.body as {
       status: Record<string, number>;
       due: { overdue: number; today: number; dueSoon: number; upcoming: number; noDate: number };
+      clickAndDropErrors: number;
     };
-    // Shape: status map + due buckets. Our two planted jobs guarantee a floor.
+    // Shape: status map + due buckets + C&D errors. Planted jobs guarantee a floor.
     expect(body.status.pending).toBeGreaterThanOrEqual(2);
     expect(body.due.overdue).toBeGreaterThanOrEqual(1);
     expect(body.due.today).toBeGreaterThanOrEqual(1);
+    expect(body.clickAndDropErrors).toBeGreaterThanOrEqual(1);
   });
 
   // --- Dispatch calendar (ADR 0110) ---------------------------------------

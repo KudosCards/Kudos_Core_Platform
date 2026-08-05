@@ -43,6 +43,9 @@ export const fulfillmentCountsSchema = z.object({
     upcoming: z.number(),
     noDate: z.number(),
   }),
+  /** Open cards (not yet posted) whose last Click & Drop import push failed — an
+   * ops attention signal for the "must ship" band. See ADR 0111. */
+  clickAndDropErrors: z.number(),
 });
 export type FulfillmentCounts = z.infer<typeof fulfillmentCountsSchema>;
 

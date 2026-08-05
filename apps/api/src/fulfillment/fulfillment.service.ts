@@ -96,6 +96,7 @@ export type FulfillmentQueueRow = FulfillmentQueueJob & { workingDaysUntilDue: n
 export interface FulfillmentCounts {
   status: Record<FulfillmentJobStatus, number>;
   due: { overdue: number; today: number; dueSoon: number; upcoming: number; noDate: number };
+  clickAndDropErrors: number;
 }
 
 /** One personalised card in a print run — the design + who it's for. The
@@ -394,6 +395,11 @@ export class FulfillmentService {
     `);
     const due = rows[0];
 
+    // Open cards whose last Click & Drop import failed — an ops attention signal.
+    const clickAndDropErrors = await this.prisma.fulfillmentJob.count({
+      where: { status: { in: OPEN_STATUSES }, clickAndDropError: { not: null } },
+    });
+
     return {
       status,
       due: {
@@ -403,6 +409,7 @@ export class FulfillmentService {
         upcoming: due?.upcoming ?? 0,
         noDate: due?.no_date ?? 0,
       },
+      clickAndDropErrors,
     };
   }
 
