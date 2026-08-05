@@ -241,6 +241,16 @@ export function FulfillmentClient({
 }) {
   const router = useRouter();
   const [jobs, setJobs] = useState(initialJobs);
+  // Resync the rendered list whenever the server sends a fresh render (a new
+  // `initialJobs` reference — e.g. after the mount/focus `router.refresh()`
+  // below, or a navigation). Done at render time (React's documented "adjust
+  // state when a prop changes" pattern) rather than in an effect, so it can't
+  // trigger a cascading render or briefly show the stale list.
+  const [renderedFrom, setRenderedFrom] = useState(initialJobs);
+  if (renderedFrom !== initialJobs) {
+    setRenderedFrom(initialJobs);
+    setJobs(initialJobs);
+  }
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -266,6 +276,29 @@ export function FulfillmentClient({
   // with sample references to confirm in the dashboard. See ADR 0114.
   const [cndStatus, setCndStatus] = useState<ClickAndDropImportStatus | null>(null);
   const [cndStatusLoading, setCndStatusLoading] = useState(false);
+
+  // The queue reflects data that changes from *background* events — the Click &
+  // Drop sweep importing cards, new paid orders, the auto-send cron — not just
+  // the operator's own clicks. The app-shell Router Cache (next.config
+  // staleTimes.dynamic=30s) would otherwise serve a stale queue on a client-side
+  // navigation (e.g. a just-printed card missing until a hard refresh), because
+  // no operator mutation ever bust it. So re-pull fresh server state on mount and
+  // whenever the tab regains focus, and (below) keep the rendered list in step
+  // with each fresh server render so the queue is always live.
+  useEffect(() => {
+    router.refresh();
+    const refresh = () => {
+      if (document.visibilityState === "visible") router.refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+    // Mount + focus only — `router` is stable, so this runs once and never loops
+    // (a data-dep here would re-fire on every refresh's new `initialJobs`).
+  }, [router]);
 
   useEffect(() => {
     let active = true;
