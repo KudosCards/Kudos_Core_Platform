@@ -138,22 +138,44 @@ function firstNonEmpty(...candidates: (string | number | undefined)[]): string |
   return undefined;
 }
 
+/** The envelope of a Click & Drop create response — the top-level object, which
+ * may itself carry the error fields when `failedOrders[]` doesn't. */
+export interface ClickAndDropCreateResponse extends ClickAndDropFailedOrderError {
+  createdOrders?: { orderIdentifier?: number | string; orderReference?: string }[];
+  failedOrders?: ClickAndDropFailedOrder[];
+}
+
 /**
- * Turn a Click & Drop failure into the most useful message we can. Prefers a
- * human-readable `errorMessage`/`message` (top-level or nested), appends the
- * error code when present, and — critically — falls back to the raw JSON of the
- * failure so the operator always sees *something* concrete, never a bare
- * "unknown error", even if Royal Mail changes the field names again.
+ * Turn a Click & Drop rejection into the most useful message we can. Looks for a
+ * human-readable `errorMessage`/`message` (and code) in the failed line, its
+ * nested `errors[]`, *and* the top-level envelope — Royal Mail puts the reason in
+ * different places across accounts/versions. Failing all of that it returns the
+ * raw response body verbatim, so the operator always sees exactly what Royal Mail
+ * sent, never a bare "unknown error" — even when `failedOrders[0]` is an empty
+ * object (which is how we first hit this).
  */
-export function describeFailedOrder(failure: ClickAndDropFailedOrder): string {
-  const nested = failure.errors?.[0];
+export function describeFailedOrder(
+  failure: ClickAndDropFailedOrder | undefined,
+  envelope: ClickAndDropFailedOrderError = {},
+  rawBody = "",
+): string {
+  const nested = failure?.errors?.[0];
   const message = firstNonEmpty(
-    failure.errorMessage,
-    failure.message,
+    failure?.errorMessage,
+    failure?.message,
     nested?.errorMessage,
     nested?.message,
+    envelope.errorMessage,
+    envelope.message,
   );
-  const code = firstNonEmpty(failure.errorCode, failure.code, nested?.errorCode, nested?.code);
+  const code = firstNonEmpty(
+    failure?.errorCode,
+    failure?.code,
+    nested?.errorCode,
+    nested?.code,
+    envelope.errorCode,
+    envelope.code,
+  );
 
   if (message) {
     return code ? `${message} (${code})` : message;
@@ -161,8 +183,9 @@ export function describeFailedOrder(failure: ClickAndDropFailedOrder): string {
   if (code) {
     return `error code ${code}`;
   }
-  // No recognised field — surface the raw rejection rather than hide it.
-  const raw = JSON.stringify(failure);
+  // No recognised field anywhere — surface the raw response body rather than
+  // hide it. This is the branch that turns "unknown error" into a real clue.
+  const raw = rawBody.trim() || JSON.stringify(failure ?? {});
   return raw && raw !== "{}" ? raw.slice(0, 400) : "unknown error";
 }
 
@@ -262,30 +285,39 @@ export class HttpClickAndDropClient implements ClickAndDropClient {
       }),
     });
 
+    // Read the body once as text and keep it, so the real Click & Drop reason is
+    // never lost — whatever shape (or non-shape) it arrives in.
+    const rawBody = await response.text().catch(() => "");
+
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
       throw new Error(
-        `Click & Drop order import failed — POST ${endpoint} (${response.status}): ${detail.slice(
+        `Click & Drop order import failed — POST ${endpoint} (${response.status}): ${rawBody.slice(
           0,
           500,
         )}`,
       );
     }
 
-    const data = (await response.json()) as {
-      createdOrders?: { orderIdentifier?: number | string; orderReference?: string }[];
-      failedOrders?: ClickAndDropFailedOrder[];
-    };
-
-    const failure = data.failedOrders?.[0];
-    if (failure) {
-      throw new Error(`Click & Drop rejected the order: ${describeFailedOrder(failure)}`);
+    let data: ClickAndDropCreateResponse;
+    try {
+      data = (rawBody ? JSON.parse(rawBody) : {}) as ClickAndDropCreateResponse;
+    } catch {
+      throw new Error(
+        `Click & Drop returned an unreadable response: ${rawBody.slice(0, 500) || "(empty body)"}`,
+      );
     }
 
+    // Success first: a created order with an identifier is the only good outcome.
     const created = data.createdOrders?.[0];
-    if (created?.orderIdentifier === undefined || created.orderIdentifier === null) {
-      throw new Error("Click & Drop order response had no order identifier");
+    if (created?.orderIdentifier !== undefined && created.orderIdentifier !== null) {
+      return { orderIdentifier: String(created.orderIdentifier) };
     }
-    return { orderIdentifier: String(created.orderIdentifier) };
+
+    // Anything else is a rejection — surface the most specific reason we can find,
+    // always with the raw response body as the ultimate fallback so an empty or
+    // unexpected `failedOrders` shape still yields a real clue, not "unknown error".
+    throw new Error(
+      `Click & Drop rejected the order: ${describeFailedOrder(data.failedOrders?.[0], data, rawBody)}`,
+    );
   }
 }
