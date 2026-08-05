@@ -338,16 +338,23 @@ export class BatchOrdersService {
     // genuinely missing custom-field tokens are flagged.
     const occasionLabel = dto.occasionType ?? "bespoke_campaign";
     let ready = 0;
+    // Cards that will actually be charged: only recipients with a valid, mailable
+    // UK address get an order line (bulkSend refuses to post to the rest), so the
+    // price must be over this subset — never the whole selection — or it would
+    // overstate the charge whenever a contact is missing an address.
+    let mailable = 0;
 
     for (const r of recipients) {
       const name = `${r.firstName} ${r.lastName}`.trim();
       let clean = true;
+      let addressOk = true;
 
       const hasParts =
         !!r.addressLine1?.trim() && !!r.addressCity?.trim() && !!r.addressPostcode?.trim();
       if (!hasParts) {
         flag("missingAddress", { recipientId: r.id, name, detail: "No postal address" });
         clean = false;
+        addressOk = false;
       } else if ((r.addressCountry ?? "GB") !== "GB") {
         flag("invalidPostcode", {
           recipientId: r.id,
@@ -355,6 +362,7 @@ export class BatchOrdersService {
           detail: `Non-UK address (${r.addressCountry})`,
         });
         clean = false;
+        addressOk = false;
       } else if (!UK_POSTCODE_REGEX.test(r.addressPostcode!)) {
         flag("invalidPostcode", {
           recipientId: r.id,
@@ -362,7 +370,9 @@ export class BatchOrdersService {
           detail: `Postcode “${r.addressPostcode}” looks invalid`,
         });
         clean = false;
+        addressOk = false;
       }
+      if (addressOk) mailable += 1;
 
       const ctx: MergeContext = {
         firstName: r.firstName,
@@ -392,10 +402,11 @@ export class BatchOrdersService {
     const total = recipients.length;
     const cardPer = computeCardPriceMinor(entitlement.cardDiscountPercent);
     const postagePer = computePostageMinor(dto.postageClass);
+    // Price only the mailable cards — the exact set that will be charged.
     const price = computePricingBreakdown({
-      cardCount: total,
-      cardSubtotalInclVatMinor: cardPer * total,
-      postageMinor: postagePer * total,
+      cardCount: mailable,
+      cardSubtotalInclVatMinor: cardPer * mailable,
+      postageMinor: postagePer * mailable,
     });
 
     return {

@@ -746,9 +746,11 @@ describe("Batch orders (e2e)", () => {
       expect(body.unresolvedTokens.sample[0]!.detail).toContain("{teacher}");
       expect(body.invalidPostcode.count).toBe(0);
       expect(body.duplicate.count).toBe(0);
-      // 3 × (£2.50 + £0.91) 2nd class = £10.23; lines reconcile to the total.
-      expect(body.price.cardCount).toBe(3);
-      expect(body.price.totalMinor).toBe(1023);
+      // Price covers only the mailable cards — the set that will actually be
+      // charged. Cy has no address, so it's Ada + Bo = 2 × (£2.50 + £0.91) 2nd
+      // class = £6.82, not all three.
+      expect(body.price.cardCount).toBe(2);
+      expect(body.price.totalMinor).toBe(682);
     });
 
     it("flags a recent duplicate send of the same design", async () => {

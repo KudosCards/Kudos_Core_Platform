@@ -59,6 +59,9 @@ with the business:
   never surprises the buyer with the next issue. `ready` is the count with *no*
   problem — so the buckets don't sum to `total - ready`; the web frames it as
   "N cards need attention" with a per-issue breakdown that may repeat a card.
+  The `price` covers only the **mailable** cards (those with a valid address),
+  because `bulkSend` gives no order line to the rest — so the figure shown equals
+  the eventual Stripe charge, never overstated by contacts still missing an address.
   Unresolved tokens are found with the shared `unresolvedMergeTokens` util
   (built on the merge engine); duplicates are recipients who ordered the same
   design in the last 30 days. The web surfaces this as a checks banner with

@@ -38,7 +38,10 @@ export interface BatchOrderPreflight {
   unresolvedTokens: PreflightBucket;
   /** Recently ordered this same design — a possible accidental re-send. Warning. */
   duplicate: PreflightBucket;
-  /** The exact, VAT-decomposed price for the whole selection — the amount that
-   * will actually be charged (unlike the composer's rough estimate). */
+  /** The exact, VAT-decomposed price for the **mailable** cards only — the set
+   * that will actually be charged (a card with no valid address gets no order
+   * line), so this matches the eventual Stripe total, not the composer's rough
+   * estimate. Its `cardCount` can be lower than `total` when contacts still need
+   * an address. */
   price: PricingBreakdown;
 }
