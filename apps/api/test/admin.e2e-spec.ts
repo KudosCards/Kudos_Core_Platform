@@ -411,4 +411,40 @@ describe("Admin — super admin dashboard (e2e)", () => {
     expect(mine!.cardsSent).toBe(1);
     expect(mine!.totalSpentMinor).toBe(totalMinor);
   });
+
+  it("filters subscribers server-side by search + paginates (no 100-cap)", async () => {
+    const adminToken = await createAdmin();
+    const { accountId } = await createPaidOrder();
+    const account = await prisma.account.findUniqueOrThrow({ where: { id: accountId } });
+    // The account name is `Test Centre <uuid>`; the uuid is a unique fragment.
+    const uniqueFragment = account.name.split(" ").pop()!;
+
+    // Name search resolves in SQL — it finds the account even far past the newest
+    // 100 (the old in-memory client filter would miss it).
+    const found = await request(app.getHttpServer())
+      .get(`/admin/subscribers?search=${uniqueFragment}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    const foundBody = paginated(subscriberRowSchema).parse(found.body);
+    expect(foundBody.items.some((s) => s.id === accountId)).toBe(true);
+
+    // A search that can't match excludes it.
+    const none = await request(app.getHttpServer())
+      .get("/admin/subscribers?search=zzz-no-such-account-xyz")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    expect(paginated(subscriberRowSchema).parse(none.body).items.some((s) => s.id === accountId)).toBe(
+      false,
+    );
+
+    // Pagination metadata is honoured.
+    const paged = await request(app.getHttpServer())
+      .get("/admin/subscribers?perPage=1&page=1")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    const pagedBody = paginated(subscriberRowSchema).parse(paged.body);
+    expect(pagedBody.items).toHaveLength(1);
+    expect(pagedBody.perPage).toBe(1);
+    expect(pagedBody.total).toBeGreaterThanOrEqual(1);
+  });
 });
