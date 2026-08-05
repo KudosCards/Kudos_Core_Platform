@@ -550,4 +550,110 @@ describe("Fulfillment (e2e)", () => {
     expect(body.due.overdue).toBeGreaterThanOrEqual(1);
     expect(body.due.today).toBeGreaterThanOrEqual(1);
   });
+
+  // --- Dispatch calendar (ADR 0110) ---------------------------------------
+
+  /** A far-future window nothing else in the suite lands in, so per-day counts
+   * are exact rather than polluted by other tests' 2026 dueDates. */
+  const CAL_FROM = "2027-03-01";
+  const CAL_TO = "2027-03-31";
+  const dayUtc = (iso: string): Date => {
+    const [y, m, d] = iso.split("-");
+    return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+  };
+
+  it("buckets the open posting workload by dispatch day, excluding posted cards", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+
+    const a = await createPaidOrder(token);
+    const b = await createPaidOrder(token);
+    const c = await createPaidOrder(token);
+    const posted = await createPaidOrder(token);
+    const before = await createPaidOrder(token);
+
+    // Two cards on the 10th, one on the 20th, one posted on the 15th (excluded),
+    // one open before the window (feeds overdueBefore).
+    await prisma.fulfillmentJob.update({ where: { id: a.jobId }, data: { dueDate: dayUtc("2027-03-10") } });
+    await prisma.fulfillmentJob.update({ where: { id: b.jobId }, data: { dueDate: dayUtc("2027-03-10") } });
+    await prisma.fulfillmentJob.update({ where: { id: c.jobId }, data: { dueDate: dayUtc("2027-03-20") } });
+    await prisma.fulfillmentJob.update({
+      where: { id: posted.jobId },
+      data: { dueDate: dayUtc("2027-03-15"), status: "posted" },
+    });
+    await prisma.fulfillmentJob.update({
+      where: { id: before.jobId },
+      data: { dueDate: dayUtc("2027-02-01") },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/fulfillment/calendar?from=${CAL_FROM}&to=${CAL_TO}`)
+      .set("Authorization", `Bearer ${opsToken}`)
+      .expect(200);
+    const body = res.body as {
+      days: { day: string; total: number; pending: number; printed: number }[];
+      overdueBefore: number;
+    };
+
+    // Counts are cross-account aggregates with no per-test isolation, so assert
+    // our planted cards form a floor (>=) rather than an exact total.
+    const tenth = body.days.find((d) => d.day === "2027-03-10");
+    expect(tenth).toBeDefined();
+    expect(tenth!.total).toBeGreaterThanOrEqual(2);
+    expect(tenth!.pending).toBeGreaterThanOrEqual(2);
+
+    const twentieth = body.days.find((d) => d.day === "2027-03-20");
+    expect(twentieth?.total).toBeGreaterThanOrEqual(1);
+
+    // The posted card's day never appears — it's done, not workload. This is
+    // exact and pollution-proof: no run ever adds an *open* card on the 15th.
+    expect(body.days.find((d) => d.day === "2027-03-15")).toBeUndefined();
+
+    // The card due before the window is counted as carried-in overdue.
+    expect(body.overdueBefore).toBeGreaterThanOrEqual(1);
+  });
+
+  it("drills into one dispatch day via the dueOn filter", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+
+    const onDay = await createPaidOrder(token);
+    const otherDay = await createPaidOrder(token);
+    await prisma.fulfillmentJob.update({ where: { id: onDay.jobId }, data: { dueDate: dayUtc("2027-03-12") } });
+    await prisma.fulfillmentJob.update({ where: { id: otherDay.jobId }, data: { dueDate: dayUtc("2027-03-13") } });
+
+    const res = await request(app.getHttpServer())
+      .get("/fulfillment/jobs?status=pending&dueOn=2027-03-12&perPage=200")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .expect(200);
+    const ids = (res.body as { items: { id: string }[] }).items.map((j) => j.id);
+    expect(ids).toContain(onDay.jobId);
+    expect(ids).not.toContain(otherDay.jobId);
+  });
+
+  it("validates the calendar window and refuses non-admins", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+
+    // `to` before `from`.
+    await request(app.getHttpServer())
+      .get("/fulfillment/calendar?from=2027-03-31&to=2027-03-01")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .expect(400);
+    // Window wider than the cap.
+    await request(app.getHttpServer())
+      .get("/fulfillment/calendar?from=2027-01-01&to=2027-12-31")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .expect(400);
+    // Malformed date (DTO regex).
+    await request(app.getHttpServer())
+      .get("/fulfillment/calendar?from=nope&to=2027-03-01")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .expect(400);
+    // Not a platform admin.
+    await request(app.getHttpServer())
+      .get(`/fulfillment/calendar?from=${CAL_FROM}&to=${CAL_TO}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(403);
+  });
 });

@@ -37,3 +37,10 @@ export function workingDaysUntilDue(dueDate: Date | null, now: Date = new Date()
   if (!dueDate) return null;
   return workingDaysUntil(dueDate, now);
 }
+
+/** Parse a `YYYY-MM-DD` calendar date to its UTC-midnight Date, for comparing
+ * against the `@db.Date` dueDate column. */
+export function isoDayToUtc(iso: string): Date {
+  const [y, m, d] = iso.split("-");
+  return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+}

@@ -19,8 +19,9 @@ import { ClickAndDropService } from "../shipping/click-and-drop.service";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
 import { isoDay } from "@kudos/shared-types";
+import type { FulfillmentCalendar, FulfillmentCalendarDay } from "@kudos/shared-types";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
-import { dueCutoffs, workingDaysUntilDue } from "./fulfillment-due.util";
+import { dueCutoffs, isoDayToUtc, workingDaysUntilDue } from "./fulfillment-due.util";
 import type { TransitionFulfillmentDto, TransitionableStatus } from "./dto/transition-fulfillment.dto";
 import type { BulkTransitionFulfillmentDto } from "./dto/bulk-transition-fulfillment.dto";
 import type { ExportAddressesDto } from "./dto/export-addresses.dto";
@@ -134,6 +135,13 @@ const FROM_STATUSES: Record<TransitionableStatus, FulfillmentJobStatus[]> = {
   delivered: ["posted"],
   failed: ["pending", "in_progress", "printed", "posted"],
 };
+
+/** Statuses whose posting deadline is still actionable — a card not yet posted.
+ * The dispatch calendar and its "overdue" carry-over count only these. */
+const OPEN_STATUSES: FulfillmentJobStatus[] = ["pending", "in_progress", "printed"];
+
+/** How wide a dispatch-calendar window the API will scan in one request. */
+const MAX_CALENDAR_DAYS = 92;
 
 export interface BulkTransitionSummary {
   transitioned: number;
@@ -291,8 +299,14 @@ export class FulfillmentService {
     const where: Prisma.FulfillmentJobWhereInput = {
       status: query.status ?? FulfillmentJobStatus.pending,
     };
-    const dueFilter = this.dueWhere(query.due, today, dueSoon);
-    if (dueFilter !== undefined) where.dueDate = dueFilter;
+    if (query.dueOn) {
+      // The dispatch-calendar drill-in: exactly one deadline day. Takes
+      // precedence over the `due` bucket. See ADR 0110.
+      where.dueDate = { equals: isoDayToUtc(query.dueOn) };
+    } else {
+      const dueFilter = this.dueWhere(query.due, today, dueSoon);
+      if (dueFilter !== undefined) where.dueDate = dueFilter;
+    }
 
     // Default: soonest deadline first. Postgres sorts NULLs last on ASC, so
     // undated cards (no occasion) naturally trail the dated, urgency-ordered
@@ -390,6 +404,51 @@ export class FulfillmentService {
         noDate: due?.no_date ?? 0,
       },
     };
+  }
+
+  /**
+   * The open posting workload keyed on dispatch deadline, for the dispatch
+   * calendar: per-day counts of still-open cards (pending / in progress /
+   * printed) due to post within [from, to], plus a single "overdue before this
+   * window" count for a carried-in banner. One grouped aggregate + one count —
+   * the grid never fetches individual cards. See ADR 0110.
+   */
+  async calendar(fromIso: string, toIso: string): Promise<FulfillmentCalendar> {
+    const from = isoDayToUtc(fromIso);
+    const to = isoDayToUtc(toIso);
+    if (to.getTime() < from.getTime()) {
+      throw new BadRequestException("`to` must be on or after `from`");
+    }
+    const spanDays = Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1;
+    if (spanDays > MAX_CALENDAR_DAYS) {
+      throw new BadRequestException(`Calendar window is capped at ${MAX_CALENDAR_DAYS} days`);
+    }
+
+    const grouped = await this.prisma.fulfillmentJob.groupBy({
+      by: ["dueDate", "status"],
+      where: { status: { in: OPEN_STATUSES }, dueDate: { gte: from, lte: to } },
+      _count: { _all: true },
+    });
+
+    const byDay = new Map<string, FulfillmentCalendarDay>();
+    for (const row of grouped) {
+      if (!row.dueDate) continue;
+      const day = isoDay(row.dueDate);
+      const entry = byDay.get(day) ?? { day, total: 0, pending: 0, inProgress: 0, printed: 0 };
+      const count = row._count._all;
+      entry.total += count;
+      if (row.status === "pending") entry.pending += count;
+      else if (row.status === "in_progress") entry.inProgress += count;
+      else if (row.status === "printed") entry.printed += count;
+      byDay.set(day, entry);
+    }
+    const days = [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+
+    const overdueBefore = await this.prisma.fulfillmentJob.count({
+      where: { status: { in: OPEN_STATUSES }, dueDate: { lt: from } },
+    });
+
+    return { days, overdueBefore };
   }
 
   async findOne(actorUserId: string, id: string): Promise<FulfillmentJob> {
