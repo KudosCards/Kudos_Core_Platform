@@ -16,6 +16,7 @@ import { clientApiFetch } from "@/lib/api.client";
 import { AddressModal } from "@/components/address-modal";
 import { CardPreviewLightbox, insideFacesHint } from "@/components/card-preview-lightbox";
 import { RecipientPicker, type Paginated } from "./recipient-picker";
+import { ReviewAllCards } from "./review-all-cards";
 
 // Client-only (Konva touches canvas APIs) — renders a card exactly as it prints.
 const CardFacePreview = dynamic(
@@ -23,8 +24,13 @@ const CardFacePreview = dynamic(
   { ssr: false },
 );
 
-/** How many personalised previews to render at once before summarising the rest. */
+/** How many personalised previews to render inline before offering "Review all". */
 const MAX_PREVIEWS = 8;
+
+/** At/above this many cards the run is large enough that reviewing every card
+ * before paying really matters, so "Review all" is promoted to a primary action
+ * (the scale-adaptive review threshold from ADR 0118). */
+const REVIEW_ALL_THRESHOLD = 50;
 
 /** Card price and postage in pence, for the on-screen estimate. The server is
  * authoritative — Stripe shows the exact total and applies any plan discount —
@@ -120,6 +126,8 @@ export function BulkSendClient({
   const [addressModalFor, setAddressModalFor] = useState<Recipient | null>(null);
   // The recipient whose full card (all faces) is open in the flip lightbox.
   const [previewFor, setPreviewFor] = useState<Recipient | null>(null);
+  // Whether the full-screen "review every card" overlay is open.
+  const [reviewAllOpen, setReviewAllOpen] = useState(false);
   // Default on: sending from an occasion-mode segment should consume the matched
   // occasion so it isn't sent again. See docs/adr/0107.
   const [markHandled, setMarkHandled] = useState(true);
@@ -492,8 +500,34 @@ export function BulkSendClient({
                 })}
               </div>
               {sendable.length > MAX_PREVIEWS && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+                  <p className="text-xs text-muted">
+                    …and {sendable.length - MAX_PREVIEWS} more, each with their own name.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setReviewAllOpen(true)}
+                    className={
+                      sendable.length >= REVIEW_ALL_THRESHOLD
+                        ? "btn-accent text-sm"
+                        : "rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-foreground/[0.04]"
+                    }
+                  >
+                    🔍 Review all {sendable.length} cards
+                  </button>
+                </div>
+              )}
+              {sendable.length >= REVIEW_ALL_THRESHOLD && (
                 <p className="text-xs text-muted">
-                  …and {sendable.length - MAX_PREVIEWS} more, each with their own name.
+                  Sending a large run? Open{" "}
+                  <button
+                    type="button"
+                    onClick={() => setReviewAllOpen(true)}
+                    className="text-accent underline hover:no-underline"
+                  >
+                    Review all {sendable.length} cards
+                  </button>{" "}
+                  to search and check every personalised card before you pay.
                 </p>
               )}
             </section>
@@ -599,6 +633,14 @@ export function BulkSendClient({
           title={`${previewFor.firstName} ${previewFor.lastName}`}
           subtitle={addressSummary(previewFor)}
           onClose={() => setPreviewFor(null)}
+        />
+      )}
+
+      {reviewAllOpen && selectedDesign && (
+        <ReviewAllCards
+          design={selectedDesign}
+          recipients={sendable}
+          onClose={() => setReviewAllOpen(false)}
         />
       )}
     </div>
