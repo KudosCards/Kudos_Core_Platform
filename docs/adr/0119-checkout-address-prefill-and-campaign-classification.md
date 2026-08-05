@@ -34,16 +34,23 @@ Two pieces of pre-launch user feedback turned out to be live bugs:
    postcode); the checkout line is pre-filled from it (still editable) instead of
    starting blank. An address already on file is never re-keyed.
 
-2. **A one-off send inherits the campaign it fulfils, and ships "today".** When a
-   bulk-send supersedes a natural occasion (e.g. a birthday from the birthday
-   segment), the created send occasion **inherits that occasion's `type` and
-   `occasionDate`** — so it stays a birthday, tied to the birthday, and shows on
-   the calendar on the birthday rather than as a bespoke event dated today. And
-   because an `asap` one-off send is **paid and produced now**, its `dispatchDate`
-   is set to **today** (not back-computed from the occasion date), so the ops
-   queue reads it as due now, never overdue. The same "dispatch today" rule is
-   applied to the guided single send (`quickSend`), which had the identical
-   back-dating bug.
+2. **A one-off send inherits the campaign's classification, and ships "today".**
+   When a bulk-send supersedes a natural occasion (e.g. a birthday from the
+   birthday segment), the created send occasion **inherits that occasion's
+   `type`** — so it stays a *birthday*, not a bespoke event. It keeps the send
+   moment as its own `occasionDate`, deliberately: the DB enforces a unique
+   `(recipientId, type, occasionDate)`, so there can only ever be one birthday
+   occasion per person per date, and the superseded natural one already holds the
+   birthday's own date — a second on that date is impossible (and a full timestamp
+   keeps repeat same-day sends collision-free too). Because an `asap` one-off send
+   is **paid and produced now**, its `dispatchDate` is set to **today** (not
+   back-computed from the occasion date), so the ops queue reads it as due now,
+   never overdue. The same "dispatch today" rule is applied to the guided single
+   send (`quickSend`), which had the identical back-dating bug.
+
+   (Putting the send's calendar event *on the birthday itself* would need a
+   larger rework — reusing the natural occasion as the send record rather than
+   creating a superseding one-off — because of that uniqueness rule; deferred.)
 
 ## Consequences
 
