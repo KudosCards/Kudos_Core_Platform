@@ -19,6 +19,13 @@ export interface PlatformInboxPage extends Paginated<PlatformNotification> {
   unreadCount: number;
 }
 
+/** Options for a fan-out: restrict to a role (e.g. super-admin escalation) and/or
+ * enlist in an existing transaction. */
+export interface NotifyAdminsOptions {
+  role?: string;
+  client?: Prisma.TransactionClient | PrismaService;
+}
+
 /**
  * The Kudos HQ ops notification centre — the platform-admin equivalent of the
  * account NotificationInboxService (ADR 0034). A platform-wide event fans out one
@@ -29,28 +36,34 @@ export class PlatformNotificationService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Record a platform-wide event: one notification per operator. Idempotent when
-   * `entityId` is given — if any operator already has a notification for this
-   * (kind, entity), it's a no-op, so a re-run cron can't double-notify. Accepts a
-   * transaction client so it can enlist in a producer's existing transaction.
+   * Record a platform-wide event: one notification per operator (optionally
+   * restricted to a role, e.g. super-admin escalation). Idempotent when
+   * `entityId` is given — if any matching operator already has a notification for
+   * this (kind, entity), it's a no-op, so a re-run cron (or a second API instance)
+   * can't double-notify. Returns whether it actually created rows, which callers
+   * use as a "first run wins" guard for side effects like sending email.
    */
   async notifyAllAdmins(
     payload: PlatformNotifyPayload,
-    client: Prisma.TransactionClient | PrismaService = this.prisma,
-  ): Promise<void> {
+    options: NotifyAdminsOptions = {},
+  ): Promise<boolean> {
+    const client = options.client ?? this.prisma;
     if (payload.entityId) {
       const existing = await client.platformNotification.findFirst({
         where: { kind: payload.kind, entityId: payload.entityId },
         select: { id: true },
       });
       if (existing) {
-        return;
+        return false;
       }
     }
 
-    const admins = await client.platformAdmin.findMany({ select: { userId: true } });
+    const admins = await client.platformAdmin.findMany({
+      where: options.role ? { role: options.role } : undefined,
+      select: { userId: true },
+    });
     if (admins.length === 0) {
-      return;
+      return false;
     }
 
     await client.platformNotification.createMany({
@@ -64,6 +77,7 @@ export class PlatformNotificationService {
         entityId: payload.entityId ?? null,
       })),
     });
+    return true;
   }
 
   async list(userId: string, page?: string, perPage?: string): Promise<PlatformInboxPage> {

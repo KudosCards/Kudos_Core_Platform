@@ -1,13 +1,19 @@
 import { BadRequestException, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { Interval } from "@nestjs/schedule";
 import {
+  DEFAULT_DISPATCH_REMINDER_CONFIG,
   DEFAULT_SEASONAL_DISPATCH_RULES,
+  dispatchReminderConfigSchema,
   getSeasonalDispatchRules,
   seasonalDispatchRulesSchema,
   setSeasonalDispatchRules,
+  type DispatchReminderConfig,
   type SeasonalDispatchRule,
 } from "@kudos/shared-types";
-import { PlatformSettingsService, PLATFORM_SETTING_KEYS } from "../billing/platform-settings.service";
+import {
+  PlatformSettingsService,
+  PLATFORM_SETTING_KEYS,
+} from "../billing/platform-settings.service";
 
 /**
  * Loads the admin-configured seasonal dispatch rules from the PlatformSetting
@@ -60,9 +66,47 @@ export class DispatchConfigService implements OnModuleInit {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid seasonal rules");
     }
-    await this.settings.set(PLATFORM_SETTING_KEYS.dispatchSeasonalRules, JSON.stringify(parsed.data));
+    await this.settings.set(
+      PLATFORM_SETTING_KEYS.dispatchSeasonalRules,
+      JSON.stringify(parsed.data),
+    );
     setSeasonalDispatchRules(parsed.data);
     this.logger.log(`Seasonal dispatch rules updated (${parsed.data.length} window(s))`);
+    return parsed.data;
+  }
+
+  /** The current send-by-5 reminder config (ops-edited or the default). Read
+   * through on each call — it's consulted infrequently (an hourly cron + the ops
+   * must-ship reads) and must reflect an edit on any instance immediately. */
+  async getReminderConfig(): Promise<DispatchReminderConfig> {
+    const raw = await this.settings.get(PLATFORM_SETTING_KEYS.dispatchReminderConfig);
+    if (!raw) return DEFAULT_DISPATCH_REMINDER_CONFIG;
+    const parsed = dispatchReminderConfigSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) {
+      this.logger.warn("Stored dispatch reminder config failed validation — using the default");
+      return DEFAULT_DISPATCH_REMINDER_CONFIG;
+    }
+    return parsed.data;
+  }
+
+  /** The bundled default, so the UI can offer "reset to default". */
+  getDefaultReminderConfig(): DispatchReminderConfig {
+    return DEFAULT_DISPATCH_REMINDER_CONFIG;
+  }
+
+  /** Validate and persist a new reminder config. Rejects an out-of-range value. */
+  async updateReminderConfig(config: unknown): Promise<DispatchReminderConfig> {
+    const parsed = dispatchReminderConfigSchema.safeParse(config);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid reminder config");
+    }
+    await this.settings.set(
+      PLATFORM_SETTING_KEYS.dispatchReminderConfig,
+      JSON.stringify(parsed.data),
+    );
+    this.logger.log(
+      `Dispatch reminder config updated (enabled=${parsed.data.enabled}, hour=${parsed.data.sendHourUtc})`,
+    );
     return parsed.data;
   }
 

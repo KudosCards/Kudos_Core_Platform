@@ -10,12 +10,18 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import type { AdminOrderDetail, Customer360, SeasonalDispatchRule } from "@kudos/shared-types";
+import type {
+  AdminOrderDetail,
+  Customer360,
+  DispatchReminderConfig,
+  SeasonalDispatchRule,
+} from "@kudos/shared-types";
 import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import type { Paginated } from "../common/paginated";
 import { SeatBillingService, type SeatPriceStatus } from "../billing/seat-billing.service";
 import { DispatchConfigService } from "../dispatch/dispatch-config.service";
 import { UpdateSeasonalRulesDto } from "./dto/update-seasonal-rules.dto";
+import { UpdateReminderConfigDto } from "./dto/update-reminder-config.dto";
 import {
   AdminService,
   type AdminOverview,
@@ -110,5 +116,27 @@ export class AdminController {
     @Body() dto: UpdateSeasonalRulesDto,
   ): Promise<{ rules: readonly SeasonalDispatchRule[] }> {
     return { rules: await this.dispatchConfig.updateRules(dto.rules) };
+  }
+
+  /** The send-by-5 reminder config (on/off, send hour, lead window, escalation)
+   * plus the bundled default, for the ops editor. See docs/adr/0117. */
+  @Get("dispatch/reminder-config")
+  async reminderConfig(): Promise<{
+    config: DispatchReminderConfig;
+    default: DispatchReminderConfig;
+  }> {
+    return {
+      config: await this.dispatchConfig.getReminderConfig(),
+      default: this.dispatchConfig.getDefaultReminderConfig(),
+    };
+  }
+
+  /** Replace the reminder config. Applied on the next run + persisted, so the
+   * dispatch reminder changes with no redeploy. See docs/adr/0117. */
+  @Put("dispatch/reminder-config")
+  async updateReminderConfig(
+    @Body() dto: UpdateReminderConfigDto,
+  ): Promise<{ config: DispatchReminderConfig }> {
+    return { config: await this.dispatchConfig.updateReminderConfig(dto) };
   }
 }
