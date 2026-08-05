@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import type Konva from "konva";
 import { Stage, Layer, Rect, Text, Group, Image as KonvaImage } from "react-konva";
 import useImage from "use-image";
-import type { DesignDocument, DesignElement } from "@kudos/shared-types";
+import type { DesignDocument, DesignElement, DesignPage } from "@kudos/shared-types";
 import {
   CARD_HEIGHT,
   CARD_WIDTH,
@@ -38,20 +38,28 @@ function ImageNode({ element }: { element: Extract<DesignElement, { kind: "image
 }
 
 /**
- * A non-interactive render of a design's front page — used to show a card
+ * A non-interactive render of one of a design's faces — used to show a card
  * exactly as it'll print, including merged {name} text (pass a document that's
- * already been through applyMergeTokens). Client-only: Konva touches canvas
- * APIs, so callers import this with `dynamic(..., { ssr: false })`.
+ * already been through applyMergeTokens). Defaults to the `front` face; pass
+ * `face` to render an inside or back face (the flip viewer uses this to let a
+ * sender review the personalised message, not just the cover). Client-only:
+ * Konva touches canvas APIs, so callers import this with
+ * `dynamic(..., { ssr: false })`.
  */
 export function CardFacePreview({
   document,
   width = 225,
+  face = "front",
 }: {
   document: DesignDocument;
   width?: number;
+  face?: DesignPage["name"];
 }) {
   const scale = width / CANVAS_WIDTH;
-  const front = document.pages.find((page) => page.name === "front") ?? document.pages[0];
+  const front =
+    document.pages.find((page) => page.name === face) ??
+    document.pages.find((page) => page.name === "front") ??
+    document.pages[0];
   const elements = front?.elements ?? [];
 
   // The web fonts this design actually uses — so the preloader warms only those,
@@ -107,12 +115,7 @@ export function CardFacePreview({
             }
             if (element.kind === "shape") {
               return (
-                <Group
-                  key={element.id}
-                  x={element.x}
-                  y={element.y}
-                  rotation={element.rotation}
-                >
+                <Group key={element.id} x={element.x} y={element.y} rotation={element.rotation}>
                   <ShapePrimitive element={element} />
                 </Group>
               );
