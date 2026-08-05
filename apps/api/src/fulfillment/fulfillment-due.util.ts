@@ -23,9 +23,12 @@ export interface DueCutoffs {
   dueSoon: Date;
 }
 
-export function dueCutoffs(now: Date = new Date()): DueCutoffs {
+export function dueCutoffs(
+  now: Date = new Date(),
+  leadWorkingDays: number = DUE_SOON_WORKING_DAYS,
+): DueCutoffs {
   const today = startOfUtcDay(now);
-  return { today, dueSoon: addWorkingDays(today, DUE_SOON_WORKING_DAYS) };
+  return { today, dueSoon: addWorkingDays(today, leadWorkingDays) };
 }
 
 /**

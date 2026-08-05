@@ -5,6 +5,7 @@ import { formatGbp } from "@/lib/orders";
 import { planLabel } from "@/lib/admin";
 import { SeatBillingSetup } from "./seat-billing-setup";
 import { SeasonalDispatchSetup } from "./seasonal-dispatch-setup";
+import { DispatchReminderSetup } from "./dispatch-reminder-setup";
 
 interface AdminOverview {
   accounts: { total: number; organisations: number; individuals: number };
@@ -258,6 +259,9 @@ export default async function AdminOverviewPage() {
 
       {/* Seasonal dispatch windows — Christmas rush etc., editable in-app. */}
       <SeasonalDispatchSetup />
+
+      {/* Send-by-5 dispatch reminder knobs (on/off, send time, window, escalation). */}
+      <DispatchReminderSetup />
 
       {/* Revenue chart + plans */}
       <div className="grid gap-4 lg:grid-cols-3">

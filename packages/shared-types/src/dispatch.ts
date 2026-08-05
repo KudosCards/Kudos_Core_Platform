@@ -307,3 +307,30 @@ export const seasonalDispatchRuleSchema = z.object({
 /** The full admin-editable rule set — bounded so it can't grow unbounded. */
 export const seasonalDispatchRulesSchema = z.array(seasonalDispatchRuleSchema).max(24);
 export type SeasonalDispatchRuleInput = z.infer<typeof seasonalDispatchRuleSchema>;
+
+/**
+ * Runtime knobs for the send-by-5 ops dispatch reminder (ADR 0115/0117) — editable
+ * by ops with no redeploy. `leadWorkingDays` is the must-ship window (the SLA,
+ * default 5); `escalateAfterWorkingDays` is how many working days past its deadline
+ * a card must be before it escalates to super admins (0 = escalation off).
+ */
+export const dispatchReminderConfigSchema = z.object({
+  /** Whether the daily reminder runs at all. */
+  enabled: z.boolean(),
+  /** UTC hour (0–23) the weekday digest is sent. */
+  sendHourUtc: z.number().int().min(0).max(23),
+  /** The send-by window in working days — the must-ship horizon. */
+  leadWorkingDays: z.number().int().min(1).max(15),
+  /** Overdue-by threshold (working days) that escalates a card to super admins;
+   * 0 disables escalation. */
+  escalateAfterWorkingDays: z.number().int().min(0).max(15),
+});
+export type DispatchReminderConfig = z.infer<typeof dispatchReminderConfigSchema>;
+
+/** The out-of-the-box reminder config: on, 07:00 UTC, send-by-5, escalate at 3 wd late. */
+export const DEFAULT_DISPATCH_REMINDER_CONFIG: DispatchReminderConfig = {
+  enabled: true,
+  sendHourUtc: 7,
+  leadWorkingDays: 5,
+  escalateAfterWorkingDays: 3,
+};

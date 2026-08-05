@@ -16,6 +16,7 @@ import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
 import { ROYAL_MAIL_CLIENT } from "../shipping/royal-mail-client.provider";
 import { royalMailTrackingUrl, type RoyalMailClient } from "../shipping/royal-mail-client";
 import { ClickAndDropService } from "../shipping/click-and-drop.service";
+import { DispatchConfigService } from "../dispatch/dispatch-config.service";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
 import { isoDay, startOfUtcDay } from "@kudos/shared-types";
@@ -223,6 +224,7 @@ export class FulfillmentService {
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
     @Inject(ROYAL_MAIL_CLIENT) private readonly royalMail: RoyalMailClient,
     private readonly clickAndDrop: ClickAndDropService,
+    private readonly dispatchConfig: DispatchConfigService,
   ) {}
 
   /** Whether Click & Drop order-import is wired (drives the ops UI). */
@@ -503,7 +505,10 @@ export class FulfillmentService {
    * banner, the daily reminder email and the notification centre.
    */
   async mustShip(now: Date = new Date()): Promise<MustShipSummary> {
-    const { today, dueSoon } = dueCutoffs(now);
+    // The send-by window is runtime-configurable (default 5 working days), so the
+    // must-ship band, banner, and reminder all move together. See ADR 0117.
+    const { leadWorkingDays } = await this.dispatchConfig.getReminderConfig();
+    const { today, dueSoon } = dueCutoffs(now, leadWorkingDays);
     const openAnd = (dueDate: Prisma.DateTimeNullableFilter): Prisma.FulfillmentJobWhereInput => ({
       status: { in: OPEN_STATUSES },
       dueDate,
