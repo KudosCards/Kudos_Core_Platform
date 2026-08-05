@@ -192,16 +192,33 @@ function downloadCsv(rows: ExportedAddress[]): void {
   URL.revokeObjectURL(url);
 }
 
+/** A pinned dispatch-calendar day (YYYY-MM-DD) rendered for the banner. */
+function formatDueOn(dueOn: string): string {
+  const [y, m, d] = dueOn.split("-").map(Number);
+  return new Date(Date.UTC(y!, m! - 1, d!)).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export function FulfillmentClient({
   initialJobs,
   status,
   due,
   counts,
+  dueOn,
 }: {
   initialJobs: FulfillmentJob[];
-  status: FulfillmentStatus;
+  /** The active status tab, or null when a calendar day is pinned with no
+   * explicit status (the queue then shows every open card for that day). */
+  status: FulfillmentStatus | null;
   due: DueFilter;
   counts: FulfillmentCounts;
+  /** The dispatch-calendar drill-in day (YYYY-MM-DD), or null. See ADR 0110. */
+  dueOn: string | null;
 }) {
   const router = useRouter();
   const [jobs, setJobs] = useState(initialJobs);
@@ -377,7 +394,17 @@ export function FulfillmentClient({
     }
   }
 
-  const bulkStep = NEXT_STEP[status];
+  // A single forward step only makes sense when one status is in view. On a
+  // day drill-in with mixed open statuses (status null) bulk-advance is hidden.
+  const bulkStep = status ? NEXT_STEP[status] : undefined;
+
+  /** A status-tab href that keeps the pinned calendar day, so the tabs narrow
+   * within the day rather than jumping back to the whole queue. */
+  function statusHref(tab: FulfillmentStatus): string {
+    const params = new URLSearchParams({ status: tab });
+    if (dueOn) params.set("dueOn", dueOn);
+    return `/fulfillment?${params.toString()}`;
+  }
 
   async function bulkAdvance() {
     if (!bulkStep || selected.size === 0) return;
@@ -434,12 +461,29 @@ export function FulfillmentClient({
         </a>
       </div>
 
+      {dueOn && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
+          <span>
+            Showing cards due <strong>{formatDueOn(dueOn)}</strong>
+            {status ? ` · ${status.replaceAll("_", " ")}` : " · all still to post"}.
+          </span>
+          <div className="flex items-center gap-3">
+            <a href="/fulfillment/calendar" className="text-accent hover:underline">
+              ← Calendar
+            </a>
+            <a href="/fulfillment" className="text-muted hover:text-accent">
+              Show whole queue
+            </a>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2 text-sm">
         {STATUS_TABS.map((tab) => (
           <button
             key={tab}
             type="button"
-            onClick={() => router.push(`/fulfillment?status=${tab}`)}
+            onClick={() => router.push(statusHref(tab))}
             className={`flex items-center gap-2 rounded-full px-3 py-1 capitalize ${
               tab === status
                 ? "bg-accent text-white"
@@ -457,8 +501,9 @@ export function FulfillmentClient({
       </div>
 
       {/* Dispatch-urgency filter — only on the actionable pending queue, where the
-          due buckets are computed. Sorted soonest-deadline-first regardless. */}
-      {status === "pending" && (
+          due buckets are computed. Hidden on a calendar day drill-in, whose own
+          date already scopes the list. Sorted soonest-deadline-first regardless. */}
+      {status === "pending" && !dueOn && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-xs uppercase tracking-wide text-foreground/40">By dispatch date</span>
           {DUE_TABS.map((tab) => {

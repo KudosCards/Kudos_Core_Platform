@@ -297,9 +297,18 @@ export class FulfillmentService {
     const now = new Date();
     const { today, dueSoon } = dueCutoffs(now);
 
-    const where: Prisma.FulfillmentJobWhereInput = {
-      status: query.status ?? FulfillmentJobStatus.pending,
-    };
+    const where: Prisma.FulfillmentJobWhereInput = {};
+    if (query.status) {
+      where.status = query.status;
+    } else if (query.dueOn) {
+      // A calendar drill-in with no explicit status shows every still-open card
+      // due that day (pending / in progress / printed), so the queue count
+      // matches the calendar badge's open-status total rather than pending
+      // alone. An explicit status tab still narrows within the day. See ADR 0110.
+      where.status = { in: OPEN_STATUSES };
+    } else {
+      where.status = FulfillmentJobStatus.pending;
+    }
     if (query.dueOn) {
       // The dispatch-calendar drill-in: exactly one deadline day. Takes
       // precedence over the `due` bucket. See ADR 0110.
