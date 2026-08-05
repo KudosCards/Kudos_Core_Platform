@@ -26,6 +26,62 @@ const IMPORT_SELECT = {
 
 type ImportJob = Prisma.FulfillmentJobGetPayload<{ select: typeof IMPORT_SELECT }>;
 
+/** The reference we stamp on a card's Click & Drop order — unique, human-readable
+ * and ≤40 chars. Defined once so the sweep (what we send) and the import-status
+ * readout (what we tell the operator to search for) can never drift apart. */
+function orderReferenceFor(jobId: string, orderNumber: number): string {
+  return `ORD-${orderNumber}-${jobId.slice(0, 8)}`;
+}
+
+/** One sampled card in the import-status readout — enough to search Click & Drop
+ * for it and confirm our orders land in the right dashboard account. */
+export interface ClickAndDropImportSample {
+  jobId: string;
+  /** The reference we stamp on the Click & Drop order (`ORD-<n>-<jobId8>`), so an
+   * operator can search the dashboard for the exact string we sent. */
+  orderReference: string;
+  /** Royal Mail's stored order id (null on the error samples, which never got one). */
+  orderIdentifier: string | null;
+  /** The stored import error (only on error samples). */
+  error: string | null;
+  /** The precise moment this card imported into Click & Drop (null on error
+   * samples, which never imported). */
+  importedAt: Date | null;
+  /** When the row last changed — the timestamp for error samples (last-failed). */
+  updatedAt: Date;
+}
+
+/**
+ * A readout of where our fulfillment jobs stand relative to Click & Drop: how
+ * many have imported (have a stored order id), how many errored, and how many
+ * are still awaiting a push — plus a few sampled references so an operator can
+ * confirm our orders appear in the same dashboard account as any legacy orders.
+ */
+export interface ClickAndDropImportStatus {
+  enabled: boolean;
+  imported: number;
+  errored: number;
+  awaiting: number;
+  recentImports: ClickAndDropImportSample[];
+  recentErrors: ClickAndDropImportSample[];
+}
+
+/** Everything a status sample needs: the job id, the order number for the
+ * reference, the stored id/error and the timestamp. */
+const SAMPLE_SELECT = {
+  id: true,
+  clickAndDropOrderId: true,
+  clickAndDropError: true,
+  clickAndDropImportedAt: true,
+  updatedAt: true,
+  orderRecipient: { select: { batchOrder: { select: { orderNumber: true } } } },
+} satisfies Prisma.FulfillmentJobSelect;
+
+type SampleRow = Prisma.FulfillmentJobGetPayload<{ select: typeof SAMPLE_SELECT }>;
+
+/** How many sampled rows to return per band in the readout. */
+const SAMPLE_LIMIT = 5;
+
 /** Cap per sweep so a backlog is worked through in bounded batches. */
 const SWEEP_BATCH = 200;
 /** A failed card is auto-retried by the sweep only once its error is this old,
@@ -66,6 +122,60 @@ export class ClickAndDropService {
   async testConnection(): Promise<ClickAndDropProbeResult & { enabled: boolean }> {
     const result = await this.client.probe();
     return { enabled: this.client.enabled, ...result };
+  }
+
+  /**
+   * Where our fulfillment jobs stand relative to Click & Drop — the ops readout.
+   * Splits every job into three disjoint bands by its stored import state:
+   * `imported` (has an order id), `errored` (no id, last push failed) and
+   * `awaiting` (no id, never tried). Adds a few sampled references per band so an
+   * operator can search the dashboard for a known `ORD-…` string and confirm our
+   * orders land in the same account as any legacy (e.g. WooCommerce) orders. The
+   * counts are computed even when import is disabled — the awaiting backlog is
+   * still worth seeing before the key is set.
+   */
+  async importStatus(): Promise<ClickAndDropImportStatus> {
+    const [imported, errored, awaiting, importRows, errorRows] = await Promise.all([
+      this.prisma.fulfillmentJob.count({ where: { clickAndDropOrderId: { not: null } } }),
+      this.prisma.fulfillmentJob.count({
+        where: { clickAndDropOrderId: null, clickAndDropError: { not: null } },
+      }),
+      this.prisma.fulfillmentJob.count({
+        where: { clickAndDropOrderId: null, clickAndDropError: null },
+      }),
+      this.prisma.fulfillmentJob.findMany({
+        where: { clickAndDropOrderId: { not: null } },
+        orderBy: { clickAndDropImportedAt: "desc" },
+        take: SAMPLE_LIMIT,
+        select: SAMPLE_SELECT,
+      }),
+      this.prisma.fulfillmentJob.findMany({
+        where: { clickAndDropOrderId: null, clickAndDropError: { not: null } },
+        orderBy: { updatedAt: "desc" },
+        take: SAMPLE_LIMIT,
+        select: SAMPLE_SELECT,
+      }),
+    ]);
+
+    return {
+      enabled: this.client.enabled,
+      imported,
+      errored,
+      awaiting,
+      recentImports: importRows.map((row) => this.toSample(row)),
+      recentErrors: errorRows.map((row) => this.toSample(row)),
+    };
+  }
+
+  private toSample(row: SampleRow): ClickAndDropImportSample {
+    return {
+      jobId: row.id,
+      orderReference: orderReferenceFor(row.id, row.orderRecipient.batchOrder.orderNumber),
+      orderIdentifier: row.clickAndDropOrderId,
+      error: row.clickAndDropError,
+      importedAt: row.clickAndDropImportedAt,
+      updatedAt: row.updatedAt,
+    };
   }
 
   /** Runs every 5 minutes: import any paid card not yet in Click & Drop. No-op
@@ -141,8 +251,7 @@ export class ClickAndDropService {
     const r = job.orderRecipient;
     try {
       const result = await this.client.createOrder({
-        // Unique, human-readable, and ≤40 chars for Click & Drop.
-        orderReference: `ORD-${r.batchOrder.orderNumber}-${job.id.slice(0, 8)}`,
+        orderReference: orderReferenceFor(job.id, r.batchOrder.orderNumber),
         recipientName: `${r.recipient.firstName} ${r.recipient.lastName}`.trim(),
         addressLine1: r.shippingAddressLine1,
         addressLine2: r.shippingAddressLine2,
@@ -155,7 +264,11 @@ export class ClickAndDropService {
       });
       await this.prisma.fulfillmentJob.update({
         where: { id: job.id },
-        data: { clickAndDropOrderId: result.orderIdentifier, clickAndDropError: null },
+        data: {
+          clickAndDropOrderId: result.orderIdentifier,
+          clickAndDropError: null,
+          clickAndDropImportedAt: new Date(),
+        },
       });
       return null;
     } catch (error) {

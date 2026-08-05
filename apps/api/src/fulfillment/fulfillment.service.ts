@@ -22,7 +22,10 @@ import { isoDay, startOfUtcDay } from "@kudos/shared-types";
 import type { FulfillmentCalendar, FulfillmentCalendarDay } from "@kudos/shared-types";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { dueCutoffs, isoDayToUtc, workingDaysUntilDue } from "./fulfillment-due.util";
-import type { TransitionFulfillmentDto, TransitionableStatus } from "./dto/transition-fulfillment.dto";
+import type {
+  TransitionFulfillmentDto,
+  TransitionableStatus,
+} from "./dto/transition-fulfillment.dto";
 import type { BulkTransitionFulfillmentDto } from "./dto/bulk-transition-fulfillment.dto";
 import type { ExportAddressesDto } from "./dto/export-addresses.dto";
 
@@ -181,6 +184,13 @@ export class FulfillmentService {
     return this.clickAndDrop.testConnection();
   }
 
+  /** Ops readout: how many cards have imported into Click & Drop vs are errored
+   * or still awaiting a push, plus a few sampled references to confirm in the
+   * dashboard. See ADR 0114. */
+  clickAndDropImportStatus() {
+    return this.clickAndDrop.importStatus();
+  }
+
   /** Attach the server-computed urgency (working days until due) to a queue row,
    * so every path that returns a row — the list and each single-row action the
    * web patches in place — carries the same shape. */
@@ -192,7 +202,10 @@ export class FulfillmentService {
    * the refreshed queue row so the UI can patch it in place. */
   async retryClickAndDrop(id: string): Promise<FulfillmentQueueRow> {
     await this.clickAndDrop.retryJob(id);
-    const job = await this.prisma.fulfillmentJob.findUniqueOrThrow({ where: { id }, select: QUEUE_SELECT });
+    const job = await this.prisma.fulfillmentJob.findUniqueOrThrow({
+      where: { id },
+      select: QUEUE_SELECT,
+    });
     return this.enrichRow(job);
   }
 
@@ -713,7 +726,9 @@ export class FulfillmentService {
       groups = [...byOrder.values()];
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown error";
-      this.logger.error(`Dispatch notification lookup for [${jobIds.join(", ")}] failed: ${reason}`);
+      this.logger.error(
+        `Dispatch notification lookup for [${jobIds.join(", ")}] failed: ${reason}`,
+      );
       return;
     }
 
@@ -750,7 +765,9 @@ export class FulfillmentService {
     await this.email.sendTransactional({
       to: group.email,
       subject:
-        count === 1 ? `Your card has been posted (${orderRef})` : `Your cards have been posted (${orderRef})`,
+        count === 1
+          ? `Your card has been posted (${orderRef})`
+          : `Your cards have been posted (${orderRef})`,
       // A Brevo template (if configured) is used; otherwise the HTML below.
       // Template params, for reference: {{ params.orderNumber }},
       // {{ params.cardCount }}, {{ params.recipientNames }} ([name] to loop),

@@ -75,6 +75,41 @@ export const fulfillmentCalendarSchema = z.object({
 });
 export type FulfillmentCalendar = z.infer<typeof fulfillmentCalendarSchema>;
 
+/**
+ * One sampled card in the Click & Drop import-status readout: the reference we
+ * stamp on the order (`ORD-<n>-<jobId8>`), plus Royal Mail's stored id or the
+ * import error. An operator searches the dashboard for `orderReference` to
+ * confirm our orders land in the right account. See ADR 0114.
+ */
+export const clickAndDropImportSampleSchema = z.object({
+  jobId: z.string(),
+  orderReference: z.string(),
+  orderIdentifier: z.string().nullable(),
+  error: z.string().nullable(),
+  /** The precise import time (imported samples); null on error samples. */
+  importedAt: z.coerce.date().nullable(),
+  /** The row's last-changed time — used for error samples (last-failed). */
+  updatedAt: z.coerce.date(),
+});
+export type ClickAndDropImportSample = z.infer<typeof clickAndDropImportSampleSchema>;
+
+/**
+ * GET /fulfillment/click-and-drop/import-status — where our fulfillment jobs
+ * stand relative to Click & Drop. `imported`/`errored`/`awaiting` are disjoint
+ * counts across every job; the sample arrays let an operator confirm real
+ * references in the dashboard. `enabled` is false when no API key is set (the
+ * counts still populate, so an awaiting backlog is visible before go-live).
+ */
+export const clickAndDropImportStatusSchema = z.object({
+  enabled: z.boolean(),
+  imported: z.number(),
+  errored: z.number(),
+  awaiting: z.number(),
+  recentImports: z.array(clickAndDropImportSampleSchema),
+  recentErrors: z.array(clickAndDropImportSampleSchema),
+});
+export type ClickAndDropImportStatus = z.infer<typeof clickAndDropImportStatusSchema>;
+
 export interface FulfillmentProvider {
   submit(job: FulfillmentJob): Promise<{ providerReference: string }>;
   getStatus(providerReference: string): Promise<FulfillmentJobStatusUpdate>;
