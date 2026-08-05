@@ -24,9 +24,19 @@ import type { UpdateOccasionEventDto } from "./dto/update-occasion-event.dto";
 import type { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
 import type { ApproveOccasionDto } from "./dto/approve-occasion.dto";
 
-/** Just enough of the recipient to show a human-readable name in the UI. */
+/** Enough of the recipient to show a human-readable name and pre-fill the
+ * checkout shipping line from the address already on the contact record (so it
+ * isn't re-keyed). See ADR 0119. */
 const RECIPIENT_SELECT = {
-  select: { firstName: true, lastName: true, addressVerificationRequired: true },
+  select: {
+    firstName: true,
+    lastName: true,
+    addressLine1: true,
+    addressLine2: true,
+    addressCity: true,
+    addressPostcode: true,
+    addressVerificationRequired: true,
+  },
 } as const;
 
 /** The occasion's latest order line (if any), so the UI can link straight to

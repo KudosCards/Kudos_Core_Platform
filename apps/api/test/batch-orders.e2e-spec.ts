@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import { accountSchema, type BatchOrderPreflight } from "@kudos/shared-types";
+import { accountSchema, startOfUtcDay, type BatchOrderPreflight } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import type Stripe from "stripe";
@@ -607,6 +607,59 @@ describe("Batch orders (e2e)", () => {
         .post(`/batch-orders/${order.id}/checkout`)
         .set("Authorization", `Bearer ${token}`)
         .expect(201);
+    });
+
+    it("retains the birthday classification (and dates the send to today) when sending via a reconciled occasion", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const contactId = await createRecipientWithAddress(token);
+
+      // A natural birthday occasion for the contact, dated a few weeks out — the
+      // kind the birthday segment matches and offers to mark handled.
+      const birthdayDate = new Date();
+      birthdayDate.setUTCDate(birthdayDate.getUTCDate() + 20);
+      const birthday = await prisma.occasion.create({
+        data: {
+          accountId,
+          recipientId: contactId,
+          type: "birthday",
+          source: "recurring_per_recipient",
+          occasionDate: birthdayDate,
+          dispatchDate: birthdayDate,
+          status: "scheduled",
+          dispatchOption: "auto_send",
+          postageClass: "second_class",
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [contactId],
+          postageClass: "second_class",
+          reconcile: [{ recipientId: contactId, occasionId: birthday.id }],
+        })
+        .expect(201);
+
+      // The created send occasion inherits the birthday *classification* (not a
+      // bespoke event) and supersedes the natural one. Its own date stays the
+      // send moment — the unique (recipient, type, occasionDate) index means we
+      // can't put a second birthday occasion on the birthday's own date, which
+      // the natural one already holds. And, being an asap send paid now, it
+      // dispatches TODAY, so it never reads as overdue.
+      const sent = await prisma.occasion.findFirstOrThrow({
+        where: { accountId, source: "one_off_campaign" },
+      });
+      expect(sent.type).toBe("birthday");
+      expect(sent.supersedesOccasionId).toBe(birthday.id);
+      expect(sent.dispatchDate?.getTime()).toBe(startOfUtcDay(new Date()).getTime());
+      // Dated to the send moment (today), not the future birthday.
+      expect(sent.occasionDate.getTime()).toBeGreaterThanOrEqual(
+        startOfUtcDay(new Date()).getTime(),
+      );
+      expect(sent.occasionDate.getTime()).not.toBe(birthday.occasionDate.getTime());
     });
 
     it("blocks the send and names contacts missing a postal address (no order created)", async () => {
