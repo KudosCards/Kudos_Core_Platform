@@ -82,6 +82,17 @@ mounts a face's Konva canvas only while near the viewport) so a run of thousands
 stays responsive. "Review all N cards" is promoted to a primary action at/above
 the `REVIEW_ALL_THRESHOLD` (50) scale-adaptive cutover.
 
+P2 shipped the server preflight endpoint plus its web surface: the `/send`
+composer runs the check automatically (debounced, sequence-guarded) whenever the
+design, postage or selection — including an inline address fix — changes, and
+renders a **Pre-send check** panel: "R ready · N need attention", each non-empty
+bucket drilled into with the affected contacts (address problems get an inline
+"Fix address" that opens the same editor), and the order summary switches from a
+rough estimate to the exact, VAT-decomposed `PricingBreakdown` the server
+returns. The old composer estimate used the wrong card price (£1.50); it now
+sources `CARD_PRICE_MINOR`/`POSTAGE_MINOR` from shared-types so even the
+pre-check estimate can't drift.
+
 ## Consequences
 
 - Buyers can review the personalised inside message, not just the cover, before
