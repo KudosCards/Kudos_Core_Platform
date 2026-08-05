@@ -72,6 +72,40 @@ export const orderRecipientSchema = z.object({
 export type OrderRecipient = z.infer<typeof orderRecipientSchema>;
 
 /**
+ * A single card line enriched for the buyer's order-detail view: the base
+ * OrderRecipient plus the recipient's name (so the buyer sees *who* each card is
+ * for, not just a postcode), the Royal Mail tracking reference once posted, and
+ * the slug of its digital message page. The heavier detail lives only on the
+ * single-order read — the orders *list* stays lean. See docs/adr/0109.
+ */
+export const orderRecipientLineSchema = orderRecipientSchema.extend({
+  recipientFirstName: z.string(),
+  recipientLastName: z.string(),
+  /** The card's current fulfilment stage, or null before it's been queued. */
+  jobStatus: z.string().nullable(),
+  /** Royal Mail tracking reference once the card is posted, else null. */
+  trackingReference: z.string().nullable(),
+  /** Slug of the card's QR-linked digital message page (/r/:slug), else null. */
+  messagePageSlug: z.string().nullable(),
+});
+export type OrderRecipientLine = z.infer<typeof orderRecipientLineSchema>;
+
+/** A single order with its enriched card lines — the buyer's order-detail read. */
+export const batchOrderDetailSchema = batchOrderSchema.extend({
+  orderRecipients: z.array(orderRecipientLineSchema),
+});
+export type BatchOrderDetail = z.infer<typeof batchOrderDetailSchema>;
+
+/** The public Royal Mail "track your item" URL for a tracking reference — the
+ * single source of truth shared by the dispatch email and the buyer's order
+ * page. */
+export function royalMailTrackingUrl(trackingNumber: string): string {
+  return `https://www.royalmail.com/track-your-item#/tracking-results/${encodeURIComponent(
+    trackingNumber,
+  )}`;
+}
+
+/**
  * Matches CreateBatchOrderDto/CreateBatchOrderLineDto exactly: recipientId
  * and savedDesignId are deliberately NOT client-supplied — the server
  * derives both from the referenced (already-approved) Occasion, per the

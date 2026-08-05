@@ -31,6 +31,44 @@ const ORDER_RECIPIENTS_INCLUDE = { orderRecipients: true } as const;
 
 export type BatchOrder = Prisma.BatchOrderGetPayload<{ include: typeof ORDER_RECIPIENTS_INCLUDE }>;
 
+/**
+ * The single-order detail read: each card line carries the recipient's name (so
+ * the buyer sees *who* each card is for, not just a postcode), its fulfilment
+ * stage + Royal Mail tracking reference, and its digital-message-page slug. This
+ * heavier shape is used only by findOne — the orders *list* stays lean on
+ * ORDER_RECIPIENTS_INCLUDE. See docs/adr/0109-order-detail.md.
+ */
+const ORDER_DETAIL_INCLUDE = {
+  orderRecipients: {
+    orderBy: { createdAt: "asc" },
+    include: {
+      recipient: { select: { firstName: true, lastName: true } },
+      fulfillmentJob: { select: { status: true, trackingReference: true } },
+      messagePage: { select: { slug: true } },
+    },
+  },
+} satisfies Prisma.BatchOrderInclude;
+
+type OrderDetailPayload = Prisma.BatchOrderGetPayload<{ include: typeof ORDER_DETAIL_INCLUDE }>;
+
+/** One card line for the buyer's order detail: the raw OrderRecipient scalars
+ * plus the flattened recipient name, fulfilment stage, tracking and message-page
+ * slug. Structurally matches @kudos/shared-types' orderRecipientLineSchema. */
+export type OrderRecipientLine = Omit<
+  OrderDetailPayload["orderRecipients"][number],
+  "recipient" | "fulfillmentJob" | "messagePage"
+> & {
+  recipientFirstName: string;
+  recipientLastName: string;
+  jobStatus: string | null;
+  trackingReference: string | null;
+  messagePageSlug: string | null;
+};
+
+export type BatchOrderDetail = Omit<OrderDetailPayload, "orderRecipients"> & {
+  orderRecipients: OrderRecipientLine[];
+};
+
 /** Occasion statuses that can still be sent — a segment send only supersedes a
  * natural occasion still in one of these, so it never un-does an in-flight send.
  * See docs/adr/0107-occasion-reconciliation.md. */
@@ -518,10 +556,10 @@ export class BatchOrdersService {
     return { items, total, page, perPage };
   }
 
-  async findOne(accountId: string, actorUserId: string, id: string): Promise<BatchOrder> {
+  async findOne(accountId: string, actorUserId: string, id: string): Promise<BatchOrderDetail> {
     const order = await this.prisma.batchOrder.findFirst({
       where: { id, accountId },
-      include: ORDER_RECIPIENTS_INCLUDE,
+      include: ORDER_DETAIL_INCLUDE,
     });
     if (!order) {
       throw new NotFoundException("Batch order not found");
@@ -533,7 +571,20 @@ export class BatchOrdersService {
       targetType: "BatchOrder",
       targetId: id,
     });
-    return order;
+    // Flatten the joined relations onto each line so the buyer's order page can
+    // name every card, link its tracking, and reach its digital message page.
+    const { orderRecipients, ...rest } = order;
+    return {
+      ...rest,
+      orderRecipients: orderRecipients.map(({ recipient, fulfillmentJob, messagePage, ...line }) => ({
+        ...line,
+        recipientFirstName: recipient.firstName,
+        recipientLastName: recipient.lastName,
+        jobStatus: fulfillmentJob?.status ?? null,
+        trackingReference: fulfillmentJob?.trackingReference ?? null,
+        messagePageSlug: messagePage?.slug ?? null,
+      })),
+    };
   }
 
   async checkout(

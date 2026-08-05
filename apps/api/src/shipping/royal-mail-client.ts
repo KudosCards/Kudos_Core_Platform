@@ -35,12 +35,10 @@ export interface RoyalMailClient {
   createShipment(input: CreateShipmentInput): Promise<CreateShipmentResult>;
 }
 
-/** The customer-facing Royal Mail tracking page for a tracking number. */
-export function royalMailTrackingUrl(trackingNumber: string): string {
-  return `https://www.royalmail.com/track-your-item#/tracking-results/${encodeURIComponent(
-    trackingNumber,
-  )}`;
-}
+// The customer-facing Royal Mail tracking URL now lives in @kudos/shared-types
+// (one source of truth, shared with the buyer's order page). Re-exported here so
+// existing shipping-module callers keep their import path.
+export { royalMailTrackingUrl } from "@kudos/shared-types";
 
 /**
  * Used when no ROYAL_MAIL_API_KEY is set: shipping automation is simply off, so
