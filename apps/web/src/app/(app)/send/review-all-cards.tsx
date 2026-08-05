@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CardPreviewLightbox, insideFacesHint } from "@/components/card-preview-lightbox";
 import { formatGbp } from "@/lib/orders";
+import { downloadContactSheet } from "./contact-sheet";
 
 /** The deliberate confirm step for a large run (ADR 0118): the exact total, a
  * summary of the pre-send check, and a Pay CTA gated behind an explicit "I've
@@ -105,6 +106,7 @@ export function ReviewAllCards({
   recipients,
   onClose,
   confirm,
+  postageLabel = "Standard postage",
 }: {
   design: SavedDesign;
   recipients: Recipient[];
@@ -112,6 +114,8 @@ export function ReviewAllCards({
   /** When present, the overlay becomes the deliberate "Review & confirm" gate
    * with a pay footer; otherwise it's a plain look-through. */
   confirm?: ReviewConfirm;
+  /** How the run posts, for the downloadable proof sheet header. */
+  postageLabel?: string;
 }) {
   const [query, setQuery] = useState("");
   const [previewFor, setPreviewFor] = useState<Recipient | null>(null);
@@ -156,6 +160,21 @@ export function ReviewAllCards({
             placeholder="Search by name…"
             className="w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm sm:w-56"
           />
+          <button
+            type="button"
+            onClick={() =>
+              downloadContactSheet(design, recipients, {
+                postageLabel,
+                totalLabel: confirm?.preflight
+                  ? formatGbp(confirm.preflight.price.totalMinor)
+                  : undefined,
+              })
+            }
+            className="shrink-0 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-foreground/[0.04]"
+            title="Download a printable list of every card, address and message"
+          >
+            ⬇ Proof sheet
+          </button>
           <button
             type="button"
             onClick={onClose}
