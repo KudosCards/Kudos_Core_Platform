@@ -2,19 +2,28 @@
 
 import type {
   BatchOrder,
+  BatchOrderPreflight,
   Recipient,
   RecipientListSummary,
   SavedDesign,
   SegmentReconciliation,
 } from "@kudos/shared-types";
-import { applyMergeTokens, hasMergeTokens, ukPostcodeRegex } from "@kudos/shared-types";
+import {
+  applyMergeTokens,
+  CARD_PRICE_MINOR,
+  hasMergeTokens,
+  POSTAGE_MINOR as SHARED_POSTAGE_MINOR,
+  ukPostcodeRegex,
+} from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { AddressModal } from "@/components/address-modal";
 import { CardPreviewLightbox, insideFacesHint } from "@/components/card-preview-lightbox";
+import { PricingBreakdownCard } from "@/components/pricing-breakdown";
+import { PreSendCheck } from "./pre-send-check";
 import { RecipientPicker, type Paginated } from "./recipient-picker";
 import { ReviewAllCards } from "./review-all-cards";
 
@@ -32,15 +41,20 @@ const MAX_PREVIEWS = 8;
  * (the scale-adaptive review threshold from ADR 0118). */
 const REVIEW_ALL_THRESHOLD = 50;
 
-/** Card price and postage in pence, for the on-screen estimate. The server is
- * authoritative — Stripe shows the exact total and applies any plan discount —
- * so this is only ever labelled an estimate. Mirrors the guided-send page. */
-const CARD_MINOR = 150;
-const POSTAGE_MINOR: Record<string, number> = { second_class: 91, first_class: 180 };
+/** Card price and postage in pence, for the on-screen estimate before the server
+ * preflight has run. Sourced from shared-types so this never drifts from the real
+ * charge; the exact, discount-applied total comes from the preflight check and
+ * again from Stripe. */
+const CARD_MINOR = CARD_PRICE_MINOR;
+const POSTAGE_MINOR: Record<string, number> = SHARED_POSTAGE_MINOR;
 const POSTAGE_LABEL: Record<string, string> = {
   second_class: "2nd class (2–3 days)",
   first_class: "1st class (next day)",
 };
+
+/** How long the run settles before the auto pre-send check fires, so a burst of
+ * selection toggles makes one request, not one per click. */
+const PREFLIGHT_DEBOUNCE_MS = 600;
 
 function gbp(minor: number): string {
   return `£${(minor / 100).toFixed(2)}`;
@@ -131,6 +145,16 @@ export function BulkSendClient({
   // Default on: sending from an occasion-mode segment should consume the matched
   // occasion so it isn't sent again. See docs/adr/0107.
   const [markHandled, setMarkHandled] = useState(true);
+  // The server-authoritative pre-send check (ADR 0118): who's ready, who needs
+  // attention (address / postcode / unresolved tokens / duplicate) and the exact
+  // price. Tagged with the run key it was fetched for, so a result for a stale
+  // selection is ignored at render time rather than cleared via effect setState.
+  const [preflightResult, setPreflightResult] = useState<{
+    key: string;
+    data: BatchOrderPreflight;
+  } | null>(null);
+  const [preflightBusy, setPreflightBusy] = useState(false);
+  const [preflightError, setPreflightError] = useState<string | null>(null);
 
   const selectedIds = useMemo(() => new Set(selected.keys()), [selected]);
   const selectedList = useMemo(() => [...selected.values()], [selected]);
@@ -174,6 +198,61 @@ export function BulkSendClient({
   const perCard = CARD_MINOR + (POSTAGE_MINOR[postageClass] ?? 0);
   const estimate = perCard * sendable.length;
 
+  // Everything the preflight depends on, flattened to a stable string so the check
+  // re-runs when the design, postage, the selected set, OR an inline address fix
+  // changes — but not on unrelated re-renders.
+  const preflightKey = useMemo(
+    () =>
+      JSON.stringify({
+        d: selectedDesignId,
+        p: postageClass,
+        r: selectedList
+          .map((r) =>
+            [r.id, r.addressLine1, r.addressCity, r.addressPostcode, r.addressCountry].join("|"),
+          )
+          .sort(),
+      }),
+    [selectedDesignId, postageClass, selectedList],
+  );
+
+  // Auto pre-send check: debounced, and guarded by a sequence number so a slow
+  // response for a stale selection can never overwrite a newer one. All setState
+  // happens inside the debounced callback (never synchronously in the effect
+  // body); a stale result is discarded at render time via the key tag.
+  const preflightSeq = useRef(0);
+  useEffect(() => {
+    if (!selectedDesignId || selectedList.length === 0) return;
+    const seq = ++preflightSeq.current;
+    const key = preflightKey;
+    const recipientIds = selectedList.map((r) => r.id);
+    const timer = setTimeout(() => {
+      setPreflightBusy(true);
+      void (async () => {
+        try {
+          const data = await clientApiFetch<BatchOrderPreflight>("/batch-orders/preflight", {
+            method: "POST",
+            body: JSON.stringify({ savedDesignId: selectedDesignId, recipientIds, postageClass }),
+          });
+          if (seq !== preflightSeq.current) return;
+          setPreflightResult({ key, data });
+          setPreflightError(null);
+        } catch {
+          if (seq !== preflightSeq.current) return;
+          setPreflightError("Couldn't run the pre-send check just now.");
+        } finally {
+          if (seq === preflightSeq.current) setPreflightBusy(false);
+        }
+      })();
+    }, PREFLIGHT_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // preflightKey captures every input the request cares about.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preflightKey]);
+
+  // Only trust a result fetched for the *current* run; a stale one (selection
+  // changed since) reads as "no check yet" until the fresh fetch lands.
+  const preflight = preflightResult?.key === preflightKey ? preflightResult.data : null;
+
   function toggleRecipient(recipient: Recipient) {
     setSelected((current) => {
       const next = new Map(current);
@@ -197,6 +276,13 @@ export function BulkSendClient({
       next.set(updated.id, updated);
       return next;
     });
+  }
+
+  /** Open the address editor for a recipient flagged by the pre-send check (the
+   * contact is always in the current selection, so this is a cheap lookup). */
+  function fixAddressFor(recipientId: string) {
+    const recipient = selected.get(recipientId);
+    if (recipient) setAddressModalFor(recipient);
   }
 
   /** A link back to this composer's current state — used as the editor's
@@ -532,6 +618,19 @@ export function BulkSendClient({
               )}
             </section>
           )}
+
+          {/* Server-authoritative pre-send check: who's ready, who needs
+              attention (with inline address fixes), refreshed as the run
+              changes. See docs/adr/0118. */}
+          {selectedDesign && selectedList.length > 0 && (
+            <PreSendCheck
+              preflight={preflight}
+              busy={preflightBusy}
+              error={preflightError}
+              editDesignHref={editHref(selectedDesign.id)}
+              onFixAddress={fixAddressFor}
+            />
+          )}
         </div>
 
         {/* Order summary + pay */}
@@ -562,22 +661,31 @@ export function BulkSendClient({
             ))}
           </fieldset>
 
-          <div className="flex flex-col gap-2 border-t border-border pt-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted">
-                {sendable.length} card{sendable.length === 1 ? "" : "s"} × {gbp(perCard)}
-              </span>
-              <span>{gbp(estimate)}</span>
-            </div>
-            <div className="flex justify-between border-t border-border pt-2 font-semibold">
-              <span>Estimated total</span>
-              <span>{gbp(estimate)}</span>
-            </div>
+          <div className="border-t border-border pt-3">
+            {preflight ? (
+              // The server preflight returns the exact, discount-applied, VAT-
+              // decomposed price for the cards that will actually be charged.
+              <PricingBreakdownCard breakdown={preflight.price} />
+            ) : (
+              <div className="flex flex-col gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted">
+                    {sendable.length} card{sendable.length === 1 ? "" : "s"} × {gbp(perCard)}
+                  </span>
+                  <span>{gbp(estimate)}</span>
+                </div>
+                <div className="flex justify-between border-t border-border pt-2 font-semibold">
+                  <span>Estimated total</span>
+                  <span>{gbp(estimate)}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <p className="text-xs text-muted">
-            Card price includes VAT and postage per card. Any plan discount and the exact total are
-            shown on the secure payment page.
+            {preflight
+              ? "This is the exact amount, with any plan discount applied — confirmed again on the secure payment page."
+              : "Card price includes VAT and postage per card. Any plan discount and the exact total are shown on the secure payment page."}
           </p>
 
           {/* Desktop keeps the CTA in the summary column; on mobile it moves to
@@ -603,9 +711,13 @@ export function BulkSendClient({
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
           <div className="flex flex-col leading-tight">
             <span className="text-xs text-muted">
-              {sendable.length} card{sendable.length === 1 ? "" : "s"} · estimated
+              {(preflight ? preflight.price.cardCount : sendable.length)} card
+              {(preflight ? preflight.price.cardCount : sendable.length) === 1 ? "" : "s"} ·{" "}
+              {preflight ? "total" : "estimated"}
             </span>
-            <span className="text-lg font-semibold">{gbp(estimate)}</span>
+            <span className="text-lg font-semibold">
+              {gbp(preflight ? preflight.price.totalMinor : estimate)}
+            </span>
           </div>
           <button
             type="button"
