@@ -421,9 +421,17 @@ export function FulfillmentClient({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Fulfillment queue</h1>
-        <p className="text-foreground/60">Print, post, and track cards across all accounts.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Fulfillment queue</h1>
+          <p className="text-foreground/60">Print, post, and track cards across all accounts.</p>
+        </div>
+        <a
+          href="/fulfillment/calendar"
+          className="rounded-full border border-black/15 px-4 py-1.5 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+        >
+          📅 Dispatch calendar
+        </a>
       </div>
 
       <div className="flex flex-wrap gap-2 text-sm">

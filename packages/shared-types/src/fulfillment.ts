@@ -46,6 +46,32 @@ export const fulfillmentCountsSchema = z.object({
 });
 export type FulfillmentCounts = z.infer<typeof fulfillmentCountsSchema>;
 
+/**
+ * One day's posting workload on the dispatch calendar: how many still-open cards
+ * (pending / in progress / printed — not yet posted) are due to post that day.
+ * `day` is a `YYYY-MM-DD` calendar date. See docs/adr/0110-dispatch-calendar.md.
+ */
+export const fulfillmentCalendarDaySchema = z.object({
+  day: z.string(),
+  total: z.number(),
+  pending: z.number(),
+  inProgress: z.number(),
+  printed: z.number(),
+});
+export type FulfillmentCalendarDay = z.infer<typeof fulfillmentCalendarDaySchema>;
+
+/**
+ * GET /fulfillment/calendar — the open posting workload keyed on dispatch
+ * deadline. `days` holds only days that have cards (the grid fills the gaps);
+ * `overdueBefore` is the count of still-open cards whose deadline fell before the
+ * requested window, for a "carried in" banner.
+ */
+export const fulfillmentCalendarSchema = z.object({
+  days: z.array(fulfillmentCalendarDaySchema),
+  overdueBefore: z.number(),
+});
+export type FulfillmentCalendar = z.infer<typeof fulfillmentCalendarSchema>;
+
 export interface FulfillmentProvider {
   submit(job: FulfillmentJob): Promise<{ providerReference: string }>;
   getStatus(providerReference: string): Promise<FulfillmentJobStatusUpdate>;

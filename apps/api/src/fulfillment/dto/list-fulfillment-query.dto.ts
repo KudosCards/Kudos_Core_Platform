@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { FulfillmentJobStatus } from "@prisma/client";
-import { IsEnum, IsIn, IsOptional, IsString } from "class-validator";
+import { IsEnum, IsIn, IsOptional, IsString, Matches } from "class-validator";
 
 /** Urgency filter over a job's dispatch deadline (due_date). See ADR 0108. */
 export const DUE_FILTERS = ["overdue", "today", "due_soon", "upcoming", "no_date", "all"] as const;
@@ -20,6 +20,13 @@ export class ListFulfillmentQueryDto {
   @IsOptional()
   @IsIn(DUE_FILTERS)
   due?: DueFilter;
+
+  /** Exact posting-deadline day (YYYY-MM-DD) — the dispatch-calendar drill-in.
+   * Takes precedence over the `due` bucket when set. See ADR 0110. */
+  @ApiPropertyOptional({ example: "2026-08-12" })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "dueOn must be an ISO date (YYYY-MM-DD)" })
+  dueOn?: string;
 
   @ApiPropertyOptional({ enum: QUEUE_SORTS, default: "due_date" })
   @IsOptional()

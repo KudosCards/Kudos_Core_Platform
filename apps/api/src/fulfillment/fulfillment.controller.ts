@@ -4,6 +4,7 @@ import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import { CurrentPlatformAdmin } from "../auth/current-platform-admin.decorator";
 import type { PlatformAdminContext } from "../auth/types";
 import type { Paginated } from "../common/paginated";
+import type { FulfillmentCalendar } from "@kudos/shared-types";
 import {
   FulfillmentService,
   type FulfillmentJob,
@@ -14,6 +15,7 @@ import {
   type PrintRunCard,
 } from "./fulfillment.service";
 import { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
+import { CalendarQueryDto } from "./dto/calendar-query.dto";
 import { TransitionFulfillmentDto } from "./dto/transition-fulfillment.dto";
 import { BulkTransitionFulfillmentDto } from "./dto/bulk-transition-fulfillment.dto";
 import { ExportAddressesDto } from "./dto/export-addresses.dto";
@@ -47,6 +49,12 @@ export class FulfillmentController {
   @Get("counts")
   counts(): Promise<FulfillmentCounts> {
     return this.fulfillmentService.counts();
+  }
+
+  /** The open posting workload per day for the dispatch calendar (see ADR 0110). */
+  @Get("calendar")
+  calendar(@Query() query: CalendarQueryDto): Promise<FulfillmentCalendar> {
+    return this.fulfillmentService.calendar(query.from, query.to);
   }
 
   @Get("jobs/:id")
