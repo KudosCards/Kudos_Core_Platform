@@ -60,9 +60,14 @@ with the business:
 - **P4 — Scale & guard rails.** Server-rendered thumbnails if needed; duplicate
   window tuning; performance pass.
 
-This ADR's first slice (P1a) ships items 1–2 of the review: the `face` prop and
-the flip lightbox, wired into the `/send` composer (each preview tile opens the
-whole card + its address).
+P1a shipped items 1–2 of the review: the `face` prop and the flip lightbox,
+wired into the `/send` composer (each preview tile opens the whole card + its
+address). P1b adds the full **"Review every card"** overlay — a searchable grid
+of a card for *every* recipient in the run, each showing the name + address it
+posts to and opening the flip lightbox on click, virtualized (`LazyCardTile`
+mounts a face's Konva canvas only while near the viewport) so a run of thousands
+stays responsive. "Review all N cards" is promoted to a primary action at/above
+the `REVIEW_ALL_THRESHOLD` (50) scale-adaptive cutover.
 
 ## Consequences
 
