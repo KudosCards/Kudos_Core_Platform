@@ -140,8 +140,9 @@ export function BulkSendClient({
   const [addressModalFor, setAddressModalFor] = useState<Recipient | null>(null);
   // The recipient whose full card (all faces) is open in the flip lightbox.
   const [previewFor, setPreviewFor] = useState<Recipient | null>(null);
-  // Whether the full-screen "review every card" overlay is open.
-  const [reviewAllOpen, setReviewAllOpen] = useState(false);
+  // The full-screen overlay: closed, a plain "review every card" look-through, or
+  // the deliberate "review & confirm" pay gate for a large run. See ADR 0118.
+  const [reviewMode, setReviewMode] = useState<null | "review" | "confirm">(null);
   // Default on: sending from an occasion-mode segment should consume the matched
   // occasion so it isn't sent again. See docs/adr/0107.
   const [markHandled, setMarkHandled] = useState(true);
@@ -339,6 +340,19 @@ export function BulkSendClient({
   }
 
   const canPay = !busy && !!selectedDesignId && sendable.length > 0;
+  // Scale-adaptive routing (ADR 0118): a large run pays through the deliberate
+  // "Review & confirm" gate; a small run keeps the frictionless one-tap pay.
+  const largeRun = sendable.length >= REVIEW_ALL_THRESHOLD;
+  const primaryCtaLabel = largeRun
+    ? `Review & confirm ${sendable.length} cards →`
+    : busy
+      ? "Taking you to payment…"
+      : `Pay & send ${sendable.length} card${sendable.length === 1 ? "" : "s"} →`;
+  /** The main CTA: large runs open the gate; small runs pay straight away. */
+  function onPrimaryCta() {
+    if (largeRun) setReviewMode("confirm");
+    else void handleSend();
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 pb-24 lg:pb-0">
@@ -592,7 +606,7 @@ export function BulkSendClient({
                   </p>
                   <button
                     type="button"
-                    onClick={() => setReviewAllOpen(true)}
+                    onClick={() => setReviewMode("review")}
                     className={
                       sendable.length >= REVIEW_ALL_THRESHOLD
                         ? "btn-accent text-sm"
@@ -608,7 +622,7 @@ export function BulkSendClient({
                   Sending a large run? Open{" "}
                   <button
                     type="button"
-                    onClick={() => setReviewAllOpen(true)}
+                    onClick={() => setReviewMode("review")}
                     className="text-accent underline hover:no-underline"
                   >
                     Review all {sendable.length} cards
@@ -693,14 +707,16 @@ export function BulkSendClient({
           <button
             type="button"
             disabled={!canPay}
-            onClick={() => void handleSend()}
+            onClick={onPrimaryCta}
             className="btn-accent hidden w-full disabled:opacity-50 lg:block"
           >
-            {busy
-              ? "Taking you to payment…"
-              : `Pay & send ${sendable.length} card${sendable.length === 1 ? "" : "s"} →`}
+            {primaryCtaLabel}
           </button>
-          <p className="text-center text-xs text-muted">Secure payment powered by Stripe</p>
+          <p className="text-center text-xs text-muted">
+            {largeRun
+              ? "You'll see every card and confirm before paying · Secure payment by Stripe"
+              : "Secure payment powered by Stripe"}
+          </p>
         </div>
       </div>
 
@@ -722,10 +738,10 @@ export function BulkSendClient({
           <button
             type="button"
             disabled={!canPay}
-            onClick={() => void handleSend()}
+            onClick={onPrimaryCta}
             className="btn-accent flex-1 whitespace-nowrap disabled:opacity-50"
           >
-            {busy ? "Taking you to payment…" : "Pay & send →"}
+            {largeRun ? "Review & confirm →" : busy ? "Taking you to payment…" : "Pay & send →"}
           </button>
         </div>
       </div>
@@ -748,11 +764,16 @@ export function BulkSendClient({
         />
       )}
 
-      {reviewAllOpen && selectedDesign && (
+      {reviewMode && selectedDesign && (
         <ReviewAllCards
           design={selectedDesign}
           recipients={sendable}
-          onClose={() => setReviewAllOpen(false)}
+          onClose={() => setReviewMode(null)}
+          confirm={
+            reviewMode === "confirm"
+              ? { preflight, paying: busy, onPay: () => void handleSend() }
+              : undefined
+          }
         />
       )}
     </div>
