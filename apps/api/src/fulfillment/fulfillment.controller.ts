@@ -143,6 +143,15 @@ export class FulfillmentController {
     return { enabled: this.fulfillmentService.clickAndDropEnabled() };
   }
 
+  /** Ops diagnostic: fire one real read-only Click & Drop call and return the raw
+   * HTTP status + body + the endpoint/scheme used, so a bad key or base URL is
+   * pinpointed in seconds without waiting for the background sweep. Never creates
+   * an order. Gated by PlatformAdminGuard like the rest of this controller. */
+  @Post("click-and-drop/test")
+  testClickAndDrop() {
+    return this.fulfillmentService.testClickAndDrop();
+  }
+
   /** Retry importing a card into the Click & Drop dashboard queue after a failed
    * push (the background sweep imports automatically; this is the manual retry). */
   @Post("jobs/:id/click-and-drop")

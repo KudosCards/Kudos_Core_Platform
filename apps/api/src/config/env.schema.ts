@@ -161,6 +161,10 @@ export const envSchema = z.object({
     .optional()
     .or(z.literal("").transform(() => undefined)),
   CLICK_AND_DROP_API_BASE_URL: z.string().url().default("https://api.parcel.royalmail.com"),
+  // How the API key is sent in the Authorization header. Royal Mail's own cURL
+  // example uses the raw key ("raw", the default); flip to "bearer" if an account
+  // needs the "Bearer <key>" scheme — no code change required.
+  CLICK_AND_DROP_AUTH_SCHEME: z.enum(["raw", "bearer"]).default("raw"),
   // Optional Click & Drop service codes per postage class. When unset (default),
   // the order imports with no service selected so the operator picks it in the
   // dashboard — the safest default until the account's exact codes are confirmed.

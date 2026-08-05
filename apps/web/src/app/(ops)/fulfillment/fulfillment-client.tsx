@@ -240,6 +240,9 @@ export function FulfillmentClient({
   // retry action. See ADR 0095.
   const [clickAndDropEnabled, setClickAndDropEnabled] = useState(false);
   const [cndRetryId, setCndRetryId] = useState<string | null>(null);
+  // Live Click & Drop connectivity probe (ops diagnostic).
+  const [cndTesting, setCndTesting] = useState(false);
+  const [cndTestResult, setCndTestResult] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -261,6 +264,39 @@ export function FulfillmentClient({
       active = false;
     };
   }, []);
+
+  /** Fire a live read-only Click & Drop probe and show the raw status + body, so
+   * a bad key / base URL is diagnosable from the console. See ADR 0113. */
+  async function testClickAndDrop() {
+    setCndTesting(true);
+    setCndTestResult(null);
+    try {
+      const r = await clientApiFetch<{
+        enabled: boolean;
+        ok: boolean;
+        status: number;
+        body: string;
+        endpoint: string;
+        authScheme: string;
+        error?: string;
+      }>("/fulfillment/click-and-drop/test", { method: "POST" });
+      if (!r.enabled) {
+        setCndTestResult("Click & Drop is not configured (no API key set).");
+      } else {
+        const verdict = r.ok ? "✅ connected" : "❌ failed";
+        const detail = r.error ? `network error: ${r.error}` : `body: ${r.body || "(empty)"}`;
+        setCndTestResult(
+          `${verdict} · HTTP ${r.status} · ${r.authScheme} auth · ${r.endpoint}\n${detail}`,
+        );
+      }
+    } catch (testError) {
+      setCndTestResult(
+        testError instanceof ApiError ? testError.message : "Could not run the connection test",
+      );
+    } finally {
+      setCndTesting(false);
+    }
+  }
 
   /** Retry importing a card into Click & Drop after a failed push, patching the
    * refreshed row in place. */
@@ -453,13 +489,30 @@ export function FulfillmentClient({
           <h1 className="text-2xl font-semibold">Fulfillment queue</h1>
           <p className="text-foreground/60">Print, post, and track cards across all accounts.</p>
         </div>
-        <a
-          href="/fulfillment/calendar"
-          className="rounded-full border border-black/15 px-4 py-1.5 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
-        >
-          📅 Dispatch calendar
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void testClickAndDrop()}
+            disabled={cndTesting}
+            title="Fire one live read-only call to Royal Mail Click & Drop to check the API key + connection"
+            className="rounded-full border border-black/15 px-4 py-1.5 text-sm hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+          >
+            {cndTesting ? "Testing…" : "🔌 Test Click & Drop"}
+          </button>
+          <a
+            href="/fulfillment/calendar"
+            className="rounded-full border border-black/15 px-4 py-1.5 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+          >
+            📅 Dispatch calendar
+          </a>
+        </div>
       </div>
+
+      {cndTestResult && (
+        <pre className="max-w-full overflow-x-auto rounded-lg border border-black/10 bg-black/[0.03] p-3 text-xs whitespace-pre-wrap dark:border-white/10 dark:bg-white/[0.03]">
+          {cndTestResult}
+        </pre>
+      )}
 
       {dueOn && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-sm">

@@ -32,7 +32,8 @@ export const clickAndDropClientProvider: Provider = {
       first_class: config.get("CLICK_AND_DROP_SERVICE_CODE_FIRST", { infer: true }),
       second_class: config.get("CLICK_AND_DROP_SERVICE_CODE_SECOND", { infer: true }),
     };
-    return new HttpClickAndDropClient(apiKey, baseUrl, serviceCodes);
+    const authScheme = config.get("CLICK_AND_DROP_AUTH_SCHEME", { infer: true });
+    return new HttpClickAndDropClient(apiKey, baseUrl, serviceCodes, authScheme);
   },
   inject: [ConfigService],
 };

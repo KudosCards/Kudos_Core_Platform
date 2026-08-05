@@ -3,7 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CLICK_AND_DROP_CLIENT } from "./click-and-drop-client.provider";
-import type { ClickAndDropClient } from "./click-and-drop-client";
+import type { ClickAndDropClient, ClickAndDropProbeResult } from "./click-and-drop-client";
 
 /** Everything needed to build one Click & Drop order from a fulfillment job. */
 const IMPORT_SELECT = {
@@ -54,6 +54,18 @@ export class ClickAndDropService {
   /** Whether Click & Drop import is wired (drives the ops UI + skips the sweep). */
   enabled(): boolean {
     return this.client.enabled;
+  }
+
+  /**
+   * A live connectivity + auth check an operator can run on demand: fires one
+   * real read-only call to the Click & Drop API and returns the raw status +
+   * body, so a bad key or wrong base URL is diagnosable in seconds instead of
+   * waiting for the sweep to fail. Never creates an order. Returns `enabled:false`
+   * (no call made) when the key is unset.
+   */
+  async testConnection(): Promise<ClickAndDropProbeResult & { enabled: boolean }> {
+    const result = await this.client.probe();
+    return { enabled: this.client.enabled, ...result };
   }
 
   /** Runs every 5 minutes: import any paid card not yet in Click & Drop. No-op
