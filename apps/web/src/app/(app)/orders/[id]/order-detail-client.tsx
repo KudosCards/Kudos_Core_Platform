@@ -8,6 +8,7 @@ import { computePricingBreakdown, royalMailTrackingUrl } from "@kudos/shared-typ
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { PricingBreakdownCard } from "@/components/pricing-breakdown";
+import { downloadOrderProofSheet } from "@/app/(app)/send/contact-sheet";
 import {
   ORDER_RECIPIENT_STATUS_LABELS,
   ORDER_STATUS_CLASSES,
@@ -173,7 +174,17 @@ export function OrderDetailClient({
       )}
 
       <div className="flex flex-col gap-2">
-        <h2 className="font-semibold">Cards in this order</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold">Cards in this order</h2>
+          <button
+            type="button"
+            onClick={() => downloadOrderProofSheet(order)}
+            className="text-xs text-muted underline hover:text-foreground"
+            title="Download a printable record of every card, address and status"
+          >
+            ⬇ Download proof sheet
+          </button>
+        </div>
         <div className="card flex flex-col divide-y divide-border overflow-hidden">
           {order.orderRecipients.map((line) => (
             <div
@@ -185,8 +196,10 @@ export function OrderDetailClient({
                   {line.recipientFirstName} {line.recipientLastName}
                 </span>
                 <span className="text-xs text-muted">
-                  {line.shippingAddressCity}, {line.shippingAddressPostcode} ·{" "}
-                  {line.postageClass === "first_class" ? "First class" : "Second class"} ·{" "}
+                  {[line.shippingAddressLine1, line.shippingAddressCity, line.shippingAddressPostcode]
+                    .filter(Boolean)
+                    .join(", ")}{" "}
+                  · {line.postageClass === "first_class" ? "First class" : "Second class"} ·{" "}
                   {formatGbp(line.priceMinor + line.postageMinor)}
                 </span>
                 {(line.trackingReference || line.messagePageSlug) && (

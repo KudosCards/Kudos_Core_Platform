@@ -96,8 +96,15 @@ the exact address it posts to, and the personalised message with its merge token
 resolved per person — so the buyer keeps an offline record they can check, file or
 share before paying. It's generated client-side (no server round-trip), all
 contact data HTML-escaped, and offered from the order-summary column and the
-review overlay (both the plain look-through and the confirm gate). Still to come
-in P3: the post-payment per-card record on the order detail.
+review overlay (both the plain look-through and the confirm gate).
+
+P3c completes P3 with the **post-payment per-card record** on the order detail.
+The buyer's order detail already carries the shipping-address *snapshot* per line
+(the exact address posted to, frozen at order time), so it now shows the full
+posting address per card and offers a **"Download proof sheet"** — an order-receipt
+variant of the same printable document, listing every card with its recipient,
+snapshot address, postage, price, fulfilment stage and Royal Mail tracking. The
+sheet chrome is shared with the pre-send proof so both read as one document.
 
 P2 shipped the server preflight endpoint plus its web surface: the `/send`
 composer runs the check automatically (debounced, sequence-guarded) whenever the
