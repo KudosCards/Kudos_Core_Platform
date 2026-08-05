@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma } from "@prisma/client";
+import { Prisma, type OccasionType } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { PrismaService } from "../prisma/prisma.service";
@@ -21,6 +21,7 @@ import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.constants";
 import {
   computePricingBreakdown,
+  startOfUtcDay,
   unresolvedMergeTokens,
   type BatchOrderPreflight,
   type DesignDocument,
@@ -29,7 +30,6 @@ import {
 } from "@kudos/shared-types";
 import { MessagesService } from "../messages/messages.service";
 import { RecipientsService } from "../recipients/recipients.service";
-import { computeDispatchDate } from "../occasions/occasion-scheduling.constants";
 import { UK_POSTCODE_REGEX } from "../common/uk-postcode";
 import type { CreateBatchOrderDto, CreateBatchOrderLineDto } from "./dto/create-batch-order.dto";
 import type { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
@@ -83,6 +83,15 @@ export type BatchOrderDetail = Omit<OrderDetailPayload, "orderRecipients"> & {
  * natural occasion still in one of these, so it never un-does an in-flight send.
  * See docs/adr/0107-occasion-reconciliation.md. */
 const RECONCILABLE_OCCASION_STATUSES = ["scheduled", "pending_approval", "approved"] as const;
+
+/** The natural occasion a bulk-send line supersedes — its id (to mark handled),
+ * and its type + date, which the one-off send inherits so it keeps the natural
+ * classification (e.g. birthday) instead of becoming a bespoke event. */
+interface SupersededOccasion {
+  id: string;
+  type: OccasionType;
+  occasionDate: Date;
+}
 
 /** A card can only be posted to a contact with a complete, valid UK address. */
 function hasMailableAddress(recipient: Prisma.RecipientGetPayload<object>): boolean {
@@ -174,15 +183,18 @@ export class BatchOrdersService {
     // the guided flow is the human decision that the manual approve step
     // represents, so there's nothing left to approve. dispatchOption `asap`
     // means a person checks it out (which is exactly what happens next).
-    const occasionDate = new Date();
+    // asap send, checked out immediately after → it ships today, so date its
+    // dispatch to today. Back-computing from the occasion date would put the
+    // dispatch ~5 working days in the past and read as overdue. See docs/adr/0119.
+    const today = startOfUtcDay(new Date());
     const occasion = await this.prisma.occasion.create({
       data: {
         accountId,
         recipientId: recipient.id,
         type: dto.occasionType ?? "bespoke_campaign",
         source: "one_off_campaign",
-        occasionDate,
-        dispatchDate: computeDispatchDate(occasionDate),
+        occasionDate: today,
+        dispatchDate: today,
         status: "approved",
         savedDesignId: savedDesign.id,
         dispatchOption: "asap",
@@ -253,7 +265,7 @@ export class BatchOrdersService {
 
     // Which natural occasion (if any) each recipient's campaign occasion should
     // supersede, so a segment send doesn't double-send. Validated + account-scoped.
-    const supersedesByRecipient = await this.resolveReconcile(accountId, dto);
+    const supersededByRecipient = await this.resolveReconcile(accountId, dto);
 
     // One approved one-off occasion per contact, carrying the design. Build them
     // all up front with client-generated ids and insert in a SINGLE createMany,
@@ -262,26 +274,34 @@ export class BatchOrdersService {
     // below; the shared create() then transitions them approved → queued. See
     // docs/adr/0118.
     const byId = new Map(recipients.map((r) => [r.id, r]));
-    const occasionDate = new Date();
-    const dispatchDate = computeDispatchDate(occasionDate);
+    // asap send, paid now → it ships today. Dating it to "today" (not a date
+    // back-computed from a future occasion) is why the ops queue reads it as due
+    // now rather than overdue. See docs/adr/0119.
+    const today = startOfUtcDay(new Date());
     const occasionIdByRecipient = new Map<string, string>(
       dto.recipientIds.map((id) => [id, randomUUID()]),
     );
     await this.prisma.occasion.createMany({
-      data: dto.recipientIds.map((id) => ({
-        id: occasionIdByRecipient.get(id)!,
-        accountId,
-        recipientId: id,
-        type: dto.occasionType ?? "bespoke_campaign",
-        source: "one_off_campaign",
-        occasionDate,
-        dispatchDate,
-        status: "approved",
-        savedDesignId: savedDesign.id,
-        dispatchOption: "asap",
-        postageClass: dto.postageClass,
-        supersedesOccasionId: supersedesByRecipient.get(id),
-      })),
+      data: dto.recipientIds.map((id) => {
+        // When this send supersedes a natural occasion (e.g. a birthday from the
+        // birthday segment), inherit its classification + date so it stays a
+        // birthday tied to the birthday — not a bespoke event dated today.
+        const superseded = supersededByRecipient.get(id);
+        return {
+          id: occasionIdByRecipient.get(id)!,
+          accountId,
+          recipientId: id,
+          type: superseded?.type ?? dto.occasionType ?? "bespoke_campaign",
+          source: "one_off_campaign",
+          occasionDate: superseded?.occasionDate ?? today,
+          dispatchDate: today,
+          status: "approved",
+          savedDesignId: savedDesign.id,
+          dispatchOption: "asap",
+          postageClass: dto.postageClass,
+          supersedesOccasionId: superseded?.id,
+        };
+      }),
     });
 
     const lines: CreateBatchOrderLineDto[] = dto.recipientIds.map((id) => {
@@ -463,14 +483,17 @@ export class BatchOrdersService {
   private async resolveReconcile(
     accountId: string,
     dto: BulkSendDto,
-  ): Promise<Map<string, string>> {
-    const result = new Map<string, string>();
+  ): Promise<Map<string, SupersededOccasion>> {
+    const result = new Map<string, SupersededOccasion>();
     if (!dto.reconcile?.length) return result;
 
     const selected = new Set(dto.recipientIds);
     const requested = dto.reconcile.filter((r) => selected.has(r.recipientId));
     if (requested.length === 0) return result;
 
+    // Pull the natural occasion's type + date too: the one-off send inherits
+    // them so a birthday sent via the birthday segment stays a birthday, dated to
+    // the birthday — not a bespoke event dated today. See docs/adr/0119.
     const valid = await this.prisma.occasion.findMany({
       where: {
         accountId,
@@ -479,12 +502,19 @@ export class BatchOrdersService {
         source: { not: "one_off_campaign" },
         status: { in: [...RECONCILABLE_OCCASION_STATUSES] },
       },
-      select: { id: true, recipientId: true },
+      select: { id: true, recipientId: true, type: true, occasionDate: true },
     });
-    const validByPair = new Set(valid.map((o) => `${o.recipientId}:${o.id}`));
+    const validByPair = new Map(valid.map((o) => [`${o.recipientId}:${o.id}`, o]));
 
     for (const { recipientId, occasionId } of requested) {
-      if (validByPair.has(`${recipientId}:${occasionId}`)) result.set(recipientId, occasionId);
+      const match = validByPair.get(`${recipientId}:${occasionId}`);
+      if (match) {
+        result.set(recipientId, {
+          id: match.id,
+          type: match.type,
+          occasionDate: match.occasionDate,
+        });
+      }
     }
     return result;
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { AccountPricing } from "@kudos/shared-types";
 import { computePricingBreakdown, suggestFirstClass } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
@@ -27,6 +27,20 @@ const EMPTY_LINE: LineDraft = {
   dispatchOption: "asap",
   postageClass: "first_class",
 };
+
+/** A checkout line pre-filled from the contact's stored address — so an address
+ * already on the record isn't re-keyed at checkout. Falls back to blank fields
+ * when the contact has no address yet. See ADR 0119. */
+function lineFromOccasion(occasion: OccasionWithRecipient | undefined): LineDraft {
+  const r = occasion?.recipient;
+  return {
+    ...EMPTY_LINE,
+    shippingAddressLine1: r?.addressLine1 ?? "",
+    shippingAddressLine2: r?.addressLine2 ?? "",
+    shippingAddressCity: r?.addressCity ?? "",
+    shippingAddressPostcode: r?.addressPostcode ?? "",
+  };
+}
 
 const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
 
@@ -59,8 +73,14 @@ export function BatchOrdersClient({
   /** Plan's `batchOrderMaxSize` — the most cards allowed in a single order. */
   maxPerOrder: number;
 }) {
+  const occasionById = useMemo(
+    () => new Map(initialOccasions.map((o) => [o.id, o])),
+    [initialOccasions],
+  );
   const [lines, setLines] = useState<Record<string, LineDraft>>(() =>
-    Object.fromEntries(initialSelectedIds.map((id) => [id, { ...EMPTY_LINE }])),
+    Object.fromEntries(
+      initialSelectedIds.map((id) => [id, lineFromOccasion(occasionById.get(id))]),
+    ),
   );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -78,7 +98,7 @@ export function BatchOrdersClient({
         delete next[occasionId];
         return next;
       }
-      return { ...current, [occasionId]: { ...EMPTY_LINE } };
+      return { ...current, [occasionId]: lineFromOccasion(occasionById.get(occasionId)) };
     });
   }
 

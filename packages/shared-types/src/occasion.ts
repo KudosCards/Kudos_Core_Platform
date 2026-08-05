@@ -55,6 +55,14 @@ export const occasionSchema = z
       .object({
         firstName: z.string(),
         lastName: z.string(),
+        /** The contact's stored postal address, so checkout can pre-fill the
+         * shipping line instead of asking for it again (it's already on the
+         * record). Optional — occasion endpoints that don't select the address
+         * still parse. See ADR 0119. */
+        addressLine1: z.string().nullable().optional(),
+        addressLine2: z.string().nullable().optional(),
+        addressCity: z.string().nullable().optional(),
+        addressPostcode: z.string().nullable().optional(),
         /** True when a card to this contact was returned and the address hasn't
          * been re-verified — checkout warns before sending again. Optional so
          * occasion endpoints that don't select it still parse. See ADR 0039. */
