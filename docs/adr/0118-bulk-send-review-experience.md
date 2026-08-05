@@ -89,8 +89,15 @@ a confirm mode — the same virtualized every-card grid, now with a sticky pay
 footer carrying the pre-send-check summary, the exact total, and a Pay button
 gated behind an explicit "I've reviewed the N cards and the addresses" tick. So a
 five-figure run can only be charged after a deliberate look, never a stray click.
-Still to come in P3: the downloadable proof / contact sheet and the post-payment
-per-card record on the order detail.
+
+P3b adds the downloadable **proof / contact sheet**: a self-contained, print-ready
+HTML document (Print → Save as PDF) listing every card in the run — the recipient,
+the exact address it posts to, and the personalised message with its merge tokens
+resolved per person — so the buyer keeps an offline record they can check, file or
+share before paying. It's generated client-side (no server round-trip), all
+contact data HTML-escaped, and offered from the order-summary column and the
+review overlay (both the plain look-through and the confirm gate). Still to come
+in P3: the post-payment per-card record on the order detail.
 
 P2 shipped the server preflight endpoint plus its web surface: the `/send`
 composer runs the check automatically (debounced, sequence-guarded) whenever the

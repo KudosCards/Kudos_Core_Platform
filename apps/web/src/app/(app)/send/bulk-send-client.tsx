@@ -24,6 +24,7 @@ import { AddressModal } from "@/components/address-modal";
 import { CardPreviewLightbox, insideFacesHint } from "@/components/card-preview-lightbox";
 import { PricingBreakdownCard } from "@/components/pricing-breakdown";
 import { PreSendCheck } from "./pre-send-check";
+import { downloadContactSheet } from "./contact-sheet";
 import { RecipientPicker, type Paginated } from "./recipient-picker";
 import { ReviewAllCards } from "./review-all-cards";
 
@@ -704,6 +705,21 @@ export function BulkSendClient({
 
           {/* Desktop keeps the CTA in the summary column; on mobile it moves to
               the sticky bar below so the total + Pay are always in reach. */}
+          {selectedDesign && sendable.length > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                downloadContactSheet(selectedDesign, sendable, {
+                  postageLabel: POSTAGE_LABEL[postageClass] ?? "Standard postage",
+                  totalLabel: preflight ? gbp(preflight.price.totalMinor) : undefined,
+                })
+              }
+              className="hidden text-xs text-muted underline hover:text-foreground lg:block"
+            >
+              ⬇ Download proof sheet (every card, address &amp; message)
+            </button>
+          )}
+
           <button
             type="button"
             disabled={!canPay}
@@ -769,6 +785,7 @@ export function BulkSendClient({
           design={selectedDesign}
           recipients={sendable}
           onClose={() => setReviewMode(null)}
+          postageLabel={POSTAGE_LABEL[postageClass] ?? "Standard postage"}
           confirm={
             reviewMode === "confirm"
               ? { preflight, paying: busy, onPay: () => void handleSend() }
