@@ -344,17 +344,19 @@ export function FulfillmentClient({
     }
   }
 
-  /** Retry importing a card into Click & Drop after a failed push, patching the
-   * refreshed row in place. */
-  async function retryClickAndDrop(job: FulfillmentJob) {
+  /** Retry importing a card into Click & Drop after a failed push, by job id.
+   * Forces an immediate re-push (bypassing the sweep's retry cooldown), patches
+   * the row if it's on screen, and refreshes the readout. Shared by the queue-row
+   * button and the "Retry now" button in the import-status error panel. */
+  async function retryClickAndDropById(jobId: string) {
     setError(null);
-    setCndRetryId(job.id);
+    setCndRetryId(jobId);
     try {
       const updated = await clientApiFetch<FulfillmentJob>(
-        `/fulfillment/jobs/${job.id}/click-and-drop`,
+        `/fulfillment/jobs/${jobId}/click-and-drop`,
         { method: "POST" },
       );
-      setJobs((current) => current.map((j) => (j.id === job.id ? { ...j, ...updated } : j)));
+      setJobs((current) => current.map((j) => (j.id === jobId ? { ...j, ...updated } : j)));
       // The card just moved bands (errored/awaiting → imported), so refresh the
       // readout counts + samples.
       void loadImportStatus();
@@ -365,6 +367,10 @@ export function FulfillmentClient({
     } finally {
       setCndRetryId(null);
     }
+  }
+
+  function retryClickAndDrop(job: FulfillmentJob) {
+    return retryClickAndDropById(job.id);
   }
 
   /** Auto-create a Royal Mail shipment for a printed card (buys postage,
@@ -632,11 +638,21 @@ export function FulfillmentClient({
               <p className="text-xs text-foreground/60">Most recent import errors:</p>
               <ul className="mt-1.5 space-y-1 text-xs">
                 {cndStatus.recentErrors.map((sample) => (
-                  <li key={sample.jobId} className="flex flex-wrap items-baseline gap-x-2">
+                  <li key={sample.jobId} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                     <code className="rounded bg-black/[0.06] px-1.5 py-0.5 dark:bg-white/[0.08]">
                       {sample.orderReference}
                     </code>
                     <span className="text-rose-600 dark:text-rose-400">{sample.error}</span>
+                    {clickAndDropEnabled && (
+                      <button
+                        type="button"
+                        disabled={cndRetryId === sample.jobId}
+                        onClick={() => void retryClickAndDropById(sample.jobId)}
+                        className="rounded-full border border-black/20 px-2 py-0.5 hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+                      >
+                        {cndRetryId === sample.jobId ? "Retrying…" : "Retry now"}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
