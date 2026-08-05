@@ -39,6 +39,7 @@ import { EnterpriseModule } from "./enterprise/enterprise.module";
 import { SegmentsModule } from "./segments/segments.module";
 import { SupabaseAdminModule } from "./supabase/supabase-admin.module";
 import { StorageMaintenanceModule } from "./storage-maintenance/storage-maintenance.module";
+import { PlatformNotificationsModule } from "./platform-notifications/platform-notifications.module";
 
 @Module({
   imports: [
@@ -90,6 +91,7 @@ import { StorageMaintenanceModule } from "./storage-maintenance/storage-maintena
     SegmentsModule,
     SupabaseAdminModule,
     StorageMaintenanceModule,
+    PlatformNotificationsModule,
   ],
 })
 export class AppModule {}

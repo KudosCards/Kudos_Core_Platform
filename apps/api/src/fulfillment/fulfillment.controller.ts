@@ -19,6 +19,7 @@ import {
   type FulfillmentJob,
   type FulfillmentQueueRow,
   type FulfillmentCounts,
+  type MustShipSummary,
   type BulkTransitionSummary,
   type ExportedAddress,
   type PrintRunCard,
@@ -58,6 +59,14 @@ export class FulfillmentController {
   @Get("counts")
   counts(): Promise<FulfillmentCounts> {
     return this.fulfillmentService.counts();
+  }
+
+  /** The send-by-5 must-ship watch-list: open cards overdue / due today / due
+   * within 5 working days, plus the most urgent ones. Powers the ops must-ship
+   * band + shell banner (and the daily reminder reuses the service). See ADR 0115. */
+  @Get("must-ship")
+  mustShip(): Promise<MustShipSummary> {
+    return this.fulfillmentService.mustShip();
   }
 
   /** The open posting workload per day for the dispatch calendar (see ADR 0110). */

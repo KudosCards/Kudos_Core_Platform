@@ -110,6 +110,38 @@ export const clickAndDropImportStatusSchema = z.object({
 });
 export type ClickAndDropImportStatus = z.infer<typeof clickAndDropImportStatusSchema>;
 
+/**
+ * One card on the send-by-5 must-ship watch-list (ADR 0115): identify + prioritise
+ * it (name + city, as the queue already exposes — no street address).
+ * `workingDaysUntilDue` is negative when overdue, 0 when due today.
+ */
+export const mustShipCardSchema = z.object({
+  jobId: z.string(),
+  orderNumber: z.number(),
+  recipientName: z.string(),
+  city: z.string(),
+  postcode: z.string(),
+  dueDate: z.coerce.date(),
+  workingDaysUntilDue: z.number(),
+  status: fulfillmentJobStatusSchema,
+});
+export type MustShipCard = z.infer<typeof mustShipCardSchema>;
+
+/**
+ * GET /fulfillment/must-ship — the send-by-5 watch-list. `overdue`/`today`/
+ * `dueSoon` are disjoint counts of open (not-yet-posted) cards by dispatch
+ * deadline; `total` is their sum; `cards` holds the most urgent (soonest first),
+ * bounded. See docs/adr/0115-send-by-5-dispatch-assurance.md.
+ */
+export const mustShipSummarySchema = z.object({
+  overdue: z.number(),
+  today: z.number(),
+  dueSoon: z.number(),
+  total: z.number(),
+  cards: z.array(mustShipCardSchema),
+});
+export type MustShipSummary = z.infer<typeof mustShipSummarySchema>;
+
 export interface FulfillmentProvider {
   submit(job: FulfillmentJob): Promise<{ providerReference: string }>;
   getStatus(providerReference: string): Promise<FulfillmentJobStatusUpdate>;

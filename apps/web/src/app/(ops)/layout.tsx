@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import type { AdminIdentity } from "@kudos/shared-types";
+import type { AdminIdentity, MustShipSummary } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { serverApiFetch } from "@/lib/api.server";
 import { LogoutButton } from "../(app)/logout-button";
+import { OpsNotificationBell } from "./ops-notification-bell";
 
 /**
  * The internal ops shell — a separate surface from the customer app, with its
@@ -26,6 +27,25 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
     // No session at all — the operator needs to sign in on the ops surface.
     redirect("/admin-login");
   }
+
+  // Send-by-5 SLA banner: a page-agnostic, high-priority alert whenever a card
+  // is overdue or must post today, on every ops screen so it can't be missed.
+  // Non-fatal if it fails — the shell must still render. See ADR 0115.
+  const mustShip = await serverApiFetch<MustShipSummary>("/fulfillment/must-ship").catch(
+    () => null,
+  );
+  const shipAlert =
+    mustShip && (mustShip.overdue > 0 || mustShip.today > 0)
+      ? mustShip.overdue > 0
+        ? {
+            urgent: true,
+            text: `${mustShip.overdue} card${mustShip.overdue === 1 ? "" : "s"} overdue to post`,
+          }
+        : {
+            urgent: false,
+            text: `${mustShip.today} card${mustShip.today === 1 ? "" : "s"} to post today`,
+          }
+      : null;
 
   const navItems = [
     { href: "/admin", label: "Dashboard", group: "Overview" },
@@ -72,13 +92,19 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
           ))}
         </div>
         <div className="flex flex-col gap-2 border-t border-black/10 pt-4 text-sm dark:border-white/10">
-          <div className="px-3">
-            <p className="truncate text-xs font-medium text-foreground/80" title={me.email ?? undefined}>
-              {me.email ?? "Operator"}
-            </p>
-            <p className="text-xs text-foreground/40">
-              {me.role === "super_admin" ? "Super admin" : "Operator"}
-            </p>
+          <div className="flex items-center justify-between gap-2 px-3">
+            <div className="min-w-0">
+              <p
+                className="truncate text-xs font-medium text-foreground/80"
+                title={me.email ?? undefined}
+              >
+                {me.email ?? "Operator"}
+              </p>
+              <p className="text-xs text-foreground/40">
+                {me.role === "super_admin" ? "Super admin" : "Operator"}
+              </p>
+            </div>
+            <OpsNotificationBell />
           </div>
           <LogoutButton redirectTo="/admin-login" />
         </div>
@@ -88,7 +114,10 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
       <div className="flex flex-col border-b border-black/10 bg-surface lg:hidden dark:border-white/10">
         <div className="flex items-center justify-between px-4 py-3">
           <span className="text-sm font-semibold">Kudos Ops</span>
-          <LogoutButton redirectTo="/admin-login" />
+          <div className="flex items-center gap-1">
+            <OpsNotificationBell />
+            <LogoutButton redirectTo="/admin-login" />
+          </div>
         </div>
         <nav className="flex gap-1.5 overflow-x-auto px-4 pb-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {navItems.map((item) => (
@@ -103,7 +132,25 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
         </nav>
       </div>
 
-      <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {shipAlert && (
+          <Link
+            href="/fulfillment"
+            className={`flex items-center justify-between gap-3 px-4 py-2.5 text-sm font-semibold sm:px-6 lg:px-8 ${
+              shipAlert.urgent
+                ? "bg-red-600 text-white hover:bg-red-700"
+                : "bg-amber-400 text-black hover:bg-amber-300"
+            }`}
+          >
+            <span>
+              {shipAlert.urgent ? "⚠️ " : "🖨️ "}
+              {shipAlert.text} — hit the 5-working-day deadline
+            </span>
+            <span className="shrink-0 underline underline-offset-2">Open queue →</span>
+          </Link>
+        )}
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
+      </div>
     </div>
   );
 }

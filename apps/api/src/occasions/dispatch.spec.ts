@@ -4,6 +4,7 @@ import {
   DEFAULT_SEASONAL_DISPATCH_RULES,
   getSeasonalDispatchRules,
   isWorkingDay,
+  POSTAGE_LEAD_DAYS,
   seasonalDispatchRuleFor,
   setSeasonalDispatchRules,
   suggestFirstClass,
@@ -107,7 +108,13 @@ describe("seasonal override", () => {
 
   it("honours an injected custom rule set", () => {
     const rules: SeasonalDispatchRule[] = [
-      { label: "Custom", from: { month: 3, day: 1 }, to: { month: 3, day: 31 }, extraLeadDays: 2, suggestFirstClass: false },
+      {
+        label: "Custom",
+        from: { month: 3, day: 1 },
+        to: { month: 3, day: 31 },
+        extraLeadDays: 2,
+        suggestFirstClass: false,
+      },
     ];
     expect(seasonalDispatchRuleFor(utc(2026, 2, 15), rules)?.label).toBe("Custom");
     expect(seasonalDispatchRuleFor(utc(2026, 11, 15), rules)).toBeNull();
@@ -126,6 +133,21 @@ describe("suggestFirstClass", () => {
   });
 });
 
+describe("send-by-5 lead policy (ADR 0115)", () => {
+  it("posts every class at least 5 working days before the delivery date", () => {
+    // Both classes share the send-by-5 SLA: no card posts fewer than 5 working
+    // days before its occasion, regardless of postage class.
+    expect(POSTAGE_LEAD_DAYS.first_class).toBe(5);
+    expect(POSTAGE_LEAD_DAYS.second_class).toBe(5);
+
+    // Occasion Wed 15 Jul 2026 → both classes post Wed 8 Jul (5 working days back).
+    const firstClass = computeDispatchDate(utc(2026, 6, 15), POSTAGE_LEAD_DAYS.first_class);
+    const secondClass = computeDispatchDate(utc(2026, 6, 15), POSTAGE_LEAD_DAYS.second_class);
+    expect(firstClass).toEqual(utc(2026, 6, 8));
+    expect(secondClass).toEqual(utc(2026, 6, 8));
+  });
+});
+
 describe("runtime-configurable seasonal rules", () => {
   // The active set is a process-wide global; always restore the default so a
   // config test can't bleed into the others.
@@ -136,7 +158,13 @@ describe("runtime-configurable seasonal rules", () => {
     expect(suggestFirstClass(utc(2026, 2, 15)).suggested).toBe(false);
 
     setSeasonalDispatchRules([
-      { label: "Spring rush", from: { month: 3, day: 1 }, to: { month: 3, day: 31 }, extraLeadDays: 2, suggestFirstClass: true },
+      {
+        label: "Spring rush",
+        from: { month: 3, day: 1 },
+        to: { month: 3, day: 31 },
+        extraLeadDays: 2,
+        suggestFirstClass: true,
+      },
     ]);
 
     expect(getSeasonalDispatchRules()).toHaveLength(1);
@@ -157,7 +185,13 @@ describe("runtime-configurable seasonal rules", () => {
   it("still honours an explicit per-call rule set over the active one", () => {
     setSeasonalDispatchRules([]);
     const rules: SeasonalDispatchRule[] = [
-      { label: "Explicit", from: { month: 6, day: 1 }, to: { month: 6, day: 30 }, extraLeadDays: 1, suggestFirstClass: false },
+      {
+        label: "Explicit",
+        from: { month: 6, day: 1 },
+        to: { month: 6, day: 30 },
+        extraLeadDays: 1,
+        suggestFirstClass: false,
+      },
     ];
     expect(seasonalDispatchRuleFor(utc(2026, 5, 15), rules)?.label).toBe("Explicit");
   });
