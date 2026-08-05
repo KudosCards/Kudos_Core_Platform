@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import { accountSchema } from "@kudos/shared-types";
+import { accountSchema, type BatchOrderPreflight } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import type Stripe from "stripe";
@@ -588,8 +588,12 @@ describe("Batch orders (e2e)", () => {
 
       // Every line reuses the ONE design and is addressed from its contact.
       expect(order.orderRecipients.every((r) => r.savedDesignId === savedDesignId)).toBe(true);
-      expect(new Set(order.orderRecipients.map((r) => r.recipientId))).toEqual(new Set(recipientIds));
-      expect(order.orderRecipients.every((r) => r.shippingAddressPostcode === "SW1A 1AA")).toBe(true);
+      expect(new Set(order.orderRecipients.map((r) => r.recipientId))).toEqual(
+        new Set(recipientIds),
+      );
+      expect(order.orderRecipients.every((r) => r.shippingAddressPostcode === "SW1A 1AA")).toBe(
+        true,
+      );
 
       // One approved-then-queued one-off occasion was created per contact.
       const occasions = await prisma.occasion.findMany({ where: { accountId } });
@@ -620,7 +624,11 @@ describe("Batch orders (e2e)", () => {
       const response = await request(app.getHttpServer())
         .post("/batch-orders/bulk-send")
         .set("Authorization", `Bearer ${token}`)
-        .send({ savedDesignId, recipientIds: [withAddress, noAddress], postageClass: "second_class" })
+        .send({
+          savedDesignId,
+          recipientIds: [withAddress, noAddress],
+          postageClass: "second_class",
+        })
         .expect(400);
       expect((response.body as { message: string }).message).toContain("Sam Recipient");
 
@@ -664,6 +672,118 @@ describe("Batch orders (e2e)", () => {
       // The cap check fires inside create(), after the occasions are made, so a
       // rejected bulk send leaves no draft order behind.
       expect(await prisma.batchOrder.count({ where: { accountId } })).toBe(0);
+    });
+  });
+
+  describe("preflight (bulk-send pre-send check)", () => {
+    it("flags missing address + unresolved tokens and returns the exact price", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      // Give the design a custom-field token only some recipients can resolve.
+      await prisma.savedDesign.update({
+        where: { id: savedDesignId },
+        data: {
+          document: {
+            version: 1,
+            pages: [
+              {
+                name: "front",
+                elements: [{ id: "t1", kind: "text", text: "Dear {name}, from {teacher}" }],
+              },
+            ],
+          },
+        },
+      });
+
+      const clean = await prisma.recipient.create({
+        data: {
+          accountId,
+          firstName: "Ada",
+          lastName: "Clean",
+          addressLine1: "1 Test St",
+          addressCity: "London",
+          addressPostcode: "SW1A 1AA",
+          customFields: { teacher: "Mrs Smith" },
+        },
+      });
+      const noToken = await prisma.recipient.create({
+        data: {
+          accountId,
+          firstName: "Bo",
+          lastName: "NoTeacher",
+          addressLine1: "2 Test St",
+          addressCity: "London",
+          addressPostcode: "SW1A 1AA",
+        },
+      });
+      const noAddress = await prisma.recipient.create({
+        data: { accountId, firstName: "Cy", lastName: "NoAddress" },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post("/batch-orders/preflight")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [clean.id, noToken.id, noAddress.id],
+          postageClass: "second_class",
+        })
+        .expect(201);
+      const body = res.body as BatchOrderPreflight;
+
+      expect(body.total).toBe(3);
+      expect(body.ready).toBe(1);
+      expect(body.missingAddress.count).toBe(1);
+      expect(body.missingAddress.sample[0]!.name).toBe("Cy NoAddress");
+      // Buckets overlap by design: a recipient can have more than one problem, and
+      // each is reported so fixing one doesn't surprise the buyer with the next.
+      // Cy has no address AND no {teacher} field, so it's flagged in both buckets —
+      // hence two unresolved-token recipients (Bo and Cy), one missing address (Cy).
+      expect(body.unresolvedTokens.count).toBe(2);
+      const tokenNames = body.unresolvedTokens.sample.map((s) => s.name);
+      expect(tokenNames).toContain("Bo NoTeacher");
+      expect(tokenNames).toContain("Cy NoAddress");
+      expect(body.unresolvedTokens.sample[0]!.detail).toContain("{teacher}");
+      expect(body.invalidPostcode.count).toBe(0);
+      expect(body.duplicate.count).toBe(0);
+      // Price covers only the mailable cards — the set that will actually be
+      // charged. Cy has no address, so it's Ada + Bo = 2 × (£2.50 + £0.91) 2nd
+      // class = £6.82, not all three.
+      expect(body.price.cardCount).toBe(2);
+      expect(body.price.totalMinor).toBe(682);
+    });
+
+    it("flags a recent duplicate send of the same design", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const contact = await prisma.recipient.create({
+        data: {
+          accountId,
+          firstName: "Dee",
+          lastName: "Repeat",
+          addressLine1: "3 Test St",
+          addressCity: "London",
+          addressPostcode: "SW1A 1AA",
+        },
+      });
+
+      // A prior bulk-send of the same design to this contact.
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [contact.id], postageClass: "second_class" })
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .post("/batch-orders/preflight")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [contact.id], postageClass: "second_class" })
+        .expect(201);
+      const body = res.body as BatchOrderPreflight;
+
+      expect(body.duplicate.count).toBe(1);
+      expect(body.duplicate.sample[0]!.name).toBe("Dee Repeat");
+      expect(body.ready).toBe(0);
     });
   });
 });

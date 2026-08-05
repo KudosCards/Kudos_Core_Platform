@@ -51,9 +51,22 @@ with the business:
   Then a searchable, virtualized "review all" grid replaces the 8-card cap, with
   scale-adaptive routing to the dedicated review step.
 - **P2 — Server preflight check.** `POST /batch-orders/preflight` returns
-  ready / needs-address / unresolved-token / duplicate buckets (with the exact
-  people, paginated) and the exact price breakdown, surfaced as a checks banner
-  with inline fixes.
+  ready / needs-address / invalid-postcode / unresolved-token / duplicate buckets
+  (each a total `count` plus a bounded `sample` for drill-in) and the exact,
+  VAT-decomposed price for the whole selection — read-only, creating nothing.
+  Buckets **overlap by design**: one recipient can carry several problems at once
+  (e.g. no address *and* an unresolved `{teacher}`), and each is reported so a fix
+  never surprises the buyer with the next issue. `ready` is the count with *no*
+  problem — so the buckets don't sum to `total - ready`; the web frames it as
+  "N cards need attention" with a per-issue breakdown that may repeat a card.
+  The `price` covers only the **mailable** cards (those with a valid address),
+  because `bulkSend` gives no order line to the rest — so the figure shown equals
+  the eventual Stripe charge, never overstated by contacts still missing an address.
+  Unresolved tokens are found with the shared `unresolvedMergeTokens` util
+  (built on the merge engine); duplicates are recipients who ordered the same
+  design in the last 30 days. The web surfaces this as a checks banner with
+  inline fixes (P2 web slice). This also corrects the composer's rough estimate,
+  which used the wrong card price.
 - **P3 — Confirm & proof.** The Review & confirm gate with the checks summary,
   exact total, and a downloadable proof/contact sheet; the same per-card + address
   record kept on the order detail as a post-payment receipt.

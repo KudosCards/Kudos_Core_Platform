@@ -20,6 +20,8 @@ import { CreateBatchOrderDto } from "./dto/create-batch-order.dto";
 import { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
 import { QuickSendDto } from "./dto/quick-send.dto";
 import { BulkSendDto } from "./dto/bulk-send.dto";
+import { PreflightBatchOrderDto } from "./dto/preflight-batch-order.dto";
+import type { BatchOrderPreflight } from "@kudos/shared-types";
 
 @ApiTags("batch-orders")
 @ApiBearerAuth()
@@ -58,6 +60,17 @@ export class BatchOrdersController {
     @Body() dto: BulkSendDto,
   ): Promise<BatchOrder> {
     return this.batchOrdersService.bulkSend(membership.accountId, user.id, dto);
+  }
+
+  /** Pre-send check for a bulk run: how many cards are ready, who needs attention
+   * (address / unresolved merge tokens / recent duplicate), and the exact price —
+   * read-only, creates nothing. See docs/adr/0118. */
+  @Post("preflight")
+  preflight(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Body() dto: PreflightBatchOrderDto,
+  ): Promise<BatchOrderPreflight> {
+    return this.batchOrdersService.preflight(membership.accountId, dto);
   }
 
   @Get()
