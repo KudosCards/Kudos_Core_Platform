@@ -54,6 +54,11 @@ with the business:
   ready / needs-address / invalid-postcode / unresolved-token / duplicate buckets
   (each a total `count` plus a bounded `sample` for drill-in) and the exact,
   VAT-decomposed price for the whole selection — read-only, creating nothing.
+  Buckets **overlap by design**: one recipient can carry several problems at once
+  (e.g. no address *and* an unresolved `{teacher}`), and each is reported so a fix
+  never surprises the buyer with the next issue. `ready` is the count with *no*
+  problem — so the buckets don't sum to `total - ready`; the web frames it as
+  "N cards need attention" with a per-issue breakdown that may repeat a card.
   Unresolved tokens are found with the shared `unresolvedMergeTokens` util
   (built on the merge engine); duplicates are recipients who ordered the same
   design in the last 30 days. The web surfaces this as a checks banner with

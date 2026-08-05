@@ -735,8 +735,14 @@ describe("Batch orders (e2e)", () => {
       expect(body.ready).toBe(1);
       expect(body.missingAddress.count).toBe(1);
       expect(body.missingAddress.sample[0]!.name).toBe("Cy NoAddress");
-      expect(body.unresolvedTokens.count).toBe(1);
-      expect(body.unresolvedTokens.sample[0]!.name).toBe("Bo NoTeacher");
+      // Buckets overlap by design: a recipient can have more than one problem, and
+      // each is reported so fixing one doesn't surprise the buyer with the next.
+      // Cy has no address AND no {teacher} field, so it's flagged in both buckets —
+      // hence two unresolved-token recipients (Bo and Cy), one missing address (Cy).
+      expect(body.unresolvedTokens.count).toBe(2);
+      const tokenNames = body.unresolvedTokens.sample.map((s) => s.name);
+      expect(tokenNames).toContain("Bo NoTeacher");
+      expect(tokenNames).toContain("Cy NoAddress");
       expect(body.unresolvedTokens.sample[0]!.detail).toContain("{teacher}");
       expect(body.invalidPostcode.count).toBe(0);
       expect(body.duplicate.count).toBe(0);
