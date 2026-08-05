@@ -66,6 +66,25 @@ describe("HttpClickAndDropClient", () => {
     expect(authOf(init)).toBe("secret-key");
   });
 
+  it("includes the required shippingCostCharged and a consistent total in the order line", async () => {
+    fetchSpy = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        fakeResponse({ ok: true, status: 200, json: { createdOrders: [{ orderIdentifier: 1 }] } }),
+      );
+    const client = new HttpClickAndDropClient("secret-key", "https://api.parcel.royalmail.com");
+
+    await client.createOrder(ORDER); // subtotalPence: 350 → £3.50
+
+    const item = (JSON.parse((lastCall().init.body as string) ?? "{}") as { items: unknown[] })
+      .items[0] as { subtotal: number; shippingCostCharged: number; total: number };
+    // Postage is included in the flat price, so shipping is 0 and total === subtotal.
+    // Omitting shippingCostCharged makes Click & Drop reject the whole order.
+    expect(item.shippingCostCharged).toBe(0);
+    expect(item.subtotal).toBe(3.5);
+    expect(item.total).toBe(3.5);
+  });
+
   it("prefixes Bearer when the auth scheme is 'bearer'", async () => {
     fetchSpy = jest
       .spyOn(globalThis, "fetch")
