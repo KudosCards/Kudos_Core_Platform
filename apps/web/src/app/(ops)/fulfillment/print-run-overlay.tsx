@@ -1,15 +1,24 @@
 "use client";
 
-import type { DesignDocument } from "@kudos/shared-types";
+import type { DesignDocument, DesignPage } from "@kudos/shared-types";
 import { applyMergeTokens } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { facesOf } from "@/components/card-preview-lightbox";
 
 const CardFacePreview = dynamic(
   () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
   { ssr: false },
 );
+
+/** Human label per face, for the (screen-only) collation caption. */
+const FACE_LABEL: Record<DesignPage["name"], string> = {
+  front: "Front",
+  "inside-left": "Inside left",
+  "inside-right": "Inside right",
+  back: "Back",
+};
 
 export interface PrintRunCard {
   jobId: string;
@@ -32,9 +41,12 @@ function occasionLabel(card: PrintRunCard): string | null {
 }
 
 /**
- * A print-ready sheet of an entire run's personalised card faces, one card per
- * page. Uses the browser's native print → "Save as PDF"; the print CSS in
- * globals.css hides the app so only these cards print. See docs/adr/0032.
+ * A print-ready sheet of an entire run's personalised card faces — **every face
+ * a design has** (front, the inside message, and back), one face per page, so
+ * the personalised inside (where {name} usually lives) reaches physical
+ * production, not just the cover. Uses the browser's native print → "Save as
+ * PDF"; the print CSS in globals.css hides the app so only these cards print.
+ * See docs/adr/0032 and 0118.
  */
 export function PrintRunOverlay({
   cards,
@@ -65,7 +77,7 @@ export function PrintRunOverlay({
       {/* Toolbar — screen only; never printed. */}
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-black/10 bg-white px-6 py-3 print:hidden">
         <span className="text-sm font-medium text-black">
-          {cards.length} personalised card{cards.length === 1 ? "" : "s"} — one per page
+          {cards.length} personalised card{cards.length === 1 ? "" : "s"} — every face, one per page
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -86,26 +98,29 @@ export function PrintRunOverlay({
       </div>
 
       <div className="mx-auto flex max-w-3xl flex-col items-center gap-8 px-6 py-8 print:gap-0 print:p-0">
-        {cards.map((card) => (
-          <div
-            key={card.jobId}
-            className="flex break-after-page flex-col items-center gap-2 print:min-h-screen print:justify-center"
-          >
-            <CardFacePreview
-              document={applyMergeTokens(card.document, {
-                firstName: card.recipientFirstName,
-                lastName: card.recipientLastName,
-                occasion: occasionLabel(card),
-                occasionDate: card.occasionDate,
-                customFields: card.recipientCustomFields,
-              })}
-              width={360}
-            />
-            <span className="text-xs text-black/60 print:hidden">
-              {card.recipientFirstName} {card.recipientLastName} · {card.savedDesignName}
-            </span>
-          </div>
-        ))}
+        {cards.flatMap((card) => {
+          // Merge once per card, then print every face the design has, each on
+          // its own page — so the inside message prints, not just the front.
+          const merged = applyMergeTokens(card.document, {
+            firstName: card.recipientFirstName,
+            lastName: card.recipientLastName,
+            occasion: occasionLabel(card),
+            occasionDate: card.occasionDate,
+            customFields: card.recipientCustomFields,
+          });
+          return facesOf(merged).map((face) => (
+            <div
+              key={`${card.jobId}-${face}`}
+              className="flex break-after-page flex-col items-center gap-2 print:min-h-screen print:justify-center"
+            >
+              <CardFacePreview document={merged} width={360} face={face} />
+              <span className="text-xs text-black/60 print:hidden">
+                {card.recipientFirstName} {card.recipientLastName} · {card.savedDesignName} ·{" "}
+                {FACE_LABEL[face]}
+              </span>
+            </div>
+          ));
+        })}
       </div>
     </div>,
     document.body,

@@ -123,9 +123,12 @@ pre-check estimate can't drift.
   paying — closing the biggest reassurance gap.
 - The flip viewer + `facesOf`/`insideFacesHint` helpers are reusable across the
   send flows, the designs gallery and (later) the ops print-run.
-- Related finding to verify in a later slice: the ops **print-run** render uses the
-  same front-only component, so the inside faces' path to physical production
-  needs confirming.
+- Resolved finding: the ops **print-run** overlay rendered only the front face
+  per card (`CardFacePreview` with no `face` prop), so the personalised inside
+  message never reached physical production. It now prints **every face a design
+  has** — front, the inside spread, and back — one face per page (reusing
+  `facesOf` + the `face` prop from P1), with a screen-only collation caption
+  naming the recipient and face.
 
 ## Alternatives considered
 
