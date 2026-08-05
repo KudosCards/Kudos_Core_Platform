@@ -17,13 +17,16 @@ const ORDER: ClickAndDropOrderInput = {
   subtotalPence: 350,
 };
 
-/** A minimal Response stand-in for the global fetch mock. */
+/** A minimal Response stand-in for the global fetch mock. The client reads the
+ * body via `text()` (then parses), so when a test supplies `json` we serialise it
+ * as the body text — exactly what a real Response does. */
 function fakeResponse(init: { ok: boolean; status: number; json?: unknown; text?: string }) {
+  const body = init.text ?? (init.json !== undefined ? JSON.stringify(init.json) : "");
   return {
     ok: init.ok,
     status: init.status,
     json: () => Promise.resolve(init.json ?? {}),
-    text: () => Promise.resolve(init.text ?? ""),
+    text: () => Promise.resolve(body),
   } as unknown as Response;
 }
 
@@ -45,15 +48,13 @@ describe("HttpClickAndDropClient", () => {
   }
 
   it("sends the raw API key in Authorization by default and posts to /api/v1/orders", async () => {
-    fetchSpy = jest
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        fakeResponse({
-          ok: true,
-          status: 200,
-          json: { createdOrders: [{ orderIdentifier: 987 }] },
-        }),
-      );
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(
+      fakeResponse({
+        ok: true,
+        status: 200,
+        json: { createdOrders: [{ orderIdentifier: 987 }] },
+      }),
+    );
     const client = new HttpClickAndDropClient("secret-key", "https://api.parcel.royalmail.com");
 
     const result = await client.createOrder(ORDER);
@@ -140,6 +141,35 @@ describe("HttpClickAndDropClient", () => {
 
     // Even an unrecognised shape surfaces its raw content rather than "unknown error".
     await expect(client.createOrder(ORDER)).rejects.toThrow(/unexpected shape/);
+  });
+
+  it("surfaces the raw body when failedOrders[0] is empty and the reason is top-level", async () => {
+    // The exact shape that produced a bare "unknown error" in production: an empty
+    // failed-order line, with the real reason sitting on the envelope.
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(
+      fakeResponse({
+        ok: true,
+        status: 200,
+        json: { message: "Invalid postcode for the destination country", failedOrders: [{}] },
+      }),
+    );
+    const client = new HttpClickAndDropClient("secret-key", "https://api.parcel.royalmail.com");
+
+    await expect(client.createOrder(ORDER)).rejects.toThrow(
+      /Invalid postcode for the destination country/,
+    );
+  });
+
+  it("surfaces the raw body when a 200 has neither created nor failed orders", async () => {
+    fetchSpy = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        fakeResponse({ ok: true, status: 200, text: '{"errorsCount":1,"successCount":0}' }),
+      );
+    const client = new HttpClickAndDropClient("secret-key", "https://api.parcel.royalmail.com");
+
+    // No createdOrders → a rejection, and the raw envelope is the clue.
+    await expect(client.createOrder(ORDER)).rejects.toThrow(/errorsCount/);
   });
 
   it("probe() does a read-only GET and reports status + body + endpoint + scheme", async () => {
