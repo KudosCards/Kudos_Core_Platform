@@ -140,7 +140,9 @@ describe("Click & Drop import (e2e)", () => {
       }),
     ).expect(201);
 
-    const orderRecipient = await prisma.orderRecipient.findFirstOrThrow({ where: { batchOrderId } });
+    const orderRecipient = await prisma.orderRecipient.findFirstOrThrow({
+      where: { batchOrderId },
+    });
     const job = await prisma.fulfillmentJob.findFirstOrThrow({
       where: { orderRecipientId: orderRecipient.id },
     });
@@ -222,6 +224,67 @@ describe("Click & Drop import (e2e)", () => {
     const jobId = await createPaidJob(token);
     await request(app.getHttpServer())
       .post(`/fulfillment/jobs/${jobId}/click-and-drop`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(403);
+  });
+
+  it("import-status readout bands a card as imported with a searchable reference", async () => {
+    const ops = await createOpsAdmin();
+    const token = await signUp();
+    const jobId = await createPaidJob(token);
+    createOrder.mockClear();
+    await service.sweep();
+
+    const stored = await prisma.fulfillmentJob.findUniqueOrThrow({ where: { id: jobId } });
+    const response = await request(app.getHttpServer())
+      .get("/fulfillment/click-and-drop/import-status")
+      .set("Authorization", `Bearer ${ops}`)
+      .expect(200);
+    const status = response.body as {
+      enabled: boolean;
+      imported: number;
+      errored: number;
+      awaiting: number;
+      recentImports: { jobId: string; orderReference: string; orderIdentifier: string | null }[];
+    };
+
+    expect(status.enabled).toBe(true);
+    expect(status.imported).toBeGreaterThanOrEqual(1);
+    // The reference we surface for confirming in the dashboard is exactly the one
+    // the sweep sent (the stored id is `cnd_<reference>` in this mock).
+    const sample = status.recentImports.find((s) => s.jobId === jobId);
+    expect(sample).toBeDefined();
+    expect(sample!.orderReference).toMatch(/^ORD-\d+-[0-9a-f]{8}$/);
+    expect(stored.clickAndDropOrderId).toBe(`cnd_${sample!.orderReference}`);
+  });
+
+  it("import-status readout bands a failed card as errored with its message", async () => {
+    const ops = await createOpsAdmin();
+    const token = await signUp();
+    const jobId = await createPaidJob(token);
+
+    createOrder.mockImplementationOnce(() => Promise.reject(new Error("RM 400: bad postcode")));
+    await service.sweep();
+
+    const response = await request(app.getHttpServer())
+      .get("/fulfillment/click-and-drop/import-status")
+      .set("Authorization", `Bearer ${ops}`)
+      .expect(200);
+    const status = response.body as {
+      errored: number;
+      recentErrors: { jobId: string; orderReference: string; error: string | null }[];
+    };
+
+    expect(status.errored).toBeGreaterThanOrEqual(1);
+    const sample = status.recentErrors.find((s) => s.jobId === jobId);
+    expect(sample).toBeDefined();
+    expect(sample!.error).toContain("bad postcode");
+  });
+
+  it("requires platform-admin auth for the import-status readout", async () => {
+    const token = await signUp();
+    await request(app.getHttpServer())
+      .get("/fulfillment/click-and-drop/import-status")
       .set("Authorization", `Bearer ${token}`)
       .expect(403);
   });

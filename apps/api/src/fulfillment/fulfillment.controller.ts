@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import { CurrentPlatformAdmin } from "../auth/current-platform-admin.decorator";
@@ -152,12 +161,19 @@ export class FulfillmentController {
     return this.fulfillmentService.testClickAndDrop();
   }
 
+  /** Ops readout: how many fulfillment jobs have imported into Click & Drop vs
+   * are errored or still awaiting a push, with a few sampled `ORD-…` references
+   * an operator can search the dashboard for to confirm our orders land in the
+   * right account. Read-only. Gated by PlatformAdminGuard. See ADR 0114. */
+  @Get("click-and-drop/import-status")
+  clickAndDropImportStatus() {
+    return this.fulfillmentService.clickAndDropImportStatus();
+  }
+
   /** Retry importing a card into the Click & Drop dashboard queue after a failed
    * push (the background sweep imports automatically; this is the manual retry). */
   @Post("jobs/:id/click-and-drop")
-  retryClickAndDrop(
-    @Param("id", ParseUUIDPipe) id: string,
-  ): Promise<FulfillmentQueueRow> {
+  retryClickAndDrop(@Param("id", ParseUUIDPipe) id: string): Promise<FulfillmentQueueRow> {
     return this.fulfillmentService.retryClickAndDrop(id);
   }
 }

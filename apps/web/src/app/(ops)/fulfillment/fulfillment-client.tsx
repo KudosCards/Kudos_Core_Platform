@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import type { DesignDocument, DueFilter, FulfillmentCounts } from "@kudos/shared-types";
+import type {
+  ClickAndDropImportStatus,
+  DesignDocument,
+  DueFilter,
+  FulfillmentCounts,
+} from "@kudos/shared-types";
 import { applyMergeTokens } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -108,14 +113,15 @@ const STATUS_TABS: FulfillmentStatus[] = [
 /** The due-date urgency filters, in the order the print/post team works them.
  * `key` matches the API's `due` param and the counts.due bucket; shown only on
  * the actionable `pending` queue (where the buckets are computed). See ADR 0108. */
-const DUE_TABS: { key: DueFilter; label: string; bucket: keyof FulfillmentCounts["due"] | null }[] = [
-  { key: "all", label: "All", bucket: null },
-  { key: "overdue", label: "Overdue", bucket: "overdue" },
-  { key: "today", label: "Due today", bucket: "today" },
-  { key: "due_soon", label: "Due soon", bucket: "dueSoon" },
-  { key: "upcoming", label: "Upcoming", bucket: "upcoming" },
-  { key: "no_date", label: "No date", bucket: "noDate" },
-];
+const DUE_TABS: { key: DueFilter; label: string; bucket: keyof FulfillmentCounts["due"] | null }[] =
+  [
+    { key: "all", label: "All", bucket: null },
+    { key: "overdue", label: "Overdue", bucket: "overdue" },
+    { key: "today", label: "Due today", bucket: "today" },
+    { key: "due_soon", label: "Due soon", bucket: "dueSoon" },
+    { key: "upcoming", label: "Upcoming", bucket: "upcoming" },
+    { key: "no_date", label: "No date", bucket: "noDate" },
+  ];
 
 /** The colour-coded deadline badge for a queue row, from the server-computed
  * working-days-until-due. Red overdue, amber this week, neutral beyond, grey
@@ -204,6 +210,19 @@ function formatDueOn(dueOn: string): string {
   });
 }
 
+/** A concise date+time for an import sample's `updatedAt` (arrives as an ISO
+ * string over the wire). */
+function formatSampleDate(value: Date | string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function FulfillmentClient({
   initialJobs,
   status,
@@ -243,6 +262,10 @@ export function FulfillmentClient({
   // Live Click & Drop connectivity probe (ops diagnostic).
   const [cndTesting, setCndTesting] = useState(false);
   const [cndTestResult, setCndTestResult] = useState<string | null>(null);
+  // Import-status readout: how many cards have imported / errored / are awaiting,
+  // with sample references to confirm in the dashboard. See ADR 0114.
+  const [cndStatus, setCndStatus] = useState<ClickAndDropImportStatus | null>(null);
+  const [cndStatusLoading, setCndStatusLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -260,10 +283,33 @@ export function FulfillmentClient({
       .catch(() => {
         /* non-fatal: the sweep still imports automatically */
       });
+    clientApiFetch<ClickAndDropImportStatus>("/fulfillment/click-and-drop/import-status")
+      .then((s) => {
+        if (active) setCndStatus(s);
+      })
+      .catch(() => {
+        /* non-fatal: the readout is a diagnostic */
+      });
     return () => {
       active = false;
     };
   }, []);
+
+  /** Reload the Click & Drop import-status readout (the ↻ button + after a manual
+   * retry, so the counts + samples reflect the latest push). */
+  async function loadImportStatus() {
+    setCndStatusLoading(true);
+    try {
+      const s = await clientApiFetch<ClickAndDropImportStatus>(
+        "/fulfillment/click-and-drop/import-status",
+      );
+      setCndStatus(s);
+    } catch {
+      /* non-fatal: the readout is a diagnostic */
+    } finally {
+      setCndStatusLoading(false);
+    }
+  }
 
   /** Fire a live read-only Click & Drop probe and show the raw status + body, so
    * a bad key / base URL is diagnosable from the console. See ADR 0113. */
@@ -309,6 +355,9 @@ export function FulfillmentClient({
         { method: "POST" },
       );
       setJobs((current) => current.map((j) => (j.id === job.id ? { ...j, ...updated } : j)));
+      // The card just moved bands (errored/awaiting → imported), so refresh the
+      // readout counts + samples.
+      void loadImportStatus();
     } catch (retryError) {
       setError(
         retryError instanceof ApiError ? retryError.message : "Could not import to Click & Drop",
@@ -328,7 +377,9 @@ export function FulfillmentClient({
       removeJob(job.id);
     } catch (dispatchError) {
       setError(
-        dispatchError instanceof ApiError ? dispatchError.message : "Could not dispatch via Royal Mail",
+        dispatchError instanceof ApiError
+          ? dispatchError.message
+          : "Could not dispatch via Royal Mail",
       );
     } finally {
       setPendingId(null);
@@ -348,7 +399,9 @@ export function FulfillmentClient({
       });
       setPrintCards(cards);
     } catch (printError) {
-      setError(printError instanceof ApiError ? printError.message : "Could not build the print run");
+      setError(
+        printError instanceof ApiError ? printError.message : "Could not build the print run",
+      );
     } finally {
       setPrintPending(false);
     }
@@ -514,6 +567,88 @@ export function FulfillmentClient({
         </pre>
       )}
 
+      {/* Import-status readout: where our cards stand relative to Click & Drop, so
+          an operator can confirm our ORD-… orders are landing in the dashboard
+          (vs any legacy WooCommerce #NNNN orders on the same account). ADR 0114. */}
+      {cndStatus && (
+        <div className="rounded-xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">Click &amp; Drop import status</h2>
+              {!cndStatus.enabled && (
+                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
+                  not configured
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadImportStatus()}
+              disabled={cndStatusLoading}
+              className="rounded-full border border-black/15 px-3 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+            >
+              {cndStatusLoading ? "Refreshing…" : "↻ Refresh"}
+            </button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2 text-sm">
+            <span className="rounded-lg bg-emerald-500/[0.12] px-3 py-1 text-emerald-700 dark:text-emerald-300">
+              Imported <strong className="tabular-nums">{cndStatus.imported}</strong>
+            </span>
+            <span className="rounded-lg bg-rose-500/[0.12] px-3 py-1 text-rose-700 dark:text-rose-300">
+              Errored <strong className="tabular-nums">{cndStatus.errored}</strong>
+            </span>
+            <span className="rounded-lg bg-black/[0.05] px-3 py-1 dark:bg-white/[0.06]">
+              Awaiting <strong className="tabular-nums">{cndStatus.awaiting}</strong>
+            </span>
+          </div>
+
+          {cndStatus.recentImports.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs text-foreground/60">
+                Recently imported — search these references in your Click &amp; Drop dashboard to
+                confirm our orders land in the right account:
+              </p>
+              <ul className="mt-1.5 space-y-1 text-xs">
+                {cndStatus.recentImports.map((sample) => (
+                  <li key={sample.jobId} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <code className="rounded bg-black/[0.06] px-1.5 py-0.5 dark:bg-white/[0.08]">
+                      {sample.orderReference}
+                    </code>
+                    <span className="text-foreground/50">→ RM order {sample.orderIdentifier}</span>
+                    <span className="text-foreground/40">
+                      · {formatSampleDate(sample.updatedAt)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {cndStatus.recentErrors.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs text-foreground/60">Most recent import errors:</p>
+              <ul className="mt-1.5 space-y-1 text-xs">
+                {cndStatus.recentErrors.map((sample) => (
+                  <li key={sample.jobId} className="flex flex-wrap items-baseline gap-x-2">
+                    <code className="rounded bg-black/[0.06] px-1.5 py-0.5 dark:bg-white/[0.08]">
+                      {sample.orderReference}
+                    </code>
+                    <span className="text-rose-600 dark:text-rose-400">{sample.error}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {cndStatus.imported === 0 && cndStatus.errored === 0 && cndStatus.awaiting === 0 && (
+            <p className="mt-3 text-xs text-foreground/50">
+              No fulfillment jobs yet — nothing to import.
+            </p>
+          )}
+        </div>
+      )}
+
       {dueOn && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
           <span>
@@ -558,7 +693,9 @@ export function FulfillmentClient({
           date already scopes the list. Sorted soonest-deadline-first regardless. */}
       {status === "pending" && !dueOn && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-xs uppercase tracking-wide text-foreground/40">By dispatch date</span>
+          <span className="text-xs uppercase tracking-wide text-foreground/40">
+            By dispatch date
+          </span>
           {DUE_TABS.map((tab) => {
             const count = tab.bucket ? counts.due[tab.bucket] : null;
             const active = tab.key === due;
@@ -822,9 +959,7 @@ export function FulfillmentClient({
         </Modal>
       )}
 
-      {printCards && (
-        <PrintRunOverlay cards={printCards} onClose={() => setPrintCards(null)} />
-      )}
+      {printCards && <PrintRunOverlay cards={printCards} onClose={() => setPrintCards(null)} />}
     </div>
   );
 }
