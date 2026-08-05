@@ -18,12 +18,13 @@ interface NavGroup {
 const GROUPS: NavGroup[] = [
   { title: "Overview", items: [{ label: "Dashboard", href: "/dashboard", icon: "dashboard" }] },
   {
+    // Checkout lives on the header basket indicator (it badges unfinished
+    // orders), so it's deliberately not repeated here — the sidebar stays lean.
     title: "Send cards",
     items: [
       { label: "Send a card", href: "/send", icon: "send" },
       { label: "Calendar", href: "/calendar", icon: "calendar" },
       { label: "Approvals", href: "/approvals", icon: "approvals" },
-      { label: "Checkout", href: "/batch-orders", icon: "checkout" },
       { label: "Orders", href: "/orders", icon: "orders" },
     ],
   },

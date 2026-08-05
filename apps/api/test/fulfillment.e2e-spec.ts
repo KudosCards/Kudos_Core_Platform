@@ -159,6 +159,41 @@ describe("Fulfillment (e2e)", () => {
     };
   }
 
+  it("gives the buyer an enriched order detail: recipient name, tracking, message-page slug", async () => {
+    const { token } = await signUp();
+    const order = await createPaidOrder(token);
+
+    // The MessagePage is created alongside the FulfillmentJob by the webhook.
+    const messagePage = await prisma.messagePage.findUniqueOrThrow({
+      where: { orderRecipientId: order.orderRecipientId },
+      select: { slug: true },
+    });
+
+    // Before dispatch: named line, no tracking yet, message-page slug present.
+    const before = await request(app.getHttpServer())
+      .get(`/batch-orders/${order.batchOrderId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const line = (before.body as { orderRecipients: Record<string, unknown>[] }).orderRecipients[0]!;
+    expect(line.recipientFirstName).toBe("Ada");
+    expect(line.recipientLastName).toBe("Lovelace");
+    expect(line.trackingReference).toBeNull();
+    expect(line.messagePageSlug).toBe(messagePage.slug);
+
+    // After the card is posted with a tracking reference, the buyer's page shows it.
+    await prisma.fulfillmentJob.update({
+      where: { id: order.jobId },
+      data: { status: "posted", trackingReference: "AB123456789GB" },
+    });
+    const after = await request(app.getHttpServer())
+      .get(`/batch-orders/${order.batchOrderId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const posted = (after.body as { orderRecipients: Record<string, unknown>[] }).orderRecipients[0]!;
+    expect(posted.jobStatus).toBe("posted");
+    expect(posted.trackingReference).toBe("AB123456789GB");
+  });
+
   it("refuses a non-platform-admin (a normal customer) with 403", async () => {
     const { token } = await signUp();
     await request(app.getHttpServer())

@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
-import type { BatchOrder } from "@kudos/shared-types";
-import { computePricingBreakdown } from "@kudos/shared-types";
+import type { BatchOrderDetail } from "@kudos/shared-types";
+import { computePricingBreakdown, royalMailTrackingUrl } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { PricingBreakdownCard } from "@/components/pricing-breakdown";
@@ -21,7 +21,7 @@ export function OrderDetailClient({
   order,
   walletBalanceMinor,
 }: {
-  order: BatchOrder;
+  order: BatchOrderDetail;
   walletBalanceMinor: number;
 }) {
   const router = useRouter();
@@ -176,17 +176,47 @@ export function OrderDetailClient({
         <h2 className="font-semibold">Cards in this order</h2>
         <div className="card flex flex-col divide-y divide-border overflow-hidden">
           {order.orderRecipients.map((line) => (
-            <div key={line.id} className="flex items-center justify-between px-5 py-3 text-sm">
+            <div
+              key={line.id}
+              className="flex flex-col gap-2 px-5 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+            >
               <div className="flex flex-col">
-                <span>
-                  {line.shippingAddressCity}, {line.shippingAddressPostcode}
+                <span className="font-medium">
+                  {line.recipientFirstName} {line.recipientLastName}
                 </span>
                 <span className="text-xs text-muted">
+                  {line.shippingAddressCity}, {line.shippingAddressPostcode} ·{" "}
                   {line.postageClass === "first_class" ? "First class" : "Second class"} ·{" "}
                   {formatGbp(line.priceMinor + line.postageMinor)}
                 </span>
+                {(line.trackingReference || line.messagePageSlug) && (
+                  <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+                    {line.trackingReference && (
+                      <a
+                        href={royalMailTrackingUrl(line.trackingReference)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-accent hover:underline"
+                      >
+                        Track delivery →
+                      </a>
+                    )}
+                    {line.messagePageSlug && (
+                      <a
+                        href={`/r/${line.messagePageSlug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted hover:text-foreground hover:underline"
+                      >
+                        View digital message
+                      </a>
+                    )}
+                  </span>
+                )}
               </div>
-              <span className="pill pill-muted">{ORDER_RECIPIENT_STATUS_LABELS[line.status]}</span>
+              <span className="pill pill-muted shrink-0 self-start sm:self-auto">
+                {ORDER_RECIPIENT_STATUS_LABELS[line.status]}
+              </span>
             </div>
           ))}
         </div>
