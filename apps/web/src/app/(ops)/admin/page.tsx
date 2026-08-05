@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { FulfillmentCounts } from "@kudos/shared-types";
+import type { FulfillmentCounts, MustShipSummary } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { formatGbp } from "@/lib/orders";
 import { planLabel } from "@/lib/admin";
@@ -19,11 +19,23 @@ interface AdminOverview {
   needsAttention: { id: string; name: string; lastActivityDays: number }[];
 }
 
-function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "accent" }) {
+function Stat({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: "accent";
+}) {
   return (
     <div className="rounded-xl border border-border bg-surface p-5">
       <p className="text-xs font-medium tracking-wide text-muted uppercase">{label}</p>
-      <p className={`mt-1 text-3xl font-bold tracking-tight ${tone === "accent" ? "text-accent" : ""}`}>
+      <p
+        className={`mt-1 text-3xl font-bold tracking-tight ${tone === "accent" ? "text-accent" : ""}`}
+      >
         {value}
       </p>
       {sub && <p className="mt-1 text-xs text-muted">{sub}</p>}
@@ -66,7 +78,15 @@ function OpsTile({
   );
 }
 
-function Panel({ title, right, children }: { title: string; right?: string; children: React.ReactNode }) {
+function Panel({
+  title,
+  right,
+  children,
+}: {
+  title: string;
+  right?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-5">
       <div className="flex items-baseline justify-between gap-3">
@@ -120,9 +140,10 @@ function Meter({ label, value, max }: { label: string; value: number; max: numbe
 }
 
 export default async function AdminOverviewPage() {
-  const [overview, counts] = await Promise.all([
+  const [overview, counts, mustShip] = await Promise.all([
     serverApiFetch<AdminOverview>("/admin/overview"),
     serverApiFetch<FulfillmentCounts>("/fulfillment/counts"),
+    serverApiFetch<MustShipSummary>("/fulfillment/must-ship").catch(() => null),
   ]);
   if (!overview) {
     return <p className="text-sm text-muted">Couldn&apos;t load the dashboard.</p>;
@@ -143,33 +164,60 @@ export default async function AdminOverviewPage() {
         <p className="text-sm text-muted">A live view of the whole Kudos Cards platform.</p>
       </div>
 
-      {/* Operations first: what has to ship, before the business metrics. Each
-          tile drops into the filtered dispatch queue. See ADR 0111. */}
+      {/* Operations first — the send-by-5 dispatch SLA, before the business
+          metrics. Counts span every not-yet-posted card (a printed-but-unposted
+          overdue card still counts), from the shared must-ship query. Each tile
+          drops into the filtered dispatch queue. See ADR 0111 + 0115. */}
       {counts && (
         <section className="flex flex-col gap-3">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <h2 className="text-xs font-semibold tracking-wide text-muted uppercase">
-              Must ship
+              Must ship — send-by-5
             </h2>
             <Link href="/fulfillment/calendar" className="text-sm text-muted hover:text-accent">
               Dispatch calendar →
             </Link>
           </div>
+          {mustShip && (mustShip.overdue > 0 || mustShip.today > 0) && (
+            <Link
+              href="/fulfillment"
+              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold ${
+                mustShip.overdue > 0
+                  ? "bg-red-50 text-red-800 dark:bg-red-500/10 dark:text-red-300"
+                  : "bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-300"
+              }`}
+            >
+              <span>
+                {mustShip.overdue > 0
+                  ? `⚠️ ${mustShip.overdue} card${mustShip.overdue === 1 ? "" : "s"} overdue — post now to meet the 5-working-day deadline`
+                  : `🖨️ ${mustShip.today} card${mustShip.today === 1 ? "" : "s"} must post today`}
+              </span>
+              <span className="shrink-0 underline underline-offset-2">Open queue →</span>
+            </Link>
+          )}
           <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-5">
             <OpsTile
               label="Overdue"
-              value={counts.due.overdue}
+              value={mustShip?.overdue ?? counts.due.overdue}
               href="/fulfillment?due=overdue"
               tone="red"
             />
             <OpsTile
               label="Due today"
-              value={counts.due.today}
+              value={mustShip?.today ?? counts.due.today}
               href="/fulfillment?due=today"
               tone="amber"
             />
-            <OpsTile label="Due this week" value={counts.due.dueSoon} href="/fulfillment?due=due_soon" />
-            <OpsTile label="Awaiting print" value={counts.status.pending ?? 0} href="/fulfillment?status=pending" />
+            <OpsTile
+              label="Due within 5 working days"
+              value={mustShip?.dueSoon ?? counts.due.dueSoon}
+              href="/fulfillment?due=due_soon"
+            />
+            <OpsTile
+              label="Awaiting print"
+              value={counts.status.pending ?? 0}
+              href="/fulfillment?status=pending"
+            />
             <OpsTile
               label="Click & Drop errors"
               value={counts.clickAndDropErrors}
@@ -214,7 +262,10 @@ export default async function AdminOverviewPage() {
       {/* Revenue chart + plans */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <Panel title="Revenue, last 12 months" right={`${formatGbp(overview.revenueMinor.allTime)} total`}>
+          <Panel
+            title="Revenue, last 12 months"
+            right={`${formatGbp(overview.revenueMinor.allTime)} total`}
+          >
             <RevenueChart data={overview.monthlyRevenueMinor} />
           </Panel>
         </div>
@@ -259,11 +310,15 @@ export default async function AdminOverviewPage() {
           ) : (
             <div className="flex flex-col divide-y divide-border">
               {overview.needsAttention.map((account) => (
-                <div key={account.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                <div
+                  key={account.id}
+                  className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+                >
                   <div className="flex min-w-0 flex-col">
                     <span className="truncate text-sm font-semibold">{account.name}</span>
                     <span className="text-xs text-muted">
-                      Last activity {account.lastActivityDays} day{account.lastActivityDays === 1 ? "" : "s"} ago
+                      Last activity {account.lastActivityDays} day
+                      {account.lastActivityDays === 1 ? "" : "s"} ago
                     </span>
                   </div>
                   <span className="shrink-0 rounded-full border border-accent/40 px-2 py-0.5 text-xs font-medium text-accent">

@@ -144,6 +144,58 @@ const FROM_STATUSES: Record<TransitionableStatus, FulfillmentJobStatus[]> = {
  * The dispatch calendar and its "overdue" carry-over count only these. */
 const OPEN_STATUSES: FulfillmentJobStatus[] = ["pending", "in_progress", "printed"];
 
+/** How many of the most-urgent must-ship cards to return with the summary —
+ * enough for the reminder digest + dashboard preview without unbounding it. */
+const MUST_SHIP_LIMIT = 50;
+
+/** One card on the must-ship watch-list: enough to identify and prioritise it
+ * (name + city, exactly what the queue view already exposes — no street
+ * address). See ADR 0115. */
+const MUST_SHIP_SELECT = {
+  id: true,
+  status: true,
+  dueDate: true,
+  orderRecipient: {
+    select: {
+      shippingAddressCity: true,
+      shippingAddressPostcode: true,
+      recipient: { select: { firstName: true, lastName: true } },
+      batchOrder: { select: { orderNumber: true } },
+    },
+  },
+} satisfies Prisma.FulfillmentJobSelect;
+
+type MustShipRow = Prisma.FulfillmentJobGetPayload<{ select: typeof MUST_SHIP_SELECT }>;
+
+/** One must-ship card, flattened for the ops surfaces. */
+export interface MustShipCard {
+  jobId: string;
+  orderNumber: number;
+  recipientName: string;
+  city: string;
+  postcode: string;
+  dueDate: Date;
+  /** Working days until it must post: negative = overdue, 0 = due today. */
+  workingDaysUntilDue: number;
+  status: FulfillmentJobStatus;
+}
+
+/**
+ * The internal "post-by" watch-list — the single source of truth behind the
+ * send-by-5 SLA (ADR 0115). Counts every open (not-yet-posted) card whose
+ * dispatch deadline is overdue, today, or within the send-by-5 window, and
+ * returns the most urgent ones. One method so the ops must-ship band, the
+ * shell banner, the daily reminder email and the notification centre never
+ * disagree.
+ */
+export interface MustShipSummary {
+  overdue: number;
+  today: number;
+  dueSoon: number;
+  total: number;
+  cards: MustShipCard[];
+}
+
 /** How wide a dispatch-calendar window the API will scan in one request. */
 const MAX_CALENDAR_DAYS = 92;
 
@@ -438,6 +490,60 @@ export class FulfillmentService {
         noDate: due?.no_date ?? 0,
       },
       clickAndDropErrors,
+    };
+  }
+
+  /**
+   * The must-ship watch-list for the send-by-5 SLA (ADR 0115): every open
+   * (not-yet-posted) card whose dispatch deadline is overdue, today, or within
+   * the send-by-5 working-day window, split into those three bands, plus the
+   * most urgent cards (soonest deadline first). Spans all open statuses — a
+   * `printed`-but-not-posted card past its deadline is still must-ship, unlike
+   * the pending-only `counts.due` buckets. Powers the dashboard band, the shell
+   * banner, the daily reminder email and the notification centre.
+   */
+  async mustShip(now: Date = new Date()): Promise<MustShipSummary> {
+    const { today, dueSoon } = dueCutoffs(now);
+    const openAnd = (dueDate: Prisma.DateTimeNullableFilter): Prisma.FulfillmentJobWhereInput => ({
+      status: { in: OPEN_STATUSES },
+      dueDate,
+    });
+
+    const [overdue, todayCount, dueSoonCount, rows] = await Promise.all([
+      this.prisma.fulfillmentJob.count({ where: openAnd({ lt: today }) }),
+      this.prisma.fulfillmentJob.count({ where: openAnd({ equals: today }) }),
+      this.prisma.fulfillmentJob.count({ where: openAnd({ gt: today, lte: dueSoon }) }),
+      this.prisma.fulfillmentJob.findMany({
+        // Everything due on or before the send-by-5 cutoff (overdue + today +
+        // due-soon), soonest-first, bounded.
+        where: openAnd({ lte: dueSoon }),
+        orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }],
+        take: MUST_SHIP_LIMIT,
+        select: MUST_SHIP_SELECT,
+      }),
+    ]);
+
+    return {
+      overdue,
+      today: todayCount,
+      dueSoon: dueSoonCount,
+      total: overdue + todayCount + dueSoonCount,
+      cards: rows.map((row) => this.toMustShipCard(row, now)),
+    };
+  }
+
+  private toMustShipCard(row: MustShipRow, now: Date): MustShipCard {
+    const r = row.orderRecipient;
+    return {
+      jobId: row.id,
+      orderNumber: r.batchOrder.orderNumber,
+      recipientName: `${r.recipient.firstName} ${r.recipient.lastName}`.trim(),
+      city: r.shippingAddressCity,
+      postcode: r.shippingAddressPostcode,
+      // Only dated, due-now-or-soon cards reach here, so dueDate is non-null.
+      dueDate: row.dueDate!,
+      workingDaysUntilDue: workingDaysUntilDue(row.dueDate, now) ?? 0,
+      status: row.status,
     };
   }
 

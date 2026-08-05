@@ -146,7 +146,9 @@ describe("Fulfillment (e2e)", () => {
       }),
     ).expect(201);
 
-    const orderRecipient = await prisma.orderRecipient.findFirstOrThrow({ where: { batchOrderId } });
+    const orderRecipient = await prisma.orderRecipient.findFirstOrThrow({
+      where: { batchOrderId },
+    });
     const job = await prisma.fulfillmentJob.findFirstOrThrow({
       where: { orderRecipientId: orderRecipient.id },
     });
@@ -174,7 +176,8 @@ describe("Fulfillment (e2e)", () => {
       .get(`/batch-orders/${order.batchOrderId}`)
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
-    const line = (before.body as { orderRecipients: Record<string, unknown>[] }).orderRecipients[0]!;
+    const line = (before.body as { orderRecipients: Record<string, unknown>[] })
+      .orderRecipients[0]!;
     expect(line.recipientFirstName).toBe("Ada");
     expect(line.recipientLastName).toBe("Lovelace");
     expect(line.trackingReference).toBeNull();
@@ -189,7 +192,8 @@ describe("Fulfillment (e2e)", () => {
       .get(`/batch-orders/${order.batchOrderId}`)
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
-    const posted = (after.body as { orderRecipients: Record<string, unknown>[] }).orderRecipients[0]!;
+    const posted = (after.body as { orderRecipients: Record<string, unknown>[] })
+      .orderRecipients[0]!;
     expect(posted.jobStatus).toBe("posted");
     expect(posted.trackingReference).toBe("AB123456789GB");
   });
@@ -386,7 +390,9 @@ describe("Fulfillment (e2e)", () => {
     let orderRecipient = await prisma.orderRecipient.findUniqueOrThrow({
       where: { id: order.orderRecipientId },
     });
-    let batchOrder = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.batchOrderId } });
+    let batchOrder = await prisma.batchOrder.findUniqueOrThrow({
+      where: { id: order.batchOrderId },
+    });
     expect(occasion.status).toBe("printed");
     expect(orderRecipient.status).toBe("printed");
     expect(batchOrder.status).toBe("fulfilling"); // first card printed -> order fulfilling
@@ -532,10 +538,19 @@ describe("Fulfillment (e2e)", () => {
 
     // Plant controlled deadlines. `soon` at +1 day is inside the 5-working-day
     // window whatever weekday the suite runs; `upcoming` at +60 is well beyond.
-    await prisma.fulfillmentJob.update({ where: { id: overdue.jobId }, data: { dueDate: utcDay(-10) } });
-    await prisma.fulfillmentJob.update({ where: { id: today.jobId }, data: { dueDate: utcDay(0) } });
+    await prisma.fulfillmentJob.update({
+      where: { id: overdue.jobId },
+      data: { dueDate: utcDay(-10) },
+    });
+    await prisma.fulfillmentJob.update({
+      where: { id: today.jobId },
+      data: { dueDate: utcDay(0) },
+    });
     await prisma.fulfillmentJob.update({ where: { id: soon.jobId }, data: { dueDate: utcDay(1) } });
-    await prisma.fulfillmentJob.update({ where: { id: upcoming.jobId }, data: { dueDate: utcDay(60) } });
+    await prisma.fulfillmentJob.update({
+      where: { id: upcoming.jobId },
+      data: { dueDate: utcDay(60) },
+    });
     await prisma.fulfillmentJob.update({ where: { id: noDate.jobId }, data: { dueDate: null } });
 
     const list = async (due: string) => {
@@ -567,7 +582,9 @@ describe("Fulfillment (e2e)", () => {
     const upcomingItems = await list("upcoming");
     expect(upcomingItems.map((j) => j.id)).toContain(upcoming.jobId);
     expect(upcomingItems.map((j) => j.id)).not.toContain(soon.jobId);
-    expect(upcomingItems.find((j) => j.id === upcoming.jobId)!.workingDaysUntilDue).toBeGreaterThan(0);
+    expect(upcomingItems.find((j) => j.id === upcoming.jobId)!.workingDaysUntilDue).toBeGreaterThan(
+      0,
+    );
 
     const noDateItems = await list("no_date");
     expect(noDateItems.map((j) => j.id)).toContain(noDate.jobId);
@@ -581,14 +598,82 @@ describe("Fulfillment (e2e)", () => {
     expect(ids.indexOf(upcoming.jobId)).toBeLessThan(ids.indexOf(noDate.jobId));
   });
 
+  it("must-ship spans every not-yet-posted card (a printed-but-overdue card still counts)", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+
+    const overduePending = await createPaidOrder(token);
+    const overduePrinted = await createPaidOrder(token);
+    const dueToday = await createPaidOrder(token);
+    const upcoming = await createPaidOrder(token);
+
+    await prisma.fulfillmentJob.update({
+      where: { id: overduePending.jobId },
+      data: { dueDate: utcDay(-10) },
+    });
+    // A printed (not yet posted) card past its deadline is still must-ship —
+    // the whole point of spanning open statuses, not just pending. See ADR 0115.
+    await prisma.fulfillmentJob.update({
+      where: { id: overduePrinted.jobId },
+      data: { dueDate: utcDay(-8), status: "printed" },
+    });
+    await prisma.fulfillmentJob.update({
+      where: { id: dueToday.jobId },
+      data: { dueDate: utcDay(0) },
+    });
+    await prisma.fulfillmentJob.update({
+      where: { id: upcoming.jobId },
+      data: { dueDate: utcDay(60) },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/fulfillment/must-ship")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .expect(200);
+    const body = res.body as {
+      overdue: number;
+      today: number;
+      dueSoon: number;
+      total: number;
+      cards: { jobId: string; workingDaysUntilDue: number; status: string; orderNumber: number }[];
+    };
+
+    const ids = body.cards.map((c) => c.jobId);
+    // Both overdue cards present — including the printed one.
+    expect(ids).toContain(overduePending.jobId);
+    expect(ids).toContain(overduePrinted.jobId);
+    expect(ids).toContain(dueToday.jobId);
+    // The +60-day card is well outside the send-by-5 window.
+    expect(ids).not.toContain(upcoming.jobId);
+    expect(body.overdue).toBeGreaterThanOrEqual(2);
+    expect(body.today).toBeGreaterThanOrEqual(1);
+    expect(
+      body.cards.find((c) => c.jobId === overduePrinted.jobId)!.workingDaysUntilDue,
+    ).toBeLessThan(0);
+  });
+
+  it("requires platform-admin auth for the must-ship watch-list", async () => {
+    const { token } = await signUp();
+    await request(app.getHttpServer())
+      .get("/fulfillment/must-ship")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(403);
+  });
+
   it("reports due-date urgency buckets in the counts, within pending", async () => {
     const opsToken = await createOpsAdmin();
     const { token } = await signUp();
 
     const overdue = await createPaidOrder(token);
     const today = await createPaidOrder(token);
-    await prisma.fulfillmentJob.update({ where: { id: overdue.jobId }, data: { dueDate: utcDay(-3) } });
-    await prisma.fulfillmentJob.update({ where: { id: today.jobId }, data: { dueDate: utcDay(0) } });
+    await prisma.fulfillmentJob.update({
+      where: { id: overdue.jobId },
+      data: { dueDate: utcDay(-3) },
+    });
+    await prisma.fulfillmentJob.update({
+      where: { id: today.jobId },
+      data: { dueDate: utcDay(0) },
+    });
     // A failed Click & Drop import on an open card — the "must ship" attention
     // signal (ADR 0111).
     await prisma.fulfillmentJob.update({
@@ -635,9 +720,18 @@ describe("Fulfillment (e2e)", () => {
 
     // Two cards on the 10th, one on the 20th, one posted on the 15th (excluded),
     // one open before the window (feeds overdueBefore).
-    await prisma.fulfillmentJob.update({ where: { id: a.jobId }, data: { dueDate: dayUtc("2027-03-10") } });
-    await prisma.fulfillmentJob.update({ where: { id: b.jobId }, data: { dueDate: dayUtc("2027-03-10") } });
-    await prisma.fulfillmentJob.update({ where: { id: c.jobId }, data: { dueDate: dayUtc("2027-03-20") } });
+    await prisma.fulfillmentJob.update({
+      where: { id: a.jobId },
+      data: { dueDate: dayUtc("2027-03-10") },
+    });
+    await prisma.fulfillmentJob.update({
+      where: { id: b.jobId },
+      data: { dueDate: dayUtc("2027-03-10") },
+    });
+    await prisma.fulfillmentJob.update({
+      where: { id: c.jobId },
+      data: { dueDate: dayUtc("2027-03-20") },
+    });
     await prisma.fulfillmentJob.update({
       where: { id: posted.jobId },
       data: { dueDate: dayUtc("2027-03-15"), status: "posted" },
@@ -680,8 +774,14 @@ describe("Fulfillment (e2e)", () => {
 
     const onDay = await createPaidOrder(token);
     const otherDay = await createPaidOrder(token);
-    await prisma.fulfillmentJob.update({ where: { id: onDay.jobId }, data: { dueDate: dayUtc("2027-03-12") } });
-    await prisma.fulfillmentJob.update({ where: { id: otherDay.jobId }, data: { dueDate: dayUtc("2027-03-13") } });
+    await prisma.fulfillmentJob.update({
+      where: { id: onDay.jobId },
+      data: { dueDate: dayUtc("2027-03-12") },
+    });
+    await prisma.fulfillmentJob.update({
+      where: { id: otherDay.jobId },
+      data: { dueDate: dayUtc("2027-03-13") },
+    });
 
     const res = await request(app.getHttpServer())
       .get("/fulfillment/jobs?status=pending&dueOn=2027-03-12&perPage=200")
@@ -702,7 +802,10 @@ describe("Fulfillment (e2e)", () => {
     const printed = await createPaidOrder(token);
     const posted = await createPaidOrder(token);
     const DAY = "2027-03-25";
-    await prisma.fulfillmentJob.update({ where: { id: pending.jobId }, data: { dueDate: dayUtc(DAY) } });
+    await prisma.fulfillmentJob.update({
+      where: { id: pending.jobId },
+      data: { dueDate: dayUtc(DAY) },
+    });
     await prisma.fulfillmentJob.update({
       where: { id: inProgress.jobId },
       data: { dueDate: dayUtc(DAY), status: "in_progress" },
@@ -724,9 +827,7 @@ describe("Fulfillment (e2e)", () => {
       .set("Authorization", `Bearer ${opsToken}`)
       .expect(200);
     const ids = (res.body as { items: { id: string }[] }).items.map((j) => j.id);
-    expect(ids).toEqual(
-      expect.arrayContaining([pending.jobId, inProgress.jobId, printed.jobId]),
-    );
+    expect(ids).toEqual(expect.arrayContaining([pending.jobId, inProgress.jobId, printed.jobId]));
     expect(ids).not.toContain(posted.jobId);
   });
 

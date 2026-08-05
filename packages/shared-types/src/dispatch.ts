@@ -20,14 +20,17 @@ import type { PostageClass } from "./enums";
 export const DEFAULT_POSTAGE_LEAD_DAYS = 5;
 
 /**
- * Working days before the occasion a card is posted, per postage class. First
- * class lands sooner, second class needs a longer run. These are Kudos HQ
- * print/pack turnaround plus Royal Mail delivery, counted as working days (so
- * the real calendar lead is longer, which is the point). The auto-send cron
- * acts once `dispatchDate <= today`. See docs/adr/0013-auto-send.md.
+ * Working days before the occasion a card is posted, per postage class. Kudos
+ * HQ's operating rule is a single **send-by-5** SLA: every ordered card is
+ * posted at least 5 working days before its delivery date, regardless of postage
+ * class, so the print/post schedule has one deadline to work to and nothing
+ * arrives late (see docs/adr/0115-send-by-5-dispatch-assurance.md). The values
+ * are equal by design — kept as a per-class map so a class could be given a
+ * longer run later without touching call sites. The auto-send cron acts once
+ * `dispatchDate <= today`. See docs/adr/0013-auto-send.md.
  */
 export const POSTAGE_LEAD_DAYS: Record<PostageClass, number> = {
-  first_class: 3,
+  first_class: 5,
   second_class: 5,
 };
 
@@ -207,7 +210,10 @@ export function workingDaysUntil(
 
 /** True when a card can be printed and posted on this date: a weekday that
  * isn't a bank holiday. */
-export function isWorkingDay(date: Date, holidays: ReadonlySet<string> = UK_BANK_HOLIDAYS): boolean {
+export function isWorkingDay(
+  date: Date,
+  holidays: ReadonlySet<string> = UK_BANK_HOLIDAYS,
+): boolean {
   const dow = date.getUTCDay();
   if (dow === 0 || dow === 6) return false; // Sunday / Saturday
   return !holidays.has(isoDay(date));
