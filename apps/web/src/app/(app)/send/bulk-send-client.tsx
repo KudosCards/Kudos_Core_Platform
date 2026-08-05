@@ -14,6 +14,7 @@ import { useMemo, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { AddressModal } from "@/components/address-modal";
+import { CardPreviewLightbox, insideFacesHint } from "@/components/card-preview-lightbox";
 import { RecipientPicker, type Paginated } from "./recipient-picker";
 
 // Client-only (Konva touches canvas APIs) — renders a card exactly as it prints.
@@ -117,6 +118,8 @@ export function BulkSendClient({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addressModalFor, setAddressModalFor] = useState<Recipient | null>(null);
+  // The recipient whose full card (all faces) is open in the flip lightbox.
+  const [previewFor, setPreviewFor] = useState<Recipient | null>(null);
   // Default on: sending from an occasion-mode segment should consume the matched
   // occasion so it isn't sent again. See docs/adr/0107.
   const [markHandled, setMarkHandled] = useState(true);
@@ -149,7 +152,8 @@ export function BulkSendClient({
   // else a generic "occasion" — pluralised by how many are being consumed.
   const reconcileNoun = useMemo(() => {
     const types = [...new Set(reconcileMatches.map((m) => m.occasionType))];
-    const singular = types.length === 1 ? (OCCASION_TYPE_LABEL[types[0]!] ?? "occasion") : "occasion";
+    const singular =
+      types.length === 1 ? (OCCASION_TYPE_LABEL[types[0]!] ?? "occasion") : "occasion";
     return `${singular}${reconcileMatches.length === 1 ? "" : "s"}`;
   }, [reconcileMatches]);
 
@@ -217,7 +221,10 @@ export function BulkSendClient({
           // so they aren't sent a second time. See docs/adr/0107.
           reconcile:
             markHandled && reconcileMatches.length > 0
-              ? reconcileMatches.map((m) => ({ recipientId: m.recipientId, occasionId: m.occasionId }))
+              ? reconcileMatches.map((m) => ({
+                  recipientId: m.recipientId,
+                  occasionId: m.occasionId,
+                }))
               : undefined,
         }),
       });
@@ -266,8 +273,8 @@ export function BulkSendClient({
             </p>
           ) : (
             <p className="mt-0.5 text-muted">
-              Everyone&apos;s pre-selected below — remove anyone you don&apos;t want, fix any missing
-              addresses, then choose a design and pay.
+              Everyone&apos;s pre-selected below — remove anyone you don&apos;t want, fix any
+              missing addresses, then choose a design and pay.
             </p>
           )}
 
@@ -282,7 +289,8 @@ export function BulkSendClient({
                 className="mt-0.5 size-4 accent-accent"
               />
               <span>
-                Mark {reconcileMatches.length === 1 ? "this" : "these"} {reconcileNoun} as handled so
+                Mark {reconcileMatches.length === 1 ? "this" : "these"} {reconcileNoun} as handled
+                so
                 {reconcileMatches.length === 1 ? " it isn't" : " they aren't"} sent again from your
                 approvals or auto-send.
               </span>
@@ -429,14 +437,17 @@ export function BulkSendClient({
           </section>
 
           {/* Personalisation preview — one card per recipient, with the {name}
-              token resolved to each person, so the sender sees every card. */}
+              token resolved to each person. Each tile opens a flip lightbox
+              showing every face (front + inside + back) alongside the exact
+              address it posts to, so the sender reviews the whole card, not just
+              the cover, before paying. */}
           {selectedDesign && sendable.length > 0 && (
             <section className="card flex flex-col gap-3 p-6">
               <div className="flex flex-col gap-1">
                 <h2 className="font-semibold">Personalised for each recipient</h2>
                 <p className="text-sm text-muted">
                   {personalises ? (
-                    <>Each card is printed with that person&apos;s name.</>
+                    <>Each card is printed with that person&apos;s name. </>
                   ) : (
                     <>
                       This design has no{" "}
@@ -448,23 +459,37 @@ export function BulkSendClient({
                       >
                         Edit / personalise
                       </Link>{" "}
-                      to include each recipient&apos;s name.
+                      to include each recipient&apos;s name.{" "}
                     </>
                   )}
+                  Click any card to flip through every face and check the address.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                {sendable.slice(0, MAX_PREVIEWS).map((recipient) => (
-                  <div key={recipient.id} className="flex flex-col items-center gap-1.5">
-                    <CardFacePreview
-                      document={applyMergeTokens(selectedDesign.document, recipient)}
-                      width={150}
-                    />
-                    <span className="truncate text-xs text-muted">
-                      {recipient.firstName} {recipient.lastName}
-                    </span>
-                  </div>
-                ))}
+                {sendable.slice(0, MAX_PREVIEWS).map((recipient) => {
+                  const merged = applyMergeTokens(selectedDesign.document, recipient);
+                  const insideHint = insideFacesHint(merged);
+                  return (
+                    <button
+                      key={recipient.id}
+                      type="button"
+                      onClick={() => setPreviewFor(recipient)}
+                      className="group flex flex-col items-center gap-1.5 rounded-lg p-1 text-center transition-colors hover:bg-foreground/[0.03]"
+                    >
+                      <span className="relative">
+                        <CardFacePreview document={merged} width={150} />
+                        {insideHint && (
+                          <span className="absolute right-1 bottom-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                            {insideHint}
+                          </span>
+                        )}
+                      </span>
+                      <span className="truncate text-xs text-muted group-hover:text-foreground">
+                        {recipient.firstName} {recipient.lastName}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
               {sendable.length > MAX_PREVIEWS && (
                 <p className="text-xs text-muted">
@@ -565,6 +590,15 @@ export function BulkSendClient({
           open={addressModalFor !== null}
           onClose={() => setAddressModalFor(null)}
           onSaved={onAddressSaved}
+        />
+      )}
+
+      {previewFor && selectedDesign && (
+        <CardPreviewLightbox
+          document={applyMergeTokens(selectedDesign.document, previewFor)}
+          title={`${previewFor.firstName} ${previewFor.lastName}`}
+          subtitle={addressSummary(previewFor)}
+          onClose={() => setPreviewFor(null)}
         />
       )}
     </div>
