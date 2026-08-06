@@ -417,7 +417,39 @@ describe("Batch orders (e2e)", () => {
     expect(stored.stripePaymentIntentId).toMatch(/^pi_test_/);
   });
 
-  it("rejects checking out a non-draft batch order", async () => {
+  it("resumes checkout on a pending_payment order, minting a fresh Stripe session", async () => {
+    const { token } = await signUp();
+    const occasionId = await createApprovedOccasion(token);
+    const createResponse = await request(app.getHttpServer())
+      .post("/batch-orders")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ lines: [buildLine(occasionId)] })
+      .expect(201);
+    const order = batchOrderSchema.parse(createResponse.body);
+
+    // First checkout: draft → pending_payment, one session.
+    await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/checkout`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    // The buyer closed Stripe without paying; the order is stuck pending_payment.
+    // Clicking "Resume checkout" hits the same endpoint again — it must succeed
+    // and mint a NEW session rather than reject the (now non-draft) order.
+    const resume = await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/checkout`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    expect(resume.body).toEqual({
+      checkoutUrl: expect.stringMatching(/^https:\/\/checkout\.stripe\.test\/pay\/cs_test_/),
+    });
+    expect(checkoutSessionsCreate).toHaveBeenCalledTimes(2);
+
+    const stored = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.id } });
+    expect(stored.status).toBe("pending_payment");
+  });
+
+  it("rejects checking out a cancelled batch order", async () => {
     const { token } = await signUp();
     const occasionId = await createApprovedOccasion(token);
     const createResponse = await request(app.getHttpServer())
@@ -428,14 +460,16 @@ describe("Batch orders (e2e)", () => {
     const order = batchOrderSchema.parse(createResponse.body);
 
     await request(app.getHttpServer())
-      .post(`/batch-orders/${order.id}/checkout`)
+      .post(`/batch-orders/${order.id}/cancel`)
       .set("Authorization", `Bearer ${token}`)
       .expect(201);
 
+    // A cancelled order is final — not re-payable.
     await request(app.getHttpServer())
       .post(`/batch-orders/${order.id}/checkout`)
       .set("Authorization", `Bearer ${token}`)
       .expect(409);
+    expect(checkoutSessionsCreate).not.toHaveBeenCalled();
   });
 
   it("cancels a draft batch order and reverts its occasion back to approved", async () => {

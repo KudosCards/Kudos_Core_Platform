@@ -804,22 +804,33 @@ export class BatchOrdersService {
     if (!existing) {
       throw new NotFoundException("Batch order not found");
     }
-    if (existing.status !== "draft") {
-      throw new ConflictException(`Batch order is "${existing.status}", not a draft`);
+    // Payable from "draft" (first checkout) or "pending_payment" (a resume —
+    // checkout was started but the buyer closed Stripe without paying, so the
+    // order is stuck holding its occasions "queued" with no live session). Both
+    // just need a fresh Checkout Session minted below. Anything past payment
+    // (paid/fulfilling/completed) or cancelled is final and not re-payable.
+    if (existing.status !== "draft" && existing.status !== "pending_payment") {
+      throw new ConflictException(`Batch order is "${existing.status}", not payable`);
     }
 
-    // Status-guarded, and BEFORE the Stripe call — not after. Calling Stripe
-    // first would let two concurrent checkout requests each create a real,
-    // live Checkout Session before either learns it lost the DB race,
-    // leaking an orphaned (unreturned, but still payable-in-principle)
-    // session per collision. Guarding first means at most one request ever
-    // reaches Stripe for a given draft.
-    const { count } = await this.prisma.batchOrder.updateMany({
-      where: { id, accountId, status: "draft" },
-      data: { status: "pending_payment" },
-    });
-    if (count === 0) {
-      throw new ConflictException("Batch order was already checked out by a concurrent request");
+    // Only a draft needs the status-guarded transition to pending_payment,
+    // done BEFORE the Stripe call — not after. Calling Stripe first would let
+    // two concurrent checkout requests each create a real, live Checkout
+    // Session before either learns it lost the DB race, leaking an orphaned
+    // (unreturned, but still payable-in-principle) session per collision.
+    // Guarding first means at most one request ever reaches Stripe for a given
+    // draft. A resume (already pending_payment) has no transition to guard; we
+    // track that so a failed Stripe call only hands a *draft* back.
+    let movedFromDraft = false;
+    if (existing.status === "draft") {
+      const { count } = await this.prisma.batchOrder.updateMany({
+        where: { id, accountId, status: "draft" },
+        data: { status: "pending_payment" },
+      });
+      if (count === 0) {
+        throw new ConflictException("Batch order was already checked out by a concurrent request");
+      }
+      movedFromDraft = true;
     }
 
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
@@ -866,13 +877,17 @@ export class BatchOrdersService {
         metadata: { batchOrderId: existing.id, accountId },
       });
     } catch (error) {
-      // Compensating action: we already claimed pending_payment above, so a
-      // failed Stripe call must hand the draft back rather than leave the
-      // order stuck in pending_payment with no Checkout Session behind it.
-      await this.prisma.batchOrder.updateMany({
-        where: { id, accountId, status: "pending_payment" },
-        data: { status: "draft" },
-      });
+      // Compensating action: if we just claimed pending_payment for a draft, a
+      // failed Stripe call must hand the draft back rather than leave the order
+      // stuck in pending_payment with no Checkout Session behind it. A resume
+      // was already pending_payment before this call, so leave it there —
+      // reverting it to draft would be wrong, and it can simply be resumed again.
+      if (movedFromDraft) {
+        await this.prisma.batchOrder.updateMany({
+          where: { id, accountId, status: "pending_payment" },
+          data: { status: "draft" },
+        });
+      }
       throw error;
     }
 
