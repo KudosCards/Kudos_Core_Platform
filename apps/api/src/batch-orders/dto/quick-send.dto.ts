@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { OccasionType, PostageClass } from "@prisma/client";
 import { IsEnum, IsOptional, IsString, IsUUID, Length, Matches } from "class-validator";
 import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
+import { BlankToUndefined } from "../../common/transforms";
 
 /**
  * The guided "send this card" flow: turn a freshly-designed saved card + a
@@ -31,6 +32,7 @@ export class QuickSendDto {
   shippingAddressLine1!: string;
 
   @ApiPropertyOptional()
+  @BlankToUndefined()
   @IsOptional()
   @IsString()
   @Length(1, 200)

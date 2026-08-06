@@ -13,6 +13,7 @@ import {
   ValidateNested,
 } from "class-validator";
 import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
+import { BlankToUndefined } from "../../common/transforms";
 
 /**
  * One card to be printed and posted. `occasionId` must reference an
@@ -31,6 +32,7 @@ export class CreateBatchOrderLineDto {
   shippingAddressLine1!: string;
 
   @ApiProperty({ required: false })
+  @BlankToUndefined()
   @IsOptional()
   @IsString()
   @Length(1, 200)
