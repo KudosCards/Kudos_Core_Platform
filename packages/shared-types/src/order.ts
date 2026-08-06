@@ -141,6 +141,14 @@ export type CreateBatchOrderInput = z.infer<typeof createBatchOrderInputSchema>;
  */
 export const quickSendInputSchema = z.object({
   savedDesignId: z.string().uuid(),
+  /** Send to an existing contact from the address book — skips creating a new
+   * recipient (and the duplicate that would otherwise create). The name/address
+   * fields still carry the shipping details for this order line. */
+  recipientId: z.string().uuid().optional(),
+  /** When adding a NEW contact (no recipientId), whether to keep it in the
+   * address book. Defaults to true; false creates a hidden one-off. Ignored
+   * when recipientId is set. */
+  saveToContacts: z.boolean().optional(),
   firstName: z.string().min(1).max(120),
   lastName: z.string().min(1).max(120),
   shippingAddressLine1: z.string().min(1).max(200),

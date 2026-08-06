@@ -159,16 +159,37 @@ export class BatchOrdersService {
       throw new NotFoundException("Design not found");
     }
 
-    // The recipient this card is for. Reuses the audited, cap-checked create so
-    // the guided path can't sidestep the plan's recipient limit.
-    const recipient = await this.recipients.create(accountId, actorUserId, {
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-      addressLine1: dto.shippingAddressLine1,
-      addressLine2: dto.shippingAddressLine2,
-      addressCity: dto.shippingAddressCity,
-      addressPostcode: dto.shippingAddressPostcode,
-    });
+    // Who this card is for. Three ways in (see the CRM-widget ADR):
+    //  - recipientId → an existing address-book contact, reused as-is (no new
+    //    row, so no duplicate and no cap hit). The dto's address still carries
+    //    the shipping details for this order line, so an edited address applies
+    //    to the send without mutating the stored contact.
+    //  - new contact, saveToContacts !== false (the default) → the audited,
+    //    cap-checked create, so the guided path can't sidestep the plan limit.
+    //  - new contact, saveToContacts === false → a hidden one-off (archived).
+    let recipient: { id: string };
+    if (dto.recipientId) {
+      const existing = await this.prisma.recipient.findFirst({
+        where: { id: dto.recipientId, accountId },
+      });
+      if (!existing) {
+        throw new NotFoundException("Contact not found on this account");
+      }
+      recipient = existing;
+    } else {
+      const contactData = {
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        addressLine1: dto.shippingAddressLine1,
+        addressLine2: dto.shippingAddressLine2,
+        addressCity: dto.shippingAddressCity,
+        addressPostcode: dto.shippingAddressPostcode,
+      };
+      recipient =
+        dto.saveToContacts === false
+          ? await this.recipients.createOneOff(accountId, actorUserId, contactData)
+          : await this.recipients.create(accountId, actorUserId, contactData);
+    }
 
     // A one-off occasion, created already `approved` with the design attached —
     // the guided flow is the human decision that the manual approve step

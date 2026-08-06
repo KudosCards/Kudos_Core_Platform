@@ -159,6 +159,47 @@ export class RecipientsService {
     return recipient;
   }
 
+  /**
+   * A transient recipient for a one-off guided send the buyer chose NOT to keep
+   * in their address book. Created `archived` (source "one_off") so it satisfies
+   * the order's recipient FK yet stays out of the contacts list AND out of the
+   * plan's recipient cap (which counts only `active`). Deliberately skips the
+   * cap check and the eager birthday occasion — it's a send target, not a
+   * managed contact. See docs/adr/0018 (guided send) + the CRM-widget ADR.
+   */
+  async createOneOff(
+    accountId: string,
+    actorUserId: string | null,
+    data: {
+      firstName: string;
+      lastName: string;
+      addressLine1: string;
+      addressLine2?: string;
+      addressCity: string;
+      addressPostcode: string;
+    },
+  ): Promise<Recipient> {
+    let recipient: Recipient;
+    try {
+      recipient = await this.prisma.recipient.create({
+        data: { accountId, ...data, status: "archived", source: "one_off" },
+      });
+    } catch (error) {
+      throw this.mapWriteError(error);
+    }
+    if (actorUserId) {
+      await this.audit.record({
+        accountId,
+        actorUserId,
+        action: "create",
+        targetType: "Recipient",
+        targetId: recipient.id,
+        metadata: { oneOff: true },
+      });
+    }
+    return recipient;
+  }
+
   async list(
     accountId: string,
     actorUserId: string,
