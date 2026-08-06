@@ -16,6 +16,7 @@ import type { AuthenticatedUser, CurrentMembershipContext } from "../auth/types"
 import type { Paginated } from "../common/paginated";
 import type { CheckoutResult } from "../common/checkout-result";
 import { BatchOrdersService, type BatchOrder, type BatchOrderDetail } from "./batch-orders.service";
+import { CheckoutBatchOrderDto } from "./dto/checkout-batch-order.dto";
 import { CreateBatchOrderDto } from "./dto/create-batch-order.dto";
 import { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
 import { QuickSendDto } from "./dto/quick-send.dto";
@@ -96,8 +97,11 @@ export class BatchOrdersController {
     @CurrentMembership() membership: CurrentMembershipContext,
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: CheckoutBatchOrderDto,
   ): Promise<CheckoutResult> {
-    return this.batchOrdersService.checkout(membership.accountId, user.id, id);
+    return this.batchOrdersService.checkout(membership.accountId, user.id, id, {
+      resume: dto.resume,
+    });
   }
 
   @Post(":id/cancel")

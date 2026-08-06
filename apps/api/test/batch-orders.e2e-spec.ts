@@ -523,11 +523,13 @@ describe("Batch orders (e2e)", () => {
       .expect(201);
 
     // The buyer closed Stripe without paying; the order is stuck pending_payment.
-    // Clicking "Resume checkout" hits the same endpoint again — it must succeed
-    // and mint a NEW session rather than reject the (now non-draft) order.
+    // Clicking "Resume checkout" hits the same endpoint again with an explicit
+    // resume intent — it must succeed and mint a NEW session rather than reject
+    // the (now non-draft) order.
     const resume = await request(app.getHttpServer())
       .post(`/batch-orders/${order.id}/checkout`)
       .set("Authorization", `Bearer ${token}`)
+      .send({ resume: true })
       .expect(201);
     expect(resume.body).toEqual({
       checkoutUrl: expect.stringMatching(/^https:\/\/checkout\.stripe\.test\/pay\/cs_test_/),
@@ -536,6 +538,34 @@ describe("Batch orders (e2e)", () => {
 
     const stored = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.id } });
     expect(stored.status).toBe("pending_payment");
+  });
+
+  it("rejects re-checkout of a pending_payment order without an explicit resume intent", async () => {
+    const { token } = await signUp();
+    const occasionId = await createApprovedOccasion(token);
+    const createResponse = await request(app.getHttpServer())
+      .post("/batch-orders")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ lines: [buildLine(occasionId)] })
+      .expect(201);
+    const order = batchOrderSchema.parse(createResponse.body);
+
+    // First checkout: draft → pending_payment, one session.
+    await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/checkout`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    expect(checkoutSessionsCreate).toHaveBeenCalledTimes(1);
+
+    // A second checkout WITHOUT the resume flag is treated as a stray/duplicate
+    // first-checkout submit, not a resume: it must be rejected and must never
+    // reach Stripe. This is the guarantee that makes the concurrent-double-submit
+    // case safe (the loser reads pending_payment but has no resume intent).
+    await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/checkout`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+    expect(checkoutSessionsCreate).toHaveBeenCalledTimes(1);
   });
 
   it("rejects checking out a cancelled batch order", async () => {
