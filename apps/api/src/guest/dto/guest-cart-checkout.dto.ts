@@ -16,6 +16,7 @@ import {
   ValidateNested,
 } from "class-validator";
 import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
+import { BlankToUndefined } from "../../common/transforms";
 
 /**
  * The largest guest basket we'll take in one payment. Matches the free plan's
@@ -59,6 +60,7 @@ export class GuestCartItemDto {
   shippingAddressLine1!: string;
 
   @ApiPropertyOptional()
+  @BlankToUndefined()
   @IsOptional()
   @IsString()
   @Length(1, 200)

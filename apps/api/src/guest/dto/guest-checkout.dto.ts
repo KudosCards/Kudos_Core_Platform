@@ -11,6 +11,7 @@ import {
   Matches,
 } from "class-validator";
 import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
+import { BlankToUndefined } from "../../common/transforms";
 
 /**
  * A guest one-off purchase: an unauthenticated visitor buys and sends a single
@@ -50,6 +51,7 @@ export class GuestCheckoutDto {
   shippingAddressLine1!: string;
 
   @ApiPropertyOptional()
+  @BlankToUndefined()
   @IsOptional()
   @IsString()
   @Length(1, 200)

@@ -417,6 +417,27 @@ describe("Batch orders (e2e)", () => {
     expect(stored.stripePaymentIntentId).toMatch(/^pi_test_/);
   });
 
+  it("accepts an empty optional shippingAddressLine2 (blank → not provided)", async () => {
+    const { token } = await signUp();
+    const occasionId = await createApprovedOccasion(token);
+
+    // The web checkout form sends "" for a left-blank optional Address line 2.
+    // That must be treated as "not provided", not rejected by the min-length
+    // rule — otherwise a valid order can never be placed. See common/transforms.
+    const createResponse = await request(app.getHttpServer())
+      .post("/batch-orders")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ lines: [{ ...buildLine(occasionId), shippingAddressLine2: "" }] })
+      .expect(201);
+    const order = batchOrderSchema.parse(createResponse.body);
+
+    const stored = await prisma.orderRecipient.findFirstOrThrow({
+      where: { batchOrderId: order.id },
+    });
+    // Persisted as null, not an empty string.
+    expect(stored.shippingAddressLine2).toBeNull();
+  });
+
   it("resumes checkout on a pending_payment order, minting a fresh Stripe session", async () => {
     const { token } = await signUp();
     const occasionId = await createApprovedOccasion(token);
