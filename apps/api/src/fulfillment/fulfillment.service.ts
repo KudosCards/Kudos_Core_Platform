@@ -19,7 +19,7 @@ import { ClickAndDropService } from "../shipping/click-and-drop.service";
 import { DispatchConfigService } from "../dispatch/dispatch-config.service";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
-import { isoDay, startOfUtcDay } from "@kudos/shared-types";
+import { addWorkingDays, isoDay, startOfUtcDay } from "@kudos/shared-types";
 import type { FulfillmentCalendar, FulfillmentCalendarDay } from "@kudos/shared-types";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { dueCutoffs, isoDayToUtc, workingDaysUntilDue } from "./fulfillment-due.util";
@@ -225,6 +225,22 @@ const DELIVERY_POLL_ACTOR = "system:delivery-poll";
  * to the next sweep. */
 const DELIVERY_POLL_BATCH = 200;
 
+/** The outcome of one estimated-arrival sweep, for logging + the ops on-demand run. */
+export interface ArrivalSweepResult {
+  /** Recently-posted cards examined this sweep. */
+  checked: number;
+  /** How many reached their estimated arrival → marked delivered + buyer emailed. */
+  notified: number;
+}
+
+/** Actor recorded when the arrival sweep marks a card delivered (estimated) — no
+ * operator and no carrier event; the posting-date estimate did. Mirrors the
+ * other `system:*` actors. See ADR 0124. */
+const ARRIVAL_ACTOR = "system:arrival-estimate";
+
+/** One sweep's cap on cards to examine, matching the delivery poll's bounding. */
+const ARRIVAL_SWEEP_BATCH = 500;
+
 /** One buyer's just-posted cards for a single order, for the dispatch email. */
 interface DispatchGroup {
   orderId: string;
@@ -421,6 +437,58 @@ export class FulfillmentService {
       }
     }
     return { checked: jobs.length, delivered, failed };
+  }
+
+  /**
+   * The estimated-arrival sweep (ADR 0124). Our cards go on ordinary stamps,
+   * which Royal Mail does not track — so we never observe a real delivery. This
+   * estimates arrival from each posted card's `postedAt` + its postage class's
+   * expected transit (working days, UK holiday-aware, from config) and, once that
+   * day has passed, marks the card **delivered (estimated)** — closing the order
+   * — and emails the buyer an honest "should have arrived" note.
+   *
+   * Bounded to cards posted within the configured recency window, so enabling it
+   * never emails or auto-completes a historical `posted` backlog in one go.
+   * Idempotent for free: a card that transitions leaves the `posted` set, so a
+   * later sweep can't pick it up again (the same guard the manual/delivery-poll
+   * paths rely on).
+   */
+  async notifyEstimatedArrivals(now: Date = new Date()): Promise<ArrivalSweepResult> {
+    const firstDays = this.config.get("ARRIVAL_FIRST_CLASS_WORKING_DAYS", { infer: true });
+    const secondDays = this.config.get("ARRIVAL_SECOND_CLASS_WORKING_DAYS", { infer: true });
+    const maxAgeDays = this.config.get("ARRIVAL_MAX_POSTED_AGE_DAYS", { infer: true });
+    const today = startOfUtcDay(now);
+    const earliestPosted = new Date(today);
+    earliestPosted.setUTCDate(earliestPosted.getUTCDate() - maxAgeDays);
+
+    const candidates = await this.prisma.fulfillmentJob.findMany({
+      where: { status: "posted", postedAt: { gte: earliestPosted, lte: now } },
+      select: {
+        id: true,
+        postedAt: true,
+        orderRecipient: { select: { postageClass: true } },
+      },
+      orderBy: { postedAt: "asc" },
+      take: ARRIVAL_SWEEP_BATCH,
+    });
+
+    const arrivedIds: string[] = [];
+    for (const job of candidates) {
+      if (!job.postedAt) continue; // status posted implies postedAt, but narrow the type
+      const transit = job.orderRecipient.postageClass === "second_class" ? secondDays : firstDays;
+      const estimatedArrival = addWorkingDays(startOfUtcDay(job.postedAt), transit);
+      // Not due to have arrived yet — leave it for a later sweep.
+      if (estimatedArrival.getTime() > today.getTime()) continue;
+      const applied = await this.prisma.$transaction((tx) =>
+        this.applyTransition(tx, ARRIVAL_ACTOR, job.id, "delivered", {
+          deliveredAt: estimatedArrival,
+        }),
+      );
+      if (applied) arrivedIds.push(job.id);
+    }
+
+    await this.notifyArrived(arrivedIds);
+    return { checked: candidates.length, notified: arrivedIds.length };
   }
 
   private async orderNumberFor(batchOrderId: string): Promise<number> {
@@ -857,13 +925,12 @@ export class FulfillmentService {
     return summary;
   }
 
-  /** After cards are marked posted, email each buyer that their card(s) are on
-   * the way. Grouped by order so a bulk post-run sends one email per order, not
-   * one per card. Fully best-effort — a send failure never rolls back the
-   * (already committed) dispatch. See docs/adr/0025. */
-  private async notifyDispatched(jobIds: string[]): Promise<void> {
-    if (jobIds.length === 0) return;
-    let groups: DispatchGroup[];
+  /** Load a set of jobs and fold them into one group per buyer order (name +
+   * tracking + contact email), so a bulk action sends one email per order, not
+   * one per card. Returns null if the lookup itself fails (caller logs + bails);
+   * orders whose account has no contact email are dropped. Shared by the
+   * dispatch and arrival notifications. */
+  private async groupJobsIntoOrders(jobIds: string[]): Promise<DispatchGroup[] | null> {
     try {
       const jobs = await this.prisma.fulfillmentJob.findMany({
         where: { id: { in: jobIds } },
@@ -901,14 +968,22 @@ export class FulfillmentService {
         });
         byOrder.set(or.batchOrder.id, group);
       }
-      groups = [...byOrder.values()];
+      return [...byOrder.values()];
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown error";
-      this.logger.error(
-        `Dispatch notification lookup for [${jobIds.join(", ")}] failed: ${reason}`,
-      );
-      return;
+      this.logger.error(`Notification lookup for [${jobIds.join(", ")}] failed: ${reason}`);
+      return null;
     }
+  }
+
+  /** After cards are marked posted, email each buyer that their card(s) are on
+   * the way. Grouped by order so a bulk post-run sends one email per order, not
+   * one per card. Fully best-effort — a send failure never rolls back the
+   * (already committed) dispatch. See docs/adr/0025. */
+  private async notifyDispatched(jobIds: string[]): Promise<void> {
+    if (jobIds.length === 0) return;
+    const groups = await this.groupJobsIntoOrders(jobIds);
+    if (!groups) return;
 
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
     for (const group of groups) {
@@ -918,6 +993,26 @@ export class FulfillmentService {
       } catch (error) {
         const reason = error instanceof Error ? error.message : "Unknown error";
         this.logger.error(`Dispatch email for order ${group.orderId} failed: ${reason}`);
+      }
+    }
+  }
+
+  /** After the arrival sweep marks cards delivered (estimated), email each buyer
+   * that their card(s) should have arrived. Grouped per order, best-effort — a
+   * send failure never undoes the (already committed) delivered transition. See
+   * ADR 0124. */
+  private async notifyArrived(jobIds: string[]): Promise<void> {
+    if (jobIds.length === 0) return;
+    const groups = await this.groupJobsIntoOrders(jobIds);
+    if (!groups) return;
+
+    const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
+    for (const group of groups) {
+      try {
+        await this.sendArrivalNotification(webAppUrl, group);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "Unknown error";
+        this.logger.error(`Arrival email for order ${group.orderId} failed: ${reason}`);
       }
     }
   }
@@ -971,6 +1066,56 @@ export class FulfillmentService {
             count === 1 ? "It's" : "They're"
           } now on the way in the post.</p>
           <ul style="margin:0;padding-left:18px;color:${BRAND.ink}">${list}</ul>`,
+        cta: { url: orderUrl, label: "View your order" },
+      }),
+    });
+  }
+
+  /**
+   * The estimated-arrival email. Deliberately honest: standard letter post isn't
+   * tracked, so we say the card *should have* arrived based on the posting date
+   * and Royal Mail's usual times — never that it *was* delivered. No tracking
+   * link (there's nothing to track). See ADR 0124.
+   */
+  private async sendArrivalNotification(webAppUrl: string, group: DispatchGroup): Promise<void> {
+    const orderRef = `ORD-${group.orderNumber}`;
+    const orderUrl = `${webAppUrl}/orders/${group.orderId}`;
+    const count = group.cards.length;
+    const list = group.cards
+      .map((card) => `<li style="margin-bottom:4px">${escapeHtml(card.name)}</li>`)
+      .join("");
+
+    await this.email.sendTransactional({
+      to: group.email,
+      subject:
+        count === 1
+          ? `Your card should have arrived (${orderRef})`
+          : `Your cards should have arrived (${orderRef})`,
+      // Optional Brevo template. Params: {{ params.orderNumber }},
+      // {{ params.cardCount }}, {{ params.recipientNames }} ([name] to loop),
+      // {{ params.orderUrl }}.
+      templateId: this.config.get("BREVO_ARRIVAL_TEMPLATE_ID", { infer: true }),
+      params: {
+        orderNumber: orderRef,
+        cardCount: count,
+        recipientNames: group.cards.map((c) => c.name),
+        orderUrl,
+      },
+      html: renderBrandedEmail({
+        webAppUrl,
+        preheader: count === 1 ? "Your card should have arrived." : "Your cards should have arrived.",
+        heading:
+          count === 1 ? "Your card should have arrived 💌" : "Your cards should have arrived 💌",
+        bodyHtml: `
+          <p style="margin:0 0 16px">Based on when we posted ${
+            count === 1 ? "your card" : `${count} cards`
+          } from order <strong>${orderRef}</strong> and Royal Mail's usual delivery times, ${
+            count === 1 ? "it" : "they"
+          } should have arrived by now — we hope ${
+            count === 1 ? "it makes" : "they make"
+          } someone's day. ✨</p>
+          <ul style="margin:0;padding-left:18px;color:${BRAND.ink}">${list}</ul>
+          <p style="margin:16px 0 0;font-size:13px;color:#6b7280">This is an estimate from the posting date — standard letter post isn't tracked, so we can't confirm exact delivery.</p>`,
         cta: { url: orderUrl, label: "View your order" },
       }),
     });

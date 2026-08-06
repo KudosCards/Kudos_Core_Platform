@@ -24,8 +24,10 @@ import {
   type ExportedAddress,
   type PrintRunCard,
   type DeliveryPollResult,
+  type ArrivalSweepResult,
 } from "./fulfillment.service";
 import { DeliveryPollService } from "./delivery-poll.service";
+import { ArrivalNotificationService } from "./arrival-notification.service";
 import { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { CalendarQueryDto } from "./dto/calendar-query.dto";
 import { TransitionFulfillmentDto } from "./dto/transition-fulfillment.dto";
@@ -45,6 +47,7 @@ export class FulfillmentController {
   constructor(
     private readonly fulfillmentService: FulfillmentService,
     private readonly deliveryPoll: DeliveryPollService,
+    private readonly arrivalNotifications: ArrivalNotificationService,
   ) {}
 
   /** Lightweight check the web ops shell uses to gate its routes: a 200 means
@@ -198,5 +201,15 @@ export class FulfillmentController {
   @Post("poll-deliveries")
   pollDeliveries(): Promise<DeliveryPollResult> {
     return this.deliveryPoll.runPoll();
+  }
+
+  /** Run the estimated-arrival sweep on demand: mark recently-posted cards whose
+   * estimated arrival has passed as delivered (estimated) and email their buyers
+   * a "should have arrived" note. The daily cron does this automatically (when
+   * enabled); this forces a run and confirms the wiring. Returns how many were
+   * checked / notified. See ADR 0124. */
+  @Post("notify-arrivals")
+  notifyArrivals(): Promise<ArrivalSweepResult> {
+    return this.arrivalNotifications.runSweep();
   }
 }

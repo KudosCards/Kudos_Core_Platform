@@ -169,6 +169,10 @@ switch on in code, but confirm on the Stripe account:
 | `CLICK_AND_DROP_SERVICE_CODE_FIRST` / `_SECOND` | *(optional, step 4c-i)* Click & Drop service codes per postage class; unset = operator picks in the dashboard. |
 | `ROYAL_MAIL_API_KEY` | *(optional, step 4c-ii)* Shipping API v4 key — enables the in-Kudos "Dispatch (Royal Mail)" action. Unset = manual dispatch. |
 | `ROYAL_MAIL_SERVICE_CODE_FIRST` / `_SECOND` | *(optional, step 4c-ii)* Shipping API service-code overrides (defaults `TPN01`/`TPS01`) — confirm against your account. |
+| `ARRIVAL_NOTIFICATIONS_ENABLED` | *(optional, step 4d)* `true`/`1` enables the daily estimated-arrival email for untracked stamped post (marks cards delivered-estimated + emails the buyer). Off by default. |
+| `ARRIVAL_FIRST_CLASS_WORKING_DAYS` / `_SECOND_CLASS_WORKING_DAYS` | *(optional, step 4d)* Expected transit in working days (defaults 1 / 3). |
+| `ARRIVAL_MAX_POSTED_AGE_DAYS` | *(optional, step 4d)* Recency window bounding the arrival sweep (default 14) — stops a historical backlog being emailed/completed at once. |
+| `BREVO_ARRIVAL_TEMPLATE_ID` | *(optional, step 4d)* Brevo template for the "should have arrived" email; unset = branded HTML fallback. |
 | `SENTRY_DSN` | Sentry project DSN — enables API error monitoring (now wired). Leave unset to disable. |
 
 **Netlify (web) env vars** — same `NEXT_PUBLIC_*` as today, plus optionally:
@@ -276,6 +280,27 @@ stores tracking + label, emails the buyer the tracking link). No Click & Drop da
   /fulfillment/poll-deliveries` (returns `{ checked, delivered, failed }`). No extra credential — it
   reuses `ROYAL_MAIL_API_KEY` and the base URL. Confirm the tracking resource path/fields against your
   account in the sandbox, same as the dispatch call.
+
+### 4d. Estimated-arrival emails — for untracked stamped post (ADR 0124)
+
+Standard letter post on stamps isn't tracked, so the delivery poll (4c) has no event to react to. For
+stamped mail, enable the **estimated-arrival** email instead: a daily 09:00 UTC sweep estimates each
+`posted` card's arrival from its posting date + the postage class's transit (working days, UK
+holiday-aware), and once that's passed marks the card **delivered (estimated)** — rolling the order up
+to `completed` — and emails the buyer an honest *"your card should have arrived"* note (never "was
+delivered").
+
+- **Opt-in:** set `ARRIVAL_NOTIFICATIONS_ENABLED=true` in Railway. It's off by default because it both
+  emails customers and advances order state on an estimate.
+- **Tune (optional):** `ARRIVAL_FIRST_CLASS_WORKING_DAYS` (default 1) / `ARRIVAL_SECOND_CLASS_WORKING_DAYS`
+  (default 3) — Royal Mail's own aims; `ARRIVAL_MAX_POSTED_AGE_DAYS` (default 14) bounds the sweep so
+  enabling it can't email/complete a historical `posted` backlog in one go. Optional Brevo template
+  `BREVO_ARRIVAL_TEMPLATE_ID`, else the branded HTML fallback.
+- **First check:** post a test card, backdate isn't needed live — enable, then force a run with `POST
+  /fulfillment/notify-arrivals` (returns `{ checked, notified }`) once a card is past its estimated
+  arrival, and confirm it flips to delivered + the buyer receives the "should have arrived" email.
+- This is independent of Royal Mail's API — it needs **no** `ROYAL_MAIL_API_KEY`. If you later move to a
+  tracked service, the poll in 4c takes over with real delivery events.
 
 ---
 
