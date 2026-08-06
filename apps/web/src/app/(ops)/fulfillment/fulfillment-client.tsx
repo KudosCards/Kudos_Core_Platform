@@ -957,7 +957,7 @@ export function FulfillmentClient({
                   </div>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-2 self-start">
+                <div className="flex shrink-0 flex-wrap items-center gap-2 self-start sm:justify-end">
                   <button
                     type="button"
                     disabled={previewLoadingId === job.id}
