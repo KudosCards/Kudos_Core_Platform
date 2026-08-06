@@ -171,6 +171,30 @@ export const envSchema = z.object({
   CLICK_AND_DROP_SERVICE_CODE_FIRST: z.string().min(1).optional(),
   CLICK_AND_DROP_SERVICE_CODE_SECOND: z.string().min(1).optional(),
 
+  // Estimated-arrival notification (ADR 0124). Our cards go on ordinary stamps,
+  // which Royal Mail does not track — so we can't observe delivery. Instead a
+  // daily sweep estimates arrival from the posted date + the postage class's
+  // expected transit (working days, UK holiday-aware) and emails the buyer an
+  // honest "should have arrived" note, marking the card delivered (estimated) so
+  // the order completes. Off unless ARRIVAL_NOTIFICATIONS_ENABLED is exactly
+  // "true" or "1" (interpreted in the service; kept a plain string so
+  // ConfigService reads it live) — because it both emails customers and advances
+  // order state on an estimate, it's explicit opt-in.
+  ARRIVAL_NOTIFICATIONS_ENABLED: z
+    .string()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  // Expected transit in WORKING days per postage class — Royal Mail's own aims
+  // (1st ≈ next working day, 2nd ≈ 2–3). Tunable without a code change;
+  // blank/invalid falls back to the default.
+  ARRIVAL_FIRST_CLASS_WORKING_DAYS: z.coerce.number().int().positive().default(1).catch(1),
+  ARRIVAL_SECOND_CLASS_WORKING_DAYS: z.coerce.number().int().positive().default(3).catch(3),
+  // How recently a card must have been posted to still be eligible for an arrival
+  // email (calendar days). Bounds the sweep to cards genuinely around their
+  // arrival window and stops a historical `posted` backlog from being emailed +
+  // auto-completed in one go on first enable. Default 14.
+  ARRIVAL_MAX_POSTED_AGE_DAYS: z.coerce.number().int().positive().default(14).catch(14),
+
   // Error monitoring. When set, the API initialises Sentry (see
   // observability/sentry.ts, called from main.ts) and reports 5xx errors via a
   // global exception filter; unset = monitoring disabled (a clean no-op). Treat
@@ -242,6 +266,8 @@ export const envSchema = z.object({
   BREVO_GUEST_RECEIPT_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
   BREVO_ORDER_CONFIRMATION_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
   BREVO_DISPATCH_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  // Estimated-arrival "your card should have arrived" email (see ADR 0124).
+  BREVO_ARRIVAL_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
   // Returned-to-Sender "please update the address" email (see ADR 0039).
   BREVO_RTS_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
   // Support ticketing (see ADR 0066). Optional Brevo templates for the two
