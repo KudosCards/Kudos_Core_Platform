@@ -243,6 +243,74 @@ describe("Batch orders (e2e)", () => {
 
       expect(await prisma.recipient.count({ where: { accountId } })).toBe(0);
     });
+
+    it("reuses an existing contact via recipientId (no duplicate created)", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const contactId = await createRecipient(token);
+      const before = await prisma.recipient.count({ where: { accountId } });
+
+      const response = await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ ...quickSendBody(savedDesignId), recipientId: contactId })
+        .expect(201);
+      const order = batchOrderSchema.parse(response.body);
+
+      // No new contact — the send hangs off the existing one.
+      expect(await prisma.recipient.count({ where: { accountId } })).toBe(before);
+      expect(order.orderRecipients[0]?.recipientId).toBe(contactId);
+      const occasion = await prisma.occasion.findFirstOrThrow({
+        where: { accountId, source: "one_off_campaign" },
+      });
+      expect(occasion.recipientId).toBe(contactId);
+    });
+
+    it("404s for a recipientId on another account (no order created)", async () => {
+      const accountA = await signUp();
+      const accountB = await signUp();
+      const savedDesignId = await createSavedDesign(accountB.token);
+      const foreignContact = await createRecipient(accountA.token);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${accountB.token}`)
+        .send({ ...quickSendBody(savedDesignId), recipientId: foreignContact })
+        .expect(404);
+    });
+
+    it("saves a new contact to the address book by default", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send(quickSendBody(savedDesignId))
+        .expect(201);
+
+      const contact = await prisma.recipient.findFirstOrThrow({ where: { accountId } });
+      expect(contact.status).toBe("active");
+    });
+
+    it("creates a hidden one-off when saveToContacts is false", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ ...quickSendBody(savedDesignId), saveToContacts: false })
+        .expect(201);
+
+      // The recipient exists (the order needs it) but is archived + sourced
+      // "one_off", so it's hidden from the address book and — being non-active —
+      // never counts against the plan's recipient cap.
+      const contacts = await prisma.recipient.findMany({ where: { accountId } });
+      expect(contacts).toHaveLength(1);
+      expect(contacts[0]).toMatchObject({ status: "archived", source: "one_off" });
+      expect(await prisma.recipient.count({ where: { accountId, status: "active" } })).toBe(0);
+    });
   });
 
   it("rejects an occasion that isn't approved", async () => {

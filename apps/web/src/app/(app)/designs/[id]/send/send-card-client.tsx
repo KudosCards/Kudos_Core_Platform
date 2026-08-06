@@ -2,7 +2,7 @@
 
 import type { BatchOrder } from "@kudos/shared-types";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 
@@ -21,18 +21,131 @@ function gbp(minor: number): string {
   return `£${(minor / 100).toFixed(2)}`;
 }
 
+/** The slice of a contact the address-book search needs to prefill a send. */
+interface ContactResult {
+  id: string;
+  firstName: string;
+  lastName: string;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  addressCity: string | null;
+  addressPostcode: string | null;
+}
+
+interface AddressForm {
+  firstName: string;
+  lastName: string;
+  shippingAddressLine1: string;
+  shippingAddressLine2: string;
+  shippingAddressCity: string;
+  shippingAddressPostcode: string;
+}
+
+const EMPTY_FORM: AddressForm = {
+  firstName: "",
+  lastName: "",
+  shippingAddressLine1: "",
+  shippingAddressLine2: "",
+  shippingAddressCity: "",
+  shippingAddressPostcode: "",
+};
+
+function formFromContact(c: ContactResult): AddressForm {
+  return {
+    firstName: c.firstName,
+    lastName: c.lastName,
+    shippingAddressLine1: c.addressLine1 ?? "",
+    shippingAddressLine2: c.addressLine2 ?? "",
+    shippingAddressCity: c.addressCity ?? "",
+    shippingAddressPostcode: c.addressPostcode ?? "",
+  };
+}
+
+/** One-line address preview for a search result row. */
+function addressPreview(c: ContactResult): string {
+  return [c.addressLine1, c.addressCity, c.addressPostcode].filter(Boolean).join(", ") || "No address on file";
+}
+
 export function SendCardClient({ designId, designName }: { designId: string; designName: string }) {
   const [postageClass, setPostageClass] = useState<"second_class" | "first_class">("second_class");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Address-book search. `selectedContactId` set → we're sending to an existing
+  // contact (reuse it, no new record); null → adding a new contact.
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<ContactResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [form, setForm] = useState<AddressForm>(EMPTY_FORM);
+  const [saveToContacts, setSaveToContacts] = useState(true);
+
+  function patch(next: Partial<AddressForm>) {
+    setForm((current) => ({ ...current, ...next }));
+  }
+
+  // Debounced typeahead against the existing GET /recipients?search= endpoint.
+  // Only runs while adding a new contact (no selection) and with 2+ characters.
+  // All state updates live inside the timeout so none run synchronously in the
+  // effect body (which would risk cascading renders).
+  useEffect(() => {
+    const q = query.trim();
+    const active = !selectedContactId && q.length >= 2;
+    const handle = setTimeout(
+      () => {
+        if (!active) {
+          setResults([]);
+          setSearching(false);
+          return;
+        }
+        setSearching(true);
+        void (async () => {
+          try {
+            const data = await clientApiFetch<{ items: ContactResult[] }>(
+              `/recipients?search=${encodeURIComponent(q)}&perPage=6`,
+            );
+            setResults(data.items);
+            setShowResults(true);
+          } catch {
+            setResults([]);
+          } finally {
+            setSearching(false);
+          }
+        })();
+      },
+      active ? 250 : 0,
+    );
+    return () => clearTimeout(handle);
+  }, [query, selectedContactId]);
+
+  function selectContact(contact: ContactResult) {
+    setSelectedContactId(contact.id);
+    setForm(formFromContact(contact));
+    setQuery("");
+    setResults([]);
+    setShowResults(false);
+  }
+
+  function clearContact() {
+    // Back to "new contact": keep the typed values so nothing is lost, but the
+    // send will now create a contact rather than reuse one.
+    setSelectedContactId(null);
+  }
 
   const estimate = CARD_MINOR + (POSTAGE_MINOR[postageClass] ?? 0);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    const data = new FormData(event.currentTarget);
-    const str = (key: string) => String(data.get(key) || "").trim();
+    const trimmed: AddressForm = {
+      firstName: form.firstName.trim(),
+      lastName: form.lastName.trim(),
+      shippingAddressLine1: form.shippingAddressLine1.trim(),
+      shippingAddressLine2: form.shippingAddressLine2.trim(),
+      shippingAddressCity: form.shippingAddressCity.trim(),
+      shippingAddressPostcode: form.shippingAddressPostcode.trim(),
+    };
 
     setBusy(true);
     try {
@@ -41,13 +154,19 @@ export function SendCardClient({ designId, designName }: { designId: string; des
         method: "POST",
         body: JSON.stringify({
           savedDesignId: designId,
-          firstName: str("firstName"),
-          lastName: str("lastName"),
-          shippingAddressLine1: str("shippingAddressLine1"),
-          ...(str("shippingAddressLine2") && { shippingAddressLine2: str("shippingAddressLine2") }),
-          shippingAddressCity: str("shippingAddressCity"),
-          shippingAddressPostcode: str("shippingAddressPostcode"),
+          firstName: trimmed.firstName,
+          lastName: trimmed.lastName,
+          shippingAddressLine1: trimmed.shippingAddressLine1,
+          ...(trimmed.shippingAddressLine2 && {
+            shippingAddressLine2: trimmed.shippingAddressLine2,
+          }),
+          shippingAddressCity: trimmed.shippingAddressCity,
+          shippingAddressPostcode: trimmed.shippingAddressPostcode,
           postageClass,
+          // Existing contact → reuse it; new contact → maybe save it.
+          ...(selectedContactId
+            ? { recipientId: selectedContactId }
+            : { saveToContacts }),
         }),
       });
 
@@ -93,13 +212,49 @@ export function SendCardClient({ designId, designName }: { designId: string; des
       >
         <div className="card flex flex-col gap-4 p-6">
           <h2 className="font-semibold">Who&apos;s this card for?</h2>
+
+          {selectedContactId ? (
+            // Sending to a saved contact — show who, with a way back to search.
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-accent bg-accent-soft px-4 py-3">
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold">
+                  {form.firstName} {form.lastName}
+                </span>
+                <span className="text-xs text-muted">
+                  From your contacts · address prefilled below (editable)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={clearContact}
+                className="text-xs font-medium text-accent underline-offset-2 hover:underline"
+              >
+                Change
+              </button>
+            </div>
+          ) : (
+            // New contact — offer address-book search first so an existing
+            // contact isn't re-typed (and duplicated).
+            <ContactSearch
+              query={query}
+              setQuery={setQuery}
+              results={results}
+              searching={searching}
+              showResults={showResults}
+              setShowResults={setShowResults}
+              onSelect={selectContact}
+              inputClass={inputClass}
+            />
+          )}
+
           {/* autoComplete lets the phone one-tap-autofill a saved address; the
               per-field capitalisation gives the right mobile keyboard/case. */}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">First name</span>
               <input
-                name="firstName"
+                value={form.firstName}
+                onChange={(e) => patch({ firstName: e.target.value })}
                 required
                 autoComplete="given-name"
                 autoCapitalize="words"
@@ -109,7 +264,8 @@ export function SendCardClient({ designId, designName }: { designId: string; des
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Last name</span>
               <input
-                name="lastName"
+                value={form.lastName}
+                onChange={(e) => patch({ lastName: e.target.value })}
                 required
                 autoComplete="family-name"
                 autoCapitalize="words"
@@ -119,7 +275,8 @@ export function SendCardClient({ designId, designName }: { designId: string; des
             <label className="flex flex-col gap-1 text-sm sm:col-span-2">
               <span className="text-muted">Address line 1</span>
               <input
-                name="shippingAddressLine1"
+                value={form.shippingAddressLine1}
+                onChange={(e) => patch({ shippingAddressLine1: e.target.value })}
                 required
                 autoComplete="address-line1"
                 className={inputClass}
@@ -128,7 +285,8 @@ export function SendCardClient({ designId, designName }: { designId: string; des
             <label className="flex flex-col gap-1 text-sm sm:col-span-2">
               <span className="text-muted">Address line 2 (optional)</span>
               <input
-                name="shippingAddressLine2"
+                value={form.shippingAddressLine2}
+                onChange={(e) => patch({ shippingAddressLine2: e.target.value })}
                 autoComplete="address-line2"
                 className={inputClass}
               />
@@ -136,7 +294,8 @@ export function SendCardClient({ designId, designName }: { designId: string; des
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Town / city</span>
               <input
-                name="shippingAddressCity"
+                value={form.shippingAddressCity}
+                onChange={(e) => patch({ shippingAddressCity: e.target.value })}
                 required
                 autoComplete="address-level2"
                 className={inputClass}
@@ -145,7 +304,8 @@ export function SendCardClient({ designId, designName }: { designId: string; des
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Postcode</span>
               <input
-                name="shippingAddressPostcode"
+                value={form.shippingAddressPostcode}
+                onChange={(e) => patch({ shippingAddressPostcode: e.target.value })}
                 required
                 autoComplete="postal-code"
                 autoCapitalize="characters"
@@ -153,6 +313,24 @@ export function SendCardClient({ designId, designName }: { designId: string; des
               />
             </label>
           </div>
+
+          {/* Only offered for a NEW contact — an existing one is already saved. */}
+          {!selectedContactId && (
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={saveToContacts}
+                onChange={(e) => setSaveToContacts(e.target.checked)}
+                className="mt-0.5 size-4 accent-accent"
+              />
+              <span>
+                Save to my contacts
+                <span className="block text-xs text-muted">
+                  Keep this person in your address book for next time. Uncheck for a one-off send.
+                </span>
+              </span>
+            </label>
+          )}
 
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-sm font-medium">Postage</legend>
@@ -227,6 +405,89 @@ export function SendCardClient({ designId, designName }: { designId: string; des
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Address-book typeahead: search existing contacts by name and pick one to
+ * prefill the send, so a contact already on file is never re-typed. */
+function ContactSearch({
+  query,
+  setQuery,
+  results,
+  searching,
+  showResults,
+  setShowResults,
+  onSelect,
+  inputClass,
+}: {
+  query: string;
+  setQuery: (value: string) => void;
+  results: ContactResult[];
+  searching: boolean;
+  showResults: boolean;
+  setShowResults: (value: boolean) => void;
+  onSelect: (contact: ContactResult) => void;
+  inputClass: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close the dropdown when clicking away, so it doesn't hover over the form.
+  useEffect(() => {
+    function onClick(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setShowResults(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [setShowResults]);
+
+  return (
+    <div ref={containerRef} className="relative flex flex-col gap-1">
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-muted">Find a contact</span>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => results.length > 0 && setShowResults(true)}
+          placeholder="Search your address book by name…"
+          className={inputClass}
+        />
+      </label>
+      <p className="text-xs text-muted">
+        Or just fill in the details below to send to someone new.
+      </p>
+
+      {showResults && (query.trim().length >= 2 || searching) && (
+        <div className="absolute top-full z-20 mt-1 w-full overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+          {searching && results.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-muted">Searching…</p>
+          ) : results.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-muted">
+              No contacts match — fill in the details below to send to someone new.
+            </p>
+          ) : (
+            <ul className="max-h-64 overflow-y-auto">
+              {results.map((contact) => (
+                <li key={contact.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(contact)}
+                    className="flex w-full flex-col items-start gap-0.5 px-4 py-2.5 text-left hover:bg-accent-soft"
+                  >
+                    <span className="text-sm font-medium">
+                      {contact.firstName} {contact.lastName}
+                    </span>
+                    <span className="text-xs text-muted">{addressPreview(contact)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { OccasionType, PostageClass } from "@prisma/client";
-import { IsEnum, IsOptional, IsString, IsUUID, Length, Matches } from "class-validator";
+import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID, Length, Matches } from "class-validator";
 import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
 import { BlankToUndefined } from "../../common/transforms";
 
@@ -15,6 +15,22 @@ export class QuickSendDto {
   @ApiProperty({ description: "The saved design to send" })
   @IsUUID()
   savedDesignId!: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Send to an existing contact from the address book; skips creating a new recipient",
+  })
+  @IsOptional()
+  @IsUUID()
+  recipientId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "When adding a NEW contact (no recipientId), keep it in the address book. Defaults to true; false creates a hidden one-off. Ignored when recipientId is set.",
+  })
+  @IsOptional()
+  @IsBoolean()
+  saveToContacts?: boolean;
 
   @ApiProperty()
   @IsString()
