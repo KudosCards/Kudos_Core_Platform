@@ -9,7 +9,7 @@ import type {
   DueFilter,
   FulfillmentCounts,
 } from "@kudos/shared-types";
-import { applyMergeTokens } from "@kudos/shared-types";
+import { applyMergeTokens, royalMailTrackingUrl } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { Modal } from "@/components/modal";
@@ -57,6 +57,11 @@ export interface FulfillmentJob {
   status: FulfillmentStatus;
   trackingReference: string | null;
   labelUrl: string | null;
+  /** Fulfilment milestone timestamps (ISO strings over the wire), for the
+   * per-card status trail. Each is null until that step happens. See ADR 0122. */
+  printedAt: string | null;
+  postedAt: string | null;
+  deliveredAt: string | null;
   /** The date this card must be posted by (the occasion's dispatch date), or
    * null when it has no dated deadline. See ADR 0108. */
   dueDate: string | null;
@@ -221,6 +226,41 @@ function formatSampleDate(value: Date | string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/** A short "3 Aug" day label for a milestone timestamp; empty for null/invalid. */
+function fmtDay(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+/**
+ * A compact fulfilment trail for one card: the milestones that have happened,
+ * each with its day — "Printed 3 Aug · Posted 4 Aug · Delivered 5 Aug". Rendered
+ * straight from the row's `*At` fields (the same audited timestamps the state
+ * machine stamps), so it needs no extra fetch. Shown once a card has left the
+ * pending queue; nothing renders while it's only pending. See ADR 0122.
+ */
+function StatusTrail({ job }: { job: FulfillmentJob }) {
+  const steps: { label: string; at: string | null }[] = [
+    { label: "Printed", at: job.printedAt },
+    { label: "Posted", at: job.postedAt },
+    { label: "Delivered", at: job.deliveredAt },
+  ];
+  const reached = steps.filter((s) => s.at);
+  if (reached.length === 0) return null;
+  return (
+    <p className="mt-1 text-xs text-foreground/50">
+      {reached.map((s, i) => (
+        <span key={s.label}>
+          {i > 0 && " · "}
+          <span className="font-medium text-foreground/70">{s.label}</span> {fmtDay(s.at)}
+        </span>
+      ))}
+    </p>
+  );
 }
 
 export function FulfillmentClient({
@@ -857,7 +897,20 @@ export function FulfillmentClient({
                     <p className="text-xs text-foreground/50">
                       Design: {r.savedDesign.name} ·{" "}
                       {POSTAGE_LABELS[r.postageClass] ?? r.postageClass}
-                      {job.trackingReference && ` · ${job.trackingReference}`}
+                      {job.trackingReference && (
+                        <>
+                          {" · "}
+                          <a
+                            href={royalMailTrackingUrl(job.trackingReference)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Track this item on Royal Mail"
+                            className="text-accent hover:underline"
+                          >
+                            Track {job.trackingReference}
+                          </a>
+                        </>
+                      )}
                       {job.labelUrl && (
                         <>
                           {" · "}
@@ -872,6 +925,7 @@ export function FulfillmentClient({
                         </>
                       )}
                     </p>
+                    <StatusTrail job={job} />
                     {clickAndDropEnabled && (
                       <p className="mt-1 text-xs">
                         {job.clickAndDropOrderId ? (
