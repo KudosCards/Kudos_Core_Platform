@@ -69,6 +69,7 @@ describe("Auto-send (e2e)", () => {
       data: {
         object: {
           id: sessionId,
+          payment_status: "paid",
           metadata: { type: "wallet_topup", accountId, amountMinor: String(amountMinor) },
         },
       },

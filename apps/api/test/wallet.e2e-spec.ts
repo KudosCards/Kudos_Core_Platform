@@ -22,7 +22,17 @@ function buildStripeEventPayload(type: string, dataObject: Record<string, unknow
     pending_webhooks: 0,
     request: null,
     type,
-    data: { object: dataObject },
+    // A real checkout.session.completed / async_payment_succeeded always carries
+    // a payment_status; default it to "paid" so card-payment fixtures settle,
+    // while a test can pass payment_status explicitly to model an async/unpaid one.
+    data: {
+      object:
+        (type === "checkout.session.completed" ||
+          type === "checkout.session.async_payment_succeeded") &&
+        dataObject.payment_status === undefined
+          ? { payment_status: "paid", ...dataObject }
+          : dataObject,
+    },
   });
 }
 
@@ -227,6 +237,20 @@ describe("Wallet (e2e)", () => {
 
     const ledger = await prisma.walletLedgerEntry.findMany({ where: { accountId } });
     expect(ledger).toHaveLength(1);
+  });
+
+  it("does NOT credit the wallet for a completed-but-unpaid top-up (delayed method still pending)", async () => {
+    const { token, accountId } = await signUp();
+    const payload = buildStripeEventPayload("checkout.session.completed", {
+      id: `cs_test_${randomUUID()}`,
+      payment_status: "unpaid",
+      metadata: { type: "wallet_topup", accountId, amountMinor: "2500" },
+    });
+    await postWebhook(payload).expect(201);
+
+    const summary = await getWallet(token);
+    expect(summary.balanceMinor).toBe(0);
+    expect(summary.entries).toHaveLength(0);
   });
 
   it("pays a draft order from the wallet: debits the balance, marks it paid, and fulfils it", async () => {

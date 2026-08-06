@@ -68,7 +68,12 @@ export class WalletService {
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
     const session = await this.stripe.checkout.sessions.create({
       mode: "payment",
-      payment_method_types: ["card"],
+      // No `payment_method_types` — omitting it lets Stripe-hosted Checkout
+      // present every Dashboard-enabled method (incl. the Apple Pay / Google Pay
+      // / Link wallets), so a top-up can be paid with Apple Pay too. The wallet
+      // is credited only on a confirmed (payment_status "paid") session — see
+      // applyTopupFromSession + the webhook guard — so a delayed method can never
+      // credit before we're paid. See docs/adr/0126-checkout-payment-methods.md.
       line_items: [
         {
           price_data: {

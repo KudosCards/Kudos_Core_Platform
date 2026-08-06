@@ -21,7 +21,17 @@ function buildStripeEventPayload(type: string, dataObject: Record<string, unknow
     pending_webhooks: 0,
     request: null,
     type,
-    data: { object: dataObject },
+    // A real checkout.session.completed / async_payment_succeeded always carries
+    // a payment_status; default it to "paid" so card-payment fixtures settle,
+    // while a test can pass payment_status explicitly to model an async/unpaid one.
+    data: {
+      object:
+        (type === "checkout.session.completed" ||
+          type === "checkout.session.async_payment_succeeded") &&
+        dataObject.payment_status === undefined
+          ? { payment_status: "paid", ...dataObject }
+          : dataObject,
+    },
   });
 }
 

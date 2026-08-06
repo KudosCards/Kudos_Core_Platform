@@ -894,7 +894,14 @@ export class BatchOrdersService {
     try {
       session = await this.stripe.checkout.sessions.create({
         mode: "payment",
-        payment_method_types: ["card"],
+        // No `payment_method_types` — omitting it lets Stripe-hosted Checkout
+        // present every method enabled in the Dashboard, including the Apple Pay
+        // / Google Pay / Link wallets, instead of a hardcoded card-only list.
+        // This is what surfaces Apple Pay for Safari buyers (desktop + mobile)
+        // with no domain registration on our side. The webhook only fulfils on a
+        // confirmed (payment_status "paid") session, so enabling a
+        // delayed-notification method here can never fulfil before we're paid.
+        // See docs/adr/0126-checkout-payment-methods.md.
         line_items: [
           {
             price_data: {
