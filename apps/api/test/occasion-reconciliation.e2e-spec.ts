@@ -10,10 +10,13 @@ import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
 /**
- * Occasion reconciliation (ADR 0107): a "send to segment" bulk send can consume
- * the recipient's matched natural occasion so it isn't sent again from approvals
- * or auto-send. The consume happens at payment settlement — never at draft time —
- * so an abandoned checkout never wrongly skips a real birthday. See ADR 0107.
+ * Occasion reconciliation (ADR 0107 → ADR 0119): a "send to segment" bulk send
+ * consumes the recipient's matched natural occasion so it isn't sent again from
+ * approvals or auto-send. Rather than superseding it with a one-off, the send now
+ * *reuses* the natural occasion as its send record — attaching the design and
+ * reserving it (queued) into the draft order — so the card keeps the birthday's
+ * own date and classification. Opting out (no `reconcile`) leaves the natural
+ * occasion untouched and mints a fresh one-off instead. See ADR 0119.
  */
 function buildStripeEventPayload(type: string, dataObject: Record<string, unknown>): string {
   return JSON.stringify({
@@ -130,7 +133,7 @@ describe("Occasion reconciliation (e2e)", () => {
     return (await prisma.occasion.findUniqueOrThrow({ where: { id } })).status;
   }
 
-  it("skips the matched natural occasion once the segment send is paid", async () => {
+  it("reuses the matched natural occasion as the send record", async () => {
     const token = await signUp();
     const savedDesignId = await createSavedDesign(token);
     const { recipientId, occasionId } = await addContactWithBirthday(token);
@@ -138,11 +141,20 @@ describe("Occasion reconciliation (e2e)", () => {
     const batchOrderId = await bulkSend(token, savedDesignId, [recipientId], [
       { recipientId, occasionId },
     ]);
-    // Not consumed until it's actually paid.
-    expect(await occasionStatus(occasionId)).toBe("scheduled");
+
+    // The natural occasion itself becomes the send record: reserved (queued)
+    // into the draft, carrying the design, still a birthday — not a separate
+    // skipped occasion. No superseding one-off is created, so the recipient
+    // still has exactly one occasion.
+    const reused = await prisma.occasion.findUniqueOrThrow({ where: { id: occasionId } });
+    expect(reused.status).toBe("queued");
+    expect(reused.savedDesignId).toBe(savedDesignId);
+    expect(reused.type).toBe("birthday");
+    expect(reused.supersedesOccasionId).toBeNull();
+    expect(await prisma.occasion.count({ where: { recipientId } })).toBe(1);
 
     await settle(batchOrderId).expect(201);
-    expect(await occasionStatus(occasionId)).toBe("skipped");
+    expect(await occasionStatus(occasionId)).toBe("queued");
   });
 
   it("leaves the natural occasion alone when reconciliation is opted out", async () => {
@@ -164,31 +176,38 @@ describe("Occasion reconciliation (e2e)", () => {
     const trimmed = await addContactWithBirthday(token);
 
     // Send only to `inSend`, but ask to reconcile both (as if `trimmed` was
-    // removed from the composer after seeding). Only `inSend`'s is consumed.
+    // removed from the composer after seeding). Only `inSend`'s is reused.
     const batchOrderId = await bulkSend(token, savedDesignId, [inSend.recipientId], [
       { recipientId: inSend.recipientId, occasionId: inSend.occasionId },
       { recipientId: trimmed.recipientId, occasionId: trimmed.occasionId },
     ]);
     await settle(batchOrderId).expect(201);
 
-    expect(await occasionStatus(inSend.occasionId)).toBe("skipped");
+    expect(await occasionStatus(inSend.occasionId)).toBe("queued");
     expect(await occasionStatus(trimmed.occasionId)).toBe("scheduled");
   });
 
-  it("never un-does an occasion that's already in flight", async () => {
+  it("never reuses an occasion that's already in flight", async () => {
     const token = await signUp();
     const savedDesignId = await createSavedDesign(token);
     const { recipientId, occasionId } = await addContactWithBirthday(token);
 
+    // The natural occasion got sent by another route before this send.
+    await prisma.occasion.update({ where: { id: occasionId }, data: { status: "queued" } });
+
+    // Reconcile is still requested, but a queued (in-flight) occasion isn't
+    // sendable, so it's ignored: the send falls back to a fresh one-off and the
+    // birthday is left exactly as it was.
     const batchOrderId = await bulkSend(token, savedDesignId, [recipientId], [
       { recipientId, occasionId },
     ]);
-    // The natural occasion got sent by another route between draft and payment.
-    await prisma.occasion.update({ where: { id: occasionId }, data: { status: "queued" } });
-
     await settle(batchOrderId).expect(201);
-    // Status-guarded: a queued (paid/sent) occasion is left as-is.
+
     expect(await occasionStatus(occasionId)).toBe("queued");
+    // A fresh one-off carried the send instead of reusing the in-flight birthday.
+    expect(
+      await prisma.occasion.count({ where: { recipientId, source: "one_off_campaign" } }),
+    ).toBe(1);
   });
 
   it("is idempotent under a redelivered settlement webhook", async () => {
@@ -202,6 +221,6 @@ describe("Occasion reconciliation (e2e)", () => {
     await settle(batchOrderId).expect(201);
     await settle(batchOrderId).expect(201); // redelivery — no error, no change
 
-    expect(await occasionStatus(occasionId)).toBe("skipped");
+    expect(await occasionStatus(occasionId)).toBe("queued");
   });
 });

@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma, type OccasionType } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { PrismaService } from "../prisma/prisma.service";
@@ -83,14 +83,6 @@ export type BatchOrderDetail = Omit<OrderDetailPayload, "orderRecipients"> & {
  * natural occasion still in one of these, so it never un-does an in-flight send.
  * See docs/adr/0107-occasion-reconciliation.md. */
 const RECONCILABLE_OCCASION_STATUSES = ["scheduled", "pending_approval", "approved"] as const;
-
-/** The natural occasion a bulk-send line supersedes — its id (to mark handled)
- * and its type, which the one-off send inherits so it keeps the natural
- * classification (e.g. birthday) instead of becoming a bespoke event. */
-interface SupersededOccasion {
-  id: string;
-  type: OccasionType;
-}
 
 /** A card can only be posted to a contact with a complete, valid UK address. */
 function hasMailableAddress(recipient: Prisma.RecipientGetPayload<object>): boolean {
@@ -262,39 +254,60 @@ export class BatchOrdersService {
       );
     }
 
-    // Which natural occasion (if any) each recipient's campaign occasion should
-    // supersede, so a segment send doesn't double-send. Validated + account-scoped.
-    const supersededByRecipient = await this.resolveReconcile(accountId, dto);
+    // Which recipients are sending *via* a natural occasion (e.g. a birthday
+    // picked from the birthday segment). For those we reuse that occasion as the
+    // send record rather than minting a superseding one-off — so the card's
+    // calendar event sits on the actual birthday, keeps its birthday
+    // classification, and no duplicate occasion is created. Validated +
+    // account-scoped. See docs/adr/0119.
+    const reconciledByRecipient = await this.resolveReconcile(accountId, dto);
 
-    // One approved one-off occasion per contact, carrying the design. Build them
-    // all up front with client-generated ids and insert in a SINGLE createMany,
-    // so a 10,000-card send is one round-trip — not one INSERT per recipient
-    // (the old per-line loop). The ids link each occasion to its order line
-    // below; the shared create() then transitions them approved → queued. See
-    // docs/adr/0118.
     const byId = new Map(recipients.map((r) => [r.id, r]));
-    // asap send, paid now → it ships today. Dating it to "today" (not a date
-    // back-computed from a future occasion) is why the ops queue reads it as due
-    // now rather than overdue. See docs/adr/0119.
+    // asap send, paid now → it ships today. Dating the *dispatch* to "today"
+    // (not a date back-computed from a future occasion) is why the ops queue
+    // reads it as due now rather than overdue. See docs/adr/0119.
     const today = startOfUtcDay(new Date());
-    const occasionIdByRecipient = new Map<string, string>(
-      dto.recipientIds.map((id) => [id, randomUUID()]),
-    );
-    await this.prisma.occasion.createMany({
-      data: dto.recipientIds.map((id) => {
-        // When this send supersedes a natural occasion (e.g. a birthday from the
-        // birthday segment), inherit its *classification* so the send stays a
-        // birthday, not a bespoke event. Its own occasionDate stays the send
-        // moment — the unique (recipientId, type, occasionDate) index means we
-        // can't add a second birthday occasion on the birthday's own date, and
-        // the superseded natural one already holds it. Using the send moment
-        // (with its time) also keeps repeat same-day sends collision-free.
-        const superseded = supersededByRecipient.get(id);
-        return {
+    const occasionIdByRecipient = new Map<string, string>();
+
+    // Reconciled recipients: reuse the matched natural occasion. Attach the
+    // design, make it an asap send that ships today, and move it to `approved`
+    // so the shared create() consumes it exactly like a one-off — but keep its
+    // own occasionDate (the birthday) and type (birthday), so the send stays on
+    // the real date and classification. One updateMany for the whole batch; the
+    // shared `data` is identical across them.
+    const reuseIds = [...reconciledByRecipient.values()];
+    for (const [recipientId, occasionId] of reconciledByRecipient) {
+      occasionIdByRecipient.set(recipientId, occasionId);
+    }
+    if (reuseIds.length > 0) {
+      await this.prisma.occasion.updateMany({
+        where: { id: { in: reuseIds }, accountId },
+        data: {
+          savedDesignId: savedDesign.id,
+          dispatchOption: "asap",
+          postageClass: dto.postageClass,
+          dispatchDate: today,
+          status: "approved",
+        },
+      });
+    }
+
+    // Every other recipient gets a fresh approved one-off occasion carrying the
+    // design. Built up front with client-generated ids and inserted in a SINGLE
+    // createMany, so a 10,000-card send is one round-trip — not one INSERT per
+    // recipient. Its occasionDate is the send moment (a bespoke event created
+    // now); its dispatch is today. See docs/adr/0118.
+    const freshRecipientIds = dto.recipientIds.filter((id) => !reconciledByRecipient.has(id));
+    for (const id of freshRecipientIds) {
+      occasionIdByRecipient.set(id, randomUUID());
+    }
+    if (freshRecipientIds.length > 0) {
+      await this.prisma.occasion.createMany({
+        data: freshRecipientIds.map((id) => ({
           id: occasionIdByRecipient.get(id)!,
           accountId,
           recipientId: id,
-          type: superseded?.type ?? dto.occasionType ?? "bespoke_campaign",
+          type: dto.occasionType ?? "bespoke_campaign",
           source: "one_off_campaign",
           occasionDate: new Date(),
           dispatchDate: today,
@@ -302,10 +315,9 @@ export class BatchOrdersService {
           savedDesignId: savedDesign.id,
           dispatchOption: "asap",
           postageClass: dto.postageClass,
-          supersedesOccasionId: superseded?.id,
-        };
-      }),
-    });
+        })),
+      });
+    }
 
     const lines: CreateBatchOrderLineDto[] = dto.recipientIds.map((id) => {
       const recipient = byId.get(id)!;
@@ -481,22 +493,23 @@ export class BatchOrdersService {
    * Only occasions that are on this account, belong to the paired recipient (who
    * must also be in `recipientIds`), are natural (not a `one_off_campaign` send),
    * and are still sendable survive — anything else is silently dropped rather
-   * than failing the whole send. See docs/adr/0107.
+   * than failing the whole send. See docs/adr/0107 and docs/adr/0119.
+   *
+   * The mapped natural occasion is *reused* as the send record (not superseded
+   * by a new one-off): bulkSend attaches the design to it and checks it out
+   * directly, so the send keeps the birthday's own date and classification.
    */
   private async resolveReconcile(
     accountId: string,
     dto: BulkSendDto,
-  ): Promise<Map<string, SupersededOccasion>> {
-    const result = new Map<string, SupersededOccasion>();
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
     if (!dto.reconcile?.length) return result;
 
     const selected = new Set(dto.recipientIds);
     const requested = dto.reconcile.filter((r) => selected.has(r.recipientId));
     if (requested.length === 0) return result;
 
-    // Pull the natural occasion's type too: the one-off send inherits it so a
-    // birthday sent via the birthday segment stays a birthday, not a bespoke
-    // event. See docs/adr/0119.
     const valid = await this.prisma.occasion.findMany({
       where: {
         accountId,
@@ -505,14 +518,14 @@ export class BatchOrdersService {
         source: { not: "one_off_campaign" },
         status: { in: [...RECONCILABLE_OCCASION_STATUSES] },
       },
-      select: { id: true, recipientId: true, type: true },
+      select: { id: true, recipientId: true },
     });
     const validByPair = new Map(valid.map((o) => [`${o.recipientId}:${o.id}`, o]));
 
     for (const { recipientId, occasionId } of requested) {
       const match = validByPair.get(`${recipientId}:${occasionId}`);
       if (match) {
-        result.set(recipientId, { id: match.id, type: match.type });
+        result.set(recipientId, match.id);
       }
     }
     return result;
@@ -553,11 +566,13 @@ export class BatchOrdersService {
       orderRecipients.map((recipient) => recipient.id),
     );
 
-    // Reconciliation (ADR 0107): now that this order is actually paid + queued,
-    // consume the natural occasions its campaign occasions supersede so they
-    // can't independently fire and double-send. Status-guarded (only still
-    // sendable occasions) so an in-flight send is never un-done, and idempotent
-    // — a redelivered webhook re-runs this over already-skipped rows as a no-op.
+    // Reconciliation legacy safety net (ADR 0107): a segment send now *reuses*
+    // the natural occasion as its send record (ADR 0119), so no superseding
+    // one-off is created and this is a no-op for new orders. It stays to settle
+    // any pre-0119 order still in flight, whose campaign occasion supersedes a
+    // natural one that must be consumed so it can't independently double-send.
+    // Status-guarded (only still-sendable occasions) so an in-flight send is
+    // never un-done, and idempotent — a redelivered webhook re-runs it as a no-op.
     const occasionIds = orderRecipients
       .map((r) => r.occasionId)
       .filter((id): id is string => id !== null);
