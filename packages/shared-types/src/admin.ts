@@ -105,6 +105,13 @@ export const adminOrderLineSchema = z.object({
   dueDate: z.coerce.date().nullable(),
   jobStatus: fulfillmentJobStatusSchema.nullable(),
   trackingReference: z.string().nullable(),
+  /** A printable Royal Mail label URL, when dispatch produced one. */
+  labelUrl: z.string().nullable(),
+  /** Fulfilment milestone timestamps, for the per-card status trail on the
+   * order cockpit. Each null until that step happens. See ADR 0123. */
+  printedAt: z.coerce.date().nullable(),
+  postedAt: z.coerce.date().nullable(),
+  deliveredAt: z.coerce.date().nullable(),
   clickAndDropImported: z.boolean(),
   clickAndDropError: z.string().nullable(),
 });

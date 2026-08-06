@@ -383,6 +383,12 @@ describe("Admin — super admin dashboard (e2e)", () => {
     expect(line.recipientName).toBe("Ada Lovelace");
     expect(line.jobStatus).toBe("pending");
     expect(line.dueDate).not.toBeNull();
+    // Milestone timestamps are exposed for the cockpit trail — all null until the
+    // card is worked (it's still pending here). See ADR 0123.
+    expect(line.printedAt).toBeNull();
+    expect(line.postedAt).toBeNull();
+    expect(line.deliveredAt).toBeNull();
+    expect(line.labelUrl).toBeNull();
 
     // Data minimisation: the line must NOT carry the street address — that stays
     // behind the audited fulfilment export.
