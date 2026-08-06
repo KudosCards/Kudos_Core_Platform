@@ -230,7 +230,10 @@ export function BatchOrdersClient({
     try {
       const { checkoutUrl } = await clientApiFetch<{ checkoutUrl: string }>(
         `/batch-orders/${orderId}/checkout`,
-        { method: "POST" },
+        // Explicit resume intent: mint a fresh Stripe session for this
+        // already-pending_payment order. A first checkout omits this so
+        // concurrent double-submits can't each reach Stripe. See ADR 0125.
+        { method: "POST", body: JSON.stringify({ resume: true }) },
       );
       window.location.assign(checkoutUrl);
     } catch (resumeError) {

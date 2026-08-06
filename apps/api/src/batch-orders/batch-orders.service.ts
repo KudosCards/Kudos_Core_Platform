@@ -816,6 +816,7 @@ export class BatchOrdersService {
       successPath?: string;
       cancelPath?: string;
       successExtraParams?: Record<string, string>;
+      resume?: boolean;
     },
   ): Promise<CheckoutResult> {
     const existing = await this.prisma.batchOrder.findFirst({
@@ -834,14 +835,23 @@ export class BatchOrdersService {
       throw new ConflictException(`Batch order is "${existing.status}", not payable`);
     }
 
-    // Only a draft needs the status-guarded transition to pending_payment,
-    // done BEFORE the Stripe call — not after. Calling Stripe first would let
-    // two concurrent checkout requests each create a real, live Checkout
-    // Session before either learns it lost the DB race, leaking an orphaned
-    // (unreturned, but still payable-in-principle) session per collision.
-    // Guarding first means at most one request ever reaches Stripe for a given
-    // draft. A resume (already pending_payment) has no transition to guard; we
-    // track that so a failed Stripe call only hands a *draft* back.
+    // The status-guarded transition runs BEFORE the Stripe call — not after.
+    // Calling Stripe first would let two concurrent checkout requests each
+    // create a real, live Checkout Session before either learns it lost the DB
+    // race, leaking an orphaned (unreturned, but still payable-in-principle)
+    // session per collision. Guarding first means at most one request ever
+    // reaches Stripe for a given order.
+    //
+    // A first checkout ("Pay" on a draft) and a resume ("Resume checkout" on an
+    // abandoned pending_payment order) are indistinguishable by stored state —
+    // they differ only in timing — so the caller signals a resume explicitly
+    // via `options.resume`. Without that, a first checkout whose loser happens
+    // to read the winner's freshly-set `pending_payment` would be misread as a
+    // resume and sent to Stripe a second time. The explicit intent closes that
+    // hole: an unflagged request on a non-draft order is always a 409.
+    //
+    // `movedFromDraft` records whether we claimed a *draft*, so a failed Stripe
+    // call hands only a draft back (a resume was already pending_payment).
     let movedFromDraft = false;
     if (existing.status === "draft") {
       const { count } = await this.prisma.batchOrder.updateMany({
@@ -852,6 +862,22 @@ export class BatchOrdersService {
         throw new ConflictException("Batch order was already checked out by a concurrent request");
       }
       movedFromDraft = true;
+    } else {
+      // Already pending_payment (checked existing.status above). Only an
+      // explicit resume may mint a fresh session; anything else is a concurrent
+      // double-submit of a first checkout and must lose. The compare-and-swap
+      // on updatedAt also serialises two concurrent *resumes* of the same
+      // snapshot — the loser's WHERE no longer matches, so it 409s too.
+      if (!options?.resume) {
+        throw new ConflictException("Batch order was already checked out by a concurrent request");
+      }
+      const { count } = await this.prisma.batchOrder.updateMany({
+        where: { id, accountId, status: "pending_payment", updatedAt: existing.updatedAt },
+        data: { status: "pending_payment" },
+      });
+      if (count === 0) {
+        throw new ConflictException("Batch order was already checked out by a concurrent request");
+      }
     }
 
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
