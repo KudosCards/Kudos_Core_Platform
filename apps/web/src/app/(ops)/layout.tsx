@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/api";
 import { serverApiFetch } from "@/lib/api.server";
 import { LogoutButton } from "../(app)/logout-button";
 import { OpsNotificationBell } from "./ops-notification-bell";
+import { Logo } from "@/components/logo";
 
 /**
  * The internal ops shell — a separate surface from the customer app, with its
@@ -72,6 +73,11 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
       {/* Desktop sidebar */}
       <aside className="hidden w-56 shrink-0 flex-col justify-between border-r border-black/10 px-4 py-6 lg:flex dark:border-white/10">
         <div className="flex flex-col gap-2 text-sm font-medium">
+          {/* Brand — the Kudos mark, linking back to the ops dashboard. */}
+          <Link href="/admin" className="mb-4 flex items-center gap-2 px-3">
+            <Logo className="h-11 w-auto" priority />
+            <span className="text-sm font-semibold tracking-tight">Ops</span>
+          </Link>
           {groups.map((group) => (
             <div key={group} className="flex flex-col gap-2">
               <span className="mt-3 px-3 text-xs font-semibold tracking-wide text-foreground/40 uppercase first:mt-0">
@@ -113,7 +119,10 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
       {/* Mobile top bar: brand row + horizontally-scrollable nav pills. */}
       <div className="flex flex-col border-b border-black/10 bg-surface lg:hidden dark:border-white/10">
         <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-sm font-semibold">Kudos Ops</span>
+          <Link href="/admin" className="flex items-center gap-2">
+            <Logo className="h-8 w-auto" priority />
+            <span className="text-sm font-semibold">Ops</span>
+          </Link>
           <div className="flex items-center gap-1">
             <OpsNotificationBell />
             <LogoutButton redirectTo="/admin-login" />

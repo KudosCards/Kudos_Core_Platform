@@ -5,6 +5,7 @@ import type { AdminIdentity } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { createClient } from "@/lib/supabase/client";
+import { Logo } from "@/components/logo";
 
 /**
  * The Kudos operator sign-in — a separate entry from the customer /login. After
@@ -80,7 +81,8 @@ export default function AdminLoginPage() {
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center gap-6 px-6 py-16">
-      <div className="flex flex-col items-center gap-1 text-center">
+      <div className="flex flex-col items-center gap-2 text-center">
+        <Logo className="h-16 w-auto" priority />
         <span className="text-2xl font-bold tracking-tight">Kudos Ops</span>
         <span className="text-sm text-muted">Operator sign-in</span>
       </div>
