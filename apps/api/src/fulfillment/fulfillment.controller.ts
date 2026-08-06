@@ -23,7 +23,9 @@ import {
   type BulkTransitionSummary,
   type ExportedAddress,
   type PrintRunCard,
+  type DeliveryPollResult,
 } from "./fulfillment.service";
+import { DeliveryPollService } from "./delivery-poll.service";
 import { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { CalendarQueryDto } from "./dto/calendar-query.dto";
 import { TransitionFulfillmentDto } from "./dto/transition-fulfillment.dto";
@@ -40,7 +42,10 @@ import { ExportAddressesDto } from "./dto/export-addresses.dto";
 @UseGuards(PlatformAdminGuard)
 @Controller("fulfillment")
 export class FulfillmentController {
-  constructor(private readonly fulfillmentService: FulfillmentService) {}
+  constructor(
+    private readonly fulfillmentService: FulfillmentService,
+    private readonly deliveryPoll: DeliveryPollService,
+  ) {}
 
   /** Lightweight check the web ops shell uses to gate its routes: a 200 means
    * the caller is a platform admin, a 403 (from the guard) means they aren't. */
@@ -184,5 +189,14 @@ export class FulfillmentController {
   @Post("jobs/:id/click-and-drop")
   retryClickAndDrop(@Param("id", ParseUUIDPipe) id: string): Promise<FulfillmentQueueRow> {
     return this.fulfillmentService.retryClickAndDrop(id);
+  }
+
+  /** Run the Royal Mail delivery poll on demand: sweep posted-with-tracking cards
+   * and auto-advance any the carrier reports delivered. The hourly cron does this
+   * automatically; this lets an operator force a sweep (and confirm the wiring).
+   * Returns how many were checked / delivered / failed. */
+  @Post("poll-deliveries")
+  pollDeliveries(): Promise<DeliveryPollResult> {
+    return this.deliveryPoll.runPoll();
   }
 }

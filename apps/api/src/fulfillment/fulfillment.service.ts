@@ -205,6 +205,26 @@ export interface BulkTransitionSummary {
   skipped: number;
 }
 
+/** The outcome of one delivery-poll sweep, for logging + the ops on-demand run. */
+export interface DeliveryPollResult {
+  /** Posted-with-tracking jobs looked up this sweep. */
+  checked: number;
+  /** How many the carrier reported delivered and we advanced to `delivered`. */
+  delivered: number;
+  /** Tracking lookups that errored (transport/HTTP) and were skipped this sweep. */
+  failed: number;
+}
+
+/** The audit/actor id recorded when the delivery poll registers a delivery —
+ * no operator clicked, the carrier's tracking did. Mirrors the other
+ * `system:*` actors (auto-send, stripe-webhook). */
+const DELIVERY_POLL_ACTOR = "system:delivery-poll";
+
+/** Cap one sweep so a large `posted` backlog can't fan out into an unbounded
+ * run of carrier calls; the oldest-posted are checked first and the rest roll
+ * to the next sweep. */
+const DELIVERY_POLL_BATCH = 200;
+
 /** One buyer's just-posted cards for a single order, for the dispatch email. */
 interface DispatchGroup {
   orderId: string;
@@ -354,6 +374,53 @@ export class FulfillmentService {
       }
     }
     return { dispatched, failed };
+  }
+
+  /**
+   * Auto-register delivery from Royal Mail tracking: sweep the `posted` cards
+   * that carry a tracking reference, ask the carrier each one's state, and
+   * advance any it reports delivered to `delivered` — stamping the carrier's own
+   * delivery time when known, through the same audited state machine an operator
+   * would (so `deliveredAt`, the OrderRecipient/Occasion cascade and the order's
+   * `completed` roll-up all happen exactly once). A per-card tracking error is
+   * logged and skipped so one bad lookup never stops the sweep; the card stays
+   * `posted` and is retried next run. Manual "Mark delivered" remains the
+   * fallback. No-ops when shipping automation is off. See ADR 0121.
+   */
+  async pollCarrierDeliveries(): Promise<DeliveryPollResult> {
+    if (!this.royalMail.enabled) {
+      return { checked: 0, delivered: 0, failed: 0 };
+    }
+    const jobs = await this.prisma.fulfillmentJob.findMany({
+      where: { status: "posted", trackingReference: { not: null } },
+      select: { id: true, trackingReference: true },
+      orderBy: { postedAt: "asc" },
+      take: DELIVERY_POLL_BATCH,
+    });
+
+    let delivered = 0;
+    let failed = 0;
+    for (const job of jobs) {
+      const trackingReference = job.trackingReference;
+      if (!trackingReference) continue; // narrows the type; the where already excludes null
+      try {
+        const result = await this.royalMail.getTrackingStatus(trackingReference);
+        if (result.status !== "delivered") continue;
+        const applied = await this.prisma.$transaction((tx) =>
+          this.applyTransition(tx, DELIVERY_POLL_ACTOR, job.id, "delivered", {
+            deliveredAt: result.deliveredAt ?? undefined,
+          }),
+        );
+        if (applied) delivered += 1;
+      } catch (error) {
+        failed += 1;
+        const reason = error instanceof Error ? error.message : "Unknown error";
+        this.logger.error(
+          `Delivery tracking for job ${job.id} (${trackingReference}) failed: ${reason}`,
+        );
+      }
+    }
+    return { checked: jobs.length, delivered, failed };
   }
 
   private async orderNumberFor(batchOrderId: string): Promise<number> {
@@ -920,7 +987,14 @@ export class FulfillmentService {
     actorUserId: string,
     id: string,
     toStatus: TransitionableStatus,
-    opts: { trackingReference?: string; failureReason?: string; labelUrl?: string | null },
+    opts: {
+      trackingReference?: string;
+      failureReason?: string;
+      labelUrl?: string | null;
+      /** The carrier's recorded delivery time, when a delivery-registration comes
+       * from tracking rather than an operator; falls back to now. */
+      deliveredAt?: Date;
+    },
   ): Promise<boolean> {
     const now = new Date();
     const jobData: Prisma.FulfillmentJobUpdateManyMutationInput = { status: toStatus };
@@ -930,7 +1004,7 @@ export class FulfillmentService {
       if (opts.trackingReference) jobData.trackingReference = opts.trackingReference;
       if (opts.labelUrl) jobData.labelUrl = opts.labelUrl;
     }
-    if (toStatus === "delivered") jobData.deliveredAt = now;
+    if (toStatus === "delivered") jobData.deliveredAt = opts.deliveredAt ?? now;
 
     const { count } = await tx.fulfillmentJob.updateMany({
       where: { id, status: { in: FROM_STATUSES[toStatus] } },

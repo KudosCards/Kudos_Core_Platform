@@ -1,53 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { AdminOrderDetail, FulfillmentJobStatus } from "@kudos/shared-types";
+import type { AdminOrderDetail } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { ORDER_STATUS_CLASSES, ORDER_STATUS_LABELS, formatGbp, formatOrderDate } from "@/lib/orders";
 import { formatOrderNumber } from "@/lib/admin";
-import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
-
-const JOB_STATUS_LABELS: Record<FulfillmentJobStatus, string> = {
-  pending: "Pending",
-  in_progress: "In progress",
-  printed: "Printed",
-  posted: "Posted",
-  delivered: "Delivered",
-  returned_to_sender: "Returned",
-  failed: "Failed",
-};
-
-const JOB_STATUS_CLASSES: Record<FulfillmentJobStatus, string> = {
-  pending: "bg-foreground/[0.07] text-muted",
-  in_progress: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300",
-  printed: "bg-indigo-100 text-indigo-800 dark:bg-indigo-500/15 dark:text-indigo-300",
-  posted: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  delivered: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  returned_to_sender: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  failed: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-};
-
-const POSTAGE_LABELS: Record<string, string> = {
-  first_class: "1st class",
-  second_class: "2nd class",
-};
-
-/** The active job statuses whose deadline still matters (an overdue posted card
- * isn't overdue any more). */
-const OPEN_STATUSES: FulfillmentJobStatus[] = ["pending", "in_progress", "printed"];
-
-function formatDueDate(value: string | Date): string {
-  return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}
-
-/** Whether an open card's posting deadline has already passed. Display-only
- * calendar compare — the working-day badge lives in the dispatch queue. */
-function isOverdue(dueDate: string | Date, status: FulfillmentJobStatus | null): boolean {
-  if (!status || !OPEN_STATUSES.includes(status)) return false;
-  const due = new Date(dueDate);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return due < today;
-}
+import { OrderCockpit } from "./order-cockpit-client";
 
 function ProgressBreakdown({ progress }: { progress: AdminOrderDetail["progress"] }) {
   if (progress.total === 0) {
@@ -111,7 +68,11 @@ export default async function AdminOrderDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const order = await serverApiFetch<AdminOrderDetail>(`/admin/orders/${id}`);
+  const [order, shipping, clickAndDrop] = await Promise.all([
+    serverApiFetch<AdminOrderDetail>(`/admin/orders/${id}`),
+    serverApiFetch<{ enabled: boolean }>("/fulfillment/shipping-status"),
+    serverApiFetch<{ enabled: boolean }>("/fulfillment/click-and-drop-status"),
+  ]);
   if (!order) {
     notFound();
   }
@@ -192,77 +153,11 @@ export default async function AdminOrderDetailPage({
         </section>
       </div>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold tracking-wide text-muted uppercase">
-          Cards ({order.lines.length.toLocaleString("en-GB")})
-        </h2>
-        <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs tracking-wide text-muted uppercase">
-                <th className="px-5 py-3 font-medium">Recipient</th>
-                <th className="px-5 py-3 font-medium">Occasion</th>
-                <th className="px-5 py-3 font-medium">Design</th>
-                <th className="px-5 py-3 font-medium">Postage</th>
-                <th className="px-5 py-3 font-medium">Due</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Tracking</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {order.lines.map((line) => {
-                const overdue = line.dueDate ? isOverdue(line.dueDate, line.jobStatus) : false;
-                return (
-                  <tr key={line.orderRecipientId} className="hover:bg-foreground/[0.02]">
-                    <td className="px-5 py-3 font-medium">{line.recipientName}</td>
-                    <td className="px-5 py-3 text-muted">
-                      {line.occasionType
-                        ? (OCCASION_TYPE_LABELS[line.occasionType] ?? line.occasionType)
-                        : "—"}
-                    </td>
-                    <td className="px-5 py-3 text-muted">{line.designName}</td>
-                    <td className="px-5 py-3 whitespace-nowrap text-muted">
-                      {POSTAGE_LABELS[line.postageClass] ?? line.postageClass}
-                    </td>
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      {line.dueDate ? (
-                        <span className={overdue ? "font-medium text-red-600 dark:text-red-400" : "text-muted"}>
-                          {formatDueDate(line.dueDate)}
-                          {overdue && " · overdue"}
-                        </span>
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {line.jobStatus ? (
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${JOB_STATUS_CLASSES[line.jobStatus]}`}
-                        >
-                          {JOB_STATUS_LABELS[line.jobStatus]}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted">Not queued</span>
-                      )}
-                      {line.clickAndDropError && (
-                        <span
-                          title={line.clickAndDropError}
-                          className="ml-1 text-xs text-amber-700 dark:text-amber-400"
-                        >
-                          ⚠
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-muted tabular-nums">
-                      {line.trackingReference ?? "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <OrderCockpit
+        lines={order.lines}
+        shippingEnabled={shipping?.enabled ?? false}
+        clickAndDropEnabled={clickAndDrop?.enabled ?? false}
+      />
     </div>
   );
 }
