@@ -414,8 +414,8 @@ export function BulkSendClient({
         </p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.5fr_1fr]">
+        <div className="flex min-w-0 flex-col gap-6">
           {/* 1 — who it's going to */}
           <section className="card flex flex-col gap-4 p-6">
             <h2 className="font-semibold">1. Who to send to</h2>
@@ -649,7 +649,7 @@ export function BulkSendClient({
         </div>
 
         {/* Order summary + pay */}
-        <div className="card flex h-fit flex-col gap-4 p-6 lg:sticky lg:top-6">
+        <div className="card flex h-fit min-w-0 flex-col gap-4 p-6 lg:sticky lg:top-6">
           <h2 className="font-semibold">Order summary</h2>
 
           <fieldset className="flex flex-col gap-2">
