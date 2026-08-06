@@ -269,6 +269,13 @@ stores tracking + label, emails the buyer the tracking link). No Click & Drop da
 - **First live check:** on a printed card, click Dispatch and confirm a shipment is created with a
   real tracking number + label. A wrong service code is the most likely first failure — the error
   (status + Royal Mail's message) surfaces to the operator; fix it via the env override above.
+- **Automated delivery registration** (ADR 0121): once the key is set, an hourly poll reads the
+  tracking of every `posted` card and auto-advances the delivered ones to `delivered` (stamping the
+  carrier's delivery time and rolling the order up to `completed`) — no operator click needed. Manual
+  "Mark delivered" stays available as the fallback. Force a sweep to verify wiring with `POST
+  /fulfillment/poll-deliveries` (returns `{ checked, delivered, failed }`). No extra credential — it
+  reuses `ROYAL_MAIL_API_KEY` and the base URL. Confirm the tracking resource path/fields against your
+  account in the sandbox, same as the dispatch call.
 
 ---
 
