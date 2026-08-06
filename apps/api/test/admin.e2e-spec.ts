@@ -122,7 +122,14 @@ describe("Admin — super admin dashboard (e2e)", () => {
       pending_webhooks: 0,
       request: null,
       type: "checkout.session.completed",
-      data: { object: dataObject },
+      // buildEvent only builds checkout.session.completed here; default a paid
+      // status so these order-payment fixtures settle under the webhook's guard.
+      data: {
+        object:
+          dataObject.payment_status === undefined
+            ? { payment_status: "paid", ...dataObject }
+            : dataObject,
+      },
     });
   }
 

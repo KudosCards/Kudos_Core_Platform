@@ -49,8 +49,17 @@ export class WebhooksService {
     }
 
     switch (event.type) {
+      // Both route through the same handler, which settles only a *paid*
+      // session. A delayed-notification method (e.g. a bank debit) confirms out
+      // of band: `completed` fires first with payment_status "unpaid" (a no-op),
+      // then `async_payment_succeeded` fires once the money clears. Synchronous
+      // methods (card / Apple Pay / Google Pay / Link) settle on `completed`.
       case "checkout.session.completed":
+      case "checkout.session.async_payment_succeeded":
         await this.handleCheckoutSessionCompleted(event.data.object);
+        break;
+      case "checkout.session.async_payment_failed":
+        await this.handleAsyncPaymentFailed(event.data.object);
         break;
       case "checkout.session.expired":
         await this.handleCheckoutSessionExpired(event.data.object);
@@ -72,6 +81,20 @@ export class WebhooksService {
   }
 
   private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session): Promise<void> {
+    // Only act on a session that is actually paid. Synchronous methods (card and
+    // the Apple Pay / Google Pay / Link wallets) arrive here with payment_status
+    // "paid"; a delayed-notification method arrives "unpaid" on `completed` and
+    // is settled later via `async_payment_succeeded` (which re-enters here, now
+    // paid). This guard is what makes it safe to offer every Dashboard-enabled
+    // payment method at checkout without ever fulfilling an order — or crediting
+    // a wallet — before the money has cleared. See docs/adr/0126.
+    if (session.payment_status !== "paid") {
+      this.logger.log(
+        `Checkout session ${session.id} completed but not yet paid (payment_status=${session.payment_status}); awaiting async settlement`,
+      );
+      return;
+    }
+
     if (session.metadata?.type === "wallet_topup") {
       // A wallet top-up — credit the balance (idempotent) rather than fulfil an
       // order. See wallet.service.ts.
@@ -371,6 +394,43 @@ export class WebhooksService {
       accountId: order.accountId,
       actorUserId: SYSTEM_ACTOR,
       action: "checkout_session_expired",
+      targetType: "BatchOrder",
+      targetId: batchOrderId,
+      metadata: { stripeCheckoutSessionId: session.id },
+    });
+  }
+
+  /**
+   * A delayed-notification payment (e.g. a bank debit) failed to clear after the
+   * Checkout Session completed. Nothing was ever fulfilled or credited — the
+   * `completed` event was skipped because the session was still "unpaid" (see the
+   * payment_status guard) — so this just releases the stranded order back to
+   * `draft` so the buyer can retry, mirroring an expired session. A wallet top-up
+   * is credited only on success, so a failed top-up needs no undo. Synchronous
+   * methods (card/wallets/Link) never reach this event.
+   */
+  private async handleAsyncPaymentFailed(session: Stripe.Checkout.Session): Promise<void> {
+    if (session.metadata?.type === "wallet_topup") {
+      return;
+    }
+    const batchOrderId = session.metadata?.batchOrderId;
+    if (!batchOrderId) {
+      return;
+    }
+
+    const { count } = await this.prisma.batchOrder.updateMany({
+      where: { id: batchOrderId, status: "pending_payment" },
+      data: { status: "draft" },
+    });
+    if (count === 0) {
+      return;
+    }
+
+    const order = await this.prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+    await this.audit.record({
+      accountId: order.accountId,
+      actorUserId: SYSTEM_ACTOR,
+      action: "async_payment_failed",
       targetType: "BatchOrder",
       targetId: batchOrderId,
       metadata: { stripeCheckoutSessionId: session.id },

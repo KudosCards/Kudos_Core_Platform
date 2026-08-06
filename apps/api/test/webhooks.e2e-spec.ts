@@ -27,7 +27,17 @@ function buildStripeEventPayload(type: string, dataObject: Record<string, unknow
     pending_webhooks: 0,
     request: null,
     type,
-    data: { object: dataObject },
+    // A real checkout.session.completed / async_payment_succeeded always carries
+    // a payment_status; default it to "paid" so card-payment fixtures settle,
+    // while a test can pass payment_status explicitly to model an async/unpaid one.
+    data: {
+      object:
+        (type === "checkout.session.completed" ||
+          type === "checkout.session.async_payment_succeeded") &&
+        dataObject.payment_status === undefined
+          ? { payment_status: "paid", ...dataObject }
+          : dataObject,
+    },
   });
 }
 
@@ -187,6 +197,78 @@ describe("Webhooks (e2e)", () => {
     expect(messagePage).not.toBeNull();
     expect(messagePage!.slug.length).toBeGreaterThanOrEqual(6);
     expect(messagePage!.message).toBeNull();
+  });
+
+  it("does NOT fulfil a completed-but-unpaid session (delayed payment method still pending)", async () => {
+    const { token } = await signUp();
+    const { batchOrderId } = await createPendingPaymentBatchOrder(token);
+
+    // A delayed-notification method completes the session before the money
+    // clears: payment_status "unpaid". We must not fulfil yet.
+    const payload = buildStripeEventPayload("checkout.session.completed", {
+      id: `cs_test_${randomUUID()}`,
+      payment_status: "unpaid",
+      metadata: { batchOrderId },
+    });
+    await postWebhook(payload).expect(201);
+
+    const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+    expect(order.status).toBe("pending_payment");
+    const orderRecipients = await prisma.orderRecipient.findMany({ where: { batchOrderId } });
+    expect(orderRecipients[0]?.status).toBe("approved");
+    const jobs = await prisma.fulfillmentJob.findMany({
+      where: { orderRecipient: { batchOrderId } },
+    });
+    expect(jobs).toHaveLength(0);
+  });
+
+  it("fulfils on async_payment_succeeded once a delayed payment clears", async () => {
+    const { token } = await signUp();
+    const { batchOrderId } = await createPendingPaymentBatchOrder(token);
+
+    // First the (unpaid) completed event — a no-op.
+    await postWebhook(
+      buildStripeEventPayload("checkout.session.completed", {
+        id: `cs_test_${randomUUID()}`,
+        payment_status: "unpaid",
+        metadata: { batchOrderId },
+      }),
+    ).expect(201);
+    expect(
+      (await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } })).status,
+    ).toBe("pending_payment");
+
+    // Then it clears: async_payment_succeeded (paid) fulfils the order.
+    await postWebhook(
+      buildStripeEventPayload("checkout.session.async_payment_succeeded", {
+        id: `cs_test_${randomUUID()}`,
+        metadata: { batchOrderId },
+      }),
+    ).expect(201);
+
+    const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+    expect(order.status).toBe("paid");
+    const orderRecipients = await prisma.orderRecipient.findMany({ where: { batchOrderId } });
+    expect(orderRecipients[0]?.status).toBe("queued");
+    const jobs = await prisma.fulfillmentJob.findMany({
+      where: { orderRecipient: { batchOrderId } },
+    });
+    expect(jobs).toHaveLength(1);
+  });
+
+  it("releases the order back to draft on async_payment_failed", async () => {
+    const { token } = await signUp();
+    const { batchOrderId } = await createPendingPaymentBatchOrder(token);
+
+    await postWebhook(
+      buildStripeEventPayload("checkout.session.async_payment_failed", {
+        id: `cs_test_${randomUUID()}`,
+        metadata: { batchOrderId },
+      }),
+    ).expect(201);
+
+    const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+    expect(order.status).toBe("draft");
   });
 
   it("emails a guest buyer their claim link on payment, exactly once", async () => {
