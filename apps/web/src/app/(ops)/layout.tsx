@@ -70,8 +70,9 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
 
   return (
     <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
-      {/* Desktop sidebar */}
-      <aside className="hidden w-56 shrink-0 flex-col justify-between border-r border-black/10 px-4 py-6 lg:flex dark:border-white/10">
+      {/* Desktop sidebar — brand + nav only. Operator identity, notifications and
+          sign-out live in the content-column top bar (below). */}
+      <aside className="hidden w-56 shrink-0 flex-col border-r border-black/10 px-4 py-6 lg:flex dark:border-white/10">
         <div className="flex flex-col gap-2 text-sm font-medium">
           {/* Brand — the Kudos mark, linking back to the ops dashboard. */}
           <Link href="/admin" className="mb-4 flex items-center gap-2 px-3">
@@ -97,38 +98,36 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
             </div>
           ))}
         </div>
-        <div className="flex flex-col gap-2 border-t border-black/10 pt-4 text-sm dark:border-white/10">
-          <div className="flex items-center justify-between gap-2 px-3">
-            <div className="min-w-0">
-              <p
-                className="truncate text-xs font-medium text-foreground/80"
-                title={me.email ?? undefined}
-              >
-                {me.email ?? "Operator"}
-              </p>
-              <p className="text-xs text-foreground/40">
-                {me.role === "super_admin" ? "Super admin" : "Operator"}
-              </p>
-            </div>
-            <OpsNotificationBell />
-          </div>
-          <LogoutButton redirectTo="/admin-login" />
-        </div>
       </aside>
 
-      {/* Mobile top bar: brand row + horizontally-scrollable nav pills. */}
-      <div className="flex flex-col border-b border-black/10 bg-surface lg:hidden dark:border-white/10">
-        <div className="flex items-center justify-between px-4 py-3">
-          <Link href="/admin" className="flex items-center gap-2">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Top bar — sticky across breakpoints. Notifications + sign-out sit
+            top-right (the conventional place); the brand shows on mobile where
+            there's no sidebar, and the operator identity on desktop. */}
+        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-black/10 bg-surface px-4 py-2.5 sm:px-6 lg:px-8 dark:border-white/10">
+          <Link href="/admin" className="flex items-center gap-2 lg:hidden">
             <Logo className="h-8 w-auto" priority />
             <span className="text-sm font-semibold">Ops</span>
           </Link>
-          <div className="flex items-center gap-1">
+          <div className="hidden min-w-0 lg:block">
+            <p
+              className="truncate text-sm font-medium text-foreground/80"
+              title={me.email ?? undefined}
+            >
+              {me.email ?? "Operator"}
+            </p>
+            <p className="text-xs text-foreground/40">
+              {me.role === "super_admin" ? "Super admin" : "Operator"}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
             <OpsNotificationBell />
             <LogoutButton redirectTo="/admin-login" />
           </div>
-        </div>
-        <nav className="flex gap-1.5 overflow-x-auto px-4 pb-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        </header>
+
+        {/* Mobile nav — horizontally-scrollable pills below the top bar. */}
+        <nav className="flex gap-1.5 overflow-x-auto border-b border-black/10 bg-surface px-4 py-2.5 lg:hidden dark:border-white/10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -139,9 +138,7 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
             </Link>
           ))}
         </nav>
-      </div>
 
-      <div className="flex min-w-0 flex-1 flex-col">
         {shipAlert && (
           <Link
             href="/fulfillment"
