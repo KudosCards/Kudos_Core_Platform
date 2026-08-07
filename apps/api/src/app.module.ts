@@ -20,6 +20,7 @@ import { BatchOrdersModule } from "./batch-orders/batch-orders.module";
 import { WebhooksModule } from "./webhooks/webhooks.module";
 import { SubscriptionsModule } from "./subscriptions/subscriptions.module";
 import { MessagesModule } from "./messages/messages.module";
+import { MessagePagesModule } from "./message-pages/message-pages.module";
 import { FulfillmentModule } from "./fulfillment/fulfillment.module";
 import { AdminModule } from "./admin/admin.module";
 import { DispatchModule } from "./dispatch/dispatch.module";
@@ -72,6 +73,7 @@ import { PlatformNotificationsModule } from "./platform-notifications/platform-n
     WebhooksModule,
     SubscriptionsModule,
     MessagesModule,
+    MessagePagesModule,
     FulfillmentModule,
     AdminModule,
     DispatchModule,

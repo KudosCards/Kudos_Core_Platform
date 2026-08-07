@@ -15,6 +15,7 @@ export * from "./plans";
 export * from "./enterprise";
 export * from "./card";
 export * from "./video";
+export * from "./message-page";
 export * from "./design-layout";
 export * from "./design-fonts";
 export * from "./order";
