@@ -190,13 +190,14 @@ describe("Webhooks (e2e)", () => {
     expect(fulfillmentJobs).toHaveLength(1);
     expect(fulfillmentJobs[0]?.status).toBe("pending");
 
-    // Every paid card also gets an (empty) message page with a slug.
-    const messagePage = await prisma.messagePage.findUnique({
+    // Every paid card also gets an (empty) message page + a link with a slug.
+    const messagePageLink = await prisma.messagePageLink.findUnique({
       where: { orderRecipientId: orderRecipients[0]!.id },
+      include: { messagePage: { select: { message: true } } },
     });
-    expect(messagePage).not.toBeNull();
-    expect(messagePage!.slug.length).toBeGreaterThanOrEqual(6);
-    expect(messagePage!.message).toBeNull();
+    expect(messagePageLink).not.toBeNull();
+    expect(messagePageLink!.slug.length).toBeGreaterThanOrEqual(6);
+    expect(messagePageLink!.messagePage.message).toBeNull();
   });
 
   it("does NOT fulfil a completed-but-unpaid session (delayed payment method still pending)", async () => {

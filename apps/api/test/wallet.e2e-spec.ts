@@ -278,10 +278,10 @@ describe("Wallet (e2e)", () => {
       where: { orderRecipientId: orderRecipients[0]!.id },
     });
     expect(jobs).toHaveLength(1);
-    const messagePage = await prisma.messagePage.findUnique({
+    const messagePageLink = await prisma.messagePageLink.findUnique({
       where: { orderRecipientId: orderRecipients[0]!.id },
     });
-    expect(messagePage).not.toBeNull();
+    expect(messagePageLink).not.toBeNull();
 
     // A single charge entry recording the debit.
     const charges = await prisma.walletLedgerEntry.findMany({

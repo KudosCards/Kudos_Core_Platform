@@ -216,10 +216,10 @@ describe("Auto-send (e2e)", () => {
       where: { orderRecipientId: order.orderRecipients[0]!.id },
     });
     expect(job?.status).toBe("pending");
-    const messagePage = await prisma.messagePage.findUnique({
+    const messagePageLink = await prisma.messagePageLink.findUnique({
       where: { orderRecipientId: order.orderRecipients[0]!.id },
     });
-    expect(messagePage).not.toBeNull();
+    expect(messagePageLink).not.toBeNull();
 
     // Wallet debited by exactly the order total.
     expect(await walletBalance(token)).toBe(1000 - (225 + 180));

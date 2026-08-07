@@ -199,18 +199,18 @@ describe("Messages (e2e)", () => {
   it("serves a message page publicly by slug and increments its view count", async () => {
     const { token } = await signUp();
     await createPaidOrder(token, "Grace");
-    const page = await prisma.messagePage.findFirstOrThrow({
+    const link = await prisma.messagePageLink.findFirstOrThrow({
       where: { orderRecipient: { batchOrder: { account: { name: { contains: "Test Centre" } } } } },
       orderBy: { createdAt: "desc" },
     });
     await prisma.messagePage.update({
-      where: { id: page.id },
+      where: { id: link.messagePageId },
       data: { message: "You did it!" },
     });
 
     // No Authorization header — this is the public QR-code target.
     const viewResponse = await request(app.getHttpServer())
-      .get(`/messages/${page.slug}`)
+      .get(`/messages/${link.slug}`)
       .expect(200);
     expect(viewResponse.body).toEqual({
       message: "You did it!",
@@ -220,9 +220,9 @@ describe("Messages (e2e)", () => {
       occasionType: "birthday",
     });
 
-    await request(app.getHttpServer()).get(`/messages/${page.slug}`).expect(200);
+    await request(app.getHttpServer()).get(`/messages/${link.slug}`).expect(200);
 
-    const refreshed = await prisma.messagePage.findUniqueOrThrow({ where: { id: page.id } });
+    const refreshed = await prisma.messagePageLink.findUniqueOrThrow({ where: { id: link.id } });
     expect(refreshed.viewCount).toBe(2);
   });
 

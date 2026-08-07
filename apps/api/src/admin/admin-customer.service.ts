@@ -101,8 +101,9 @@ export class AdminCustomerService {
         select: { balanceAfterMinor: true, createdAt: true },
       }),
       this.prisma.savedDesign.count({ where: { accountId } }),
-      this.prisma.messagePage.aggregate({
-        where: { orderRecipient: { batchOrder: { accountId } } },
+      // Views now live on the per-card link; count links (QRs) + sum their views.
+      this.prisma.messagePageLink.aggregate({
+        where: { messagePage: { accountId } },
         _count: true,
         _sum: { viewCount: true },
       }),
