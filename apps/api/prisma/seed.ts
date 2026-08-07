@@ -90,7 +90,7 @@ const CARD_DESIGN_TEMPLATES = [
 const PLAN_ENTITLEMENTS = [
   { planId: "free", recipientCap: 50, batchOrderMaxSize: 10, cardDiscountPercent: 0, autoSendEnabled: false, customArtworkEnabled: false, teamSeatsEnabled: false, includedSeats: 1 },
   { planId: "pro", recipientCap: 200, batchOrderMaxSize: 200, cardDiscountPercent: 10, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: false, includedSeats: 1 },
-  { planId: "centre", recipientCap: null, batchOrderMaxSize: 500, cardDiscountPercent: 15, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: true, includedSeats: 3 },
+  { planId: "centre", recipientCap: 2000, batchOrderMaxSize: 500, cardDiscountPercent: 15, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: true, includedSeats: 3 },
 ];
 
 /**
