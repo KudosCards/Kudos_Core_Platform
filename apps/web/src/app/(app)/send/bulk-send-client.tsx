@@ -4,6 +4,7 @@ import type {
   BatchOrder,
   BatchOrderPreflight,
   CardDesign,
+  MessagePageSummary,
   Recipient,
   RecipientListSummary,
   SavedDesign,
@@ -13,6 +14,7 @@ import {
   applyMergeTokens,
   CARD_PRICE_MINOR,
   hasMergeTokens,
+  hasQrElement,
   POSTAGE_MINOR as SHARED_POSTAGE_MINOR,
   ukPostcodeRegex,
 } from "@kudos/shared-types";
@@ -123,6 +125,8 @@ export function BulkSendClient({
   lists,
   initialDesignId,
   seededSegment,
+  messagePages,
+  canAuthorMessagePages,
 }: {
   initialSelected: Recipient[];
   initialRecipientsPage: Paginated<Recipient>;
@@ -131,6 +135,8 @@ export function BulkSendClient({
   lists: RecipientListSummary[];
   initialDesignId: string;
   seededSegment?: SeededSegment | null;
+  messagePages: MessagePageSummary[];
+  canAuthorMessagePages: boolean;
 }) {
   // The chosen contacts, keyed by id and holding the full record, so a selected
   // contact keeps its address/preview even when it's off the current picker page.
@@ -207,6 +213,14 @@ export function BulkSendClient({
     [designs, selectedDesignId],
   );
   const personalises = selectedDesign ? hasMergeTokens(selectedDesign.document) : false;
+  // The "add a message page?" step only appears when the chosen design carries a
+  // QR element to point at it (ADR 0132).
+  const designHasQr = selectedDesign ? hasQrElement(selectedDesign.document) : false;
+  const [messagePageId, setMessagePageId] = useState<string>("");
+  const activeMessagePages = useMemo(
+    () => messagePages.filter((page) => page.status === "active"),
+    [messagePages],
+  );
 
   const perCard = CARD_MINOR + (POSTAGE_MINOR[postageClass] ?? 0);
   const estimate = perCard * sendable.length;
@@ -347,6 +361,9 @@ export function BulkSendClient({
           savedDesignId: selectedDesignId,
           recipientIds: sendable.map((r) => r.id),
           postageClass,
+          // Attach the chosen message page to every card's QR (only meaningful
+          // when the design carries a QR element). See docs/adr/0132.
+          messagePageId: designHasQr && messagePageId ? messagePageId : undefined,
           // Undefined for "send now"; an arrive-by date for a scheduled send.
           deliverBy: timingDeliverBy(timing),
           // Consume the matched natural occasions (unless the sender opted out),
@@ -741,6 +758,44 @@ export function BulkSendClient({
               </label>
             ))}
           </fieldset>
+
+          {designHasQr && (
+            <fieldset className="flex flex-col gap-2 border-t border-border pt-3">
+              <legend className="mb-1 text-sm font-medium">Message page</legend>
+              <p className="text-xs text-muted">
+                This design has a QR code. Attach a message page so recipients see a video
+                and a personal note when they scan it.
+              </p>
+              {activeMessagePages.length > 0 ? (
+                <select
+                  value={messagePageId}
+                  onChange={(e) => setMessagePageId(e.target.value)}
+                  className="w-full rounded-md border border-border bg-surface px-3 py-2.5 text-base sm:text-sm"
+                >
+                  <option value="">No message page</option>
+                  {activeMessagePages.map((page) => (
+                    <option key={page.id} value={page.id}>
+                      {page.emoji ? `${page.emoji} ` : ""}
+                      {page.title}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-xs text-muted">
+                  {canAuthorMessagePages ? (
+                    <Link href="/message-pages/new" className="text-accent hover:underline">
+                      Create a message page
+                    </Link>
+                  ) : (
+                    <Link href="/billing" className="text-accent hover:underline">
+                      Upgrade to add message pages
+                    </Link>
+                  )}{" "}
+                  to use this card&apos;s QR code.
+                </p>
+              )}
+            </fieldset>
+          )}
 
           <div className="border-t border-border pt-3">
             {preflight ? (

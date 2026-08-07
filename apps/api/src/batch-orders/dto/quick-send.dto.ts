@@ -82,6 +82,14 @@ export class QuickSendDto {
 
   @ApiPropertyOptional({
     description:
+      "A library message page to attach to this card's QR (ADR 0132). Only meaningful when the design carries a QR element; validated to belong to the account.",
+  })
+  @IsOptional()
+  @IsUUID()
+  messagePageId?: string;
+
+  @ApiPropertyOptional({
+    description:
       "Arrive-by date (YYYY-MM-DD) for a scheduled send — we post it to land around then. Omit to send now.",
   })
   @IsOptional()

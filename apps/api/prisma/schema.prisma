@@ -686,6 +686,10 @@ model OrderRecipient {
   recipientId             String               @map("recipient_id")
   occasionId              String?              @map("occasion_id")
   savedDesignId           String               @map("saved_design_id")
+  /// The library message page chosen for this card in the send flow (ADR 0132).
+  /// When set, settlement mints this card's QR link onto that shared page
+  /// (reuse); when null, a fresh per-card page is auto-created as before.
+  messagePageId           String?              @map("message_page_id")
   shippingAddressLine1    String               @map("shipping_address_line1")
   shippingAddressLine2    String?              @map("shipping_address_line2")
   shippingAddressCity     String               @map("shipping_address_city")
@@ -704,10 +708,11 @@ model OrderRecipient {
   batchOrder     BatchOrder      @relation(fields: [batchOrderId], references: [id], onDelete: Cascade)
   recipient      Recipient       @relation(fields: [recipientId], references: [id])
   occasion       Occasion?       @relation(fields: [occasionId], references: [id])
-  savedDesign     SavedDesign      @relation(fields: [savedDesignId], references: [id])
-  messagePageLink MessagePageLink?
-  fulfillmentJob  FulfillmentJob?
-  returnCase     ReturnCase?
+  savedDesign       SavedDesign      @relation(fields: [savedDesignId], references: [id])
+  chosenMessagePage MessagePage?     @relation("ChosenMessagePage", fields: [messagePageId], references: [id], onDelete: SetNull)
+  messagePageLink   MessagePageLink?
+  fulfillmentJob    FulfillmentJob?
+  returnCase        ReturnCase?
 
   @@index([batchOrderId])
   @@index([recipientId])
@@ -759,6 +764,9 @@ model MessagePage {
 
   account Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   links   MessagePageLink[]
+  /// Order recipients that chose this page in the send flow (before settlement
+  /// turns each choice into a per-card link). See docs/adr/0132-message-pages-v2.md.
+  chosenByOrderRecipients OrderRecipient[] @relation("ChosenMessagePage")
 
   @@index([accountId])
   @@map("message_pages")

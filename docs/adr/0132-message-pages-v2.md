@@ -145,9 +145,26 @@ Each phase ships as its own verified PR, merged when the preview is green.
 
 - **PR 1 — foundations (merged, #231):** the page/link schema split + slug-preserving
   migration, `messagePagesEnabled` entitlement + seed, `parseVideoEmbed` helper.
-- **PR 2 — library API (this PR):** the account-owned `message-pages` module —
+- **PR 2 — library API (merged, #232):** the account-owned `message-pages` module —
   create (mints a standalone QR link so a page is scannable the moment it's saved),
   list with rolled-up stats (link count + total views), get, update, soft-archive —
   paid-gated on authoring while reads stay open (so a downgrade doesn't hide existing
   pages); server-side HTML sanitiser (`b/i/u/p/br/ul/ol/li`, no attributes) and
   embed-only video validation via the shared helper; v2 shared-types contract.
+- **PR 3 — web + send flow (this PR):** the `/message-pages` library UI (stats,
+  search / filter / sort, paid-plan upsell) and the builder (title, emoji, embed
+  video with live validation, a tiny rich-text editor, CTA, replies toggle) with a
+  live mobile preview and the page's own QR + download; the redesigned public
+  `/r/[slug]` (title, emoji, embedded video, sanitised rich message, CTA,
+  theme-aware, graceful "no longer available" for an archived page) sharing one
+  `MessagePageView` with the builder preview so they can't drift; the widened
+  public read (`GET /messages/:slug` now returns title / CTA / embed URL / archived
+  state); and the **QR-gated "add a message page?" step** in the `/send` composer —
+  the chosen page rides on `BulkSendDto.messagePageId` (also accepted on quick-send
+  and per line on `CreateBatchOrderDto`), is validated to the account, stored on
+  `OrderRecipient.messagePageId`, and at settlement each card's QR link is minted
+  onto that shared page (per-card analytics on a reused page) instead of a fresh
+  auto-page. The library lists only authored pages, so the per-card auto-pages stay
+  on the v1 personalise surface and never clutter it. (The guided single-card
+  `/designs/[id]/send` wizard's picker is a fast-follow; its endpoint already
+  accepts `messagePageId`.)

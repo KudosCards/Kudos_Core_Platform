@@ -263,6 +263,7 @@ export class BatchOrdersService {
       shippingAddressPostcode: dto.shippingAddressPostcode,
       dispatchOption: "asap",
       postageClass: dto.postageClass,
+      messagePageId: dto.messagePageId,
     };
   }
 
@@ -397,6 +398,7 @@ export class BatchOrdersService {
         shippingAddressPostcode: recipient.addressPostcode!,
         dispatchOption: "asap",
         postageClass: dto.postageClass,
+        messagePageId: dto.messagePageId,
       };
     });
     return this.create(accountId, actorUserId, { lines });
@@ -680,6 +682,22 @@ export class BatchOrdersService {
 
     const priceMinor = computeCardPriceMinor(entitlement.cardDiscountPercent);
 
+    // Any message page attached to a line (send flow, ADR 0132) must belong to
+    // this account and still be active — the trust boundary, even though the UI
+    // only offers the account's own pages. Settlement mints each card's QR link
+    // onto the chosen page.
+    const messagePageIds = [
+      ...new Set(dto.lines.map((line) => line.messagePageId).filter((id): id is string => !!id)),
+    ];
+    if (messagePageIds.length > 0) {
+      const found = await this.prisma.messagePage.count({
+        where: { id: { in: messagePageIds }, accountId, status: "active" },
+      });
+      if (found !== messagePageIds.length) {
+        throw new NotFoundException("One or more message pages were not found on this account");
+      }
+    }
+
     const batchOrder = await this.prisma.$transaction(async (tx) => {
       const occasions = await tx.occasion.findMany({
         where: { id: { in: occasionIds }, accountId },
@@ -732,6 +750,7 @@ export class BatchOrdersService {
           recipientId: occasion.recipientId,
           occasionId: occasion.id,
           savedDesignId: occasion.savedDesignId,
+          messagePageId: line.messagePageId ?? null,
           shippingAddressLine1: line.shippingAddressLine1,
           shippingAddressLine2: line.shippingAddressLine2 ?? null,
           shippingAddressCity: line.shippingAddressCity,

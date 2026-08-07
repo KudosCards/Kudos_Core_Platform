@@ -137,6 +137,19 @@ export const designDocumentSchema = z.object({
 });
 export type DesignDocument = z.infer<typeof designDocumentSchema>;
 
+/**
+ * Whether a design places a QR element on any face. The QR resolves to the
+ * recipient's digital message page, so the send flow offers to attach a message
+ * page only when this is true (ADR 0132). Defensive against loosely-typed
+ * documents read from storage.
+ */
+export function hasQrElement(document: DesignDocument | null | undefined): boolean {
+  if (!document || !Array.isArray(document.pages)) return false;
+  return document.pages.some((page) =>
+    Array.isArray(page.elements) && page.elements.some((element) => element.kind === "qr"),
+  );
+}
+
 export const cardDesignSchema = z.object({
   id: z.string().uuid(),
   category: z.string(),

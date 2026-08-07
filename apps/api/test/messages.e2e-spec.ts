@@ -81,6 +81,7 @@ describe("Messages (e2e)", () => {
     token: string,
     recipientFirstName = "Sam",
     designVideoUrl?: string,
+    messagePageId?: string,
   ): Promise<{ batchOrderId: string }> {
     const recipientResponse = await request(app.getHttpServer())
       .post("/recipients")
@@ -145,6 +146,7 @@ describe("Messages (e2e)", () => {
             shippingAddressPostcode: "SW1A 1AA",
             dispatchOption: "asap",
             postageClass: "first_class",
+            ...(messagePageId ? { messagePageId } : {}),
           },
         ],
       })
@@ -213,9 +215,15 @@ describe("Messages (e2e)", () => {
       .get(`/messages/${link.slug}`)
       .expect(200);
     expect(viewResponse.body).toEqual({
+      available: true,
+      title: "Your message",
       message: "You did it!",
       emoji: null,
+      videoType: "none",
+      embedUrl: null,
       videoUrl: null,
+      ctaLabel: null,
+      ctaUrl: null,
       recipientFirstName: "Grace",
       occasionType: "birthday",
     });
@@ -252,5 +260,54 @@ describe("Messages (e2e)", () => {
       .set("Authorization", `Bearer ${other.token}`)
       .expect(200);
     expect(otherList.body).toHaveLength(0);
+  });
+
+  it("keeps auto-created per-card pages out of the library", async () => {
+    const { token } = await signUp();
+    await createPaidOrder(token, "Nia");
+
+    // The v1 personalise surface still lists the card's auto-created page…
+    const personalise = await request(app.getHttpServer())
+      .get("/messages")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(personalise.body).toHaveLength(1);
+
+    // …but the v2 library shows only authored pages, so it's empty here.
+    const library = await request(app.getHttpServer())
+      .get("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(library.body).toHaveLength(0);
+  });
+
+  it("attaches a chosen library page to a card at settlement", async () => {
+    const { token, accountId } = await signUp();
+    await prisma.account.update({ where: { id: accountId }, data: { planId: "pro" } });
+
+    const created = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "From the whole team" })
+      .expect(201);
+    const pageId = (created.body as { id: string }).id;
+
+    await createPaidOrder(token, "Owen", undefined, pageId);
+
+    // The card's QR link points at the chosen page (reuse), not a fresh auto-page.
+    const cardLink = await prisma.messagePageLink.findFirstOrThrow({
+      where: { messagePageId: pageId, orderRecipientId: { not: null } },
+    });
+    expect(cardLink.messagePageId).toBe(pageId);
+
+    // The library now shows that page carrying two links: its standalone QR + the card.
+    const library = await request(app.getHttpServer())
+      .get("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const summary = (library.body as { id: string; linkCount: number }[]).find(
+      (page) => page.id === pageId,
+    );
+    expect(summary?.linkCount).toBe(2);
   });
 });

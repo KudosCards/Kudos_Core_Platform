@@ -51,6 +51,8 @@ export const planEntitlementSchema = z.object({
   customArtworkEnabled: z.boolean(),
   /** Whether the plan may invite additional team members (Centre-tier today). */
   teamSeatsEnabled: z.boolean(),
+  /** Whether the plan may author reusable digital message pages (ADR 0132). */
+  messagePagesEnabled: z.boolean(),
   /** Seats included in the plan's base price before per-seat charges (Centre 3). */
   includedSeats: z.number().int().nonnegative(),
   /** Null for the free plan, which has no Stripe subscription object at all. */
