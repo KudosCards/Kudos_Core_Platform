@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { MessagePageVideoType, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { parseVideoEmbed } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
+import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import { generateSlug } from "../common/generate-slug";
 import type { UpdateMessagePageDto } from "./dto/update-message-page.dto";
+import type { SubmitMessageReplyDto } from "./dto/submit-message-reply.dto";
 
 /** Reads the design document's default video URL (set in the card designer),
  * defensively — the document is stored as free-form JSON. */
@@ -40,6 +42,8 @@ export interface PublicMessagePage {
   videoUrl: string | null;
   ctaLabel: string | null;
   ctaUrl: string | null;
+  /** Whether this page invites the recipient to write back (Phase 2). */
+  allowReplies: boolean;
   recipientFirstName: string;
   occasionType: string;
 }
@@ -103,7 +107,10 @@ function toAccountMessagePage(page: AccountPagePayload): AccountMessagePage | nu
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inbox: NotificationInboxService,
+  ) {}
 
   /**
    * Mints each given order recipient's MessagePageLink (unique slug, bound to
@@ -225,6 +232,7 @@ export class MessagesService {
             videoUrl: true,
             ctaLabel: true,
             ctaUrl: true,
+            allowReplies: true,
             recipientName: true,
           },
         },
@@ -256,6 +264,7 @@ export class MessagesService {
         videoUrl: null,
         ctaLabel: null,
         ctaUrl: null,
+        allowReplies: false,
         recipientFirstName,
         occasionType,
       };
@@ -282,9 +291,58 @@ export class MessagesService {
       videoUrl: page.videoType === MessagePageVideoType.upload ? page.videoUrl : null,
       ctaLabel: page.ctaLabel,
       ctaUrl: page.ctaUrl,
+      allowReplies: page.allowReplies,
       recipientFirstName,
       occasionType,
     };
+  }
+
+  /**
+   * Public reply submission (Phase 2, ADR 0132). Anonymous, so it's throttled at
+   * the controller and validated to a plain-text, length-capped body. Only a
+   * live page that opted into replies accepts one; an unknown slug or archived
+   * page 404s, a page with replies off 403s. On success it records the reply and
+   * notifies the account's members (inbox), idempotent on the reply id.
+   */
+  async submitReply(slug: string, dto: SubmitMessageReplyDto): Promise<void> {
+    const link = await this.prisma.messagePageLink.findUnique({
+      where: { slug },
+      select: {
+        id: true,
+        orderRecipient: { select: { recipient: { select: { firstName: true } } } },
+        messagePage: {
+          select: {
+            id: true,
+            accountId: true,
+            title: true,
+            status: true,
+            allowReplies: true,
+          },
+        },
+      },
+    });
+    if (!link || link.messagePage.status === "archived") {
+      throw new NotFoundException("Message page not found");
+    }
+    if (!link.messagePage.allowReplies) {
+      throw new ForbiddenException("This page isn't accepting replies");
+    }
+
+    const senderName = dto.senderName?.trim() || null;
+    const reply = await this.prisma.messagePageReply.create({
+      data: { messagePageLinkId: link.id, senderName, body: dto.body.trim() },
+      select: { id: true },
+    });
+
+    const who = senderName ?? link.orderRecipient?.recipient.firstName ?? "Someone";
+    await this.inbox.notifyAccount(link.messagePage.accountId, {
+      kind: "message_reply",
+      title: "New message reply",
+      body: `${who} replied to “${link.messagePage.title}”`,
+      href: `/message-pages/${link.messagePage.id}`,
+      entityType: "message_page_reply",
+      entityId: reply.id,
+    });
   }
 
   async list(accountId: string): Promise<AccountMessagePage[]> {

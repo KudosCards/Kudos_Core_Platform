@@ -135,7 +135,13 @@ backfill, verified against a reseeded database. The public URL stays `/r/:slug`.
   `/r/:slug`; per-card view tracking; the QR-gated "add a page?" step in the send
   flow; `parseVideoEmbed` + HTML sanitiser.
 - **Phase 2 — engagement:** replies (public post → dashboard read → inbox/email
-  notification) + CTA-click tracking via a logged redirect.
+  notification) — **replies delivered** (this PR): `MessagePageReply` tied to the
+  scanned link; a throttled, `allowReplies`-gated public `POST /messages/:slug/
+  replies` that stores plain text and fires an **inbox** notification
+  (`message_reply`) to the account; a dashboard replies panel (list + mark-read)
+  with unread counts rolled up onto the library. **Transactional email** on a new
+  reply and **CTA-click tracking** (logged redirect incrementing
+  `ctaClickCount`) are the remaining Phase 2 items.
 - **Phase 3 — insight (later):** the engagement funnel + aggregate analytics
   (`MessagePageEvent`); direct video upload may land here or in Phase 2.
 

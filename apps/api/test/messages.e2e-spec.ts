@@ -224,6 +224,7 @@ describe("Messages (e2e)", () => {
       videoUrl: null,
       ctaLabel: null,
       ctaUrl: null,
+      allowReplies: false,
       recipientFirstName: "Grace",
       occasionType: "birthday",
     });

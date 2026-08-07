@@ -1,5 +1,6 @@
 import { env } from "@/lib/env";
 import { MessagePageView } from "@/components/message-page-view";
+import { ReplyForm } from "./reply-form";
 
 /**
  * Public QR-linked digital message page — no login, no app required. The
@@ -21,6 +22,7 @@ interface PublicMessagePage {
   videoUrl: string | null;
   ctaLabel: string | null;
   ctaUrl: string | null;
+  allowReplies: boolean;
   recipientFirstName: string;
   occasionType: string;
 }
@@ -106,6 +108,7 @@ export default async function MessagePage({ params }: { params: Promise<{ slug: 
         ctaLabel={page.ctaLabel}
         ctaUrl={page.ctaUrl}
       />
+      {page.allowReplies && <ReplyForm slug={slug} />}
     </Shell>
   );
 }

@@ -11,7 +11,11 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import type { MessagePageDetail, MessagePageSummary } from "@kudos/shared-types";
+import type {
+  MessagePageDetail,
+  MessagePageReply,
+  MessagePageSummary,
+} from "@kudos/shared-types";
 import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentMembership } from "../auth/current-membership.decorator";
 import type { CurrentMembershipContext } from "../auth/types";
@@ -71,5 +75,22 @@ export class MessagePagesController {
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<void> {
     return this.messagePages.archive(membership.accountId, id);
+  }
+
+  @Get(":id/replies")
+  replies(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<MessagePageReply[]> {
+    return this.messagePages.listReplies(membership.accountId, id);
+  }
+
+  @Post(":id/replies/read")
+  @HttpCode(204)
+  markRepliesRead(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    return this.messagePages.markRepliesRead(membership.accountId, id);
   }
 }

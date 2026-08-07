@@ -48,6 +48,7 @@ export const inboxNotificationKindSchema = z.enum([
   "invite_accepted",
   "card_returned",
   "support_reply",
+  "message_reply",
 ]);
 export type InboxNotificationKind = z.infer<typeof inboxNotificationKindSchema>;
 

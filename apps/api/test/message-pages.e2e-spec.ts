@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import { accountSchema, messagePageDetailSchema, messagePageSummarySchema } from "@kudos/shared-types";
+import {
+  accountSchema,
+  messagePageDetailSchema,
+  messagePageReplySchema,
+  messagePageSummarySchema,
+} from "@kudos/shared-types";
 import { z } from "zod";
 import type { App } from "supertest/types";
 import request from "supertest";
@@ -190,5 +195,103 @@ describe("Message Pages library (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "changed" })
       .expect(403);
+  });
+
+  it("accepts a public reply, notifies the account, and reads/clears it on the dashboard", async () => {
+    const { token, accountId } = await signUp();
+    const created = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Say hi back", allowReplies: true })
+      .expect(201);
+    const page = messagePageDetailSchema.parse(created.body);
+    const slug = page.primarySlug!;
+
+    // The public page invites a reply (allowReplies surfaced).
+    const view = await request(app.getHttpServer()).get(`/messages/${slug}`).expect(200);
+    expect((view.body as { allowReplies: boolean }).allowReplies).toBe(true);
+
+    // A recipient writes back (anonymous, no auth) — accepted (202).
+    await request(app.getHttpServer())
+      .post(`/messages/${slug}/replies`)
+      .send({ senderName: "Jo", body: "Loved it, thank you!" })
+      .expect(202);
+
+    // The account was notified in its inbox.
+    const notification = await prisma.notification.findFirst({
+      where: { accountId, kind: "message_reply" },
+    });
+    expect(notification).not.toBeNull();
+
+    // The library shows the unread reply on the page's badge.
+    const listBefore = await request(app.getHttpServer())
+      .get("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const summaryBefore = z
+      .array(messagePageSummarySchema)
+      .parse(listBefore.body)
+      .find((p) => p.id === page.id);
+    expect(summaryBefore).toMatchObject({ replyCount: 1, unreadReplies: 1 });
+
+    // The dashboard lists the reply (unread), then marking read clears it.
+    const repliesResponse = await request(app.getHttpServer())
+      .get(`/message-pages/${page.id}/replies`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const replies = z.array(messagePageReplySchema).parse(repliesResponse.body);
+    expect(replies).toHaveLength(1);
+    expect(replies[0]).toMatchObject({ senderName: "Jo", body: "Loved it, thank you!", readAt: null });
+
+    await request(app.getHttpServer())
+      .post(`/message-pages/${page.id}/replies/read`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(204);
+
+    const listAfter = await request(app.getHttpServer())
+      .get("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const summaryAfter = z
+      .array(messagePageSummarySchema)
+      .parse(listAfter.body)
+      .find((p) => p.id === page.id);
+    expect(summaryAfter).toMatchObject({ replyCount: 1, unreadReplies: 0 });
+  });
+
+  it("rejects a reply on a page that hasn't enabled them, and 404s an unknown slug", async () => {
+    const { token } = await signUp();
+    const created = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "No replies here" })
+      .expect(201);
+    const slug = messagePageDetailSchema.parse(created.body).primarySlug!;
+
+    await request(app.getHttpServer())
+      .post(`/messages/${slug}/replies`)
+      .send({ body: "hello?" })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post("/messages/doesnotexist/replies")
+      .send({ body: "hello?" })
+      .expect(404);
+  });
+
+  it("won't list another account's replies", async () => {
+    const owner = await signUp();
+    const created = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${owner.token}`)
+      .send({ title: "Private", allowReplies: true })
+      .expect(201);
+    const pageId = messagePageDetailSchema.parse(created.body).id;
+
+    const other = await signUp();
+    await request(app.getHttpServer())
+      .get(`/message-pages/${pageId}/replies`)
+      .set("Authorization", `Bearer ${other.token}`)
+      .expect(404);
   });
 });
