@@ -137,8 +137,12 @@ export class MessagePagesService {
   }
 
   async list(accountId: string): Promise<MessagePageSummary[]> {
+    // Only pages authored in the library (createdByUserId set). The per-card
+    // pages settlement auto-mints for every QR card have a null author and live
+    // on the v1 "personalise your cards" surface, not here — so the library
+    // stays a clean list of the reusable/bespoke pages the member actually made.
     const pages = await this.prisma.messagePage.findMany({
-      where: { accountId },
+      where: { accountId, createdByUserId: { not: null } },
       include: PAGE_INCLUDE,
       orderBy: { updatedAt: "desc" },
     });

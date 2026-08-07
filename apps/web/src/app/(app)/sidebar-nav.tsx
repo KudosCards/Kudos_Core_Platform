@@ -34,7 +34,7 @@ const GROUPS: NavGroup[] = [
       { label: "Recipients", href: "/recipients", icon: "recipients" },
       { label: "Segments", href: "/segments", icon: "segments" },
       { label: "Designs", href: "/designs", icon: "designs" },
-      { label: "Messages", href: "/messages", icon: "messages" },
+      { label: "Message pages", href: "/message-pages", icon: "messages" },
     ],
   },
   {

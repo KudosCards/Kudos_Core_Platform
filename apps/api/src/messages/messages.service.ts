@@ -1,11 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { MessagePageVideoType, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
+import { parseVideoEmbed } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { generateSlug } from "../common/generate-slug";
 import type { UpdateMessagePageDto } from "./dto/update-message-page.dto";
-
-const RECORD_NOT_FOUND = "P2025";
 
 /** Reads the design document's default video URL (set in the card designer),
  * defensively — the document is stored as free-form JSON. */
@@ -22,11 +21,25 @@ function defaultVideoUrl(document: Prisma.JsonValue): string | null {
 /** The public, unauthenticated view — deliberately narrow. Exposes only what a
  * card recipient needs to see their own message, plus their first name for a
  * personal greeting (the same name already handwritten on the physical card
- * posted to them). No account, order, address, or view-count data leaks here. */
+ * posted to them). No account, order, address, or view-count data leaks here.
+ *
+ * v2 (ADR 0132) widens the content to the full page — title, an embeddable
+ * video (`embedUrl` for the iframe, `videoUrl` for a legacy direct upload),
+ * server-sanitised rich `message`, and an https CTA — while `available` lets an
+ * archived page degrade to a graceful "no longer available" state rather than a
+ * 404, so a card already in the post never dead-ends. */
 export interface PublicMessagePage {
+  available: boolean;
+  title: string | null;
   message: string | null;
   emoji: string | null;
+  videoType: MessagePageVideoType;
+  /** The iframe src for an embed provider (null unless videoType === "embed"). */
+  embedUrl: string | null;
+  /** The direct file URL for a legacy upload (null unless videoType === "upload"). */
   videoUrl: string | null;
+  ctaLabel: string | null;
+  ctaUrl: string | null;
   recipientFirstName: string;
   occasionType: string;
 }
@@ -93,15 +106,20 @@ export class MessagesService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Creates a MessagePage (content empty, title defaulted) + a MessagePageLink
-   * (unique slug, bound to the card) for each of the given order recipients.
-   * Called from the payment webhook right after a batch order is paid — every
-   * printed card gets a working QR target from the moment it enters production,
-   * whether or not the message has been written yet. Idempotent: recipients that
-   * already have a link (a redelivered webhook / retried transaction) are
-   * skipped, and the link's unique orderRecipientId would reject a duplicate
-   * anyway. (The send-flow slice will make this opt-in; auto-create preserves
-   * today's behaviour meanwhile.) See docs/adr/0132-message-pages-v2.md.
+   * Mints each given order recipient's MessagePageLink (unique slug, bound to
+   * the card) so every printed QR resolves from the moment the order enters
+   * production. Called from the payment webhook right after a batch order is
+   * paid. Two paths (ADR 0132):
+   *  - a card that **chose a library page** in the send flow (`messagePageId`
+   *    set) gets a link pointing at that shared page — its scans roll up as
+   *    per-card analytics on the reused page;
+   *  - a card with no chosen page gets a fresh auto-created page (title
+   *    defaulted, seeded with the design's default video), preserving the
+   *    original per-card behaviour and keeping the QR working even when nothing
+   *    was written.
+   * Idempotent: recipients that already have a link (a redelivered webhook /
+   * retried transaction) are skipped, and the link's unique orderRecipientId
+   * would reject a duplicate anyway.
    */
   async createForOrderRecipients(
     tx: Prisma.TransactionClient,
@@ -115,6 +133,7 @@ export class MessagesService {
         where: { id: { in: orderRecipientIds } },
         select: {
           id: true,
+          messagePageId: true,
           batchOrder: { select: { accountId: true } },
           savedDesign: { select: { document: true } },
         },
@@ -125,12 +144,16 @@ export class MessagesService {
       }),
     ]);
     const alreadyLinked = new Set(existing.map((link) => link.orderRecipientId));
+    const pending = recipients.filter((recipient) => !alreadyLinked.has(recipient.id));
+    if (pending.length === 0) {
+      return;
+    }
 
-    // Mint page ids up-front so the pages and their links can each be written in
-    // one bulk statement (createMany can't return ids), keeping this to two
-    // writes even for a large batch.
-    const rows = recipients
-      .filter((recipient) => !alreadyLinked.has(recipient.id))
+    // Cards with no chosen page get a fresh one. Mint page ids up-front so the
+    // pages and their links can each be written in one bulk statement
+    // (createMany can't return ids), keeping this to two writes for the batch.
+    const autoRows = pending
+      .filter((recipient) => !recipient.messagePageId)
       .map((recipient) => {
         const video = defaultVideoUrl(recipient.savedDesign.document);
         return {
@@ -141,70 +164,127 @@ export class MessagesService {
           orderRecipientId: recipient.id,
         };
       });
-    if (rows.length === 0) {
-      return;
+    if (autoRows.length > 0) {
+      await tx.messagePage.createMany({
+        data: autoRows.map((row) => ({
+          id: row.pageId,
+          accountId: row.accountId,
+          title: "Your message",
+          videoUrl: row.videoUrl,
+          videoType: row.videoType,
+        })),
+      });
     }
 
-    await tx.messagePage.createMany({
-      data: rows.map((row) => ({
-        id: row.pageId,
-        accountId: row.accountId,
-        title: "Your message",
-        videoUrl: row.videoUrl,
-        videoType: row.videoType,
-      })),
-    });
-    await tx.messagePageLink.createMany({
-      data: rows.map((row) => ({
+    // One link per card: onto its fresh auto-page, or onto the chosen library page.
+    const linkData = [
+      ...autoRows.map((row) => ({
         slug: generateSlug(),
         messagePageId: row.pageId,
         orderRecipientId: row.orderRecipientId,
       })),
+      ...pending
+        .filter((recipient) => recipient.messagePageId)
+        .map((recipient) => ({
+          slug: generateSlug(),
+          messagePageId: recipient.messagePageId!,
+          orderRecipientId: recipient.id,
+        })),
+    ];
+    await tx.messagePageLink.createMany({
+      data: linkData,
       skipDuplicates: true,
     });
   }
 
   /**
-   * Public read — atomically increments the LINK's viewCount in the same
-   * statement that fetches it (Prisma's `{ increment: 1 }` compiles to a single
-   * `UPDATE ... SET view_count = view_count + 1`, so no read-then-write race),
-   * then returns the linked page's content. A standalone link (no order
-   * recipient) falls back to the page's manual `recipientName`.
+   * Public read. Resolves the link (404 if the slug is unknown) and returns the
+   * linked page's content. A standalone link (no order recipient) falls back to
+   * the page's manual `recipientName`.
+   *
+   * An **archived** page returns `available: false` and no content (a graceful
+   * "no longer available" for a card already posted), and its view is NOT
+   * counted. An active page's view is counted with an atomic
+   * `{ increment: 1 }` — a single `UPDATE ... SET view_count = view_count + 1`,
+   * so no read-then-write race. The status has to be known before we decide to
+   * count, so the fetch and the increment are two statements here (this endpoint
+   * is scan-rate, not hot-path).
    */
   async viewBySlug(slug: string): Promise<PublicMessagePage> {
-    try {
-      const link = await this.prisma.messagePageLink.update({
-        where: { slug },
-        data: { viewCount: { increment: 1 } },
-        select: {
-          messagePage: {
-            select: { message: true, emoji: true, videoUrl: true, recipientName: true },
-          },
-          orderRecipient: {
-            select: {
-              recipient: { select: { firstName: true } },
-              occasion: { select: { type: true } },
-            },
+    const link = await this.prisma.messagePageLink.findUnique({
+      where: { slug },
+      select: {
+        id: true,
+        messagePage: {
+          select: {
+            status: true,
+            title: true,
+            message: true,
+            emoji: true,
+            videoType: true,
+            videoUrl: true,
+            ctaLabel: true,
+            ctaUrl: true,
+            recipientName: true,
           },
         },
-      });
-      return {
-        message: link.messagePage.message,
-        emoji: link.messagePage.emoji,
-        videoUrl: link.messagePage.videoUrl,
-        recipientFirstName:
-          link.orderRecipient?.recipient.firstName ?? link.messagePage.recipientName ?? "there",
-        occasionType: link.orderRecipient?.occasion?.type ?? "bespoke_campaign",
-      };
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === RECORD_NOT_FOUND
-      ) {
-        throw new NotFoundException("Message page not found");
-      }
-      throw error;
+        orderRecipient: {
+          select: {
+            recipient: { select: { firstName: true } },
+            occasion: { select: { type: true } },
+          },
+        },
+      },
+    });
+    if (!link) {
+      throw new NotFoundException("Message page not found");
     }
+
+    const page = link.messagePage;
+    const recipientFirstName =
+      link.orderRecipient?.recipient.firstName ?? page.recipientName ?? "there";
+    const occasionType = link.orderRecipient?.occasion?.type ?? "bespoke_campaign";
+
+    if (page.status === "archived") {
+      return {
+        available: false,
+        title: null,
+        message: null,
+        emoji: null,
+        videoType: MessagePageVideoType.none,
+        embedUrl: null,
+        videoUrl: null,
+        ctaLabel: null,
+        ctaUrl: null,
+        recipientFirstName,
+        occasionType,
+      };
+    }
+
+    await this.prisma.messagePageLink.update({
+      where: { id: link.id },
+      data: { viewCount: { increment: 1 } },
+    });
+
+    // Re-derive the iframe src from the stored URL so the embed helper stays the
+    // single source of truth; a legacy upload keeps its direct file URL instead.
+    const embedUrl =
+      page.videoType === MessagePageVideoType.embed && page.videoUrl
+        ? (parseVideoEmbed(page.videoUrl)?.embedUrl ?? null)
+        : null;
+    return {
+      available: true,
+      title: page.title,
+      message: page.message,
+      emoji: page.emoji,
+      videoType: page.videoType,
+      embedUrl,
+      videoUrl: page.videoType === MessagePageVideoType.upload ? page.videoUrl : null,
+      ctaLabel: page.ctaLabel,
+      ctaUrl: page.ctaUrl,
+      recipientFirstName,
+      occasionType,
+    };
   }
 
   async list(accountId: string): Promise<AccountMessagePage[]> {

@@ -1,5 +1,7 @@
 import type {
   CardDesign,
+  MessagePageSummary,
+  PlanEntitlement,
   Recipient,
   RecipientListSummary,
   SavedDesign,
@@ -39,8 +41,16 @@ export default async function SendPage({
   // not on the first page), and — when arriving from a segment — its resolved
   // members. serverApiFetch returns null on error, so a dropped id/segment
   // simply isn't pre-selected.
-  const [designs, templates, lists, recipientsPage, segmentMembers, ...preResults] =
-    await Promise.all([
+  const [
+    designs,
+    templates,
+    lists,
+    recipientsPage,
+    segmentMembers,
+    messagePages,
+    entitlement,
+    ...preResults
+  ] = await Promise.all([
     serverApiFetch<SavedDesign[]>("/saved-designs"),
     // The public catalog, so the composer's "＋ New design" can start a fresh
     // design without leaving the payment page.
@@ -52,6 +62,9 @@ export default async function SendPage({
     segmentParam
       ? serverApiFetch<SegmentMembers>(`/segments/members?segment=${encodeURIComponent(segmentParam)}`)
       : Promise.resolve(null),
+    // The account's message pages, offered when the chosen design has a QR (ADR 0132).
+    serverApiFetch<MessagePageSummary[]>("/message-pages"),
+    serverApiFetch<PlanEntitlement>("/accounts/me/entitlements"),
     ...preIds.map((id) => serverApiFetch<Recipient>(`/recipients/${id}`)),
   ]);
 
@@ -86,6 +99,8 @@ export default async function SendPage({
       lists={lists ?? []}
       initialDesignId={designParam ?? ""}
       seededSegment={seededSegment}
+      messagePages={messagePages ?? []}
+      canAuthorMessagePages={entitlement?.messagePagesEnabled ?? false}
     />
   );
 }

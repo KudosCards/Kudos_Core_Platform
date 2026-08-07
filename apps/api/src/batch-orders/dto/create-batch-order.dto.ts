@@ -54,6 +54,15 @@ export class CreateBatchOrderLineDto {
   @ApiProperty({ enum: PostageClass })
   @IsEnum(PostageClass)
   postageClass!: PostageClass;
+
+  @ApiProperty({
+    required: false,
+    description:
+      "A library message page to attach to this card's QR (ADR 0132); validated to belong to the account.",
+  })
+  @IsOptional()
+  @IsUUID()
+  messagePageId?: string;
 }
 
 export class CreateBatchOrderDto {
