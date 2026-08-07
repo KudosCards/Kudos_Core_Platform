@@ -235,6 +235,38 @@ describe("Messages (e2e)", () => {
     expect(refreshed.viewCount).toBe(2);
   });
 
+  it("classifies an auto-page's seeded provider video as an embed, not a raw upload", async () => {
+    // The card designer's "Video link" field collects an embed URL (YouTube et
+    // al). An auto-created per-card page must store it as `embed` so the public
+    // page renders it in an iframe — storing it as `upload` would play it through
+    // a raw <video> tag that can't render a YouTube page (ADR 0132).
+    const { token } = await signUp();
+    await createPaidOrder(token, "Ivy", "https://youtu.be/dQw4w9WgXcQ");
+    const link = await prisma.messagePageLink.findFirstOrThrow({
+      where: { orderRecipient: { recipient: { firstName: "Ivy" } } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const page = await prisma.messagePage.findUniqueOrThrow({
+      where: { id: link.messagePageId },
+    });
+    expect(page.videoType).toBe("embed");
+    expect(page.videoProvider).toBe("youtube");
+
+    const viewResponse = await request(app.getHttpServer())
+      .get(`/messages/${link.slug}`)
+      .expect(200);
+    const body = viewResponse.body as {
+      videoType: string;
+      embedUrl: string | null;
+      videoUrl: string | null;
+    };
+    expect(body.videoType).toBe("embed");
+    // A working iframe src, not the bare watch URL — the public page can play it.
+    expect(body.embedUrl).toContain("youtube-nocookie.com/embed/dQw4w9WgXcQ");
+    expect(body.videoUrl).toBeNull();
+  });
+
   it("returns 404 for an unknown slug", async () => {
     await request(app.getHttpServer()).get("/messages/doesnotexist").expect(404);
   });
