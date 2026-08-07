@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "analyze:bundle": "node scripts/analyze-bundle.mjs"
+    "analyze:bundle": "node scripts/analyze-bundle.mjs",
+    "clipart:build": "node scripts/build-clipart.mjs"
   },
   "dependencies": {
     "@kudos/shared-types": "workspace:*",
@@ -35,6 +36,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "eslint-config-prettier": "^9.1.0",
+    "sharp": "^0.35.3",
+    "svgo": "^4.0.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
