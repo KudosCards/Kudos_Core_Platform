@@ -175,8 +175,9 @@ describe("Fulfillment (e2e)", () => {
     const { token } = await signUp();
     const order = await createPaidOrder(token);
 
-    // The MessagePage is created alongside the FulfillmentJob by the webhook.
-    const messagePage = await prisma.messagePage.findUniqueOrThrow({
+    // The message page + its per-card link are created alongside the
+    // FulfillmentJob by the webhook; the QR slug lives on the link.
+    const messagePageLink = await prisma.messagePageLink.findUniqueOrThrow({
       where: { orderRecipientId: order.orderRecipientId },
       select: { slug: true },
     });
@@ -191,7 +192,7 @@ describe("Fulfillment (e2e)", () => {
     expect(line.recipientFirstName).toBe("Ada");
     expect(line.recipientLastName).toBe("Lovelace");
     expect(line.trackingReference).toBeNull();
-    expect(line.messagePageSlug).toBe(messagePage.slug);
+    expect(line.messagePageSlug).toBe(messagePageLink.slug);
 
     // After the card is posted with a tracking reference, the buyer's page shows it.
     await prisma.fulfillmentJob.update({

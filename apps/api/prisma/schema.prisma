@@ -72,6 +72,7 @@ model Account {
   events         Event[]
   supportTickets SupportTicket[]
   designAssets   DesignAsset[]
+  messagePages   MessagePage[]
 
   // Super-admin subscribers list is ordered newest-first.
   @@index([createdAt])
@@ -703,9 +704,9 @@ model OrderRecipient {
   batchOrder     BatchOrder      @relation(fields: [batchOrderId], references: [id], onDelete: Cascade)
   recipient      Recipient       @relation(fields: [recipientId], references: [id])
   occasion       Occasion?       @relation(fields: [occasionId], references: [id])
-  savedDesign    SavedDesign     @relation(fields: [savedDesignId], references: [id])
-  messagePage    MessagePage?
-  fulfillmentJob FulfillmentJob?
+  savedDesign     SavedDesign      @relation(fields: [savedDesignId], references: [id])
+  messagePageLink MessagePageLink?
+  fulfillmentJob  FulfillmentJob?
   returnCase     ReturnCase?
 
   @@index([batchOrderId])
@@ -713,20 +714,74 @@ model OrderRecipient {
   @@map("order_recipients")
 }
 
-/// A card's QR-linked digital message page.
+enum MessagePageStatus {
+  active
+  archived
+}
+
+enum MessagePageVideoType {
+  none
+  embed
+  upload
+}
+
+enum MessagePageVideoProvider {
+  youtube
+  vimeo
+  loom
+  google_drive
+}
+
+/// Account-owned digital message page CONTENT — authored once, reusable across
+/// many cards. The physical QR on each card is a MessagePageLink that points
+/// here; a reusable page has many links, a bespoke page one. Split from the old
+/// 1:1-with-OrderRecipient model so reuse + per-card analytics + standalone
+/// authoring are all possible. See docs/adr/0132-message-pages-v2.md.
 model MessagePage {
-  id               String   @id @default(uuid())
-  slug             String   @unique
-  orderRecipientId String   @unique @map("order_recipient_id")
-  message          String?
-  emoji            String?
-  videoUrl         String?  @map("video_url")
-  viewCount        Int      @default(0) @map("view_count")
-  createdAt        DateTime @default(now()) @map("created_at")
+  id              String                    @id @default(uuid())
+  accountId       String                    @map("account_id")
+  createdByUserId String?                   @map("created_by_user_id")
+  title           String
+  message         String?
+  emoji           String?
+  videoType       MessagePageVideoType      @default(none) @map("video_type")
+  videoUrl        String?                   @map("video_url")
+  videoProvider   MessagePageVideoProvider? @map("video_provider")
+  ctaLabel        String?                   @map("cta_label")
+  ctaUrl          String?                   @map("cta_url")
+  allowReplies    Boolean                   @default(false) @map("allow_replies")
+  /// Manual greeting name for a standalone link (no order recipient to read it
+  /// from). Ignored when a link is bound to an order recipient.
+  recipientName   String?                   @map("recipient_name")
+  status          MessagePageStatus         @default(active)
+  createdAt       DateTime                  @default(now()) @map("created_at")
+  updatedAt       DateTime                  @updatedAt @map("updated_at")
 
-  orderRecipient OrderRecipient @relation(fields: [orderRecipientId], references: [id], onDelete: Cascade)
+  account Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  links   MessagePageLink[]
 
+  @@index([accountId])
   @@map("message_pages")
+}
+
+/// One QR/slug — the scannable identity for a single physical card (or a
+/// standalone/manual QR when orderRecipientId is null). Carries this card's own
+/// engagement counters, so a shared page still yields per-recipient analytics.
+model MessagePageLink {
+  id               String    @id @default(uuid())
+  slug             String    @unique
+  messagePageId    String    @map("message_page_id")
+  orderRecipientId String?   @unique @map("order_recipient_id")
+  viewCount        Int       @default(0) @map("view_count")
+  firstViewedAt    DateTime? @map("first_viewed_at")
+  ctaClickCount    Int       @default(0) @map("cta_click_count")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  messagePage    MessagePage     @relation(fields: [messagePageId], references: [id], onDelete: Cascade)
+  orderRecipient OrderRecipient? @relation(fields: [orderRecipientId], references: [id], onDelete: Cascade)
+
+  @@index([messagePageId])
+  @@map("message_page_links")
 }
 
 // ---------------------------------------------------------------------------
@@ -811,6 +866,9 @@ model PlanEntitlement {
   /// Team seats included in the plan's base price before per-seat charges kick
   /// in (Centre includes 3; single-user plans 1). See docs/adr/0035-seat-based-billing.md.
   includedSeats        Int     @default(1) @map("included_seats")
+  /// Whether the plan may create QR message pages. Paid plans only (off for
+  /// free). See docs/adr/0132-message-pages-v2.md.
+  messagePagesEnabled  Boolean @default(false) @map("message_pages_enabled")
   /// Null for the free plan, which has no Stripe subscription object at all.
   stripePriceId        String? @map("stripe_price_id")
 

@@ -187,7 +187,11 @@ describe("Admin — Customer 360 (e2e)", () => {
       },
     });
     await prisma.messagePage.create({
-      data: { slug: randomUUID(), orderRecipientId: secondCard.id, viewCount: 3 },
+      data: {
+        accountId,
+        title: "Test",
+        links: { create: { slug: randomUUID(), orderRecipientId: secondCard.id, viewCount: 3 } },
+      },
     });
 
     const response = await request(app.getHttpServer())

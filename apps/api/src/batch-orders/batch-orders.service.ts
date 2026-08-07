@@ -59,7 +59,7 @@ const ORDER_DETAIL_INCLUDE = {
       recipient: { select: { firstName: true, lastName: true } },
       occasion: { select: { dispatchDate: true } },
       fulfillmentJob: { select: { status: true, trackingReference: true } },
-      messagePage: { select: { slug: true } },
+      messagePageLink: { select: { slug: true } },
     },
   },
 } satisfies Prisma.BatchOrderInclude;
@@ -71,7 +71,7 @@ type OrderDetailPayload = Prisma.BatchOrderGetPayload<{ include: typeof ORDER_DE
  * slug. Structurally matches @kudos/shared-types' orderRecipientLineSchema. */
 export type OrderRecipientLine = Omit<
   OrderDetailPayload["orderRecipients"][number],
-  "recipient" | "occasion" | "fulfillmentJob" | "messagePage"
+  "recipient" | "occasion" | "fulfillmentJob" | "messagePageLink"
 > & {
   recipientFirstName: string;
   recipientLastName: string;
@@ -841,14 +841,14 @@ export class BatchOrdersService {
     return {
       ...rest,
       orderRecipients: orderRecipients.map(
-        ({ recipient, occasion, fulfillmentJob, messagePage, ...line }) => ({
+        ({ recipient, occasion, fulfillmentJob, messagePageLink, ...line }) => ({
           ...line,
           recipientFirstName: recipient.firstName,
           recipientLastName: recipient.lastName,
           dispatchDate: occasion?.dispatchDate ?? null,
           jobStatus: fulfillmentJob?.status ?? null,
           trackingReference: fulfillmentJob?.trackingReference ?? null,
-          messagePageSlug: messagePage?.slug ?? null,
+          messagePageSlug: messagePageLink?.slug ?? null,
         }),
       ),
     };

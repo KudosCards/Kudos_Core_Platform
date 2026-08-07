@@ -14,6 +14,7 @@ export * from "./preflight";
 export * from "./plans";
 export * from "./enterprise";
 export * from "./card";
+export * from "./video";
 export * from "./design-layout";
 export * from "./design-fonts";
 export * from "./order";

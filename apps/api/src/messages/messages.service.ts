@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { MessagePageVideoType, Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { generateSlug } from "../common/generate-slug";
 import type { UpdateMessagePageDto } from "./dto/update-message-page.dto";
@@ -30,51 +31,77 @@ export interface PublicMessagePage {
   occasionType: string;
 }
 
-/** The account-facing shape used by the "personalise your cards" screen. */
-export type AccountMessagePage = Prisma.MessagePageGetPayload<{
-  select: {
-    id: true;
-    slug: true;
-    message: true;
-    emoji: true;
-    videoUrl: true;
-    viewCount: true;
-    orderRecipient: {
-      select: {
-        recipient: { select: { firstName: true; lastName: true } };
-        occasion: { select: { type: true } };
-      };
-    };
-  };
-}>;
+/** The account-facing row used by the "personalise your cards" screen — one per
+ * card link, joining the page content. Structurally unchanged from v1 so that
+ * surface is untouched by the page/link split; the richer builder + reuse arrive
+ * in a later Message Pages v2 slice. See docs/adr/0132-message-pages-v2.md. */
+export interface AccountMessagePage {
+  id: string;
+  slug: string;
+  message: string | null;
+  emoji: string | null;
+  videoUrl: string | null;
+  viewCount: number;
+  orderRecipient: {
+    recipient: { firstName: string; lastName: string };
+    occasion: { type: string } | null;
+  } | null;
+}
 
-const ACCOUNT_MESSAGE_PAGE_SELECT = {
+/** The page + its (first) card link, in one query shape reused by list/update. */
+const ACCOUNT_PAGE_SELECT = {
   id: true,
-  slug: true,
   message: true,
   emoji: true,
   videoUrl: true,
-  viewCount: true,
-  orderRecipient: {
+  links: {
+    take: 1,
+    orderBy: { createdAt: "asc" },
     select: {
-      recipient: { select: { firstName: true, lastName: true } },
-      occasion: { select: { type: true } },
+      slug: true,
+      viewCount: true,
+      orderRecipient: {
+        select: {
+          recipient: { select: { firstName: true, lastName: true } },
+          occasion: { select: { type: true } },
+        },
+      },
     },
   },
 } satisfies Prisma.MessagePageSelect;
+
+type AccountPagePayload = Prisma.MessagePageGetPayload<{ select: typeof ACCOUNT_PAGE_SELECT }>;
+
+/** Flatten a page + its first link into the account row, or null if (somehow)
+ * the page has no link yet. */
+function toAccountMessagePage(page: AccountPagePayload): AccountMessagePage | null {
+  const link = page.links[0];
+  if (!link) return null;
+  return {
+    id: page.id,
+    slug: link.slug,
+    message: page.message,
+    emoji: page.emoji,
+    videoUrl: page.videoUrl,
+    viewCount: link.viewCount,
+    orderRecipient: link.orderRecipient,
+  };
+}
 
 @Injectable()
 export class MessagesService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Creates a MessagePage (content empty) for each of the given order
-   * recipients, generating a unique slug per row. Called from the payment
-   * webhook right after a batch order is paid — every printed card gets a
-   * working QR target from the moment it enters production, whether or not
-   * the message has been written yet. Uses skipDuplicates so a redelivered
-   * webhook can't create a second page for the same OrderRecipient (which
-   * its @unique orderRecipientId would reject anyway).
+   * Creates a MessagePage (content empty, title defaulted) + a MessagePageLink
+   * (unique slug, bound to the card) for each of the given order recipients.
+   * Called from the payment webhook right after a batch order is paid — every
+   * printed card gets a working QR target from the moment it enters production,
+   * whether or not the message has been written yet. Idempotent: recipients that
+   * already have a link (a redelivered webhook / retried transaction) are
+   * skipped, and the link's unique orderRecipientId would reject a duplicate
+   * anyway. (The send-flow slice will make this opt-in; auto-create preserves
+   * today's behaviour meanwhile.) See docs/adr/0132-message-pages-v2.md.
    */
   async createForOrderRecipients(
     tx: Prisma.TransactionClient,
@@ -83,37 +110,76 @@ export class MessagesService {
     if (orderRecipientIds.length === 0) {
       return;
     }
-    // Load each recipient's saved design so the page can be seeded with the
-    // design's default video (the QR then works from the first scan). The
-    // subscriber can still personalise or change it per recipient on /messages.
-    const recipients = await tx.orderRecipient.findMany({
-      where: { id: { in: orderRecipientIds } },
-      select: { id: true, savedDesign: { select: { document: true } } },
-    });
+    const [recipients, existing] = await Promise.all([
+      tx.orderRecipient.findMany({
+        where: { id: { in: orderRecipientIds } },
+        select: {
+          id: true,
+          batchOrder: { select: { accountId: true } },
+          savedDesign: { select: { document: true } },
+        },
+      }),
+      tx.messagePageLink.findMany({
+        where: { orderRecipientId: { in: orderRecipientIds } },
+        select: { orderRecipientId: true },
+      }),
+    ]);
+    const alreadyLinked = new Set(existing.map((link) => link.orderRecipientId));
+
+    // Mint page ids up-front so the pages and their links can each be written in
+    // one bulk statement (createMany can't return ids), keeping this to two
+    // writes even for a large batch.
+    const rows = recipients
+      .filter((recipient) => !alreadyLinked.has(recipient.id))
+      .map((recipient) => {
+        const video = defaultVideoUrl(recipient.savedDesign.document);
+        return {
+          pageId: randomUUID(),
+          accountId: recipient.batchOrder.accountId,
+          videoUrl: video,
+          videoType: video ? MessagePageVideoType.upload : MessagePageVideoType.none,
+          orderRecipientId: recipient.id,
+        };
+      });
+    if (rows.length === 0) {
+      return;
+    }
+
     await tx.messagePage.createMany({
-      data: recipients.map((recipient) => ({
-        orderRecipientId: recipient.id,
+      data: rows.map((row) => ({
+        id: row.pageId,
+        accountId: row.accountId,
+        title: "Your message",
+        videoUrl: row.videoUrl,
+        videoType: row.videoType,
+      })),
+    });
+    await tx.messagePageLink.createMany({
+      data: rows.map((row) => ({
         slug: generateSlug(),
-        videoUrl: defaultVideoUrl(recipient.savedDesign.document),
+        messagePageId: row.pageId,
+        orderRecipientId: row.orderRecipientId,
       })),
       skipDuplicates: true,
     });
   }
 
   /**
-   * Public read — atomically increments viewCount in the same statement that
-   * fetches the page (Prisma's `{ increment: 1 }` compiles to a single
-   * `UPDATE ... SET view_count = view_count + 1`, so no read-then-write race).
+   * Public read — atomically increments the LINK's viewCount in the same
+   * statement that fetches it (Prisma's `{ increment: 1 }` compiles to a single
+   * `UPDATE ... SET view_count = view_count + 1`, so no read-then-write race),
+   * then returns the linked page's content. A standalone link (no order
+   * recipient) falls back to the page's manual `recipientName`.
    */
   async viewBySlug(slug: string): Promise<PublicMessagePage> {
     try {
-      const page = await this.prisma.messagePage.update({
+      const link = await this.prisma.messagePageLink.update({
         where: { slug },
         data: { viewCount: { increment: 1 } },
         select: {
-          message: true,
-          emoji: true,
-          videoUrl: true,
+          messagePage: {
+            select: { message: true, emoji: true, videoUrl: true, recipientName: true },
+          },
           orderRecipient: {
             select: {
               recipient: { select: { firstName: true } },
@@ -123,11 +189,12 @@ export class MessagesService {
         },
       });
       return {
-        message: page.message,
-        emoji: page.emoji,
-        videoUrl: page.videoUrl,
-        recipientFirstName: page.orderRecipient.recipient.firstName,
-        occasionType: page.orderRecipient.occasion?.type ?? "bespoke_campaign",
+        message: link.messagePage.message,
+        emoji: link.messagePage.emoji,
+        videoUrl: link.messagePage.videoUrl,
+        recipientFirstName:
+          link.orderRecipient?.recipient.firstName ?? link.messagePage.recipientName ?? "there",
+        occasionType: link.orderRecipient?.occasion?.type ?? "bespoke_campaign",
       };
     } catch (error) {
       if (
@@ -140,12 +207,15 @@ export class MessagesService {
     }
   }
 
-  list(accountId: string): Promise<AccountMessagePage[]> {
-    return this.prisma.messagePage.findMany({
-      where: { orderRecipient: { batchOrder: { accountId } } },
-      select: ACCOUNT_MESSAGE_PAGE_SELECT,
+  async list(accountId: string): Promise<AccountMessagePage[]> {
+    const pages = await this.prisma.messagePage.findMany({
+      where: { accountId, status: "active" },
+      select: ACCOUNT_PAGE_SELECT,
       orderBy: { createdAt: "desc" },
     });
+    return pages
+      .map(toAccountMessagePage)
+      .filter((page): page is AccountMessagePage => page !== null);
   }
 
   async update(
@@ -153,11 +223,10 @@ export class MessagesService {
     id: string,
     dto: UpdateMessagePageDto,
   ): Promise<AccountMessagePage> {
-    // Scope the mutation itself through the ownership chain (message page ->
-    // order recipient -> batch order -> account), not just a pre-check, so a
-    // page belonging to another account can never be updated by id alone.
+    // Scope the mutation by the page's own accountId — the page/link split means
+    // ownership no longer has to be chased through the order chain.
     const { count } = await this.prisma.messagePage.updateMany({
-      where: { id, orderRecipient: { batchOrder: { accountId } } },
+      where: { id, accountId },
       data: {
         ...(dto.message !== undefined && { message: dto.message }),
         ...(dto.emoji !== undefined && { emoji: dto.emoji }),
@@ -168,9 +237,14 @@ export class MessagesService {
       throw new NotFoundException("Message page not found");
     }
 
-    return this.prisma.messagePage.findFirstOrThrow({
+    const page = await this.prisma.messagePage.findFirstOrThrow({
       where: { id },
-      select: ACCOUNT_MESSAGE_PAGE_SELECT,
+      select: ACCOUNT_PAGE_SELECT,
     });
+    const mapped = toAccountMessagePage(page);
+    if (!mapped) {
+      throw new NotFoundException("Message page not found");
+    }
+    return mapped;
   }
 }
