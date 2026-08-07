@@ -1,6 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { OccasionType, PostageClass } from "@prisma/client";
-import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID, Length, Matches } from "class-validator";
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Matches,
+} from "class-validator";
 import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
 import { BlankToUndefined } from "../../common/transforms";
 
@@ -71,4 +79,12 @@ export class QuickSendDto {
   @IsOptional()
   @IsEnum(OccasionType)
   occasionType?: OccasionType;
+
+  @ApiPropertyOptional({
+    description:
+      "Arrive-by date (YYYY-MM-DD) for a scheduled send — we post it to land around then. Omit to send now.",
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "deliverBy must be an ISO date (YYYY-MM-DD)" })
+  deliverBy?: string;
 }

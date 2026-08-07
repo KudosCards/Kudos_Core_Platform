@@ -23,6 +23,7 @@ import { clientApiFetch } from "@/lib/api.client";
 import { AddressModal } from "@/components/address-modal";
 import { CardPreviewLightbox, insideFacesHint } from "@/components/card-preview-lightbox";
 import { PricingBreakdownCard } from "@/components/pricing-breakdown";
+import { SendTimingPicker, timingDeliverBy, type SendTiming } from "@/components/send-timing";
 import { PreSendCheck } from "./pre-send-check";
 import { downloadContactSheet } from "./contact-sheet";
 import { RecipientPicker, type Paginated } from "./recipient-picker";
@@ -136,6 +137,8 @@ export function BulkSendClient({
     initialDesignId || designs[0]?.id || "",
   );
   const [postageClass, setPostageClass] = useState<"second_class" | "first_class">("second_class");
+  // Send now, or pay now and schedule delivery for a chosen date (ADR 0130).
+  const [timing, setTiming] = useState<SendTiming>({ mode: "now" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addressModalFor, setAddressModalFor] = useState<Recipient | null>(null);
@@ -313,6 +316,8 @@ export function BulkSendClient({
           savedDesignId: selectedDesignId,
           recipientIds: sendable.map((r) => r.id),
           postageClass,
+          // Undefined for "send now"; an arrive-by date for a scheduled send.
+          deliverBy: timingDeliverBy(timing),
           // Consume the matched natural occasions (unless the sender opted out),
           // so they aren't sent a second time. See docs/adr/0107.
           reconcile:
@@ -344,11 +349,13 @@ export function BulkSendClient({
   // Scale-adaptive routing (ADR 0118): a large run pays through the deliberate
   // "Review & confirm" gate; a small run keeps the frictionless one-tap pay.
   const largeRun = sendable.length >= REVIEW_ALL_THRESHOLD;
+  const cardNoun = `${sendable.length} card${sendable.length === 1 ? "" : "s"}`;
+  const payVerb = timing.mode === "scheduled" ? "schedule" : "send";
   const primaryCtaLabel = largeRun
     ? `Review & confirm ${sendable.length} cards →`
     : busy
       ? "Taking you to payment…"
-      : `Pay & send ${sendable.length} card${sendable.length === 1 ? "" : "s"} →`;
+      : `Pay & ${payVerb} ${cardNoun} →`;
   /** The main CTA: large runs open the gate; small runs pay straight away. */
   function onPrimaryCta() {
     if (largeRun) setReviewMode("confirm");
@@ -703,6 +710,10 @@ export function BulkSendClient({
               : "Card price includes VAT and postage per card. Any plan discount and the exact total are shown on the secure payment page."}
           </p>
 
+          <div className="border-t border-border pt-3">
+            <SendTimingPicker postageClass={postageClass} value={timing} onChange={setTiming} />
+          </div>
+
           {/* Desktop keeps the CTA in the summary column; on mobile it moves to
               the sticky bar below so the total + Pay are always in reach. */}
           {selectedDesign && sendable.length > 0 && (
@@ -757,7 +768,11 @@ export function BulkSendClient({
             onClick={onPrimaryCta}
             className="btn-accent flex-1 whitespace-nowrap disabled:opacity-50"
           >
-            {largeRun ? "Review & confirm →" : busy ? "Taking you to payment…" : "Pay & send →"}
+            {largeRun
+              ? "Review & confirm →"
+              : busy
+                ? "Taking you to payment…"
+                : `Pay & ${payVerb} →`}
           </button>
         </div>
       </div>

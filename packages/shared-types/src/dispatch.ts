@@ -262,6 +262,29 @@ export function computeDispatchDate(
   return dispatch;
 }
 
+/** The longest ahead a send may be scheduled, in calendar days from today. */
+export const MAX_SCHEDULE_AHEAD_DAYS = 365;
+
+/**
+ * The arrive-by ("deliver by") window a customer may pick for a scheduled send,
+ * given a postage class: from the soonest date a card posted today could land
+ * (`addWorkingDays(today, lead)`) out to the horizon. Both bounds are UTC
+ * date-only. Shared so the web date picker and the API validation agree on the
+ * range. The API still confirms the exact computed post date isn't in the past
+ * (seasonal lead can push it earlier than this approximation). Pure.
+ */
+export function deliverByWindow(
+  postageClass: PostageClass,
+  from: Date = new Date(),
+  options: DispatchDateOptions = {},
+): { earliest: Date; latest: Date } {
+  const holidays = options.holidays ?? UK_BANK_HOLIDAYS;
+  const today = startOfUtcDay(from);
+  const earliest = addWorkingDays(today, POSTAGE_LEAD_DAYS[postageClass], holidays);
+  const latest = new Date(today.getTime() + MAX_SCHEDULE_AHEAD_DAYS * 86_400_000);
+  return { earliest, latest };
+}
+
 /** Whether to nudge the sender toward First Class for this occasion, and why. */
 export interface FirstClassSuggestion {
   suggested: boolean;

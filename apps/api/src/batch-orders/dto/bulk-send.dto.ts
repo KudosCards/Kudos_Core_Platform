@@ -7,6 +7,7 @@ import {
   IsEnum,
   IsOptional,
   IsUUID,
+  Matches,
   ValidateNested,
 } from "class-validator";
 
@@ -52,6 +53,14 @@ export class BulkSendDto {
   @IsOptional()
   @IsEnum(OccasionType)
   occasionType?: OccasionType;
+
+  @ApiPropertyOptional({
+    description:
+      "Arrive-by date (YYYY-MM-DD) for a scheduled send — we post it to land around then. Omit to send now.",
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "deliverBy must be an ISO date (YYYY-MM-DD)" })
+  deliverBy?: string;
 
   @ApiPropertyOptional({
     type: [BulkSendReconcileDto],

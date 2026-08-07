@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { SendTimingPicker, timingDeliverBy, type SendTiming } from "@/components/send-timing";
 
 /** Card price and postage in pence, for the on-screen estimate. The server is
  * authoritative — Stripe shows the exact total, and plan discounts (Pro/Centre)
@@ -68,6 +69,8 @@ function addressPreview(c: ContactResult): string {
 
 export function SendCardClient({ designId, designName }: { designId: string; designName: string }) {
   const [postageClass, setPostageClass] = useState<"second_class" | "first_class">("second_class");
+  // Send now, or pay now and schedule delivery for a chosen date (ADR 0130).
+  const [timing, setTiming] = useState<SendTiming>({ mode: "now" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -163,6 +166,8 @@ export function SendCardClient({ designId, designName }: { designId: string; des
           shippingAddressCity: trimmed.shippingAddressCity,
           shippingAddressPostcode: trimmed.shippingAddressPostcode,
           postageClass,
+          // Undefined for "send now"; an arrive-by date for a scheduled send.
+          deliverBy: timingDeliverBy(timing),
           // Existing contact → reuse it; new contact → maybe save it.
           ...(selectedContactId
             ? { recipientId: selectedContactId }
@@ -377,10 +382,15 @@ export function SendCardClient({ designId, designName }: { designId: string; des
             Card price includes VAT. Any plan discount and the exact total are shown on the secure
             payment page.
           </p>
+          <div className="border-t border-border pt-3">
+            <SendTimingPicker postageClass={postageClass} value={timing} onChange={setTiming} />
+          </div>
           {/* Desktop keeps the CTA in the summary column; on mobile it moves to
               the sticky bar below so the total + Pay are always in reach. */}
           <button type="submit" disabled={busy} className="btn-accent hidden w-full lg:block">
-            {busy ? "Taking you to payment…" : "Pay & send →"}
+            {busy
+              ? "Taking you to payment…"
+              : `Pay & ${timing.mode === "scheduled" ? "schedule" : "send"} →`}
           </button>
           <p className="text-center text-xs text-muted">Secure payment powered by Stripe</p>
         </div>
@@ -401,7 +411,9 @@ export function SendCardClient({ designId, designName }: { designId: string; des
             disabled={busy}
             className="btn-accent flex-1 whitespace-nowrap"
           >
-            {busy ? "Taking you to payment…" : "Pay & send →"}
+            {busy
+              ? "Taking you to payment…"
+              : `Pay & ${timing.mode === "scheduled" ? "schedule" : "send"} →`}
           </button>
         </div>
       </div>
