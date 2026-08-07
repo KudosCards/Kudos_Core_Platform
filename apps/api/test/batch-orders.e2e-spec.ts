@@ -223,6 +223,43 @@ describe("Batch orders (e2e)", () => {
       expect(checkoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
+    it("attaches a chosen message page to the card's QR link (ADR 0132)", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const page = await prisma.messagePage.create({
+        data: { accountId, title: "Watch this" },
+      });
+
+      const response = await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ ...quickSendBody(savedDesignId), messagePageId: page.id })
+        .expect(201);
+      const order = batchOrderSchema.parse(response.body);
+
+      // The chosen page rides onto the order line, so settlement mints the
+      // card's QR link onto it rather than auto-creating a fresh page.
+      const orderRecipient = await prisma.orderRecipient.findFirstOrThrow({
+        where: { batchOrderId: order.id },
+      });
+      expect(orderRecipient.messagePageId).toBe(page.id);
+    });
+
+    it("404s a message page from another account (guarding the send-flow attach)", async () => {
+      const owner = await signUp();
+      const attacker = await signUp();
+      const savedDesignId = await createSavedDesign(attacker.token);
+      const foreignPage = await prisma.messagePage.create({
+        data: { accountId: owner.accountId, title: "Not yours" },
+      });
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${attacker.token}`)
+        .send({ ...quickSendBody(savedDesignId), messagePageId: foreignPage.id })
+        .expect(404);
+    });
+
     it("404s when the design belongs to another account (no order or recipient created)", async () => {
       const accountA = await signUp();
       const accountB = await signUp();

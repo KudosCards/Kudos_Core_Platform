@@ -198,3 +198,10 @@ Each phase ships as its own verified PR, merged when the preview is green.
   - **Deferred:** the insights reads still load each page's links + replies in full
     to count them (fine at current volume; revisit with `groupBy`/`_count` when a
     page accumulates enough cards/replies to matter).
+- **Guided-wizard picker (post-#237):** the single-card `/designs/[id]/send` wizard
+  now shows the same QR-gated "attach a message page?" step as the bulk composer —
+  the design's document is checked with `hasQrElement`, and when it carries a QR the
+  account's active pages are offered (with a create/upgrade prompt when there are
+  none). The chosen page rides on `QuickSendDto.messagePageId` (already accepted +
+  account-validated), reaching parity with bulk send. Web-only; e2e added on the
+  quick-send path (attach + cross-account 404).
