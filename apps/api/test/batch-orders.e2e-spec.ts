@@ -55,11 +55,14 @@ describe("Batch orders (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
   let checkoutSessionsCreate: jest.Mock;
+  let refundsCreate: jest.Mock;
 
   beforeAll(async () => {
     checkoutSessionsCreate = jest.fn();
+    refundsCreate = jest.fn();
     const mockStripe = {
       checkout: { sessions: { create: checkoutSessionsCreate } },
+      refunds: { create: refundsCreate },
     } as unknown as Stripe;
 
     app = await createTestApp([{ provide: STRIPE_CLIENT, useValue: mockStripe }]);
@@ -72,6 +75,10 @@ describe("Batch orders (e2e)", () => {
 
   beforeEach(() => {
     checkoutSessionsCreate.mockReset();
+    refundsCreate.mockReset();
+    refundsCreate.mockImplementation(() =>
+      Promise.resolve({ id: `re_test_${randomUUID()}`, status: "succeeded" }),
+    );
     // A fresh id per call: BatchOrder.stripePaymentIntentId is unique in the
     // DB, and a static mock value would collide across test cases the way
     // two genuinely distinct Stripe sessions never would in production.
@@ -670,6 +677,146 @@ describe("Batch orders (e2e)", () => {
       .post(`/batch-orders/${order.id}/cancel`)
       .set("Authorization", `Bearer ${token}`)
       .expect(409);
+  });
+
+  describe("cancel & refund (self-serve, ADR 0131)", () => {
+    /** Drives an approved occasion through to a PAID, settled order with a
+     * pending FulfillmentJob per card — the state the webhook leaves behind —
+     * so a self-serve refund has something realistic to release. Returns the
+     * order id and its recipient/occasion ids. */
+    async function paidOrderWithPendingJobs(
+      token: string,
+      paymentMethod: "card" | "wallet",
+    ): Promise<{ orderId: string; recipientLineIds: string[]; occasionId: string }> {
+      const occasionId = await createApprovedOccasion(token);
+      const createResponse = await request(app.getHttpServer())
+        .post("/batch-orders")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ lines: [buildLine(occasionId)] })
+        .expect(201);
+      const order = batchOrderSchema.parse(createResponse.body);
+
+      // Checkout mints the pi id we later refund against (card path).
+      await request(app.getHttpServer())
+        .post(`/batch-orders/${order.id}/checkout`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+
+      // Stand in for the webhook: mark paid + settle a pending job per card.
+      await prisma.batchOrder.update({
+        where: { id: order.id },
+        data: { status: "paid", paymentMethod },
+      });
+      const lines = await prisma.orderRecipient.findMany({
+        where: { batchOrderId: order.id },
+      });
+      await prisma.orderRecipient.updateMany({
+        where: { batchOrderId: order.id },
+        data: { status: "queued" },
+      });
+      await prisma.fulfillmentJob.createMany({
+        data: lines.map((line) => ({ orderRecipientId: line.id, status: "pending" as const })),
+      });
+      return { orderId: order.id, recipientLineIds: lines.map((l) => l.id), occasionId };
+    }
+
+    it("refunds a paid card order to Stripe and releases it", async () => {
+      const { token } = await signUp();
+      const { orderId, recipientLineIds, occasionId } = await paidOrderWithPendingJobs(
+        token,
+        "card",
+      );
+      const before = await prisma.batchOrder.findUniqueOrThrow({ where: { id: orderId } });
+
+      const response = await request(app.getHttpServer())
+        .post(`/batch-orders/${orderId}/cancel-refund`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+      expect(batchOrderSchema.parse(response.body).status).toBe("cancelled");
+
+      // Refunded once, against the payment intent, keyed on the order id so a
+      // retry can never double-refund.
+      expect(refundsCreate).toHaveBeenCalledTimes(1);
+      expect(refundsCreate).toHaveBeenCalledWith(
+        { payment_intent: before.stripePaymentIntentId },
+        { idempotencyKey: `refund:${orderId}` },
+      );
+
+      // The order is released: cards cancelled, occasion skipped, jobs dropped.
+      const lines = await prisma.orderRecipient.findMany({ where: { batchOrderId: orderId } });
+      expect(lines.every((l) => l.status === "cancelled")).toBe(true);
+      const occasion = await prisma.occasion.findUniqueOrThrow({ where: { id: occasionId } });
+      expect(occasion.status).toBe("skipped");
+      const jobs = await prisma.fulfillmentJob.findMany({
+        where: { orderRecipientId: { in: recipientLineIds } },
+      });
+      expect(jobs).toHaveLength(0);
+    });
+
+    it("refunds a paid wallet order to the ledger and never calls Stripe", async () => {
+      const { token, accountId } = await signUp();
+      const { orderId } = await paidOrderWithPendingJobs(token, "wallet");
+      const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: orderId } });
+
+      await request(app.getHttpServer())
+        .post(`/batch-orders/${orderId}/cancel-refund`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+
+      expect(refundsCreate).not.toHaveBeenCalled();
+      const entries = await prisma.walletLedgerEntry.findMany({
+        where: { accountId, reference: `refund:${orderId}` },
+      });
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ type: "refund", amountMinor: order.totalMinor });
+    });
+
+    it("refuses to refund once any card has started, and issues no refund", async () => {
+      const { token } = await signUp();
+      const { orderId, recipientLineIds } = await paidOrderWithPendingJobs(token, "card");
+      // A card has moved into production — self-serve refund must stop here.
+      await prisma.fulfillmentJob.updateMany({
+        where: { orderRecipientId: recipientLineIds[0]! },
+        data: { status: "in_progress" },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/batch-orders/${orderId}/cancel-refund`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(409);
+      expect(refundsCreate).not.toHaveBeenCalled();
+      const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: orderId } });
+      expect(order.status).toBe("paid");
+    });
+
+    it("refuses to refund an unpaid draft order", async () => {
+      const { token } = await signUp();
+      const occasionId = await createApprovedOccasion(token);
+      const createResponse = await request(app.getHttpServer())
+        .post("/batch-orders")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ lines: [buildLine(occasionId)] })
+        .expect(201);
+      const order = batchOrderSchema.parse(createResponse.body);
+
+      await request(app.getHttpServer())
+        .post(`/batch-orders/${order.id}/cancel-refund`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(409);
+      expect(refundsCreate).not.toHaveBeenCalled();
+    });
+
+    it("does not let another account refund your order", async () => {
+      const owner = await signUp();
+      const intruder = await signUp();
+      const { orderId } = await paidOrderWithPendingJobs(owner.token, "card");
+
+      await request(app.getHttpServer())
+        .post(`/batch-orders/${orderId}/cancel-refund`)
+        .set("Authorization", `Bearer ${intruder.token}`)
+        .expect(404);
+      expect(refundsCreate).not.toHaveBeenCalled();
+    });
   });
 
   it("rejects checking out a batch order twice concurrently — only one Stripe session is created", async () => {
