@@ -11,6 +11,7 @@ import type {
 } from "@kudos/shared-types";
 import type { LayerMove } from "@kudos/shared-types";
 import {
+  CARD_SAFE_MARGIN,
   CARD_WIDTH,
   EDITOR_FONTS,
   FONT_CATEGORY_ORDER,
@@ -89,13 +90,23 @@ function fitWithinBox(
   };
 }
 
+/**
+ * A freshly-added text box gets an explicit width narrower than the safe area
+ * and is horizontally centred on the card, with its text centre-aligned — so it
+ * lands cleanly in the middle inside the guard rails rather than left-anchored
+ * and stretching past the safe margin. Sits just inside the top safe margin so
+ * it reads as deliberately placed. */
+const NEW_TEXT_WIDTH = CARD_WIDTH - CARD_SAFE_MARGIN * 6; // 450 - 144 = 306
+
 function newTextElement(): Extract<DesignElement, { kind: "text" }> {
   return {
     kind: "text",
     id: crypto.randomUUID(),
     text: "New text",
-    x: 40,
-    y: 40,
+    x: Math.round((CARD_WIDTH - NEW_TEXT_WIDTH) / 2),
+    y: CARD_SAFE_MARGIN + 16,
+    width: NEW_TEXT_WIDTH,
+    align: "center",
     fontFamily: "Helvetica",
     fontSize: 20,
     color: "#111111",
