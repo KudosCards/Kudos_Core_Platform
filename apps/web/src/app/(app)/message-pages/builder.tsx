@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   MESSAGE_PAGE_LIMITS,
@@ -331,7 +331,7 @@ function Field({
 
 function QrPanel({ slug, stats }: { slug: string; stats: MessagePageDetail }) {
   const [dataUrl, setDataUrl] = useState("");
-  useMemo(() => {
+  useEffect(() => {
     const url = `${window.location.origin}/r/${slug}`;
     void qrDataUrl(url).then(setDataUrl);
   }, [slug]);

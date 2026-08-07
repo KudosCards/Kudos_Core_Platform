@@ -1,6 +1,6 @@
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { MessagePageVideoType, Prisma } from "@prisma/client";
+import { MessagePageVideoProvider, MessagePageVideoType, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { parseVideoEmbed } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -18,7 +18,7 @@ function reasonOf(error: unknown): string {
 
 /** Reads the design document's default video URL (set in the card designer),
  * defensively — the document is stored as free-form JSON. */
-function defaultVideoUrl(document: Prisma.JsonValue): string | null {
+function defaultVideoUrl(document: Prisma.JsonValue | null | undefined): string | null {
   if (document && typeof document === "object" && !Array.isArray(document)) {
     const value = (document as Record<string, unknown>).videoUrl;
     if (typeof value === "string" && value.length > 0) {
@@ -26,6 +26,36 @@ function defaultVideoUrl(document: Prisma.JsonValue): string | null {
     }
   }
   return null;
+}
+
+interface ResolvedSeededVideo {
+  videoType: MessagePageVideoType;
+  videoUrl: string | null;
+  videoProvider: MessagePageVideoProvider | null;
+}
+
+/** Classify the design's seeded video the same way the library builder does
+ * (ADR 0132): an embeddable provider URL (YouTube / Vimeo / Loom / Google
+ * Drive — which is exactly what the card designer's "Video link" field
+ * collects) becomes an `embed` so the public page renders it in an iframe;
+ * any other non-empty URL is kept as a legacy direct `upload`; empty clears it.
+ * Without this an embed link is stored as `upload` and the public page tries to
+ * play it through a raw <video> tag that can't render a YouTube/Vimeo page — the
+ * exact v1 weakness v2 set out to fix. */
+function resolveSeededVideo(document: Prisma.JsonValue | null | undefined): ResolvedSeededVideo {
+  const url = defaultVideoUrl(document);
+  if (!url) {
+    return { videoType: MessagePageVideoType.none, videoUrl: null, videoProvider: null };
+  }
+  const embed = parseVideoEmbed(url);
+  if (embed) {
+    return {
+      videoType: MessagePageVideoType.embed,
+      videoUrl: url,
+      videoProvider: embed.provider,
+    };
+  }
+  return { videoType: MessagePageVideoType.upload, videoUrl: url, videoProvider: null };
 }
 
 /** The public, unauthenticated view — deliberately narrow. Exposes only what a
@@ -174,12 +204,16 @@ export class MessagesService {
     const autoRows = pending
       .filter((recipient) => !recipient.messagePageId)
       .map((recipient) => {
-        const video = defaultVideoUrl(recipient.savedDesign.document);
+        // `savedDesign` is optional-chained: the settlement path always sets a
+        // design, but a missing one must never throw inside this transaction and
+        // strand a paid order — it just yields a page with no video.
+        const video = resolveSeededVideo(recipient.savedDesign?.document);
         return {
           pageId: randomUUID(),
           accountId: recipient.batchOrder.accountId,
-          videoUrl: video,
-          videoType: video ? MessagePageVideoType.upload : MessagePageVideoType.none,
+          videoUrl: video.videoUrl,
+          videoType: video.videoType,
+          videoProvider: video.videoProvider,
           orderRecipientId: recipient.id,
         };
       });
@@ -191,6 +225,7 @@ export class MessagesService {
           title: "Your message",
           videoUrl: row.videoUrl,
           videoType: row.videoType,
+          videoProvider: row.videoProvider,
         })),
       });
     }
@@ -283,14 +318,21 @@ export class MessagesService {
       };
     }
 
-    await this.prisma.messagePageLink.update({
-      where: { id: link.id },
-      data: {
-        viewCount: { increment: 1 },
-        // Stamp the first open so insights can show "first viewed" (Phase 3).
-        ...(link.firstViewedAt === null ? { firstViewedAt: new Date() } : {}),
-      },
-    });
+    // The counter is analytics, not the payload — the content is already
+    // resolved. A transient write failure is logged and swallowed so it can
+    // never deny a recipient the message their card points them to.
+    try {
+      await this.prisma.messagePageLink.update({
+        where: { id: link.id },
+        data: {
+          viewCount: { increment: 1 },
+          // Stamp the first open so insights can show "first viewed" (Phase 3).
+          ...(link.firstViewedAt === null ? { firstViewedAt: new Date() } : {}),
+        },
+      });
+    } catch (error) {
+      this.logger.error(`View-count update failed for link ${link.id}: ${reasonOf(error)}`);
+    }
 
     // Re-derive the iframe src from the stored URL so the embed helper stays the
     // single source of truth; a legacy upload keeps its direct file URL instead.

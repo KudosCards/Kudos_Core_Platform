@@ -186,3 +186,15 @@ Each phase ships as its own verified PR, merged when the preview is green.
   on the v1 personalise surface and never clutter it. (The guided single-card
   `/designs/[id]/send` wizard's picker is a fast-follow; its endpoint already
   accepts `messagePageId`.)
+- **Review-pass hardening (post-#236):** a review over #231–#236 surfaced that the
+  auto-created per-card page stored the design's seeded video as a raw `upload`
+  regardless of provider — so a YouTube/Vimeo default (exactly what the designer's
+  "Video link" field collects) rendered through a `<video>` tag that can't play it,
+  reintroducing the v1 weakness. Settlement now classifies the seeded URL through
+  `parseVideoEmbed` (embed → iframe; other non-empty → legacy upload), with an e2e
+  guarding it. Also: the settlement video read is null-safe so a missing design can
+  never throw inside the paid-order transaction, and the public view's view-count
+  increment is best-effort so a counter blip can't deny a recipient their message.
+  - **Deferred:** the insights reads still load each page's links + replies in full
+    to count them (fine at current volume; revisit with `groupBy`/`_count` when a
+    page accumulates enough cards/replies to matter).
