@@ -134,14 +134,19 @@ backfill, verified against a reseeded database. The public URL stays `/r/:slug`.
   toggle stored but inert until P2) with a live mobile preview; redesigned public
   `/r/:slug`; per-card view tracking; the QR-gated "add a page?" step in the send
   flow; `parseVideoEmbed` + HTML sanitiser.
-- **Phase 2 — engagement:** replies (public post → dashboard read → inbox/email
-  notification) — **replies delivered** (this PR): `MessagePageReply` tied to the
-  scanned link; a throttled, `allowReplies`-gated public `POST /messages/:slug/
-  replies` that stores plain text and fires an **inbox** notification
-  (`message_reply`) to the account; a dashboard replies panel (list + mark-read)
-  with unread counts rolled up onto the library. **Transactional email** on a new
-  reply and **CTA-click tracking** (logged redirect incrementing
-  `ctaClickCount`) are the remaining Phase 2 items.
+- **Phase 2 — engagement (delivered):** replies (public post → dashboard read →
+  inbox **and email** notification) + CTA-click tracking.
+  - Replies: `MessagePageReply` tied to the scanned link; a throttled,
+    `allowReplies`-gated public `POST /messages/:slug/replies` that stores plain
+    text and fires an **inbox** notification (`message_reply`) to the account; a
+    dashboard replies panel (list + mark-read) with unread counts rolled up onto
+    the library.
+  - **Email on reply:** the account's contact is emailed (branded, best-effort —
+    a send failure never fails the public reply) alongside the inbox item.
+  - **CTA-click tracking:** the public button routes through a throttled
+    `GET /messages/:slug/cta` that increments the link's `ctaClickCount` and
+    302-redirects to the https target — per-card click analytics on a shared
+    page, surfaced as `totalCtaClicks` on the library.
 - **Phase 3 — insight (later):** the engagement funnel + aggregate analytics
   (`MessagePageEvent`); direct video upload may land here or in Phase 2.
 

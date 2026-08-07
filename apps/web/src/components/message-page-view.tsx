@@ -19,6 +19,9 @@ export interface MessagePageViewProps {
   messageHtml: string | null;
   ctaLabel: string | null;
   ctaUrl: string | null;
+  /** When set, the CTA links here instead of straight to `ctaUrl` — the public
+   * page passes a click-tracking redirect; the builder preview omits it. */
+  ctaHref?: string | null;
 }
 
 export function MessagePageView({
@@ -30,6 +33,7 @@ export function MessagePageView({
   messageHtml,
   ctaLabel,
   ctaUrl,
+  ctaHref,
 }: MessagePageViewProps) {
   const hasContent = emoji || title || embedUrl || videoUrl || messageHtml || (ctaLabel && ctaUrl);
 
@@ -75,7 +79,7 @@ export function MessagePageView({
 
       {ctaLabel && ctaUrl && (
         <a
-          href={ctaUrl}
+          href={ctaHref ?? ctaUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center justify-center rounded-full bg-accent px-6 py-3 text-base font-semibold text-white shadow-sm transition-colors hover:bg-accent/90"

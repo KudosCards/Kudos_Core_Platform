@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Redirect,
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
@@ -56,6 +57,21 @@ export class MessagesController {
   @HttpCode(202)
   reply(@Param("slug") slug: string, @Body() dto: SubmitMessageReplyDto): Promise<void> {
     return this.messagesService.submitReply(slug, dto);
+  }
+
+  /**
+   * Public — the CTA button routes through here so a click is counted before the
+   * recipient is 302-redirected to the page's https target (per-card tracking on
+   * a shared page). Throttled like the other public routes.
+   */
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Get(":slug/cta")
+  @Redirect()
+  async cta(@Param("slug") slug: string): Promise<{ url: string; statusCode: number }> {
+    const url = await this.messagesService.trackCtaClick(slug);
+    return { url, statusCode: 302 };
   }
 
   @ApiBearerAuth()

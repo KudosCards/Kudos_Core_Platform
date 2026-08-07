@@ -75,6 +75,8 @@ export const messagePageSummarySchema = z.object({
   linkCount: z.number().int().nonnegative(),
   /** Views summed across every link (per-card analytics rolled up). */
   totalViews: z.number().int().nonnegative(),
+  /** CTA-button clicks summed across every link (Phase 2). */
+  totalCtaClicks: z.number().int().nonnegative(),
   /** Total replies received across every link (Phase 2). */
   replyCount: z.number().int().nonnegative(),
   /** Replies not yet marked read — drives the library's "new replies" badge. */

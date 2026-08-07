@@ -10,17 +10,22 @@ import { z } from "zod";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { EMAIL_CLIENT } from "../src/email/email.client";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
 describe("Message Pages library (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
+  let sendTransactional: jest.Mock;
 
   beforeAll(async () => {
-    app = await createTestApp();
+    sendTransactional = jest.fn().mockResolvedValue(undefined);
+    app = await createTestApp([{ provide: EMAIL_CLIENT, useValue: { sendTransactional } }]);
     prisma = app.get(PrismaService);
   });
+
+  beforeEach(() => sendTransactional.mockClear());
 
   afterAll(async () => {
     await app.close();
@@ -199,6 +204,11 @@ describe("Message Pages library (e2e)", () => {
 
   it("accepts a public reply, notifies the account, and reads/clears it on the dashboard", async () => {
     const { token, accountId } = await signUp();
+    // A contact email so the reply notification also goes out by email.
+    await prisma.account.update({
+      where: { id: accountId },
+      data: { contactEmail: "owner@centre.test" },
+    });
     const created = await request(app.getHttpServer())
       .post("/message-pages")
       .set("Authorization", `Bearer ${token}`)
@@ -217,11 +227,14 @@ describe("Message Pages library (e2e)", () => {
       .send({ senderName: "Jo", body: "Loved it, thank you!" })
       .expect(202);
 
-    // The account was notified in its inbox.
+    // The account was notified in its inbox…
     const notification = await prisma.notification.findFirst({
       where: { accountId, kind: "message_reply" },
     });
     expect(notification).not.toBeNull();
+    // …and by email to its contact.
+    expect(sendTransactional).toHaveBeenCalledTimes(1);
+    expect((sendTransactional.mock.calls[0] as [{ to: string }])[0].to).toBe("owner@centre.test");
 
     // The library shows the unread reply on the page's badge.
     const listBefore = await request(app.getHttpServer())
@@ -293,5 +306,40 @@ describe("Message Pages library (e2e)", () => {
       .get(`/message-pages/${pageId}/replies`)
       .set("Authorization", `Bearer ${other.token}`)
       .expect(404);
+  });
+
+  it("counts a CTA click and redirects to the target", async () => {
+    const { token } = await signUp();
+    const created = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Come to the party", ctaLabel: "RSVP", ctaUrl: "https://example.com/rsvp" })
+      .expect(201);
+    const page = messagePageDetailSchema.parse(created.body);
+    const slug = page.primarySlug!;
+
+    // The public click routes through the tracker → 302 to the CTA target.
+    const redirect = await request(app.getHttpServer()).get(`/messages/${slug}/cta`).expect(302);
+    expect(redirect.headers.location).toBe("https://example.com/rsvp");
+
+    // The click is rolled up onto the library summary.
+    const list = await request(app.getHttpServer())
+      .get("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const summary = z
+      .array(messagePageSummarySchema)
+      .parse(list.body)
+      .find((p) => p.id === page.id);
+    expect(summary?.totalCtaClicks).toBe(1);
+
+    // A page with no CTA 404s rather than redirecting anywhere.
+    const noCta = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "No button" })
+      .expect(201);
+    const noCtaSlug = messagePageDetailSchema.parse(noCta.body).primarySlug!;
+    await request(app.getHttpServer()).get(`/messages/${noCtaSlug}/cta`).expect(404);
   });
 });
