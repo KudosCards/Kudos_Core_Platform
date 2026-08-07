@@ -4,7 +4,13 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
 import type { BatchOrderDetail } from "@kudos/shared-types";
-import { computePricingBreakdown, royalMailTrackingUrl } from "@kudos/shared-types";
+import {
+  computePricingBreakdown,
+  deliverByWindow,
+  isoDay,
+  royalMailTrackingUrl,
+  startOfUtcDay,
+} from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { PricingBreakdownCard } from "@/components/pricing-breakdown";
@@ -31,6 +37,39 @@ export function OrderDetailClient({
 
   const payable = isPayable(order.status);
   const canWalletPay = order.status === "draft" && walletBalanceMinor >= order.totalMinor;
+
+  // Scheduled-send management (ADR 0130). A paid order with a future post date,
+  // where no card has moved past `pending`, can still be moved to a new date.
+  const scheduledDispatch = order.orderRecipients.find((l) => l.dispatchDate)?.dispatchDate ?? null;
+  const today = startOfUtcDay(new Date());
+  const isScheduled =
+    (order.status === "paid" || order.status === "fulfilling") &&
+    scheduledDispatch != null &&
+    startOfUtcDay(new Date(scheduledDispatch)).getTime() > today.getTime();
+  const anyStarted = order.orderRecipients.some((l) => l.jobStatus && l.jobStatus !== "pending");
+  const canReschedule = isScheduled && !anyStarted;
+  const rescheduleWindow = deliverByWindow(order.orderRecipients[0]?.postageClass ?? "second_class");
+
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [newDeliverBy, setNewDeliverBy] = useState(isoDay(rescheduleWindow.earliest));
+
+  async function submitReschedule() {
+    setError(null);
+    setPending("reschedule");
+    try {
+      await clientApiFetch(`/batch-orders/${order.id}/schedule`, {
+        method: "PATCH",
+        body: JSON.stringify({ deliverBy: newDeliverBy }),
+      });
+      setRescheduleOpen(false);
+      router.refresh();
+    } catch (rescheduleError) {
+      setError(
+        rescheduleError instanceof ApiError ? rescheduleError.message : "Could not reschedule",
+      );
+      setPending(null);
+    }
+  }
 
   async function payByCard() {
     setError(null);
@@ -134,6 +173,66 @@ export function OrderDetailClient({
           </div>
         )}
       </div>
+
+      {isScheduled && scheduledDispatch && (
+        <div className="flex flex-col gap-3 rounded-xl border border-accent/30 bg-accent-soft p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-foreground">
+              📅 Scheduled — we&apos;ll post {order.orderRecipients.length === 1 ? "it" : "these"} on{" "}
+              {formatOrderDate(scheduledDispatch)}.
+            </p>
+            {canReschedule && !rescheduleOpen && (
+              <button
+                type="button"
+                onClick={() => setRescheduleOpen(true)}
+                className="btn-secondary text-sm"
+              >
+                Reschedule
+              </button>
+            )}
+          </div>
+          {canReschedule && rescheduleOpen && (
+            <div className="flex flex-col gap-2 border-t border-accent/20 pt-3">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">New arrive-by date</span>
+                <input
+                  type="date"
+                  value={newDeliverBy}
+                  min={isoDay(rescheduleWindow.earliest)}
+                  max={isoDay(rescheduleWindow.latest)}
+                  onChange={(e) => setNewDeliverBy(e.target.value)}
+                  className="w-fit rounded-md border border-black/15 px-2 py-1 dark:border-white/15"
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={pending !== null}
+                  onClick={() => void submitReschedule()}
+                  className="btn-accent text-sm"
+                >
+                  {pending === "reschedule" ? "Saving…" : "Save new date"}
+                </button>
+                <button
+                  type="button"
+                  disabled={pending !== null}
+                  onClick={() => setRescheduleOpen(false)}
+                  className="btn-secondary text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          <p className="text-xs text-muted">
+            Paid and held until then. Need to change the recipients or cancel it?{" "}
+            <Link href="/support" className="text-accent hover:underline">
+              Contact support
+            </Link>{" "}
+            and we&apos;ll sort it before it posts.
+          </p>
+        </div>
+      )}
 
       {payable && (
         <div className="flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">

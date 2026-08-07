@@ -56,6 +56,7 @@ const ORDER_DETAIL_INCLUDE = {
     orderBy: { createdAt: "asc" },
     include: {
       recipient: { select: { firstName: true, lastName: true } },
+      occasion: { select: { dispatchDate: true } },
       fulfillmentJob: { select: { status: true, trackingReference: true } },
       messagePage: { select: { slug: true } },
     },
@@ -69,10 +70,11 @@ type OrderDetailPayload = Prisma.BatchOrderGetPayload<{ include: typeof ORDER_DE
  * slug. Structurally matches @kudos/shared-types' orderRecipientLineSchema. */
 export type OrderRecipientLine = Omit<
   OrderDetailPayload["orderRecipients"][number],
-  "recipient" | "fulfillmentJob" | "messagePage"
+  "recipient" | "occasion" | "fulfillmentJob" | "messagePage"
 > & {
   recipientFirstName: string;
   recipientLastName: string;
+  dispatchDate: Date | null;
   jobStatus: string | null;
   trackingReference: string | null;
   messagePageSlug: string | null;
@@ -838,10 +840,11 @@ export class BatchOrdersService {
     return {
       ...rest,
       orderRecipients: orderRecipients.map(
-        ({ recipient, fulfillmentJob, messagePage, ...line }) => ({
+        ({ recipient, occasion, fulfillmentJob, messagePage, ...line }) => ({
           ...line,
           recipientFirstName: recipient.firstName,
           recipientLastName: recipient.lastName,
+          dispatchDate: occasion?.dispatchDate ?? null,
           jobStatus: fulfillmentJob?.status ?? null,
           trackingReference: fulfillmentJob?.trackingReference ?? null,
           messagePageSlug: messagePage?.slug ?? null,
@@ -1064,5 +1067,85 @@ export class BatchOrdersService {
       targetId: id,
     });
     return order;
+  }
+
+  /**
+   * Reschedule a paid, not-yet-posted order to a new arrive-by date. Recomputes
+   * each card's post-by date (its occasion's dispatchDate) and the denormalised
+   * FulfillmentJob.dueDate from the chosen date, using the same lead engine as
+   * creation. Only allowed while every card is still `pending` (or not yet
+   * queued) — once anything is in progress/printed/posted the schedule is fixed.
+   * Payment is unchanged; this only moves *when* it posts. See ADR 0130.
+   */
+  async reschedule(
+    accountId: string,
+    actorUserId: string,
+    id: string,
+    deliverBy: string,
+  ): Promise<BatchOrderDetail> {
+    await this.prisma.$transaction(async (tx) => {
+      const order = await tx.batchOrder.findFirst({
+        where: { id, accountId },
+        include: {
+          orderRecipients: {
+            include: {
+              occasion: { select: { id: true, source: true, postageClass: true } },
+              fulfillmentJob: { select: { id: true, status: true } },
+            },
+          },
+        },
+      });
+      if (!order) {
+        throw new NotFoundException("Batch order not found");
+      }
+      if (order.status !== "paid" && order.status !== "fulfilling") {
+        throw new ConflictException(
+          `Only a paid order that hasn't posted can be rescheduled (this one is "${order.status}").`,
+        );
+      }
+      // Every card must still be un-actioned. A job that's moved past `pending`
+      // (in progress / printed / posted / …) has left the queue's control.
+      const started = order.orderRecipients.some(
+        (r) => r.fulfillmentJob && r.fulfillmentJob.status !== "pending",
+      );
+      if (started) {
+        throw new ConflictException(
+          "Some cards are already being prepared, so this order can no longer be rescheduled.",
+        );
+      }
+
+      for (const line of order.orderRecipients) {
+        if (!line.occasion) continue;
+        const schedule = this.resolveSendSchedule(deliverBy, line.occasion.postageClass);
+        await tx.occasion.update({
+          where: { id: line.occasion.id },
+          data: {
+            dispatchDate: schedule.dispatchDate,
+            // A bespoke one-off's occasionDate *is* the arrive-by date; a reused
+            // natural occasion (a birthday) keeps its own date — only its post-by
+            // date moves. Mirrors bulkSend/quickSend.
+            ...(line.occasion.source === "one_off_campaign" && {
+              occasionDate: schedule.occasionDate,
+            }),
+          },
+        });
+        if (line.fulfillmentJob) {
+          await tx.fulfillmentJob.update({
+            where: { id: line.fulfillmentJob.id },
+            data: { dueDate: schedule.dispatchDate },
+          });
+        }
+      }
+    });
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "reschedule",
+      targetType: "BatchOrder",
+      targetId: id,
+      metadata: { deliverBy },
+    });
+    return this.findOne(accountId, actorUserId, id);
   }
 }

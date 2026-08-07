@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -22,6 +23,7 @@ import { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
 import { QuickSendDto } from "./dto/quick-send.dto";
 import { BulkSendDto } from "./dto/bulk-send.dto";
 import { PreflightBatchOrderDto } from "./dto/preflight-batch-order.dto";
+import { RescheduleBatchOrderDto } from "./dto/reschedule-batch-order.dto";
 import type { BatchOrderPreflight } from "@kudos/shared-types";
 
 @ApiTags("batch-orders")
@@ -111,5 +113,16 @@ export class BatchOrdersController {
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<BatchOrder> {
     return this.batchOrdersService.cancel(membership.accountId, user.id, id);
+  }
+
+  /** Move a paid, not-yet-posted order to a new arrive-by date (ADR 0130). */
+  @Patch(":id/schedule")
+  reschedule(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: RescheduleBatchOrderDto,
+  ): Promise<BatchOrderDetail> {
+    return this.batchOrdersService.reschedule(membership.accountId, user.id, id, dto.deliverBy);
   }
 }
