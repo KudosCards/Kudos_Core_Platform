@@ -17,3 +17,21 @@ export function BlankToUndefined(): PropertyDecorator {
     typeof value === "string" && value.trim() === "" ? undefined : value,
   );
 }
+
+/**
+ * For an *optional, clearable* string field: map a blank submission (empty or
+ * whitespace-only) to `null`.
+ *
+ * Unlike {@link BlankToUndefined}, which drops the field so a PATCH leaves the
+ * column unchanged, this persists `null` — so an edit form can actively CLEAR a
+ * value (e.g. remove a contact's address), and a create with a blank field
+ * stores null rather than an empty string. `@IsOptional()` skips validation for
+ * null, so a following `@Matches`/`@Length` only runs on a real value.
+ *
+ * Apply ABOVE the validation decorators so the transform runs first.
+ */
+export function BlankToNull(): PropertyDecorator {
+  return Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" && value.trim() === "" ? null : value,
+  );
+}

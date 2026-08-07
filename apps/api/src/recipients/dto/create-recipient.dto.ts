@@ -11,15 +11,17 @@ import {
   Matches,
 } from "class-validator";
 import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
+import { BlankToNull } from "../../common/transforms";
 
 /**
- * A directly-added contact must be mailable — we post physical cards via Royal
- * Mail, so line 1, city, and a valid postcode are required at this DTO layer.
- * This hardens the manual-add path (the Recipients "Add contact" form and the
- * onboarding quick-add). Bulk/programmatic sources — CSV import and CRM/inbound
- * `ingestContacts` — deliberately DON'T go through this DTO and stay
- * import-and-flag, so they're never rejected; anything missing an address is
- * surfaced via the "needs address" flag + worklist. See
+ * A directly-added contact carries an address when one's known, but the address
+ * is OPTIONAL — a contact can be saved with just a name and completed later.
+ * Sending physical cards still needs a full mailable address, but that's enforced
+ * at SEND time (bulk-send / quick-send reject any contact without one), not at
+ * capture time; addressless contacts are surfaced via the "needs address" flag +
+ * worklist so they get chased before a send. This matches the import-and-flag
+ * behaviour of the bulk/programmatic sources (CSV import, CRM/inbound
+ * `ingestContacts`). A postcode, if given, must still be a valid UK one. See
  * docs/adr/0067-mandatory-addresses.md.
  */
 
@@ -45,26 +47,33 @@ export class CreateRecipientDto {
   @IsEmail()
   email?: string;
 
-  @ApiProperty()
-  @IsString()
-  @Length(1, 200)
-  addressLine1!: string;
-
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: "Optional — add later; required only to send a card" })
+  @BlankToNull()
   @IsOptional()
   @IsString()
   @Length(1, 200)
-  addressLine2?: string;
+  addressLine1?: string | null;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @BlankToNull()
+  @IsOptional()
+  @IsString()
+  @Length(1, 200)
+  addressLine2?: string | null;
+
+  @ApiPropertyOptional({ description: "Optional — add later; required only to send a card" })
+  @BlankToNull()
+  @IsOptional()
   @IsString()
   @Length(1, 120)
-  addressCity!: string;
+  addressCity?: string | null;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: "Optional, but must be a valid UK postcode if given" })
+  @BlankToNull()
+  @IsOptional()
   @IsString()
   @Matches(UK_POSTCODE_REGEX, { message: "addressPostcode must be a valid UK postcode" })
-  addressPostcode!: string;
+  addressPostcode?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()
