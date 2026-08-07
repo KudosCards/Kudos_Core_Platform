@@ -151,15 +151,21 @@ export function RecipientDetailClient({
     setError(null);
     const data = new FormData(event.currentTarget);
     const str = (key: string) => String(data.get(key) || "").trim();
-    // PATCH is a merge and the API rejects empty optional strings, so only send
-    // fields that have a value. (Clearing a field isn't offered here.)
     const body: Record<string, unknown> = {
       firstName: str("firstName"),
       lastName: str("lastName"),
     };
-    for (const key of ["dateOfBirth", "email", "addressLine1", "addressLine2", "addressCity", "addressPostcode"]) {
+    // PATCH is a merge, so only send these when set (blank = leave unchanged).
+    for (const key of ["dateOfBirth", "email"]) {
       const value = str(key);
       if (value) body[key] = value;
+    }
+    // Address is always sent so it can be *cleared*, not just added — a blank
+    // field nulls the column (the API accepts null and flags the contact as
+    // needing an address). See docs/adr/0067.
+    for (const key of ["addressLine1", "addressLine2", "addressCity", "addressPostcode"]) {
+      const value = str(key);
+      body[key] = value === "" ? null : value;
     }
     setSavingDetails(true);
     try {

@@ -57,16 +57,16 @@ describe("Recipients (e2e)", () => {
     return { token, accountId: accountSchema.parse(response.body).id };
   }
 
-  /** A full, mailable address — the manual-add API now requires one. */
+  /** A full, mailable address, for tests that need a sendable contact. */
   const MAILABLE = {
     addressLine1: "1 Test Street",
     addressCity: "London",
     addressPostcode: "SW1A 1AA",
   } as const;
 
-  /** Creates an unmailable contact straight through Prisma, the way the
-   * permissive import-and-flag paths (CSV / CRM) do — the manual-add API now
-   * rejects a contact without a full address, so tests that need one bypass it. */
+  /** Creates an unmailable contact straight through Prisma. The manual-add API
+   * now also accepts addressless contacts (ADR 0067), but this keeps the older
+   * import-and-flag callers' shape for tests that predate that. */
   async function createUnmailableRecipient(
     accountId: string,
     data: { firstName: string; lastName: string; addressPostcode?: string },
@@ -655,20 +655,43 @@ describe("Recipients (e2e)", () => {
       .expect(400);
   });
 
-  it("rejects a manually-added contact without a full mailable address", async () => {
+  it("saves a manually-added contact with no address and flags it as needing one", async () => {
     const { token } = await signUp();
-    // Name only — no address at all.
-    await request(app.getHttpServer())
-      .post("/recipients")
+    // Name only — no address at all. Accepted (the address is optional; sending a
+    // card to this contact is what's blocked, at send time). See docs/adr/0067.
+    const created = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/recipients")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ firstName: "No", lastName: "Address" })
+          .expect(201)
+      ).body,
+    );
+    expect(created.addressPostcode).toBeNull();
+
+    // It surfaces under the "needs address" worklist filter.
+    const flagged = await request(app.getHttpServer())
+      .get("/recipients?missingAddress=true")
       .set("Authorization", `Bearer ${token}`)
-      .send({ firstName: "No", lastName: "Address" })
-      .expect(400);
-    // Postcode but no line 1 / city — still not mailable.
+      .expect(200);
+    const list = paginatedRecipientsSchema.parse(flagged.body);
+    expect(list.items.map((r) => r.id)).toContain(created.id);
+  });
+
+  it("still saves a contact given a partial address (postcode only) and flags it", async () => {
+    const { token } = await signUp();
+    // A valid postcode but no line 1 / city — accepted, still not mailable.
     await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
       .send({ firstName: "Partial", lastName: "Address", addressPostcode: "SW1A 1AA" })
-      .expect(400);
+      .expect(201);
+    const flagged = await request(app.getHttpServer())
+      .get("/recipients?missingAddress=true")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(paginatedRecipientsSchema.parse(flagged.body).total).toBe(1);
   });
 
   it("scopes recipients to the account — one account cannot see another's data", async () => {

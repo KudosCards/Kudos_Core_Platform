@@ -98,12 +98,8 @@ export function GetStartedClient({
       setError("A first and last name are needed.");
       return;
     }
-    // We post physical cards, so a mailable address is required to add a contact
-    // (matches the API). Bulk CSV import stays import-and-flag.
-    if (!addressLine1 || !addressCity || !addressPostcode) {
-      setError("An address (line 1, town and postcode) is needed so we can post their card.");
-      return;
-    }
+    // The address is optional here — add the contact now, complete it later. A
+    // card can't be sent until it's there, but that's enforced at send time.
     setAddingManual(true);
     try {
       await clientApiFetch("/recipients", {
@@ -112,10 +108,10 @@ export function GetStartedClient({
           firstName,
           lastName,
           ...(dateOfBirth && { dateOfBirth }),
-          addressLine1,
+          ...(addressLine1 && { addressLine1 }),
           ...(addressLine2 && { addressLine2 }),
-          addressCity,
-          addressPostcode,
+          ...(addressCity && { addressCity }),
+          ...(addressPostcode && { addressPostcode }),
         }),
       });
       formEl.reset();
@@ -208,7 +204,7 @@ export function GetStartedClient({
                   className={inputClass}
                 />
               </div>
-              <AddressFields key={addFormKey} />
+              <AddressFields key={addFormKey} required={false} />
               <button type="submit" disabled={addingManual} className="btn-accent w-fit">
                 {addingManual ? "Adding…" : "Add birthday"}
               </button>
@@ -249,7 +245,7 @@ export function GetStartedClient({
                   />
                   <input type="date" name="dateOfBirth" className={inputClass} />
                 </div>
-                <AddressFields key={addFormKey} />
+                <AddressFields key={addFormKey} required={false} />
                 <button type="submit" disabled={addingManual} className="btn-secondary w-fit">
                   {addingManual ? "Adding…" : "Add"}
                 </button>

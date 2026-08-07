@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted — **amended** (see "Amendment: address optional on manual add/edit" below).
 
 ## Context
 
@@ -64,6 +64,29 @@ address-capture work.
 - Adding an address is faster and less error-prone (postcode validated, town
   filled) at zero cost and with no API key.
 - Clear upgrade path to house-level autocomplete when a keyed provider is added.
-- Follow-ups: promote the DTO to hard-require address; adopt `AddressFields` +
-  the lookup in the checkout / bulk-send / guest flows; per-row CSV validation
-  preview.
+- Follow-ups: adopt `AddressFields` + the lookup in the checkout / bulk-send /
+  guest flows; per-row CSV validation preview.
+
+## Amendment: address optional on manual add/edit
+
+The original decision hard-required an address on the manual-add path (both the
+web form and, later, the `CreateRecipientDto`). Owner feedback reversed this: a
+contact should be **saveable with just a name**, address added later — because
+the system already **hard-stops sending** to an addressless contact
+(`bulkSend`/`quickSend` throw a `BadRequestException`, and the composer filters
+them out), so send time is the right and only place to enforce mailability.
+
+Changes:
+- `CreateRecipientDto` address fields (line 1, city, postcode) are now
+  **optional**; a postcode, if given, must still be a valid UK one. A new
+  `BlankToNull()` transform maps blank submissions to `null` so a manual **edit**
+  can also *clear* an address, not just add one. The manual-add path now matches
+  the import-and-flag behaviour of CSV/CRM.
+- Web: the Add-Contact form's `AddressFields` is `required={false}` with a note
+  that the address can be added later; the recipient-edit form always sends the
+  address fields so one can be cleared.
+
+Everything else from the original decision stands: the single "mailable"
+definition, the "needs address" badge / list filter / dashboard nudge, and the
+send-time enforcement — which is now the sole gate. This supersedes the earlier
+"promote the DTO to hard-require address" follow-up.

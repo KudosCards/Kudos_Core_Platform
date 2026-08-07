@@ -1107,10 +1107,11 @@ export function RecipientsClient({
             <input name="lastName" placeholder="Last name" required className={inputClass} />
             <input type="date" name="dateOfBirth" aria-label="Date of birth" className={`${inputClass} sm:col-span-2`} />
           </div>
-          <AddressFields key={addFormKey} />
+          <AddressFields key={addFormKey} required={false} />
           <p className="text-xs text-muted">
-            We post real cards, so a full address is required. Add a date of birth and their birthday
-            lands on the calendar automatically.
+            The address is optional — save the contact now and add it later. We&apos;ll flag anyone
+            without one and won&apos;t let a card be sent until it&apos;s added. A date of birth puts
+            their birthday on the calendar automatically.
           </p>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setAddOpen(false)} className="btn-secondary">
