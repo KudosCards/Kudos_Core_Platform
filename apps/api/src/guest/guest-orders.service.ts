@@ -87,7 +87,7 @@ export class GuestOrdersService {
         name: `Card for ${item.recipientFirstName} ${item.recipientLastName}`.slice(0, 120),
         document: item.document,
       });
-      sends.push(this.toQuickSend(savedDesign.id, item));
+      sends.push(this.toQuickSend(savedDesign.id, item, dto.deliverBy));
     }
 
     // One batch order across every card. Null actor = guest (no createdByUserId,
@@ -107,7 +107,11 @@ export class GuestOrdersService {
     return { checkoutUrl, orderId: order.id };
   }
 
-  private toQuickSend(savedDesignId: string, item: GuestCartItemDto): QuickSendDto {
+  private toQuickSend(
+    savedDesignId: string,
+    item: GuestCartItemDto,
+    deliverBy: string | undefined,
+  ): QuickSendDto {
     return {
       savedDesignId,
       firstName: item.recipientFirstName,
@@ -118,6 +122,8 @@ export class GuestOrdersService {
       shippingAddressPostcode: item.shippingAddressPostcode,
       postageClass: item.postageClass ?? "second_class",
       occasionType: item.occasionType,
+      // Basket-level scheduling: the same arrive-by date applies to every card.
+      deliverBy,
     };
   }
 }

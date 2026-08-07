@@ -105,4 +105,12 @@ export class GuestCartCheckoutDto {
   @ValidateNested({ each: true })
   @Type(() => GuestCartItemDto)
   items!: GuestCartItemDto[];
+
+  @ApiPropertyOptional({
+    description:
+      "Arrive-by date (YYYY-MM-DD) for a scheduled basket — applies to every card. Omit to send now.",
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "deliverBy must be an ISO date (YYYY-MM-DD)" })
+  deliverBy?: string;
 }

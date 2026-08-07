@@ -5,7 +5,14 @@ import Image from "next/image";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
 import Link from "next/link";
 import type { GuestCartCheckoutInput, GuestCheckoutResult } from "@kudos/shared-types";
-import { POSTAGE_MINOR, computePricingBreakdown } from "@kudos/shared-types";
+import {
+  POSTAGE_LEAD_DAYS,
+  POSTAGE_MINOR,
+  computeDispatchDate,
+  computePricingBreakdown,
+  deliverByWindow,
+  isoDay,
+} from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { publicApiPost } from "@/lib/api.public";
 import { CARD_PRICE_PENCE, removeFromCart, useCart, type CartItem } from "@/lib/cart";
@@ -34,6 +41,10 @@ export function BasketClient() {
   const items = useCart();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Send now, or pay now and schedule the whole basket to arrive on a date.
+  const scheduleWindow = deliverByWindow("second_class");
+  const [scheduled, setScheduled] = useState(false);
+  const [deliverBy, setDeliverBy] = useState(isoDay(scheduleWindow.earliest));
 
   // Guests pay full price (no plan discount), second-class postage per card —
   // matching what /guest/cart-checkout charges server-side.
@@ -53,6 +64,7 @@ export function BasketClient() {
     const body: GuestCartCheckoutInput = {
       buyerEmail: String(data.get("buyerEmail") ?? "").trim(),
       items: items.map(toApiItem),
+      ...(scheduled && { deliverBy }),
     };
 
     try {
@@ -174,6 +186,60 @@ export function BasketClient() {
           </span>
         </label>
 
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-1 text-sm font-medium text-slate-700">When should this go?</legend>
+          <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 has-[:checked]:border-slate-400 has-[:checked]:bg-slate-50">
+            <input
+              type="radio"
+              name="basket-timing"
+              className="mt-0.5"
+              checked={!scheduled}
+              onChange={() => setScheduled(false)}
+            />
+            <span>
+              <span className="font-medium">Send now</span>
+              <span className="block text-xs text-slate-400">Posted as soon as it&apos;s printed.</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 has-[:checked]:border-slate-400 has-[:checked]:bg-slate-50">
+            <input
+              type="radio"
+              name="basket-timing"
+              className="mt-0.5"
+              checked={scheduled}
+              onChange={() => setScheduled(true)}
+            />
+            <span className="flex-1">
+              <span className="font-medium">Schedule delivery</span>
+              <span className="block text-xs text-slate-400">
+                Pay now — we post it to arrive around your date.
+              </span>
+              {scheduled && (
+                <span className="mt-2 flex flex-col gap-1">
+                  <input
+                    type="date"
+                    value={deliverBy}
+                    min={isoDay(scheduleWindow.earliest)}
+                    max={isoDay(scheduleWindow.latest)}
+                    onChange={(e) => setDeliverBy(e.target.value || isoDay(scheduleWindow.earliest))}
+                    className="w-fit rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-900"
+                  />
+                  <span className="text-xs text-slate-400">
+                    We post it{" "}
+                    {isoDay(
+                      computeDispatchDate(
+                        new Date(`${deliverBy}T00:00:00.000Z`),
+                        POSTAGE_LEAD_DAYS.second_class,
+                      ),
+                    )}
+                    .
+                  </span>
+                </span>
+              )}
+            </span>
+          </label>
+        </fieldset>
+
         {error && (
           <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600">{error}</p>
         )}
@@ -184,7 +250,9 @@ export function BasketClient() {
           className="rounded-full px-6 py-3 text-center font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
           style={{ backgroundColor: CORAL }}
         >
-          {submitting ? "Taking you to checkout…" : `Pay ${formatGBP(total)}`}
+          {submitting
+            ? "Taking you to checkout…"
+            : `Pay ${formatGBP(total)}${scheduled ? " & schedule" : ""}`}
         </button>
         <p className="text-center text-xs text-slate-500">
           Secure payment by Stripe. No account needed.
