@@ -115,6 +115,17 @@ export class BatchOrdersController {
     return this.batchOrdersService.cancel(membership.accountId, user.id, id);
   }
 
+  /** Self-serve cancel-with-refund for a paid, not-yet-posted order (ADR 0131).
+   * Refunds to card or wallet, then releases the order. */
+  @Post(":id/cancel-refund")
+  cancelAndRefund(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<BatchOrder> {
+    return this.batchOrdersService.cancelAndRefund(membership.accountId, user.id, id);
+  }
+
   /** Move a paid, not-yet-posted order to a new arrive-by date (ADR 0130). */
   @Patch(":id/schedule")
   reschedule(

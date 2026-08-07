@@ -110,6 +110,21 @@ export function OrderDetailClient({
     }
   }
 
+  const [confirmRefund, setConfirmRefund] = useState(false);
+
+  async function cancelAndRefund() {
+    setError(null);
+    setPending("refund");
+    try {
+      await clientApiFetch(`/batch-orders/${order.id}/cancel-refund`, { method: "POST" });
+      setConfirmRefund(false);
+      router.refresh();
+    } catch (refundError) {
+      setError(refundError instanceof ApiError ? refundError.message : "Could not cancel and refund");
+      setPending(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -224,13 +239,67 @@ export function OrderDetailClient({
               </div>
             </div>
           )}
-          <p className="text-xs text-muted">
-            Paid and held until then. Need to change the recipients or cancel it?{" "}
-            <Link href="/support" className="text-accent hover:underline">
-              Contact support
-            </Link>{" "}
-            and we&apos;ll sort it before it posts.
-          </p>
+          {canReschedule ? (
+            <div className="flex flex-col gap-2 border-t border-accent/20 pt-3">
+              {!confirmRefund ? (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-muted">
+                    Changed your mind? You can cancel and get a full refund while it&apos;s still
+                    held.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={pending !== null}
+                    onClick={() => setConfirmRefund(true)}
+                    className="btn-secondary text-sm"
+                  >
+                    Cancel &amp; refund
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Cancel {order.orderRecipients.length === 1 ? "this card" : "these cards"} and
+                    refund {formatGbp(order.totalMinor)} to your{" "}
+                    {order.paymentMethod === "wallet" ? "wallet" : "original card"}?
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={pending !== null}
+                      onClick={() => void cancelAndRefund()}
+                      className="btn-accent text-sm"
+                    >
+                      {pending === "refund" ? "Refunding…" : "Yes, cancel & refund"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={pending !== null}
+                      onClick={() => setConfirmRefund(false)}
+                      className="btn-secondary text-sm"
+                    >
+                      Keep my order
+                    </button>
+                  </div>
+                </div>
+              )}
+              <p className="text-xs text-muted">
+                Need to change the recipients instead?{" "}
+                <Link href="/support" className="text-accent hover:underline">
+                  Contact support
+                </Link>
+                .
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-muted">
+              Paid and held until then. Need to change the recipients or cancel it?{" "}
+              <Link href="/support" className="text-accent hover:underline">
+                Contact support
+              </Link>{" "}
+              and we&apos;ll sort it before it posts.
+            </p>
+          )}
         </div>
       )}
 

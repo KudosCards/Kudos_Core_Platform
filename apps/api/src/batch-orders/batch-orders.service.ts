@@ -16,6 +16,7 @@ import { AuditService } from "../audit/audit.service";
 import type { EnvConfig } from "../config/env.schema";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
+import { runSerializable } from "../common/run-serializable";
 import type { CheckoutResult } from "../common/checkout-result";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.constants";
@@ -1147,5 +1148,176 @@ export class BatchOrdersService {
       metadata: { deliverBy },
     });
     return this.findOne(accountId, actorUserId, id);
+  }
+
+  /**
+   * Self-serve cancel-with-refund for a paid, not-yet-posted order — the
+   * customer's own "Cancel & refund" on a scheduled order. Refunds the full
+   * amount to wherever they paid from (Stripe for card, the wallet ledger for
+   * wallet), then releases the order: drops its pending print jobs, marks each
+   * card cancelled, skips its occasion, and sets the order `cancelled`.
+   *
+   * Only allowed while EVERY card is still `pending` — once anything is in
+   * progress / printed / posted the money is committed to physical work and the
+   * customer is routed to support instead. This is the platform's first
+   * automated refund (previously deferred by ADR 0008); see ADR 0131.
+   *
+   * The card path refunds FIRST, keyed on the order id so Stripe collapses any
+   * retry onto one refund (never a double refund), then claims the DB state —
+   * so the worst case is "refunded but not yet released", which self-heals on
+   * retry, never "released but silently unrefunded". The wallet path does it all
+   * in one Serializable transaction (the credit is just a ledger row).
+   */
+  async cancelAndRefund(accountId: string, actorUserId: string, id: string): Promise<BatchOrder> {
+    const order = await this.prisma.batchOrder.findFirst({
+      where: { id, accountId },
+      include: {
+        orderRecipients: {
+          select: { id: true, fulfillmentJob: { select: { status: true } } },
+        },
+      },
+    });
+    if (!order) {
+      throw new NotFoundException("Batch order not found");
+    }
+    if (order.status !== "paid" && order.status !== "fulfilling") {
+      throw new ConflictException(
+        `Only a paid order that hasn't posted can be cancelled for a refund (this one is "${order.status}").`,
+      );
+    }
+    // Every card must still be un-actioned. A job past `pending` (in progress /
+    // printed / posted / …) means real work has begun — self-serve refund stops
+    // here and the customer is pointed at support.
+    const started = order.orderRecipients.some(
+      (r) => r.fulfillmentJob && r.fulfillmentJob.status !== "pending",
+    );
+    if (started) {
+      throw new ConflictException(
+        "Some cards are already being prepared, so this order can no longer be cancelled online — please contact support.",
+      );
+    }
+
+    if (order.paymentMethod === "wallet") {
+      await this.refundWalletAndRelease(accountId, id, order.totalMinor);
+    } else {
+      await this.refundCardAndRelease(accountId, id, order.stripePaymentIntentId);
+    }
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "cancel_refund",
+      targetType: "BatchOrder",
+      targetId: id,
+      metadata: { totalMinor: order.totalMinor, paymentMethod: order.paymentMethod },
+    });
+
+    return this.prisma.batchOrder.findUniqueOrThrow({
+      where: { id },
+      include: ORDER_RECIPIENTS_INCLUDE,
+    });
+  }
+
+  /** Card refund: issue the Stripe refund (idempotency-keyed on the order id so a
+   * retry / concurrent double-submit can only ever produce one refund), THEN
+   * release the order state under a status guard. See cancelAndRefund + ADR 0131. */
+  private async refundCardAndRelease(
+    accountId: string,
+    id: string,
+    paymentIntentId: string | null,
+  ): Promise<void> {
+    if (!paymentIntentId) {
+      throw new ConflictException(
+        "This order has no card payment on record to refund — please contact support.",
+      );
+    }
+    await this.stripe.refunds.create(
+      { payment_intent: paymentIntentId },
+      { idempotencyKey: `refund:${id}` },
+    );
+
+    await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.batchOrder.updateMany({
+        where: { id, accountId, status: { in: ["paid", "fulfilling"] } },
+        data: { status: "cancelled" },
+      });
+      // count === 0 → a concurrent request already released this order; by the
+      // shared idempotency key it shares the same single refund, so there is
+      // nothing more to do.
+      if (count > 0) {
+        await this.releaseRecipientsAndOccasions(tx, id, accountId);
+      }
+    });
+  }
+
+  /** Wallet refund: claim the order and write the `refund` ledger credit in one
+   * Serializable transaction. The status-guarded claim is the idempotency guard —
+   * only the winner writes the credit, so concurrent submits can't double-refund. */
+  private async refundWalletAndRelease(
+    accountId: string,
+    id: string,
+    totalMinor: number,
+  ): Promise<void> {
+    await runSerializable(this.prisma, async (tx) => {
+      const { count } = await tx.batchOrder.updateMany({
+        where: { id, accountId, status: { in: ["paid", "fulfilling"] } },
+        data: { status: "cancelled" },
+      });
+      if (count === 0) {
+        // Already released by a concurrent request, which wrote the single refund
+        // entry — writing another here would double-credit the wallet.
+        return;
+      }
+      const { _sum } = await tx.walletLedgerEntry.aggregate({
+        where: { accountId },
+        _sum: { amountMinor: true },
+      });
+      const balance = _sum.amountMinor ?? 0;
+      await tx.walletLedgerEntry.create({
+        data: {
+          accountId,
+          type: "refund",
+          amountMinor: totalMinor,
+          balanceAfterMinor: balance + totalMinor,
+          reference: `refund:${id}`,
+        },
+      });
+      await this.releaseRecipientsAndOccasions(tx, id, accountId);
+    });
+  }
+
+  /** Shared release once a refund is committed: drop the pending print jobs
+   * (nothing will be posted now), mark every card `cancelled`, and skip each
+   * settled occasion so it never re-triggers a send. */
+  private async releaseRecipientsAndOccasions(
+    tx: Prisma.TransactionClient,
+    batchOrderId: string,
+    accountId: string,
+  ): Promise<void> {
+    const orderRecipients = await tx.orderRecipient.findMany({
+      where: { batchOrderId },
+      select: { id: true, occasionId: true },
+    });
+    const orderRecipientIds = orderRecipients.map((r) => r.id);
+    const occasionIds = orderRecipients
+      .map((r) => r.occasionId)
+      .filter((occasionId): occasionId is string => occasionId !== null);
+
+    await tx.fulfillmentJob.deleteMany({
+      where: { orderRecipientId: { in: orderRecipientIds }, status: "pending" },
+    });
+    await tx.orderRecipient.updateMany({
+      where: { batchOrderId },
+      data: { status: "cancelled" },
+    });
+    if (occasionIds.length > 0) {
+      // Guard on `queued` — a settled order's occasions sit there (create() moves
+      // approved → queued at checkout). Guarding avoids clobbering any occasion
+      // that has somehow moved on independently.
+      await tx.occasion.updateMany({
+        where: { id: { in: occasionIds }, accountId, status: "queued" },
+        data: { status: "skipped" },
+      });
+    }
   }
 }
