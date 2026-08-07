@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { Public } from "../auth/public.decorator";
@@ -11,6 +21,7 @@ import {
   type PublicMessagePage,
 } from "./messages.service";
 import { UpdateMessagePageDto } from "./dto/update-message-page.dto";
+import { SubmitMessageReplyDto } from "./dto/submit-message-reply.dto";
 
 @ApiTags("messages")
 @Controller("messages")
@@ -30,6 +41,21 @@ export class MessagesController {
   @Get(":slug")
   view(@Param("slug") slug: string): Promise<PublicMessagePage> {
     return this.messagesService.viewBySlug(slug);
+  }
+
+  /**
+   * Public — a recipient writes back from the scanned page. Anonymous and
+   * arbitrary-input, so it's throttled harder than the read (5/min per IP is
+   * ample for a genuine reply, far below what spam would need) on top of the
+   * server-side plain-text + length cap.
+   */
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post(":slug/replies")
+  @HttpCode(202)
+  reply(@Param("slug") slug: string, @Body() dto: SubmitMessageReplyDto): Promise<void> {
+    return this.messagesService.submitReply(slug, dto);
   }
 
   @ApiBearerAuth()

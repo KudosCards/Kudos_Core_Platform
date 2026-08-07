@@ -117,6 +117,11 @@ export function LibraryClient({
                     <p className="truncate font-semibold">{page.title}</p>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {page.status === "archived" && <Badge tone="muted">Archived</Badge>}
+                      {page.unreadReplies > 0 && (
+                        <Badge tone="new">
+                          {page.unreadReplies} new {page.unreadReplies === 1 ? "reply" : "replies"}
+                        </Badge>
+                      )}
                       {page.videoProvider && (
                         <Badge>{VIDEO_PROVIDER_LABELS[page.videoProvider]}</Badge>
                       )}
@@ -132,6 +137,11 @@ export function LibraryClient({
                   <span>
                     {page.totalViews} {page.totalViews === 1 ? "view" : "views"}
                   </span>
+                  {page.replyCount > 0 && (
+                    <span>
+                      {page.replyCount} {page.replyCount === 1 ? "reply" : "replies"}
+                    </span>
+                  )}
                 </div>
               </Link>
             </li>
@@ -142,13 +152,21 @@ export function LibraryClient({
   );
 }
 
-function Badge({ children, tone = "accent" }: { children: React.ReactNode; tone?: "accent" | "muted" }) {
+function Badge({
+  children,
+  tone = "accent",
+}: {
+  children: React.ReactNode;
+  tone?: "accent" | "muted" | "new";
+}) {
+  const toneClass =
+    tone === "muted"
+      ? "bg-foreground/[0.06] text-muted"
+      : tone === "new"
+        ? "bg-success/15 text-success"
+        : "bg-accent-soft text-accent";
   return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-        tone === "muted" ? "bg-foreground/[0.06] text-muted" : "bg-accent-soft text-accent"
-      }`}
-    >
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${toneClass}`}>
       {children}
     </span>
   );

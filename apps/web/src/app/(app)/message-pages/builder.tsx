@@ -13,6 +13,7 @@ import { clientApiFetch } from "@/lib/api.client";
 import { qrDataUrl } from "@/lib/qr";
 import { MessagePageView } from "@/components/message-page-view";
 import { RichTextEditor } from "./rich-text-editor";
+import { RepliesPanel } from "./replies-panel";
 
 const INPUT = "w-full rounded-md border border-border bg-surface px-3 py-2.5 text-base sm:text-sm";
 
@@ -300,6 +301,7 @@ export function MessagePageBuilder({ page }: { page: MessagePageDetail | null })
           />
         </div>
         {page?.primarySlug && <QrPanel slug={page.primarySlug} stats={page} />}
+        {page && (page.allowReplies || page.replyCount > 0) && <RepliesPanel pageId={page.id} />}
       </div>
     </div>
   );

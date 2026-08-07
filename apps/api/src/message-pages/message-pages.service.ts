@@ -8,6 +8,7 @@ import { MessagePageVideoProvider, MessagePageVideoType, Prisma } from "@prisma/
 import {
   parseVideoEmbed,
   type MessagePageDetail,
+  type MessagePageReply,
   type MessagePageSummary,
 } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -17,10 +18,17 @@ import { sanitizeMessageHtml } from "../common/sanitize-message-html";
 import type { CreateMessagePageDto } from "./dto/create-message-page.dto";
 import type { UpdateMessagePageDto } from "./dto/update-message-page.dto";
 
-/** The links each read needs to roll up per-card analytics + pick a primary QR. */
+/** The links each read needs to roll up per-card analytics + pick a primary QR,
+ * plus each link's replies' read state for the library's reply counts. */
 const PAGE_INCLUDE = {
   links: {
-    select: { slug: true, viewCount: true, orderRecipientId: true, createdAt: true },
+    select: {
+      slug: true,
+      viewCount: true,
+      orderRecipientId: true,
+      createdAt: true,
+      replies: { select: { readAt: true } },
+    },
     orderBy: { createdAt: "asc" },
   },
 } satisfies Prisma.MessagePageInclude;
@@ -220,6 +228,61 @@ export class MessagePagesService {
       throw new NotFoundException("Message page not found");
     }
   }
+
+  /** Ownership guard shared by the reply reads — 404s a page on another account. */
+  private async assertOwned(accountId: string, id: string): Promise<void> {
+    const page = await this.prisma.messagePage.findFirst({
+      where: { id, accountId },
+      select: { id: true },
+    });
+    if (!page) {
+      throw new NotFoundException("Message page not found");
+    }
+  }
+
+  /** Every reply across this page's links, newest first, each tagged with the
+   * contact it came from (via its card link) when there is one. */
+  async listReplies(accountId: string, id: string): Promise<MessagePageReply[]> {
+    await this.assertOwned(accountId, id);
+    const replies = await this.prisma.messagePageReply.findMany({
+      where: { messagePageLink: { messagePageId: id } },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        senderName: true,
+        body: true,
+        readAt: true,
+        createdAt: true,
+        messagePageLink: {
+          select: {
+            orderRecipient: {
+              select: { recipient: { select: { firstName: true, lastName: true } } },
+            },
+          },
+        },
+      },
+    });
+    return replies.map((reply) => {
+      const recipient = reply.messagePageLink.orderRecipient?.recipient;
+      return {
+        id: reply.id,
+        senderName: reply.senderName,
+        body: reply.body,
+        fromRecipientName: recipient ? `${recipient.firstName} ${recipient.lastName}` : null,
+        readAt: reply.readAt,
+        createdAt: reply.createdAt,
+      };
+    });
+  }
+
+  /** Mark every unread reply on this page as read (the "opened the replies" action). */
+  async markRepliesRead(accountId: string, id: string): Promise<void> {
+    await this.assertOwned(accountId, id);
+    await this.prisma.messagePageReply.updateMany({
+      where: { messagePageLink: { messagePageId: id }, readAt: null },
+      data: { readAt: new Date() },
+    });
+  }
 }
 
 /** The page's own standalone QR (a link with no order recipient), else its
@@ -230,6 +293,7 @@ function primarySlug(links: PagePayload["links"]): string | null {
 }
 
 function toSummary(page: PagePayload): MessagePageSummary {
+  const replies = page.links.flatMap((link) => link.replies);
   return {
     id: page.id,
     title: page.title,
@@ -243,6 +307,8 @@ function toSummary(page: PagePayload): MessagePageSummary {
     primarySlug: primarySlug(page.links),
     linkCount: page.links.length,
     totalViews: page.links.reduce((sum, link) => sum + link.viewCount, 0),
+    replyCount: replies.length,
+    unreadReplies: replies.filter((reply) => reply.readAt === null).length,
     createdAt: page.createdAt,
     updatedAt: page.updatedAt,
   };

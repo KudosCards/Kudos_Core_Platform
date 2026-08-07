@@ -27,6 +27,9 @@ export const MESSAGE_PAGE_LIMITS = {
   emoji: 8,
   ctaLabel: 40,
   recipientName: 80,
+  /** A recipient's reply (Phase 2): plain text, capped. */
+  replyBody: 2000,
+  replySenderName: 80,
 } as const;
 
 /**
@@ -72,6 +75,10 @@ export const messagePageSummarySchema = z.object({
   linkCount: z.number().int().nonnegative(),
   /** Views summed across every link (per-card analytics rolled up). */
   totalViews: z.number().int().nonnegative(),
+  /** Total replies received across every link (Phase 2). */
+  replyCount: z.number().int().nonnegative(),
+  /** Replies not yet marked read — drives the library's "new replies" badge. */
+  unreadReplies: z.number().int().nonnegative(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });
@@ -89,3 +96,25 @@ export const messagePageDetailSchema = messagePageSummarySchema.extend({
   recipientName: z.string().nullable(),
 });
 export type MessagePageDetail = z.infer<typeof messagePageDetailSchema>;
+
+/** What a recipient posts from the public page (Phase 2). Name is optional; the
+ * body is plain text, capped, and required. */
+export const submitMessageReplyInputSchema = z.object({
+  senderName: z.string().max(MESSAGE_PAGE_LIMITS.replySenderName).nullish(),
+  body: z.string().trim().min(1).max(MESSAGE_PAGE_LIMITS.replyBody),
+});
+export type SubmitMessageReplyInput = z.infer<typeof submitMessageReplyInputSchema>;
+
+/** A reply as shown on the dashboard — the message plus which card/recipient it
+ * came from (from the link), and its account-level read state. */
+export const messagePageReplySchema = z.object({
+  id: z.string().uuid(),
+  senderName: z.string().nullable(),
+  body: z.string(),
+  /** The linked contact's name when the reply came from a card sent to them,
+   * else null (a standalone-QR reply). */
+  fromRecipientName: z.string().nullable(),
+  readAt: z.coerce.date().nullable(),
+  createdAt: z.coerce.date(),
+});
+export type MessagePageReply = z.infer<typeof messagePageReplySchema>;
