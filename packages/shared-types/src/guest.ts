@@ -64,6 +64,12 @@ export type GuestCartItem = z.infer<typeof guestCartItemSchema>;
 export const guestCartCheckoutInputSchema = z.object({
   buyerEmail: z.string().email(),
   items: z.array(guestCartItemSchema).min(1).max(GUEST_CART_MAX_ITEMS),
+  /** Arrive-by date (YYYY-MM-DD) for a scheduled basket; omit to send now.
+   * Applies to every card in the basket. See docs/adr/0130-scheduled-sends.md. */
+  deliverBy: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "deliverBy must be an ISO date (YYYY-MM-DD)")
+    .optional(),
 });
 export type GuestCartCheckoutInput = z.infer<typeof guestCartCheckoutInputSchema>;
 
