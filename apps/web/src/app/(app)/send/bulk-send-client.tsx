@@ -3,6 +3,7 @@
 import type {
   BatchOrder,
   BatchOrderPreflight,
+  CardDesign,
   Recipient,
   RecipientListSummary,
   SavedDesign,
@@ -24,6 +25,7 @@ import { AddressModal } from "@/components/address-modal";
 import { CardPreviewLightbox, insideFacesHint } from "@/components/card-preview-lightbox";
 import { PricingBreakdownCard } from "@/components/pricing-breakdown";
 import { SendTimingPicker, timingDeliverBy, type SendTiming } from "@/components/send-timing";
+import { TemplatePickerModal } from "@/components/template-picker-modal";
 import { PreSendCheck } from "./pre-send-check";
 import { downloadContactSheet } from "./contact-sheet";
 import { RecipientPicker, type Paginated } from "./recipient-picker";
@@ -117,6 +119,7 @@ export function BulkSendClient({
   initialSelected,
   initialRecipientsPage,
   designs,
+  templates,
   lists,
   initialDesignId,
   seededSegment,
@@ -124,6 +127,7 @@ export function BulkSendClient({
   initialSelected: Recipient[];
   initialRecipientsPage: Paginated<Recipient>;
   designs: SavedDesign[];
+  templates: CardDesign[];
   lists: RecipientListSummary[];
   initialDesignId: string;
   seededSegment?: SeededSegment | null;
@@ -139,6 +143,10 @@ export function BulkSendClient({
   const [postageClass, setPostageClass] = useState<"second_class" | "first_class">("second_class");
   // Send now, or pay now and schedule delivery for a chosen date (ADR 0130).
   const [timing, setTiming] = useState<SendTiming>({ mode: "now" });
+  // The "＋ New design" template chooser, and the template mid-create (so the
+  // grid disables while we mint the saved design and hand off to the editor).
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [creatingDesignFrom, setCreatingDesignFrom] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addressModalFor, setAddressModalFor] = useState<Recipient | null>(null);
@@ -302,6 +310,29 @@ export function BulkSendClient({
 
   function editHref(designId: string): string {
     return `/designs/${designId}/edit?returnTo=${encodeURIComponent(returnToHere(designId))}`;
+  }
+
+  /** "＋ New design": copy a catalog template into a fresh saved design, then open
+   * it in the editor carrying a `returnTo` back here — so a buyer can create a
+   * card mid-order and land back on this page with it selected and their
+   * contacts intact, closing the design→pay loop. */
+  async function createDesignFromTemplate(template: CardDesign) {
+    setError(null);
+    setCreatingDesignFrom(template.id);
+    try {
+      const created = await clientApiFetch<SavedDesign>("/saved-designs", {
+        method: "POST",
+        body: JSON.stringify({ cardDesignId: template.id, name: `${template.name} copy` }),
+      });
+      // Full navigation into the editor; its "Save & return" brings the buyer
+      // back to returnToHere(created.id) with the new design pre-selected.
+      window.location.assign(editHref(created.id));
+    } catch (submitError) {
+      setError(
+        submitError instanceof ApiError ? submitError.message : "Could not start a new design.",
+      );
+      setCreatingDesignFrom(null);
+    }
   }
 
   async function handleSend() {
@@ -509,17 +540,45 @@ export function BulkSendClient({
 
           {/* 2 — choose the design */}
           <section className="card flex flex-col gap-3 p-6">
-            <h2 className="font-semibold">2. Choose a design</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-semibold">2. Choose a design</h2>
+              {templates.length > 0 && designs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPickerOpen(true)}
+                  className="text-sm font-medium text-accent hover:underline"
+                >
+                  ＋ New design
+                </button>
+              )}
+            </div>
             {designs.length === 0 ? (
-              <p className="text-sm text-muted">
-                You don&apos;t have any saved designs yet.{" "}
-                <Link href="/designs" className="text-accent hover:underline">
-                  Create one first
-                </Link>
-                .
-              </p>
+              <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border p-6 text-center">
+                <p className="text-sm text-muted">You don&apos;t have any saved designs yet.</p>
+                {templates.length > 0 ? (
+                  <button type="button" onClick={() => setPickerOpen(true)} className="btn-accent">
+                    ＋ Start a new design
+                  </button>
+                ) : (
+                  <Link href="/designs" className="text-accent hover:underline">
+                    Create one first
+                  </Link>
+                )}
+              </div>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {/* Create a fresh design without leaving the order — the buyer
+                    lands back here with it selected once they save. */}
+                {templates.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpen(true)}
+                    className="flex min-h-[9.5rem] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border p-2 text-muted transition-colors hover:border-accent hover:text-accent"
+                  >
+                    <span className="text-2xl leading-none">＋</span>
+                    <span className="text-xs font-medium">New design</span>
+                  </button>
+                )}
                 {designs.map((design) => {
                   const active = design.id === selectedDesignId;
                   return (
@@ -541,7 +600,7 @@ export function BulkSendClient({
                       </button>
                       <Link
                         href={editHref(design.id)}
-                        className="text-center text-xs text-muted hover:text-accent hover:underline"
+                        className="rounded-md border border-border px-2 py-1 text-center text-xs font-medium text-muted transition-colors hover:border-accent hover:text-accent"
                       >
                         Edit / personalise
                       </Link>
@@ -776,6 +835,14 @@ export function BulkSendClient({
           </button>
         </div>
       </div>
+
+      <TemplatePickerModal
+        templates={templates}
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onPick={(template) => void createDesignFromTemplate(template)}
+        busyTemplateId={creatingDesignFrom}
+      />
 
       {addressModalFor && (
         <AddressModal

@@ -1,4 +1,5 @@
 import type {
+  CardDesign,
   Recipient,
   RecipientListSummary,
   SavedDesign,
@@ -38,8 +39,12 @@ export default async function SendPage({
   // not on the first page), and — when arriving from a segment — its resolved
   // members. serverApiFetch returns null on error, so a dropped id/segment
   // simply isn't pre-selected.
-  const [designs, lists, recipientsPage, segmentMembers, ...preResults] = await Promise.all([
+  const [designs, templates, lists, recipientsPage, segmentMembers, ...preResults] =
+    await Promise.all([
     serverApiFetch<SavedDesign[]>("/saved-designs"),
+    // The public catalog, so the composer's "＋ New design" can start a fresh
+    // design without leaving the payment page.
+    serverApiFetch<CardDesign[]>("/card-designs"),
     serverApiFetch<RecipientListSummary[]>("/recipient-lists"),
     serverApiFetch<Paginated<Recipient>>(
       `/recipients?page=1&perPage=${PICKER_PER_PAGE}&status=active`,
@@ -77,6 +82,7 @@ export default async function SendPage({
       initialSelected={initialSelected}
       initialRecipientsPage={recipientsPage ?? emptyPage}
       designs={designs ?? []}
+      templates={templates ?? []}
       lists={lists ?? []}
       initialDesignId={designParam ?? ""}
       seededSegment={seededSegment}
