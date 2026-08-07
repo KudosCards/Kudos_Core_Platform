@@ -1,0 +1,182 @@
+[
+  {
+    "key": "greetings-happy_birthday_bubbles",
+    "label": "Bubbles",
+    "category": "greetings",
+    "src": "/clipart/greetings/happy_birthday_bubbles.webp",
+    "thumb": "/clipart/greetings/happy_birthday_bubbles.thumb.webp",
+    "width": 681,
+    "height": 269
+  },
+  {
+    "key": "greetings-birthday_decor",
+    "label": "Bunting",
+    "category": "greetings",
+    "src": "/clipart/greetings/birthday_decor.svg",
+    "thumb": "/clipart/greetings/birthday_decor.thumb.webp",
+    "width": 3840,
+    "height": 842
+  },
+  {
+    "key": "greetings-happy_birthday_deco",
+    "label": "Deco",
+    "category": "greetings",
+    "src": "/clipart/greetings/happy_birthday_deco.svg",
+    "thumb": "/clipart/greetings/happy_birthday_deco.thumb.webp",
+    "width": 1920,
+    "height": 1357
+  },
+  {
+    "key": "greetings-happy_birthday_funny",
+    "label": "Funny",
+    "category": "greetings",
+    "src": "/clipart/greetings/happy_birthday_funny.webp",
+    "thumb": "/clipart/greetings/happy_birthday_funny.thumb.webp",
+    "width": 486,
+    "height": 197
+  },
+  {
+    "key": "greetings-happy_birthday_pixels",
+    "label": "Pixels",
+    "category": "greetings",
+    "src": "/clipart/greetings/happy_birthday_pixels.webp",
+    "thumb": "/clipart/greetings/happy_birthday_pixels.thumb.webp",
+    "width": 2706,
+    "height": 1429
+  },
+  {
+    "key": "greetings-happy_birthday_rainbow",
+    "label": "Rainbow",
+    "category": "greetings",
+    "src": "/clipart/greetings/happy_birthday_rainbow.svg",
+    "thumb": "/clipart/greetings/happy_birthday_rainbow.thumb.webp",
+    "width": 1937,
+    "height": 905
+  },
+  {
+    "key": "greetings-happy_birthday_woods_color",
+    "label": "Woodland",
+    "category": "greetings",
+    "src": "/clipart/greetings/happy_birthday_woods_color.svg",
+    "thumb": "/clipart/greetings/happy_birthday_woods_color.thumb.webp",
+    "width": 5094,
+    "height": 2824
+  },
+  {
+    "key": "objects-birthday_balloons_group",
+    "label": "Balloons group",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_balloons_group.svg",
+    "thumb": "/clipart/objects/birthday_balloons_group.thumb.webp",
+    "width": 1760,
+    "height": 1920
+  },
+  {
+    "key": "objects-birthday_big_cake",
+    "label": "Big cake",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_big_cake.svg",
+    "thumb": "/clipart/objects/birthday_big_cake.thumb.webp",
+    "width": 1910,
+    "height": 2747
+  },
+  {
+    "key": "objects-birthday_cake",
+    "label": "Cake",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_cake.svg",
+    "thumb": "/clipart/objects/birthday_cake.thumb.webp",
+    "width": 1276,
+    "height": 1571
+  },
+  {
+    "key": "objects-birthday_cake_blanket",
+    "label": "Cake blanket",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_cake_blanket.svg",
+    "thumb": "/clipart/objects/birthday_cake_blanket.thumb.webp",
+    "width": 800,
+    "height": 800
+  },
+  {
+    "key": "objects-birthday_cake_strawberry",
+    "label": "Cake strawberry",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_cake_strawberry.svg",
+    "thumb": "/clipart/objects/birthday_cake_strawberry.thumb.webp",
+    "width": 1949,
+    "height": 2232
+  },
+  {
+    "key": "objects-birthday_cake_happy_birthday",
+    "label": "Cake with banner",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_cake_happy_birthday.svg",
+    "thumb": "/clipart/objects/birthday_cake_happy_birthday.thumb.webp",
+    "width": 520,
+    "height": 487
+  },
+  {
+    "key": "objects-birthday_cap",
+    "label": "Cap",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_cap.svg",
+    "thumb": "/clipart/objects/birthday_cap.thumb.webp",
+    "width": 1140,
+    "height": 1799
+  },
+  {
+    "key": "objects-birthday_confetti",
+    "label": "Confetti",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_confetti.svg",
+    "thumb": "/clipart/objects/birthday_confetti.thumb.webp",
+    "width": 1376,
+    "height": 1778
+  },
+  {
+    "key": "objects-birthday_cupcake",
+    "label": "Cupcake",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_cupcake.svg",
+    "thumb": "/clipart/objects/birthday_cupcake.thumb.webp",
+    "width": 998,
+    "height": 1296
+  },
+  {
+    "key": "objects-birthday_cupcake_candle",
+    "label": "Cupcake candle",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_cupcake_candle.svg",
+    "thumb": "/clipart/objects/birthday_cupcake_candle.thumb.webp",
+    "width": 57,
+    "height": 82
+  },
+  {
+    "key": "objects-birthday_gift",
+    "label": "Gift",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_gift.svg",
+    "thumb": "/clipart/objects/birthday_gift.thumb.webp",
+    "width": 1435,
+    "height": 1561
+  },
+  {
+    "key": "objects-birthday_gift_2",
+    "label": "Gift 2",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_gift_2.svg",
+    "thumb": "/clipart/objects/birthday_gift_2.thumb.webp",
+    "width": 2256,
+    "height": 1580
+  },
+  {
+    "key": "objects-birthday_hat_trumpet",
+    "label": "Hat trumpet",
+    "category": "objects",
+    "src": "/clipart/objects/birthday_hat_trumpet.svg",
+    "thumb": "/clipart/objects/birthday_hat_trumpet.thumb.webp",
+    "width": 48,
+    "height": 48
+  }
+]

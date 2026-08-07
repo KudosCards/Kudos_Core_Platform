@@ -23,6 +23,7 @@ import {
 } from "@kudos/shared-types";
 import { FontPreloader } from "@/lib/editor-fonts";
 import { STICKERS, STICKER_INSERT_SIZE } from "@/lib/stickers";
+import { CLIPART_CATEGORIES } from "@/lib/clipart";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -842,6 +843,42 @@ export function DesignEditorClient({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={sticker.src} alt="" className="size-full object-contain" />
               </button>
+            ))}
+          </div>
+
+          {/* Clip-art palette — richer illustrated birthday artwork (distinct
+              from the small Stickers above). Thumbnails are tiny WebPs; the
+              full art (vector, or a print-grade WebP for the heavy pieces) is
+              placed as an image at its true aspect ratio. */}
+          <div className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 dark:border-white/10">
+            <span className="text-xs font-medium text-foreground/70">Clipart</span>
+            {CLIPART_CATEGORIES.map((group) => (
+              <div key={group.id} className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wide text-foreground/45">
+                  {group.label}
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {group.items.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      title={`Add ${item.label.toLowerCase()}`}
+                      aria-label={`Add ${item.label.toLowerCase()} clipart`}
+                      onClick={() => insertImage(item.src, item.width, item.height)}
+                      className="flex size-12 items-center justify-center rounded-md border border-black/15 bg-white p-1 hover:ring-2 hover:ring-accent pointer-coarse:size-14 dark:border-white/15"
+                    >
+                      {/* Bundled WebP thumbnail — a plain <img> is intentional. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={item.thumb}
+                        alt=""
+                        loading="lazy"
+                        className="size-full object-contain"
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
 
