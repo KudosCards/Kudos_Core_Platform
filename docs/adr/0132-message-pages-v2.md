@@ -127,8 +127,9 @@ backfill, verified against a reseeded database. The public URL stays `/r/:slug`.
 
 ## Phased delivery
 
-- **Phase 1 — the spine (paid-gated):** page/link split + migration; `PlanEntitlement`
-  flag + seed; page CRUD + library UI (stats, search/filter/sort, preview/edit/
+- **Phase 1 — the spine (paid-gated):** page/link split + migration (delivered);
+  `PlanEntitlement` flag + seed (delivered); page CRUD API + library UI (stats,
+  search/filter/sort, preview/edit/
   archive); the builder (title, embed video, rich text, CTA, emoji, replies
   toggle stored but inert until P2) with a live mobile preview; redesigned public
   `/r/:slug`; per-card view tracking; the QR-gated "add a page?" step in the send
@@ -139,3 +140,14 @@ backfill, verified against a reseeded database. The public URL stays `/r/:slug`.
   (`MessagePageEvent`); direct video upload may land here or in Phase 2.
 
 Each phase ships as its own verified PR, merged when the preview is green.
+
+### Delivery log
+
+- **PR 1 — foundations (merged, #231):** the page/link schema split + slug-preserving
+  migration, `messagePagesEnabled` entitlement + seed, `parseVideoEmbed` helper.
+- **PR 2 — library API (this PR):** the account-owned `message-pages` module —
+  create (mints a standalone QR link so a page is scannable the moment it's saved),
+  list with rolled-up stats (link count + total views), get, update, soft-archive —
+  paid-gated on authoring while reads stay open (so a downgrade doesn't hide existing
+  pages); server-side HTML sanitiser (`b/i/u/p/br/ul/ol/li`, no attributes) and
+  embed-only video validation via the shared helper; v2 shared-types contract.
