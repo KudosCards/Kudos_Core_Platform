@@ -99,13 +99,19 @@ function fitWithinBox(
  * it reads as deliberately placed. */
 const NEW_TEXT_WIDTH = CARD_WIDTH - CARD_SAFE_MARGIN * 6; // 450 - 144 = 306
 
-function newTextElement(): Extract<DesignElement, { kind: "text" }> {
+function newTextElement(existingCount: number): Extract<DesignElement, { kind: "text" }> {
+  // Cascade successive boxes down-right so they don't stack. The box keeps its
+  // top-centred base (text auto-grows downward, so it isn't vertically centred);
+  // the step is clamped to keep the wide box's right edge inside the safe area.
+  const step = (existingCount % PLACEMENT_WRAP) * PLACEMENT_STEP;
+  const baseX = (CARD_WIDTH - NEW_TEXT_WIDTH) / 2;
+  const maxX = CARD_WIDTH - CARD_SAFE_MARGIN - NEW_TEXT_WIDTH;
   return {
     kind: "text",
     id: crypto.randomUUID(),
     text: "New text",
-    x: Math.round((CARD_WIDTH - NEW_TEXT_WIDTH) / 2),
-    y: CARD_SAFE_MARGIN + 16,
+    x: Math.min(maxX, Math.round(baseX + step)),
+    y: CARD_SAFE_MARGIN + 16 + step,
     width: NEW_TEXT_WIDTH,
     align: "center",
     fontFamily: "Helvetica",
@@ -276,7 +282,7 @@ export function DesignEditorClient({
   }
 
   function addTextElement() {
-    const element = newTextElement();
+    const element = newTextElement(activePageElementCount());
     updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
     selectElement(element.id);
   }
