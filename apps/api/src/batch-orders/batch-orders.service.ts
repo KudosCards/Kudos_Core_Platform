@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma } from "@prisma/client";
+import { PostageClass, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { PrismaService } from "../prisma/prisma.service";
@@ -20,7 +20,10 @@ import type { CheckoutResult } from "../common/checkout-result";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.constants";
 import {
+  POSTAGE_LEAD_DAYS,
+  computeDispatchDate,
   computePricingBreakdown,
+  deliverByWindow,
   startOfUtcDay,
   unresolvedMergeTokens,
   type BatchOrderPreflight,
@@ -144,6 +147,41 @@ export class BatchOrdersService {
     return this.create(accountId, actorUserId, { lines });
   }
 
+  /**
+   * Resolve an ad-hoc send's timing from an optional arrive-by (`deliverBy`)
+   * date. "Send now" (no date) posts today. A scheduled send back-computes the
+   * post-by (`dispatchDate`) from the arrive-by date via the same working-days
+   * lead engine occasions use, so a paid-now card is held in the ops queue until
+   * it's due. Validates the date is within the bookable window and its computed
+   * post date isn't already in the past. Pure-ish (reads `new Date()`). See
+   * docs/adr/0130-scheduled-sends.md.
+   */
+  private resolveSendSchedule(
+    deliverBy: string | undefined,
+    postageClass: PostageClass,
+  ): { occasionDate: Date; dispatchDate: Date; scheduled: boolean } {
+    const today = startOfUtcDay(new Date());
+    if (!deliverBy) {
+      return { occasionDate: today, dispatchDate: today, scheduled: false };
+    }
+    const arriveBy = startOfUtcDay(new Date(`${deliverBy}T00:00:00.000Z`));
+    if (Number.isNaN(arriveBy.getTime())) {
+      throw new BadRequestException("Invalid delivery date");
+    }
+    const { earliest, latest } = deliverByWindow(postageClass, today);
+    if (arriveBy.getTime() > startOfUtcDay(latest).getTime()) {
+      throw new BadRequestException("That delivery date is too far ahead to schedule.");
+    }
+    const dispatchDate = computeDispatchDate(arriveBy, POSTAGE_LEAD_DAYS[postageClass]);
+    if (dispatchDate.getTime() < today.getTime()) {
+      const soonest = startOfUtcDay(earliest).toISOString().slice(0, 10);
+      throw new BadRequestException(
+        `That delivery date is too soon — the earliest we can schedule for is ${soonest}.`,
+      );
+    }
+    return { occasionDate: arriveBy, dispatchDate, scheduled: true };
+  }
+
   /** Create the recipient + approved one-off occasion for a single guided-send
    * card, returning the order line that consumes it. Shared by quickSend and
    * quickSendMany so the single- and multi-card paths can never drift. */
@@ -195,18 +233,18 @@ export class BatchOrdersService {
     // the guided flow is the human decision that the manual approve step
     // represents, so there's nothing left to approve. dispatchOption `asap`
     // means a person checks it out (which is exactly what happens next).
-    // asap send, checked out immediately after → it ships today, so date its
-    // dispatch to today. Back-computing from the occasion date would put the
-    // dispatch ~5 working days in the past and read as overdue. See docs/adr/0119.
-    const today = startOfUtcDay(new Date());
+    // "Send now" ships today; a scheduled send back-computes its post-by date
+    // from the chosen arrive-by so the ops queue holds it until due (rather than
+    // reading as overdue). See docs/adr/0119 and 0130.
+    const schedule = this.resolveSendSchedule(dto.deliverBy, dto.postageClass);
     const occasion = await this.prisma.occasion.create({
       data: {
         accountId,
         recipientId: recipient.id,
         type: dto.occasionType ?? "bespoke_campaign",
         source: "one_off_campaign",
-        occasionDate: today,
-        dispatchDate: today,
+        occasionDate: schedule.occasionDate,
+        dispatchDate: schedule.dispatchDate,
         status: "approved",
         savedDesignId: savedDesign.id,
         dispatchOption: "asap",
@@ -284,10 +322,12 @@ export class BatchOrdersService {
     const reconciledByRecipient = await this.resolveReconcile(accountId, dto);
 
     const byId = new Map(recipients.map((r) => [r.id, r]));
-    // asap send, paid now → it ships today. Dating the *dispatch* to "today"
-    // (not a date back-computed from a future occasion) is why the ops queue
-    // reads it as due now rather than overdue. See docs/adr/0119.
-    const today = startOfUtcDay(new Date());
+    // "Send now" (no deliverBy) posts today — dating the *dispatch* to today, not
+    // a date back-computed from a future occasion, is why the ops queue reads it
+    // as due now rather than overdue (ADR 0119). A scheduled send back-computes
+    // its post-by date from the chosen arrive-by so it's paid now but held until
+    // due (ADR 0130).
+    const schedule = this.resolveSendSchedule(dto.deliverBy, dto.postageClass);
     const occasionIdByRecipient = new Map<string, string>();
 
     // Reconciled recipients: reuse the matched natural occasion. Attach the
@@ -307,7 +347,10 @@ export class BatchOrdersService {
           savedDesignId: savedDesign.id,
           dispatchOption: "asap",
           postageClass: dto.postageClass,
-          dispatchDate: today,
+          // Keep the natural occasionDate (the birthday) but set the post-by date
+          // from the send timing: today for "send now", the scheduled post date
+          // otherwise. dispatchDate is what actually drives when it's posted.
+          dispatchDate: schedule.dispatchDate,
           status: "approved",
         },
       });
@@ -330,8 +373,8 @@ export class BatchOrdersService {
           recipientId: id,
           type: dto.occasionType ?? "bespoke_campaign",
           source: "one_off_campaign",
-          occasionDate: new Date(),
-          dispatchDate: today,
+          occasionDate: schedule.occasionDate,
+          dispatchDate: schedule.dispatchDate,
           status: "approved",
           savedDesignId: savedDesign.id,
           dispatchOption: "asap",

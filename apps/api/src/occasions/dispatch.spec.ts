@@ -2,8 +2,11 @@ import {
   addWorkingDays,
   computeDispatchDate,
   DEFAULT_SEASONAL_DISPATCH_RULES,
+  deliverByWindow,
   getSeasonalDispatchRules,
+  isoDay,
   isWorkingDay,
+  MAX_SCHEDULE_AHEAD_DAYS,
   POSTAGE_LEAD_DAYS,
   seasonalDispatchRuleFor,
   setSeasonalDispatchRules,
@@ -194,5 +197,33 @@ describe("runtime-configurable seasonal rules", () => {
       },
     ];
     expect(seasonalDispatchRuleFor(utc(2026, 5, 15), rules)?.label).toBe("Explicit");
+  });
+});
+
+describe("deliverByWindow (scheduled sends)", () => {
+  beforeEach(() => setSeasonalDispatchRules([]));
+  afterEach(() => setSeasonalDispatchRules(DEFAULT_SEASONAL_DISPATCH_RULES));
+
+  it("earliest arrive-by inverts computeDispatchDate: posting it today lands today", () => {
+    // Fri 7 Aug 2026: 5 working days forward is Fri 14 Aug.
+    const from = utc(2026, 7, 7);
+    const { earliest } = deliverByWindow("second_class", from);
+    expect(isoDay(earliest)).toBe("2026-08-14");
+    // And computing the post-by date back from that earliest is today.
+    expect(isoDay(computeDispatchDate(earliest, POSTAGE_LEAD_DAYS.second_class))).toBe("2026-08-07");
+  });
+
+  it("latest is the horizon out from today", () => {
+    const from = utc(2026, 7, 7);
+    const { latest } = deliverByWindow("second_class", from);
+    const expected = new Date(from.getTime() + MAX_SCHEDULE_AHEAD_DAYS * 86_400_000);
+    expect(isoDay(latest)).toBe(isoDay(expected));
+  });
+
+  it("skips weekends when computing the post-by date from an arrive-by date", () => {
+    // Arrive-by Fri 28 Aug 2026 → 5 working days back is Fri 21 Aug (skips 22/23).
+    expect(isoDay(computeDispatchDate(utc(2026, 7, 28), POSTAGE_LEAD_DAYS.second_class))).toBe(
+      "2026-08-21",
+    );
   });
 });
