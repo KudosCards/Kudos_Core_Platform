@@ -81,6 +81,10 @@ export type OrderRecipient = z.infer<typeof orderRecipientSchema>;
 export const orderRecipientLineSchema = orderRecipientSchema.extend({
   recipientFirstName: z.string(),
   recipientLastName: z.string(),
+  /** The date this card is scheduled to be posted (its occasion's dispatchDate),
+   * or null when it has no occasion. Drives the "scheduled for…" readout and the
+   * reschedule control on the order page. See docs/adr/0130-scheduled-sends.md. */
+  dispatchDate: z.coerce.date().nullable(),
   /** The card's current fulfilment stage, or null before it's been queued. */
   jobStatus: z.string().nullable(),
   /** Royal Mail tracking reference once the card is posted, else null. */
@@ -174,6 +178,16 @@ export const bulkSendInputSchema = z.object({
   occasionType: occasionTypeSchema.optional(),
 });
 export type BulkSendInput = z.infer<typeof bulkSendInputSchema>;
+
+/**
+ * Reschedule a paid, not-yet-posted order to a new arrive-by date (ADR 0130).
+ * `deliverBy` is an ISO `YYYY-MM-DD`; the server recomputes each card's post-by
+ * date from it. Matches RescheduleBatchOrderDto.
+ */
+export const rescheduleBatchOrderInputSchema = z.object({
+  deliverBy: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "deliverBy must be an ISO date (YYYY-MM-DD)"),
+});
+export type RescheduleBatchOrderInput = z.infer<typeof rescheduleBatchOrderInputSchema>;
 
 /** A card's QR-linked digital message page. */
 export const messagePageSchema = z.object({
