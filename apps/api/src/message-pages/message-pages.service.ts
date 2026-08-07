@@ -25,6 +25,7 @@ const PAGE_INCLUDE = {
     select: {
       slug: true,
       viewCount: true,
+      ctaClickCount: true,
       orderRecipientId: true,
       createdAt: true,
       replies: { select: { readAt: true } },
@@ -307,6 +308,7 @@ function toSummary(page: PagePayload): MessagePageSummary {
     primarySlug: primarySlug(page.links),
     linkCount: page.links.length,
     totalViews: page.links.reduce((sum, link) => sum + link.viewCount, 0),
+    totalCtaClicks: page.links.reduce((sum, link) => sum + link.ctaClickCount, 0),
     replyCount: replies.length,
     unreadReplies: replies.filter((reply) => reply.readAt === null).length,
     createdAt: page.createdAt,

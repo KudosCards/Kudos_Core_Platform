@@ -137,6 +137,11 @@ export function LibraryClient({
                   <span>
                     {page.totalViews} {page.totalViews === 1 ? "view" : "views"}
                   </span>
+                  {page.totalCtaClicks > 0 && (
+                    <span>
+                      {page.totalCtaClicks} {page.totalCtaClicks === 1 ? "click" : "clicks"}
+                    </span>
+                  )}
                   {page.replyCount > 0 && (
                     <span>
                       {page.replyCount} {page.replyCount === 1 ? "reply" : "replies"}

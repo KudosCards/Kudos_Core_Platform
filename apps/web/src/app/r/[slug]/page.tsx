@@ -107,6 +107,11 @@ export default async function MessagePage({ params }: { params: Promise<{ slug: 
         messageHtml={page.message}
         ctaLabel={page.ctaLabel}
         ctaUrl={page.ctaUrl}
+        ctaHref={
+          page.ctaUrl
+            ? `${env.NEXT_PUBLIC_API_URL}/messages/${encodeURIComponent(slug)}/cta`
+            : null
+        }
       />
       {page.allowReplies && <ReplyForm slug={slug} />}
     </Shell>

@@ -1,12 +1,20 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { MessagePageVideoType, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { parseVideoEmbed } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
+import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
+import { renderBrandedEmail, escapeHtml } from "../email/email-layout";
+import type { EnvConfig } from "../config/env.schema";
 import { generateSlug } from "../common/generate-slug";
 import type { UpdateMessagePageDto } from "./dto/update-message-page.dto";
 import type { SubmitMessageReplyDto } from "./dto/submit-message-reply.dto";
+
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
 
 /** Reads the design document's default video URL (set in the card designer),
  * defensively — the document is stored as free-form JSON. */
@@ -107,9 +115,13 @@ function toAccountMessagePage(page: AccountPagePayload): AccountMessagePage | nu
 
 @Injectable()
 export class MessagesService {
+  private readonly logger = new Logger(MessagesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly inbox: NotificationInboxService,
+    private readonly config: ConfigService<EnvConfig, true>,
+    @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
   ) {}
 
   /**
@@ -334,15 +346,101 @@ export class MessagesService {
       select: { id: true },
     });
 
+    // Notifications are side effects — a failure to notify must never fail the
+    // public reply itself (it's already stored), so each is logged and swallowed.
     const who = senderName ?? link.orderRecipient?.recipient.firstName ?? "Someone";
-    await this.inbox.notifyAccount(link.messagePage.accountId, {
-      kind: "message_reply",
-      title: "New message reply",
-      body: `${who} replied to “${link.messagePage.title}”`,
-      href: `/message-pages/${link.messagePage.id}`,
-      entityType: "message_page_reply",
-      entityId: reply.id,
+    try {
+      await this.inbox.notifyAccount(link.messagePage.accountId, {
+        kind: "message_reply",
+        title: "New message reply",
+        body: `${who} replied to “${link.messagePage.title}”`,
+        href: `/message-pages/${link.messagePage.id}`,
+        entityType: "message_page_reply",
+        entityId: reply.id,
+      });
+    } catch (error) {
+      this.logger.error(`Reply inbox notify failed for page ${link.messagePage.id}: ${reasonOf(error)}`);
+    }
+    await this.notifyReplyEmail(
+      link.messagePage.accountId,
+      link.messagePage.id,
+      link.messagePage.title,
+      who,
+      dto.body.trim(),
+    );
+  }
+
+  /** Emails the account's contact that a reply arrived, linking to the page.
+   * Best-effort: a send failure is logged, never surfaced to the public poster. */
+  private async notifyReplyEmail(
+    accountId: string,
+    pageId: string,
+    pageTitle: string,
+    who: string,
+    body: string,
+  ): Promise<void> {
+    try {
+      const to = await this.resolveAccountEmail(accountId);
+      if (!to) {
+        return;
+      }
+      const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
+      const pageUrl = `${webAppUrl}/message-pages/${pageId}`;
+      await this.email.sendTransactional({
+        to,
+        subject: `New reply to “${pageTitle}”`,
+        html: renderBrandedEmail({
+          webAppUrl,
+          preheader: `${who} replied to your message page.`,
+          heading: "You've got a reply 💬",
+          bodyHtml: `
+            <p style="margin:0 0 16px"><strong>${escapeHtml(who)}</strong> replied to your
+              message page <strong>${escapeHtml(pageTitle)}</strong>:</p>
+            <p style="margin:0 0 16px;white-space:pre-wrap">${escapeHtml(body)}</p>`,
+          cta: { url: pageUrl, label: "View replies" },
+        }),
+      });
+    } catch (error) {
+      this.logger.error(`Reply email failed for page ${pageId}: ${reasonOf(error)}`);
+    }
+  }
+
+  /** The account's contact email, else the owner's, else any member's — mirrors
+   * SupportService / ReturnsService. */
+  private async resolveAccountEmail(accountId: string): Promise<string | null> {
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+      select: { contactEmail: true },
     });
+    if (account?.contactEmail) {
+      return account.contactEmail;
+    }
+    const members = await this.prisma.membership.findMany({
+      where: { accountId, email: { not: null } },
+      select: { email: true, role: true },
+    });
+    return members.find((m) => m.role === "owner")?.email ?? members[0]?.email ?? null;
+  }
+
+  /**
+   * Public CTA click (Phase 2, ADR 0132). Atomically counts the click on the
+   * scanned link and returns the page's https CTA to redirect to. The public
+   * button routes through here so a shared page still tracks per-card clicks. An
+   * unknown slug, archived page, or a page with no CTA 404s.
+   */
+  async trackCtaClick(slug: string): Promise<string> {
+    const link = await this.prisma.messagePageLink.findUnique({
+      where: { slug },
+      select: { id: true, messagePage: { select: { status: true, ctaUrl: true } } },
+    });
+    if (!link || link.messagePage.status === "archived" || !link.messagePage.ctaUrl) {
+      throw new NotFoundException("Message page not found");
+    }
+    await this.prisma.messagePageLink.update({
+      where: { id: link.id },
+      data: { ctaClickCount: { increment: 1 } },
+    });
+    return link.messagePage.ctaUrl;
   }
 
   async list(accountId: string): Promise<AccountMessagePage[]> {

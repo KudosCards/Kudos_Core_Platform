@@ -346,7 +346,8 @@ function QrPanel({ slug, stats }: { slug: string; stats: MessagePageDetail }) {
         <p className="font-medium">Its own QR code</p>
         <p className="text-xs text-muted">
           {stats.linkCount} {stats.linkCount === 1 ? "card" : "cards"} · {stats.totalViews}{" "}
-          {stats.totalViews === 1 ? "view" : "views"}
+          {stats.totalViews === 1 ? "view" : "views"} · {stats.totalCtaClicks}{" "}
+          {stats.totalCtaClicks === 1 ? "click" : "clicks"}
         </p>
         {dataUrl && (
           <a href={dataUrl} download={`kudos-qr-${slug}.png`} className="text-xs text-accent hover:underline">
