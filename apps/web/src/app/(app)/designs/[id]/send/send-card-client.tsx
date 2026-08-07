@@ -1,8 +1,9 @@
 "use client";
 
-import type { BatchOrder } from "@kudos/shared-types";
+import type { BatchOrder, DesignDocument, MessagePageSummary } from "@kudos/shared-types";
+import { hasQrElement } from "@kudos/shared-types";
 import Link from "next/link";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { SendTimingPicker, timingDeliverBy, type SendTiming } from "@/components/send-timing";
@@ -67,12 +68,34 @@ function addressPreview(c: ContactResult): string {
   return [c.addressLine1, c.addressCity, c.addressPostcode].filter(Boolean).join(", ") || "No address on file";
 }
 
-export function SendCardClient({ designId, designName }: { designId: string; designName: string }) {
+export function SendCardClient({
+  designId,
+  designName,
+  designDocument,
+  messagePages,
+  canAuthorMessagePages,
+}: {
+  designId: string;
+  designName: string;
+  designDocument: DesignDocument;
+  messagePages: MessagePageSummary[];
+  canAuthorMessagePages: boolean;
+}) {
   const [postageClass, setPostageClass] = useState<"second_class" | "first_class">("second_class");
   // Send now, or pay now and schedule delivery for a chosen date (ADR 0130).
   const [timing, setTiming] = useState<SendTiming>({ mode: "now" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Offer a message page only when the design carries a QR element to point it
+  // at — mirroring the bulk composer (ADR 0132). The endpoint already accepts
+  // messagePageId; at settlement each card's QR link is minted onto the page.
+  const designHasQr = hasQrElement(designDocument);
+  const activeMessagePages = useMemo(
+    () => messagePages.filter((page) => page.status === "active"),
+    [messagePages],
+  );
+  const [messagePageId, setMessagePageId] = useState<string>("");
 
   // Address-book search. `selectedContactId` set → we're sending to an existing
   // contact (reuse it, no new record); null → adding a new contact.
@@ -168,6 +191,9 @@ export function SendCardClient({ designId, designName }: { designId: string; des
           postageClass,
           // Undefined for "send now"; an arrive-by date for a scheduled send.
           deliverBy: timingDeliverBy(timing),
+          // Attach the chosen message page to this card's QR — only meaningful
+          // when the design carries a QR element (ADR 0132).
+          ...(designHasQr && messagePageId ? { messagePageId } : {}),
           // Existing contact → reuse it; new contact → maybe save it.
           ...(selectedContactId
             ? { recipientId: selectedContactId }
@@ -360,6 +386,44 @@ export function SendCardClient({ designId, designName }: { designId: string; des
               </label>
             ))}
           </fieldset>
+
+          {designHasQr && (
+            <fieldset className="flex flex-col gap-2 border-t border-border pt-4">
+              <legend className="mb-1 text-sm font-medium">Message page</legend>
+              <p className="text-xs text-muted">
+                This design has a QR code. Attach a message page so they see a video and a
+                personal note when they scan it.
+              </p>
+              {activeMessagePages.length > 0 ? (
+                <select
+                  value={messagePageId}
+                  onChange={(e) => setMessagePageId(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">No message page</option>
+                  {activeMessagePages.map((page) => (
+                    <option key={page.id} value={page.id}>
+                      {page.emoji ? `${page.emoji} ` : ""}
+                      {page.title}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-xs text-muted">
+                  {canAuthorMessagePages ? (
+                    <Link href="/message-pages/new" className="text-accent hover:underline">
+                      Create a message page
+                    </Link>
+                  ) : (
+                    <Link href="/billing" className="text-accent hover:underline">
+                      Upgrade to add message pages
+                    </Link>
+                  )}{" "}
+                  to use this card&apos;s QR code.
+                </p>
+              )}
+            </fieldset>
+          )}
         </div>
 
         <div className="card flex h-fit flex-col gap-4 p-6">
