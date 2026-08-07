@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
 import {
   accountSchema,
+  messagePageAccountInsightsSchema,
   messagePageDetailSchema,
+  messagePageInsightsSchema,
   messagePageReplySchema,
   messagePageSummarySchema,
 } from "@kudos/shared-types";
@@ -341,5 +343,57 @@ describe("Message Pages library (e2e)", () => {
       .expect(201);
     const noCtaSlug = messagePageDetailSchema.parse(noCta.body).primarySlug!;
     await request(app.getHttpServer()).get(`/messages/${noCtaSlug}/cta`).expect(404);
+  });
+
+  it("reports the engagement funnel per page and across the account", async () => {
+    const { token } = await signUp();
+    const created = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Party", allowReplies: true, ctaLabel: "RSVP", ctaUrl: "https://example.com/x" })
+      .expect(201);
+    const page = messagePageDetailSchema.parse(created.body);
+    const slug = page.primarySlug!;
+
+    // Walk one card all the way through the funnel: viewed → clicked → replied.
+    await request(app.getHttpServer()).get(`/messages/${slug}`).expect(200);
+    await request(app.getHttpServer()).get(`/messages/${slug}/cta`).expect(302);
+    await request(app.getHttpServer())
+      .post(`/messages/${slug}/replies`)
+      .send({ body: "Coming!" })
+      .expect(202);
+
+    const pageInsights = await request(app.getHttpServer())
+      .get(`/message-pages/${page.id}/insights`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const insights = messagePageInsightsSchema.parse(pageInsights.body);
+    expect(insights.funnel).toMatchObject({
+      sent: 1,
+      viewed: 1,
+      clicked: 1,
+      replied: 1,
+      totalViews: 1,
+      totalClicks: 1,
+      totalReplies: 1,
+    });
+    expect(insights.firstViewedAt).not.toBeNull();
+
+    // The account rollup sees the same journey and lists the page as a top page.
+    const accountInsights = await request(app.getHttpServer())
+      .get("/message-pages/insights")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const account = messagePageAccountInsightsSchema.parse(accountInsights.body);
+    expect(account.pageCount).toBeGreaterThanOrEqual(1);
+    expect(account.funnel).toMatchObject({ viewed: 1, clicked: 1, replied: 1 });
+    expect(account.topPages.some((p) => p.id === page.id)).toBe(true);
+
+    // Another account can't read this page's insights.
+    const other = await signUp();
+    await request(app.getHttpServer())
+      .get(`/message-pages/${page.id}/insights`)
+      .set("Authorization", `Bearer ${other.token}`)
+      .expect(404);
   });
 });

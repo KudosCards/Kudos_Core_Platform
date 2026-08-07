@@ -4,9 +4,11 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   VIDEO_PROVIDER_LABELS,
+  type MessagePageAccountInsights,
   type MessagePageStatus,
   type MessagePageSummary,
 } from "@kudos/shared-types";
+import { FunnelBar } from "./funnel-bar";
 
 type SortKey = "recent" | "views" | "cards";
 type StatusFilter = "active" | "archived" | "all";
@@ -16,9 +18,11 @@ const INPUT = "w-full rounded-md border border-border bg-surface px-3 py-2.5 tex
 export function LibraryClient({
   initialPages,
   canAuthor,
+  insights,
 }: {
   initialPages: MessagePageSummary[];
   canAuthor: boolean;
+  insights: MessagePageAccountInsights | null;
 }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("active");
@@ -64,6 +68,13 @@ export function LibraryClient({
           <Link href="/billing" className="btn-accent shrink-0">
             Upgrade
           </Link>
+        </div>
+      )}
+
+      {insights && insights.funnel.sent > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
+          <p className="section-label">Engagement across all pages</p>
+          <FunnelBar funnel={insights.funnel} />
         </div>
       )}
 

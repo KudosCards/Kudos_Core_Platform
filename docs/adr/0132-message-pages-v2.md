@@ -147,8 +147,15 @@ backfill, verified against a reseeded database. The public URL stays `/r/:slug`.
     `GET /messages/:slug/cta` that increments the link's `ctaClickCount` and
     302-redirects to the https target — per-card click analytics on a shared
     page, surfaced as `totalCtaClicks` on the library.
-- **Phase 3 — insight (later):** the engagement funnel + aggregate analytics
-  (`MessagePageEvent`); direct video upload may land here or in Phase 2.
+- **Phase 3 — insight (funnel delivered):** the **engagement funnel** — Sent →
+  Viewed → Clicked → Replied — computed directly from the per-card link counters
+  and replies (no new table needed; `firstViewedAt` is now stamped on first
+  open). `GET /message-pages/:id/insights` (per page) and
+  `GET /message-pages/insights` (account-wide rollup + top pages), surfaced as a
+  funnel bar in the builder and across the top of the library.
+  - **Deferred:** an append-only `MessagePageEvent` timeline (for time-series
+    charts) and direct video upload — build them only when a use case needs the
+    per-event granularity the aggregates don't already give.
 
 Each phase ships as its own verified PR, merged when the preview is green.
 

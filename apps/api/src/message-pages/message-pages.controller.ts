@@ -12,7 +12,9 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type {
+  MessagePageAccountInsights,
   MessagePageDetail,
+  MessagePageInsights,
   MessagePageReply,
   MessagePageSummary,
 } from "@kudos/shared-types";
@@ -51,12 +53,28 @@ export class MessagePagesController {
     return this.messagePages.list(membership.accountId);
   }
 
+  /** Registered before `:id` so the literal path wins over the uuid param. */
+  @Get("insights")
+  accountInsights(
+    @CurrentMembership() membership: CurrentMembershipContext,
+  ): Promise<MessagePageAccountInsights> {
+    return this.messagePages.accountInsights(membership.accountId);
+  }
+
   @Get(":id")
   get(
     @CurrentMembership() membership: CurrentMembershipContext,
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<MessagePageDetail> {
     return this.messagePages.get(membership.accountId, id);
+  }
+
+  @Get(":id/insights")
+  insights(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<MessagePageInsights> {
+    return this.messagePages.insights(membership.accountId, id);
   }
 
   @Patch(":id")

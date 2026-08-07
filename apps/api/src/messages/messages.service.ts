@@ -234,6 +234,7 @@ export class MessagesService {
       where: { slug },
       select: {
         id: true,
+        firstViewedAt: true,
         messagePage: {
           select: {
             status: true,
@@ -284,7 +285,11 @@ export class MessagesService {
 
     await this.prisma.messagePageLink.update({
       where: { id: link.id },
-      data: { viewCount: { increment: 1 } },
+      data: {
+        viewCount: { increment: 1 },
+        // Stamp the first open so insights can show "first viewed" (Phase 3).
+        ...(link.firstViewedAt === null ? { firstViewedAt: new Date() } : {}),
+      },
     });
 
     // Re-derive the iframe src from the stored URL so the embed helper stays the
