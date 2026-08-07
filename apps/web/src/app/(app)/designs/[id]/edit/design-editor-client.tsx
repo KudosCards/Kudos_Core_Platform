@@ -11,6 +11,8 @@ import type {
 } from "@kudos/shared-types";
 import type { LayerMove } from "@kudos/shared-types";
 import {
+  CARD_HEIGHT,
+  CARD_SAFE_MARGIN,
   CARD_WIDTH,
   EDITOR_FONTS,
   FONT_CATEGORY_ORDER,
@@ -89,26 +91,70 @@ function fitWithinBox(
   };
 }
 
-function newTextElement(): Extract<DesignElement, { kind: "text" }> {
+/**
+ * A freshly-added text box gets an explicit width narrower than the safe area
+ * and is horizontally centred on the card, with its text centre-aligned — so it
+ * lands cleanly in the middle inside the guard rails rather than left-anchored
+ * and stretching past the safe margin. Sits just inside the top safe margin so
+ * it reads as deliberately placed. */
+const NEW_TEXT_WIDTH = CARD_WIDTH - CARD_SAFE_MARGIN * 6; // 450 - 144 = 306
+
+function newTextElement(existingCount: number): Extract<DesignElement, { kind: "text" }> {
+  // Cascade successive boxes down-right so they don't stack. The box keeps its
+  // top-centred base (text auto-grows downward, so it isn't vertically centred);
+  // the step is clamped to keep the wide box's right edge inside the safe area.
+  const step = (existingCount % PLACEMENT_WRAP) * PLACEMENT_STEP;
+  const baseX = (CARD_WIDTH - NEW_TEXT_WIDTH) / 2;
+  const maxX = CARD_WIDTH - CARD_SAFE_MARGIN - NEW_TEXT_WIDTH;
   return {
     kind: "text",
     id: crypto.randomUUID(),
     text: "New text",
-    x: 40,
-    y: 40,
+    x: Math.min(maxX, Math.round(baseX + step)),
+    y: CARD_SAFE_MARGIN + 16 + step,
+    width: NEW_TEXT_WIDTH,
+    align: "center",
     fontFamily: "Helvetica",
     fontSize: 20,
     color: "#111111",
   };
 }
 
-function newQrElement(): Extract<DesignElement, { kind: "qr" }> {
+/** Down-right step (design units) between successive added elements, so several
+ * inserts cascade instead of landing exactly on top of one another. */
+const PLACEMENT_STEP = 20;
+/** How many cascade steps before placement wraps back to centre. */
+const PLACEMENT_WRAP = 5;
+
+/**
+ * A centred origin for a freshly-added element of known size, nudged down-right
+ * by one cascade step per element already on the page so repeated inserts don't
+ * stack. Always clamped so the whole box sits inside the safe area (a box larger
+ * than the safe area pins to the top-left safe corner). Pure. */
+function placedOrigin(
+  size: { width: number; height: number },
+  existingCount: number,
+): { x: number; y: number } {
+  const step = (existingCount % PLACEMENT_WRAP) * PLACEMENT_STEP;
+  const clampAxis = (cardDim: number, dim: number) => {
+    const centre = (cardDim - dim) / 2;
+    const max = Math.max(CARD_SAFE_MARGIN, cardDim - CARD_SAFE_MARGIN - dim);
+    return Math.min(max, Math.max(CARD_SAFE_MARGIN, Math.round(centre + step)));
+  };
+  return {
+    x: clampAxis(CARD_WIDTH, size.width),
+    y: clampAxis(CARD_HEIGHT, size.height),
+  };
+}
+
+const QR_SIZE = 120;
+
+function newQrElement(existingCount: number): Extract<DesignElement, { kind: "qr" }> {
   return {
     kind: "qr",
     id: crypto.randomUUID(),
-    x: 40,
-    y: 40,
-    size: 120,
+    ...placedOrigin({ width: QR_SIZE, height: QR_SIZE }, existingCount),
+    size: QR_SIZE,
     rotation: 0,
   };
 }
@@ -123,16 +169,20 @@ const SHAPE_PALETTE: { shape: ShapeKind; glyph: string; label: string }[] = [
   { shape: "line", glyph: "─", label: "Line" },
 ];
 
-function newShapeElement(shape: ShapeKind): Extract<DesignElement, { kind: "shape" }> {
+function newShapeElement(
+  shape: ShapeKind,
+  existingCount: number,
+): Extract<DesignElement, { kind: "shape" }> {
   const isLine = shape === "line";
+  const width = 120;
+  const height = isLine ? 8 : 120;
   return {
     kind: "shape",
     id: crypto.randomUUID(),
     shape,
-    x: 40,
-    y: 40,
-    width: 120,
-    height: isLine ? 8 : 120,
+    ...placedOrigin({ width, height }, existingCount),
+    width,
+    height,
     // A line is stroke-only; the other shapes get a soft default fill.
     fill: isLine ? undefined : "#93c5fd",
     stroke: isLine ? "#111111" : undefined,
@@ -232,19 +282,25 @@ export function DesignEditorClient({
   }
 
   function addTextElement() {
-    const element = newTextElement();
+    const element = newTextElement(activePageElementCount());
     updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
     selectElement(element.id);
   }
 
+  /** How many elements the active page already holds — drives the cascade offset
+   * so a freshly-added element doesn't land exactly on the previous one. */
+  function activePageElementCount() {
+    return document_.pages.find((p) => p.name === activePage)?.elements.length ?? 0;
+  }
+
   function addQrElement() {
-    const element = newQrElement();
+    const element = newQrElement(activePageElementCount());
     updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
     selectElement(element.id);
   }
 
   function addShapeElement(shape: ShapeKind) {
-    const element = newShapeElement(shape);
+    const element = newShapeElement(shape, activePageElementCount());
     updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
     selectElement(element.id);
   }
@@ -470,8 +526,7 @@ export function DesignEditorClient({
       kind: "image",
       id: crypto.randomUUID(),
       assetUrl: url,
-      x: 40,
-      y: 40,
+      ...placedOrigin({ width, height }, activePageElementCount()),
       width,
       height,
       rotation: 0,
