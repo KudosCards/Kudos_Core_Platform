@@ -7,7 +7,10 @@ import {
 import { MessagePageVideoProvider, MessagePageVideoType, Prisma } from "@prisma/client";
 import {
   parseVideoEmbed,
+  type MessagePageAccountInsights,
   type MessagePageDetail,
+  type MessagePageFunnel,
+  type MessagePageInsights,
   type MessagePageReply,
   type MessagePageSummary,
 } from "@kudos/shared-types";
@@ -26,6 +29,7 @@ const PAGE_INCLUDE = {
       slug: true,
       viewCount: true,
       ctaClickCount: true,
+      firstViewedAt: true,
       orderRecipientId: true,
       createdAt: true,
       replies: { select: { readAt: true } },
@@ -284,6 +288,69 @@ export class MessagePagesService {
       data: { readAt: new Date() },
     });
   }
+
+  /** One page's engagement funnel + when it was first opened (Phase 3). */
+  async insights(accountId: string, id: string): Promise<MessagePageInsights> {
+    const page = await this.prisma.messagePage.findFirst({
+      where: { id, accountId },
+      include: PAGE_INCLUDE,
+    });
+    if (!page) {
+      throw new NotFoundException("Message page not found");
+    }
+    const firstViewedAt = page.links.reduce<Date | null>((earliest, link) => {
+      if (!link.firstViewedAt) return earliest;
+      return earliest === null || link.firstViewedAt < earliest ? link.firstViewedAt : earliest;
+    }, null);
+    return { funnel: computeFunnel(page.links), firstViewedAt };
+  }
+
+  /** The funnel summed across every authored page, plus the most-viewed few
+   * (Phase 3). Reads are open, so a downgraded account still sees its numbers. */
+  async accountInsights(accountId: string): Promise<MessagePageAccountInsights> {
+    const pages = await this.prisma.messagePage.findMany({
+      where: { accountId, createdByUserId: { not: null } },
+      include: PAGE_INCLUDE,
+    });
+    const topPages = pages
+      .map((page) => ({
+        id: page.id,
+        title: page.title,
+        emoji: page.emoji,
+        totalViews: page.links.reduce((sum, link) => sum + link.viewCount, 0),
+      }))
+      .filter((page) => page.totalViews > 0)
+      .sort((a, b) => b.totalViews - a.totalViews)
+      .slice(0, 5);
+    return {
+      pageCount: pages.length,
+      funnel: computeFunnel(pages.flatMap((page) => page.links)),
+      topPages,
+    };
+  }
+}
+
+/** The engagement funnel over a set of per-card links: distinct cards at each
+ * stage, plus the raw event totals. */
+function computeFunnel(links: PagePayload["links"]): MessagePageFunnel {
+  const funnel: MessagePageFunnel = {
+    sent: links.length,
+    viewed: 0,
+    clicked: 0,
+    replied: 0,
+    totalViews: 0,
+    totalClicks: 0,
+    totalReplies: 0,
+  };
+  for (const link of links) {
+    funnel.totalViews += link.viewCount;
+    funnel.totalClicks += link.ctaClickCount;
+    funnel.totalReplies += link.replies.length;
+    if (link.viewCount > 0) funnel.viewed += 1;
+    if (link.ctaClickCount > 0) funnel.clicked += 1;
+    if (link.replies.length > 0) funnel.replied += 1;
+  }
+  return funnel;
 }
 
 /** The page's own standalone QR (a link with no order recipient), else its

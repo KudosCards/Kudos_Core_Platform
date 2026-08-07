@@ -107,6 +107,47 @@ export const submitMessageReplyInputSchema = z.object({
 });
 export type SubmitMessageReplyInput = z.infer<typeof submitMessageReplyInputSchema>;
 
+/**
+ * The engagement funnel (Phase 3, ADR 0132), derived from the per-card links:
+ * how many cards were sent, then opened, then had the CTA clicked, then were
+ * replied to. `sent`/`viewed`/`clicked`/`replied` count distinct cards (links);
+ * the `total*` are the raw event totals across them.
+ */
+export const messagePageFunnelSchema = z.object({
+  sent: z.number().int().nonnegative(),
+  viewed: z.number().int().nonnegative(),
+  clicked: z.number().int().nonnegative(),
+  replied: z.number().int().nonnegative(),
+  totalViews: z.number().int().nonnegative(),
+  totalClicks: z.number().int().nonnegative(),
+  totalReplies: z.number().int().nonnegative(),
+});
+export type MessagePageFunnel = z.infer<typeof messagePageFunnelSchema>;
+
+/** Per-page insights: its funnel plus when it was first opened. */
+export const messagePageInsightsSchema = z.object({
+  funnel: messagePageFunnelSchema,
+  /** When any of this page's cards was first opened, or null if never. */
+  firstViewedAt: z.coerce.date().nullable(),
+});
+export type MessagePageInsights = z.infer<typeof messagePageInsightsSchema>;
+
+/** Account-wide insights: the funnel summed across every authored page, plus how
+ * many pages it spans and the most-viewed few. */
+export const messagePageAccountInsightsSchema = z.object({
+  pageCount: z.number().int().nonnegative(),
+  funnel: messagePageFunnelSchema,
+  topPages: z.array(
+    z.object({
+      id: z.string().uuid(),
+      title: z.string(),
+      emoji: z.string().nullable(),
+      totalViews: z.number().int().nonnegative(),
+    }),
+  ),
+});
+export type MessagePageAccountInsights = z.infer<typeof messagePageAccountInsightsSchema>;
+
 /** A reply as shown on the dashboard — the message plus which card/recipient it
  * came from (from the link), and its account-level read state. */
 export const messagePageReplySchema = z.object({
