@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { CardDesign } from "@kudos/shared-types";
+import { CARD_SIZE_NOTICE } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CardsHeader } from "./cards-header";
 import { CardsGalleryClient } from "./cards-gallery-client";
@@ -29,6 +30,9 @@ export default async function CardsPage() {
           <p className="text-slate-600">
             Pick a design you love, personalise it with your centre&apos;s message, and we print and
             post a real card. No account needed to browse.
+          </p>
+          <p className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+            {CARD_SIZE_NOTICE}
           </p>
         </div>
         <div className="mt-8">

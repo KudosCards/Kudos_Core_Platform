@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
+import { CARD_SIZE_LABEL } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
 import { CardsHeader } from "../cards-header";
@@ -92,6 +93,10 @@ export default async function CardPreviewPage({ params }: { params: Promise<{ id
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-emerald-500">✓</span> Add a QR video message inside
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-emerald-500">✓</span> Printed {CARD_SIZE_LABEL} — more sizes
+                coming soon
               </li>
             </ul>
             <div className="pt-2">

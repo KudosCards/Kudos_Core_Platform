@@ -1,4 +1,5 @@
 import type { PricingBreakdown } from "@kudos/shared-types";
+import { CARD_SIZE_NOTICE } from "@kudos/shared-types";
 import { formatGbp } from "@/lib/orders";
 
 function Row({
@@ -49,6 +50,9 @@ export function PricingBreakdownCard({
       <Row label={`VAT (${vatRatePercent}%)`} value={formatGbp(vatMinor)} />
       <Row label="Postage (VAT-exempt)" value={postageMinor > 0 ? formatGbp(postageMinor) : "—"} />
       <Row label={estimate ? "Estimated total" : "Total"} value={formatGbp(totalMinor)} bold />
+      {/* Single-size notice: while we stock only A6, every buyer sees the size
+          before they pay. Remove/adapt when more sizes ship. */}
+      <p className="pt-1 text-xs text-muted">{CARD_SIZE_NOTICE}</p>
     </div>
   );
 }
