@@ -16,7 +16,7 @@ const STAGES = [
 export function FunnelBar({ funnel }: { funnel: MessagePageFunnel }) {
   const pct = (n: number) => (funnel.sent > 0 ? Math.round((n / funnel.sent) * 100) : 0);
   return (
-    <div className="grid grid-cols-4 gap-2">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       {STAGES.map((stage, index) => (
         <div
           key={stage.key}
