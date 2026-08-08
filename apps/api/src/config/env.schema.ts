@@ -46,6 +46,17 @@ export const envSchema = z.object({
   // docs/adr/0133-trust-proxy-and-rate-limit-integrity.md.
   TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(1).catch(1),
 
+  // Enables the GET /health/ip diagnostic (echoes how Express resolved the
+  // caller's IP) used to verify TRUST_PROXY_HOPS against the real proxy
+  // topology — see ADR 0133. OFF by default: the route returns 404 unless this
+  // is exactly "true" or "1". Turn it on temporarily to re-verify after any
+  // change to the edge/proxy setup, then turn it back off. Kept as a plain
+  // string so ConfigService reads it live; blank ⇒ unset (disabled).
+  IP_DIAGNOSTIC_ENABLED: z
+    .string()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+
   DATABASE_URL: z.string().url(),
   DIRECT_URL: z.string().url(),
 

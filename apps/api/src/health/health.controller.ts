@@ -1,4 +1,4 @@
-import { Controller, Get, Req } from "@nestjs/common";
+import { Controller, Get, NotFoundException, Req } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ApiTags } from "@nestjs/swagger";
 import {
@@ -61,8 +61,10 @@ export class HealthController {
    *       injected value wins, TRUST_PROXY_HOPS is too high and the rate limit
    *       is spoofable — lower it by one and re-test.
    *
-   * Exposes only the caller's own forwarding info plus the configured hop count
-   * (no secrets). Safe to keep as a permanent ops diagnostic.
+   * OFF by default — returns 404 unless IP_DIAGNOSTIC_ENABLED is "true"/"1", so
+   * it isn't a standing endpoint. Flip it on to re-verify after any edge/proxy
+   * change, then off again. Exposes only the caller's own forwarding info plus
+   * the configured hop count (no secrets).
    */
   @Public()
   @Get("ip")
@@ -73,6 +75,10 @@ export class HealthController {
     socketRemoteAddress: string | null;
     trustProxyHops: number;
   } {
+    const enabled = this.config.get("IP_DIAGNOSTIC_ENABLED", { infer: true });
+    if (enabled !== "true" && enabled !== "1") {
+      throw new NotFoundException();
+    }
     return {
       resolvedIp: req.ip ?? null,
       forwardedChain: req.ips ?? [],
