@@ -42,7 +42,9 @@ export function MessagePageView({
       {emoji && <div className="text-6xl leading-none sm:text-7xl">{emoji}</div>}
 
       {title && (
-        <h1 className="text-3xl font-bold tracking-tight text-balance sm:text-4xl">{title}</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-balance break-words sm:text-4xl">
+          {title}
+        </h1>
       )}
 
       {greetingName && (
@@ -72,7 +74,7 @@ export function MessagePageView({
 
       {messageHtml && (
         <div
-          className="w-full text-left text-lg leading-relaxed text-foreground/80 [&_a]:text-accent [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-6"
+          className="w-full break-words text-left text-lg leading-relaxed text-foreground/80 [&_a]:break-words [&_a]:text-accent [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-6"
           dangerouslySetInnerHTML={{ __html: messageHtml }}
         />
       )}
