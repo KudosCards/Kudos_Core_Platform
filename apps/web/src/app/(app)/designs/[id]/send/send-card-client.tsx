@@ -1,7 +1,7 @@
 "use client";
 
 import type { BatchOrder, DesignDocument, MessagePageSummary } from "@kudos/shared-types";
-import { hasQrElement } from "@kudos/shared-types";
+import { hasQrElement, linkedMessagePageId } from "@kudos/shared-types";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
@@ -98,7 +98,7 @@ export function SendCardClient({
   // Default to the page linked in the designer (ADR 0137) so the customer
   // doesn't re-pick what they already chose — but only if it's still an active
   // page, else fall back to "no page" and let them choose.
-  const designLinkedPageId = designDocument.messagePageId ?? null;
+  const designLinkedPageId = linkedMessagePageId(designDocument);
   const [messagePageId, setMessagePageId] = useState<string>(() =>
     designLinkedPageId && activeMessagePages.some((page) => page.id === designLinkedPageId)
       ? designLinkedPageId
