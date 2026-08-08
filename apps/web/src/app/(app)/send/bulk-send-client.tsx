@@ -16,6 +16,7 @@ import {
   CARD_PRICE_MINOR,
   hasMergeTokens,
   hasQrElement,
+  linkedMessagePageId,
   POSTAGE_MINOR as SHARED_POSTAGE_MINOR,
   ukPostcodeRegex,
 } from "@kudos/shared-types";
@@ -221,7 +222,7 @@ export function BulkSendClient({
   // designer (ADR 0137), when it's still an active page. Switching design
   // re-defaults it (see the design picker's onClick).
   const linkedPageIfActive = (design: SavedDesign | undefined): string => {
-    const linked = design?.document.messagePageId ?? null;
+    const linked = linkedMessagePageId(design?.document);
     return linked && messagePages.some((page) => page.status === "active" && page.id === linked)
       ? linked
       : "";

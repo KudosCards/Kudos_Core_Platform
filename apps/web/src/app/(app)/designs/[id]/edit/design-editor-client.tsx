@@ -27,7 +27,7 @@ import { STICKERS, STICKER_INSERT_SIZE } from "@/lib/stickers";
 import { CLIPART_CATEGORIES } from "@/lib/clipart";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { createClient } from "@/lib/supabase/client";
@@ -318,7 +318,10 @@ export function DesignEditorClient({
   // option; a raw video link is the shortcut. `qrMode` is the intent (so a user
   // with no pages yet can still choose "message page" and see the create
   // prompt); `document_.messagePageId` is the persisted choice.
-  const activeQrMessagePages = messagePages.filter((mp) => mp.status === "active");
+  const activeQrMessagePages = useMemo(
+    () => messagePages.filter((mp) => mp.status === "active"),
+    [messagePages],
+  );
   const [qrMode, setQrMode] = useState<"page" | "video">(
     savedDesign.document.messagePageId ? "page" : "video",
   );
@@ -988,12 +991,22 @@ export function DesignEditorClient({
                 activeQrMessagePages.length > 0 ? (
                   <>
                     <select
-                      value={document_.messagePageId ?? ""}
+                      // Fall back to the placeholder when the stored id no longer
+                      // matches an active page (e.g. it was archived after
+                      // linking) so the select never shows a phantom selection.
+                      value={selectedQrMessagePage ? (document_.messagePageId ?? "") : ""}
                       onChange={(e) =>
                         setDocument((doc) => ({ ...doc, messagePageId: e.target.value || null }))
                       }
                       className="rounded-md border border-black/10 px-2 py-1 text-sm text-foreground dark:border-white/10"
                     >
+                      {!selectedQrMessagePage && (
+                        <option value="" disabled>
+                          {document_.messagePageId
+                            ? "Linked page unavailable — choose another"
+                            : "Choose a message page…"}
+                        </option>
+                      )}
                       {activeQrMessagePages.map((mp) => (
                         <option key={mp.id} value={mp.id}>
                           {mp.emoji ? `${mp.emoji} ` : ""}
