@@ -13,6 +13,7 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { ApiBearerAuth, ApiSecurity, ApiTags } from "@nestjs/swagger";
 import { ConfigService } from "@nestjs/config";
 import type { AccountApiKey } from "@prisma/client";
@@ -30,6 +31,7 @@ import {
 } from "../recipients/recipients.service";
 import { ApiKeyService } from "./api-key.service";
 import { ApiKeyGuard } from "./api-key.guard";
+import { ApiKeyThrottlerGuard } from "./api-key-throttler.guard";
 import {
   CrmConnectionsService,
   type CrmConnectionView,
@@ -231,7 +233,11 @@ export class IntegrationsController {
    * caller) hits this to validate the key and label the connection. Non-secret. */
   @ApiSecurity("api-key")
   @Public()
-  @UseGuards(ApiKeyGuard)
+  // ApiKeyGuard first (populates request.apiKey), then the throttler keys the
+  // limit on that key — a per-account budget, not per-IP, so shared inbound
+  // source IPs (e.g. Zapier) don't let one account throttle another. ADR 0134.
+  @UseGuards(ApiKeyGuard, ApiKeyThrottlerGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Get("me")
   me(
     @Req() request: Request,
@@ -242,7 +248,11 @@ export class IntegrationsController {
 
   @ApiSecurity("api-key")
   @Public()
-  @UseGuards(ApiKeyGuard)
+  // Per-account budget (keyed on the API key, not the IP — see /me above and
+  // ADR 0134). Higher than /me because a legitimate sync pushes contacts in
+  // bursts; still a backstop against a compromised key flooding ingestion.
+  @UseGuards(ApiKeyGuard, ApiKeyThrottlerGuard)
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
   @Post("contacts")
   ingest(@Req() request: Request, @Body() dto: IngestContactsDto): Promise<IngestResult> {
     // ApiKeyGuard guarantees request.apiKey is set.
