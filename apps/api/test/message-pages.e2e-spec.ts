@@ -16,6 +16,10 @@ import { EMAIL_CLIENT } from "../src/email/email.client";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
+// Arm engagement-event capture for this suite (ADR 0136, Phase 2). Set before
+// the app boots so ConfigModule validates it on; cleaned up in afterAll.
+process.env.MESSAGE_EVENTS_ENABLED = "true";
+
 describe("Message Pages library (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
@@ -30,6 +34,7 @@ describe("Message Pages library (e2e)", () => {
   beforeEach(() => sendTransactional.mockClear());
 
   afterAll(async () => {
+    delete process.env.MESSAGE_EVENTS_ENABLED;
     await app.close();
   });
 
@@ -409,5 +414,41 @@ describe("Message Pages library (e2e)", () => {
       .get(`/message-pages/${page.id}/insights`)
       .set("Authorization", `Bearer ${other.token}`)
       .expect(404);
+  });
+
+  it("records an append-only engagement event per view, click and reply (ADR 0136)", async () => {
+    const { token, accountId } = await signUp();
+    const created = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Track me", allowReplies: true, ctaLabel: "Go", ctaUrl: "https://example.com/y" })
+      .expect(201);
+    const page = messagePageDetailSchema.parse(created.body);
+    const slug = page.primarySlug!;
+
+    await request(app.getHttpServer()).get(`/messages/${slug}`).expect(200);
+    await request(app.getHttpServer()).get(`/messages/${slug}/cta`).expect(302);
+    await request(app.getHttpServer())
+      .post(`/messages/${slug}/replies`)
+      .send({ body: "Hi" })
+      .expect(202);
+
+    const events = await prisma.messagePageEvent.findMany({
+      where: { messagePageId: page.id },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(events.map((event) => event.type)).toEqual(["viewed", "cta_clicked", "replied"]);
+    // accountId/messagePageId are denormalised onto every row (no join needed).
+    expect(events.every((event) => event.accountId === accountId)).toBe(true);
+    expect(events.every((event) => event.messagePageId === page.id)).toBe(true);
+
+    // An archived page's view is not counted, and so emits no event either.
+    await request(app.getHttpServer())
+      .delete(`/message-pages/${page.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(204);
+    await request(app.getHttpServer()).get(`/messages/${slug}`).expect(200);
+    const afterArchive = await prisma.messagePageEvent.count({ where: { messagePageId: page.id } });
+    expect(afterArchive).toBe(3);
   });
 });
