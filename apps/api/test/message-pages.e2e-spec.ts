@@ -7,6 +7,7 @@ import {
   messagePageInsightsSchema,
   messagePageReplySchema,
   messagePageSummarySchema,
+  messagePageTimeSeriesSchema,
 } from "@kudos/shared-types";
 import { z } from "zod";
 import type { App } from "supertest/types";
@@ -479,5 +480,75 @@ describe("Message Pages library (e2e)", () => {
 
     const remaining = await prisma.messagePageEvent.findMany({ where: { messagePageId: page.id } });
     expect(remaining.map((event) => event.id)).toEqual([recent.id]);
+  });
+
+  it("returns a dense daily engagement time-series from the event log (ADR 0136)", async () => {
+    const { token, accountId } = await signUp();
+    const created = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Trends" })
+      .expect(201);
+    const page = messagePageDetailSchema.parse(created.body);
+    const link = await prisma.messagePageLink.findFirstOrThrow({
+      where: { messagePageId: page.id },
+    });
+    const base = { messagePageLinkId: link.id, messagePageId: page.id, accountId } as const;
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+    const today = new Date();
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+    await prisma.messagePageEvent.createMany({
+      data: [
+        { ...base, type: "viewed", createdAt: today },
+        { ...base, type: "viewed", createdAt: today },
+        { ...base, type: "cta_clicked", createdAt: today },
+        { ...base, type: "viewed", createdAt: twoDaysAgo },
+      ],
+    });
+
+    const series = messagePageTimeSeriesSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .get(`/message-pages/${page.id}/insights/timeseries?days=30`)
+          .set("Authorization", `Bearer ${token}`)
+          .expect(200)
+      ).body,
+    );
+
+    // Dense: exactly one entry per day in the window, oldest first, last = today.
+    expect(series.days).toBe(30);
+    expect(series.points).toHaveLength(30);
+    expect(series.points.at(-1)?.date).toBe(dayKey(today));
+    const byDate = new Map(series.points.map((point) => [point.date, point]));
+    expect(byDate.get(dayKey(today))).toMatchObject({ views: 2, clicks: 1, replies: 0 });
+    expect(byDate.get(dayKey(twoDaysAgo))).toMatchObject({ views: 1, clicks: 0, replies: 0 });
+    // A day with no activity is present and zero-filled.
+    const yesterday = dayKey(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    expect(byDate.get(yesterday)).toMatchObject({ views: 0, clicks: 0, replies: 0 });
+  });
+
+  it("clamps the time-series window and serves an account-wide series", async () => {
+    const { token } = await signUp();
+    // Over the max clamps to 365; a non-numeric value falls back to the default 30.
+    const capped = messagePageTimeSeriesSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .get("/message-pages/insights/timeseries?days=9999")
+          .set("Authorization", `Bearer ${token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(capped.points).toHaveLength(365);
+
+    const defaulted = messagePageTimeSeriesSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .get("/message-pages/insights/timeseries?days=notanumber")
+          .set("Authorization", `Bearer ${token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(defaulted.points).toHaveLength(30);
   });
 });

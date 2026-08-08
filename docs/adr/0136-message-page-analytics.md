@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (roadmap) — Phases 1–3 implemented; Phases 4–5 staged.
+Accepted (roadmap) — Phases 1–4 implemented; Phase 5 staged.
 
 ## Context
 

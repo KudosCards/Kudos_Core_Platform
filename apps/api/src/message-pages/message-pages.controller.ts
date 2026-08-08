@@ -8,15 +8,18 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import type {
-  MessagePageAccountInsights,
-  MessagePageDetail,
-  MessagePageInsights,
-  MessagePageReply,
-  MessagePageSummary,
+import {
+  resolveTimeSeriesDays,
+  type MessagePageAccountInsights,
+  type MessagePageDetail,
+  type MessagePageInsights,
+  type MessagePageReply,
+  type MessagePageSummary,
+  type MessagePageTimeSeries,
 } from "@kudos/shared-types";
 import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentMembership } from "../auth/current-membership.decorator";
@@ -61,6 +64,16 @@ export class MessagePagesController {
     return this.messagePages.accountInsights(membership.accountId);
   }
 
+  /** Account-wide daily engagement. `days` clamps to 1..365 (default 30).
+   * Registered before `:id` so the literal path wins over the uuid param. */
+  @Get("insights/timeseries")
+  accountTimeseries(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Query("days") days?: string,
+  ): Promise<MessagePageTimeSeries> {
+    return this.messagePages.accountTimeseries(membership.accountId, resolveTimeSeriesDays(days));
+  }
+
   @Get(":id")
   get(
     @CurrentMembership() membership: CurrentMembershipContext,
@@ -75,6 +88,16 @@ export class MessagePagesController {
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<MessagePageInsights> {
     return this.messagePages.insights(membership.accountId, id);
+  }
+
+  /** One page's daily engagement. `days` clamps to 1..365 (default 30). */
+  @Get(":id/insights/timeseries")
+  timeseries(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Query("days") days?: string,
+  ): Promise<MessagePageTimeSeries> {
+    return this.messagePages.timeseries(membership.accountId, id, resolveTimeSeriesDays(days));
   }
 
   @Patch(":id")

@@ -148,6 +148,35 @@ export const messagePageAccountInsightsSchema = z.object({
 });
 export type MessagePageAccountInsights = z.infer<typeof messagePageAccountInsightsSchema>;
 
+/** One day's engagement totals in a time-series (ADR 0136, Phase 4). `date` is a
+ * UTC calendar day, `YYYY-MM-DD`. */
+export const messagePageTimeSeriesPointSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  views: z.number().int().nonnegative(),
+  clicks: z.number().int().nonnegative(),
+  replies: z.number().int().nonnegative(),
+});
+export type MessagePageTimeSeriesPoint = z.infer<typeof messagePageTimeSeriesPointSchema>;
+
+/** Daily engagement over the last `days`, derived from the append-only event log.
+ * `points` is DENSE — one entry per day in the window, zero-filled where there
+ * was no activity — oldest first, so a chart can plot it without gap-filling. */
+export const messagePageTimeSeriesSchema = z.object({
+  days: z.number().int().positive(),
+  points: z.array(messagePageTimeSeriesPointSchema),
+});
+export type MessagePageTimeSeries = z.infer<typeof messagePageTimeSeriesSchema>;
+
+/** Bounds for the time-series window: 1 day … 1 year, default 30. */
+export const MESSAGE_PAGE_TIMESERIES = { minDays: 1, maxDays: 365, defaultDays: 30 } as const;
+
+/** Parse/clamp a raw `days` query param to the allowed window. */
+export function resolveTimeSeriesDays(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n)) return MESSAGE_PAGE_TIMESERIES.defaultDays;
+  return Math.min(MESSAGE_PAGE_TIMESERIES.maxDays, Math.max(MESSAGE_PAGE_TIMESERIES.minDays, Math.floor(n)));
+}
+
 /** A reply as shown on the dashboard — the message plus which card/recipient it
  * came from (from the link), and its account-level read state. */
 export const messagePageReplySchema = z.object({
