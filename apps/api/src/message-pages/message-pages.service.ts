@@ -13,6 +13,7 @@ import {
   type MessagePageInsights,
   type MessagePageReply,
   type MessagePageSummary,
+  type MessagePageTimeSeries,
 } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
@@ -39,6 +40,24 @@ const PAGE_INCLUDE = {
 } satisfies Prisma.MessagePageInclude;
 
 type PagePayload = Prisma.MessagePageGetPayload<{ include: typeof PAGE_INCLUDE }>;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** One day's raw event counts, as returned by the time-series aggregate. */
+interface DailyCountRow {
+  date: string;
+  views: number;
+  clicks: number;
+  replies: number;
+}
+
+/** Midnight UTC `daysBack` days before `from` — the inclusive start of a
+ * `daysBack + 1`-day window. UTC so it lines up with `date_trunc` on the
+ * UTC-stored `created_at`, independent of server timezone. */
+function startOfUtcDay(from: Date, daysBack: number): Date {
+  const midnight = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
+  return new Date(midnight - daysBack * MS_PER_DAY);
+}
 
 interface ResolvedVideo {
   videoType: MessagePageVideoType;
@@ -340,6 +359,56 @@ export class MessagePagesService {
       totalViews: page.totalViews,
     }));
     return { pageCount, funnel, topPages };
+  }
+
+  /** Daily engagement for one page over the last `days` (ADR 0136, Phase 4). */
+  async timeseries(accountId: string, id: string, days: number): Promise<MessagePageTimeSeries> {
+    const page = await this.prisma.messagePage.findFirst({
+      where: { id, accountId },
+      select: { id: true },
+    });
+    if (!page) {
+      throw new NotFoundException("Message page not found");
+    }
+    return this.dailySeries(days, Prisma.sql`message_page_id = ${id}`);
+  }
+
+  /** Daily engagement summed across the account's pages over the last `days`. */
+  async accountTimeseries(accountId: string, days: number): Promise<MessagePageTimeSeries> {
+    return this.dailySeries(days, Prisma.sql`account_id = ${accountId}`);
+  }
+
+  /**
+   * Daily viewed/clicked/replied counts over the last `days`, computed in the
+   * database from the event log and returned DENSE (one zero-filled entry per
+   * day, oldest first) so a chart needs no gap-filling. `scope` narrows the
+   * events to a page or an account. `days` is expected pre-clamped by the caller.
+   */
+  private async dailySeries(days: number, scope: Prisma.Sql): Promise<MessagePageTimeSeries> {
+    const cutoff = startOfUtcDay(new Date(), days - 1);
+    const rows = await this.prisma.$queryRaw<DailyCountRow[]>`
+      SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS date,
+        count(*) FILTER (WHERE type::text = 'viewed')::int AS views,
+        count(*) FILTER (WHERE type::text = 'cta_clicked')::int AS clicks,
+        count(*) FILTER (WHERE type::text = 'replied')::int AS replies
+      FROM message_page_events
+      WHERE ${scope} AND created_at >= ${cutoff}
+      GROUP BY date
+      ORDER BY date
+    `;
+    const byDate = new Map(rows.map((row) => [row.date, row]));
+    const points: MessagePageTimeSeries["points"] = [];
+    for (let i = 0; i < days; i++) {
+      const date = new Date(cutoff.getTime() + i * MS_PER_DAY).toISOString().slice(0, 10);
+      const row = byDate.get(date);
+      points.push({
+        date,
+        views: row?.views ?? 0,
+        clicks: row?.clicks ?? 0,
+        replies: row?.replies ?? 0,
+      });
+    }
+    return { days, points };
   }
 
   /**
