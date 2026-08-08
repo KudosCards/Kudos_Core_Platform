@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { LoggerModule } from "nestjs-pino";
 import { validateEnv } from "./config/env.schema";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -49,6 +50,18 @@ import { PlatformNotificationsModule } from "./platform-notifications/platform-n
       validate: validateEnv,
     }),
     ScheduleModule.forRoot(),
+    // One central rate-limiting registration for the whole app. ThrottlerModule
+    // is global, so a single forRoot here backs every `@UseGuards(ThrottlerGuard)`
+    // route — the public message-page, guest-order, returns, invites and
+    // enterprise-enquiry endpoints. Previously two modules (messages, guest)
+    // each called forRoot, so there were two competing global registrations and
+    // three other controllers silently relied on that side effect; whichever
+    // module initialised last won the shared storage/config. Centralising it
+    // removes that drift. Each route still sets its own limit via @Throttle, so
+    // this default is only a backstop. The default in-memory store is correct
+    // for a single instance; to keep limits accurate across multiple instances,
+    // swap in a shared store here (e.g. Redis) — see ADR 0133.
+    ThrottlerModule.forRoot([{ name: "default", ttl: 60_000, limit: 30 }]),
     LoggerModule.forRoot({
       pinoHttp: {
         level: process.env.NODE_ENV === "production" ? "info" : "debug",

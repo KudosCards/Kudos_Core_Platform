@@ -150,6 +150,7 @@ switch on in code, but confirm on the Stripe account:
 | Var | Value |
 |---|---|
 | `NODE_ENV` | `production` |
+| `TRUST_PROXY_HOPS` | number of proxy hops in front of the API, so per-IP rate limiting keys on the real client, not the edge proxy. **`1` for Railway's edge** (the default); `2` if a CDN/WAF sits in front; `0` to disable. **Never `true`.** Verify `req.ip` resolves the real client IP on staging before trusting it (ADR 0133) |
 | `DATABASE_URL` | Supabase pooled connection |
 | `DIRECT_URL` | Supabase direct connection |
 | `SUPABASE_URL` | project URL |

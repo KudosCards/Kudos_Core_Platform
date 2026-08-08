@@ -1,15 +1,14 @@
 import { Module } from "@nestjs/common";
-import { ThrottlerModule } from "@nestjs/throttler";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { MessagesController } from "./messages.controller";
 import { MessagesService } from "./messages.service";
 
 @Module({
-  // Configured here rather than globally so rate limiting applies only to the
-  // routes that opt in via @UseGuards(ThrottlerGuard) — every other endpoint
-  // in the API is gated by auth, not throttling, and shouldn't change.
-  // NotificationsModule provides the inbox producer for reply notifications.
-  imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 30 }]), NotificationsModule],
+  // Rate limiting is configured once, globally, in AppModule (see the
+  // ThrottlerModule note there); this module's public routes opt in per-route
+  // via @UseGuards(ThrottlerGuard) + @Throttle. NotificationsModule provides the
+  // inbox producer for reply notifications.
+  imports: [NotificationsModule],
   controllers: [MessagesController],
   providers: [MessagesService],
   exports: [MessagesService],
