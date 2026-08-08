@@ -82,15 +82,24 @@ const CARD_DESIGN_TEMPLATES = [
 ];
 
 /**
- * Mirrors the legacy site's three tiers (Free / Pro £9.97 / Centre £19.97).
- * Entitlement limits these plan ids are checked against. The paid tiers' Stripe
- * price ids come from env vars (see below) rather than being hardcoded, since
- * they differ between Stripe test mode and live.
+ * Mirrors the legacy site's three self-serve tiers (Free / Pro £9.97 /
+ * Centre £19.97) plus Enterprise. Entitlement limits these plan ids are checked
+ * against. The paid tiers' Stripe price ids come from env vars (see below)
+ * rather than being hardcoded, since they differ between Stripe test mode and
+ * live.
+ *
+ * Enterprise is the "Everything in Centre, plus…" quote-based tier (see
+ * ENTERPRISE_PLAN in shared-types): no Stripe object, provisioned by hand.
+ * Its row exists so an account manually set to planId "enterprise" resolves an
+ * entitlement (full access) instead of 404-ing. `cardDiscountPercent` is set to
+ * Centre's 15% as a safe floor — ops should set the negotiated volume rate per
+ * deal; `includedSeats` is effectively unlimited.
  */
 const PLAN_ENTITLEMENTS = [
   { planId: "free", recipientCap: 50, batchOrderMaxSize: 10, cardDiscountPercent: 0, autoSendEnabled: false, customArtworkEnabled: false, teamSeatsEnabled: false, includedSeats: 1, messagePagesEnabled: false },
   { planId: "pro", recipientCap: 200, batchOrderMaxSize: 200, cardDiscountPercent: 10, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: false, includedSeats: 1, messagePagesEnabled: true },
   { planId: "centre", recipientCap: 2000, batchOrderMaxSize: 500, cardDiscountPercent: 15, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: true, includedSeats: 3, messagePagesEnabled: true },
+  { planId: "enterprise", recipientCap: null, batchOrderMaxSize: 5000, cardDiscountPercent: 15, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: true, includedSeats: 999, messagePagesEnabled: true },
 ];
 
 /**
