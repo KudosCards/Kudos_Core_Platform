@@ -1,0 +1,12 @@
+-- Backfill the message-pages entitlement for existing paid plans.
+--
+-- The 20260807170000_message_pages_v2 migration added
+-- "message_pages_enabled" with DEFAULT false but — unlike the sibling
+-- entitlement flags (custom_artwork, team_seats, included_seats) — never
+-- backfilled the paid plans. Production only runs `prisma migrate deploy`,
+-- not the seed, so pro/centre rows stayed false and paying customers were
+-- wrongly shown the "upgrade to Pro" gate on the Message Pages screen.
+--
+-- This UPDATE brings the deployed rows in line with prisma/seed.ts. It is
+-- idempotent and safe to re-run.
+UPDATE "plan_entitlements" SET "message_pages_enabled" = true WHERE "plan_id" IN ('pro', 'centre');
