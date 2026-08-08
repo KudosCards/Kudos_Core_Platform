@@ -82,6 +82,7 @@ describe("Messages (e2e)", () => {
     recipientFirstName = "Sam",
     designVideoUrl?: string,
     messagePageId?: string,
+    designMessagePageId?: string,
   ): Promise<{ batchOrderId: string }> {
     const recipientResponse = await request(app.getHttpServer())
       .post("/recipients")
@@ -108,8 +109,9 @@ describe("Messages (e2e)", () => {
       .expect(201);
     const savedDesignId = (designResponse.body as { id: string }).id;
 
-    if (designVideoUrl) {
-      // Set the design's default video (the field the card designer writes).
+    if (designVideoUrl || designMessagePageId) {
+      // Set the design's default video and/or its linked message page (the
+      // fields the card designer writes — ADR 0132 / ADR 0137).
       const current = await prisma.savedDesign.findUniqueOrThrow({
         where: { id: savedDesignId },
         select: { document: true },
@@ -117,7 +119,11 @@ describe("Messages (e2e)", () => {
       await prisma.savedDesign.update({
         where: { id: savedDesignId },
         data: {
-          document: { ...(current.document as Prisma.JsonObject), videoUrl: designVideoUrl },
+          document: {
+            ...(current.document as Prisma.JsonObject),
+            ...(designVideoUrl ? { videoUrl: designVideoUrl } : {}),
+            ...(designMessagePageId ? { messagePageId: designMessagePageId } : {}),
+          },
         },
       });
     }
@@ -342,5 +348,57 @@ describe("Messages (e2e)", () => {
       (page) => page.id === pageId,
     );
     expect(summary?.linkCount).toBe(2);
+  });
+
+  it("links the design's message page at settlement when the send chose no page (ADR 0137)", async () => {
+    const { token, accountId } = await signUp();
+    await prisma.account.update({ where: { id: accountId }, data: { planId: "pro" } });
+
+    const created = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Linked in the designer" })
+      .expect(201);
+    const pageId = (created.body as { id: string }).id;
+
+    // The design carries the linked page; the send passes no messagePageId.
+    await createPaidOrder(token, "Pia", undefined, undefined, pageId);
+
+    // The card's QR link resolves to the design-linked page — no auto-page made.
+    const cardLink = await prisma.messagePageLink.findFirstOrThrow({
+      where: { orderRecipient: { recipient: { firstName: "Pia" } } },
+    });
+    expect(cardLink.messagePageId).toBe(pageId);
+  });
+
+  it("ignores a design's message page owned by another account, falling back to the video (ADR 0137)", async () => {
+    // A design document is user-editable JSON; it must not be able to bind a
+    // card to a page it doesn't own. Settlement validates ownership and degrades
+    // to the design's video (a fresh auto-page) when it fails.
+    const outsider = await signUp();
+    await prisma.account.update({
+      where: { id: outsider.accountId },
+      data: { planId: "pro" },
+    });
+    const foreignPage = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${outsider.token}`)
+      .send({ title: "Not yours" })
+      .expect(201);
+    const foreignPageId = (foreignPage.body as { id: string }).id;
+
+    const { token } = await signUp();
+    const seededVideo = "https://youtu.be/dQw4w9WgXcQ";
+    await createPaidOrder(token, "Rex", seededVideo, undefined, foreignPageId);
+
+    const cardLink = await prisma.messagePageLink.findFirstOrThrow({
+      where: { orderRecipient: { recipient: { firstName: "Rex" } } },
+    });
+    // Not the foreign page — a fresh auto-page seeded from the design's video.
+    expect(cardLink.messagePageId).not.toBe(foreignPageId);
+    const autoPage = await prisma.messagePage.findUniqueOrThrow({
+      where: { id: cardLink.messagePageId },
+    });
+    expect(autoPage.videoUrl).toBe(seededVideo);
   });
 });

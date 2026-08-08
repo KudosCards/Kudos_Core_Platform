@@ -217,7 +217,18 @@ export function BulkSendClient({
   // The "add a message page?" step only appears when the chosen design carries a
   // QR element to point at it (ADR 0132).
   const designHasQr = selectedDesign ? hasQrElement(selectedDesign.document) : false;
-  const [messagePageId, setMessagePageId] = useState<string>("");
+  // Default the message-page choice to the one linked in the chosen design's
+  // designer (ADR 0137), when it's still an active page. Switching design
+  // re-defaults it (see the design picker's onClick).
+  const linkedPageIfActive = (design: SavedDesign | undefined): string => {
+    const linked = design?.document.messagePageId ?? null;
+    return linked && messagePages.some((page) => page.status === "active" && page.id === linked)
+      ? linked
+      : "";
+  };
+  const [messagePageId, setMessagePageId] = useState<string>(() =>
+    linkedPageIfActive(selectedDesign),
+  );
   const activeMessagePages = useMemo(
     () => messagePages.filter((page) => page.status === "active"),
     [messagePages],
@@ -603,7 +614,12 @@ export function BulkSendClient({
                     <div key={design.id} className="flex flex-col gap-1.5">
                       <button
                         type="button"
-                        onClick={() => setSelectedDesignId(design.id)}
+                        onClick={() => {
+                          setSelectedDesignId(design.id);
+                          // Re-default the message page to the newly chosen
+                          // design's linked page (ADR 0137).
+                          setMessagePageId(linkedPageIfActive(design));
+                        }}
                         aria-pressed={active}
                         className={`flex flex-col gap-2 rounded-lg border p-2 text-left transition-colors ${
                           active
