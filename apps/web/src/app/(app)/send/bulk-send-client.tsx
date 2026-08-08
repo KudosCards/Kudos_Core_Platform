@@ -1,5 +1,6 @@
 "use client";
 
+import { Search } from "lucide-react";
 import type {
   BatchOrder,
   BatchOrderPreflight,
@@ -697,7 +698,8 @@ export function BulkSendClient({
                         : "rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-foreground/[0.04]"
                     }
                   >
-                    🔍 Review all {sendable.length} cards
+                    <Search className="mr-1.5 inline h-4 w-4 align-text-bottom" aria-hidden /> Review
+                    all {sendable.length} cards
                   </button>
                 </div>
               )}

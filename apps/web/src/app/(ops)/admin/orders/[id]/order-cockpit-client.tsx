@@ -1,5 +1,6 @@
 "use client";
 
+import { Printer, Truck } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminOrderLine, FulfillmentJobStatus } from "@kudos/shared-types";
@@ -223,7 +224,14 @@ export function OrderCockpit({
               onClick={() => void openView(jobIds)}
               className="rounded-full border border-border px-3 py-1.5 text-xs font-medium hover:bg-foreground/5 disabled:opacity-40"
             >
-              {printLoading ? "…" : `🖨 Print sheet (${jobIds.length})`}
+              {printLoading ? (
+                "…"
+              ) : (
+                <>
+                  <Printer className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden /> Print
+                  sheet ({jobIds.length})
+                </>
+              )}
             </button>
           )}
           {shippingEnabled && printedIds.length > 0 && (
@@ -240,7 +248,14 @@ export function OrderCockpit({
               }
               className="rounded-full border border-accent bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/10 disabled:opacity-40"
             >
-              {bulkBusy === "dispatch" ? "…" : `🚚 Dispatch all (${printedIds.length})`}
+              {bulkBusy === "dispatch" ? (
+                "…"
+              ) : (
+                <>
+                  <Truck className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden /> Dispatch
+                  all ({printedIds.length})
+                </>
+              )}
             </button>
           )}
           {printedIds.length > 0 && (
@@ -408,7 +423,14 @@ export function OrderCockpit({
                           title="Create a Royal Mail shipment, buy postage, get tracking"
                           className="rounded-full border border-accent bg-accent-soft px-3 py-1 text-xs font-medium text-accent hover:bg-accent/10 disabled:opacity-40"
                         >
-                          {rowBusy ? "…" : "🚚 Dispatch"}
+                          {rowBusy ? (
+                            "…"
+                          ) : (
+                            <>
+                              <Truck className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden />{" "}
+                              Dispatch
+                            </>
+                          )}
                         </button>
                       )}
                       {step && (

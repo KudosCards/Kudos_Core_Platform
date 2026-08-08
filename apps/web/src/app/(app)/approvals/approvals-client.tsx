@@ -1,5 +1,6 @@
 "use client";
 
+import { Zap } from "lucide-react";
 import { suggestFirstClass, type Occasion, type SavedDesign } from "@kudos/shared-types";
 import Link from "next/link";
 import { useState } from "react";
@@ -207,7 +208,8 @@ export function ApprovalsClient({
                                 title={nudge.reason}
                                 className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200"
                               >
-                                ⚡ {nudge.reason} Use First Class
+                                <Zap className="h-3.5 w-3.5" aria-hidden /> {nudge.reason} Use First
+                                Class
                               </button>
                             )}
                           </div>

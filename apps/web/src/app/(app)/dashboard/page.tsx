@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { Cake, Calendar, Contact, type LucideIcon } from "lucide-react";
 import type { Account, DashboardSummary } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { formatGbp } from "@/lib/orders";
@@ -46,10 +47,10 @@ export default function DashboardPage() {
 /** The three things a subscriber most often wants to do, front and centre — the
  * quickest paths to sending a card. Static, so it paints in the first flush. */
 function QuickActions() {
-  const actions: { href: string; label: string; sub: string; emoji: string; primary?: boolean }[] = [
-    { href: "/send", label: "Send a card", sub: "Pick a design, add a recipient, pay", emoji: "🎂", primary: true },
-    { href: "/get-started", label: "Upload contacts", sub: "Import your list from a CSV", emoji: "📇" },
-    { href: "/calendar", label: "View calendar", sub: "Upcoming birthdays & dispatches", emoji: "📅" },
+  const actions: { href: string; label: string; sub: string; Icon: LucideIcon; primary?: boolean }[] = [
+    { href: "/send", label: "Send a card", sub: "Pick a design, add a recipient, pay", Icon: Cake, primary: true },
+    { href: "/get-started", label: "Upload contacts", sub: "Import your list from a CSV", Icon: Contact },
+    { href: "/calendar", label: "View calendar", sub: "Upcoming birthdays & dispatches", Icon: Calendar },
   ];
   return (
     <div className="grid gap-3 sm:grid-cols-3">
@@ -63,9 +64,10 @@ function QuickActions() {
               : "border-border hover:border-foreground/20 hover:bg-foreground/[0.02]"
           }`}
         >
-          <span className="text-2xl" aria-hidden>
-            {action.emoji}
-          </span>
+          <action.Icon
+            className={`h-6 w-6 shrink-0 ${action.primary ? "text-accent" : "text-muted"}`}
+            aria-hidden
+          />
           <span className="flex flex-col">
             <span className={`font-semibold ${action.primary ? "text-accent" : ""}`}>
               {action.label}

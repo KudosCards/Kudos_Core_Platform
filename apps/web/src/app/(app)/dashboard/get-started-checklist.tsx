@@ -1,5 +1,6 @@
 "use client";
 
+import { Target } from "lucide-react";
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
@@ -128,9 +129,7 @@ export function GetStartedChecklist({
         className="card flex items-center justify-between gap-3 p-3 text-left text-sm text-muted transition-colors hover:border-foreground/20 hover:text-foreground"
       >
         <span>
-          <span aria-hidden className="mr-2">
-            🎯
-          </span>
+          <Target className="mr-2 inline h-4 w-4 align-text-bottom" aria-hidden />
           Show setup guide
         </span>
         {progressBadge}

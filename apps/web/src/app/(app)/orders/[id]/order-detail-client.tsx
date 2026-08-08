@@ -1,5 +1,6 @@
 "use client";
 
+import { Calendar } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
@@ -193,7 +194,8 @@ export function OrderDetailClient({
         <div className="flex flex-col gap-3 rounded-xl border border-accent/30 bg-accent-soft p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium text-foreground">
-              📅 Scheduled — we&apos;ll post {order.orderRecipients.length === 1 ? "it" : "these"} on{" "}
+              <Calendar className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden /> Scheduled —
+              we&apos;ll post {order.orderRecipients.length === 1 ? "it" : "these"} on{" "}
               {formatOrderDate(scheduledDispatch)}.
             </p>
             {canReschedule && !rescheduleOpen && (

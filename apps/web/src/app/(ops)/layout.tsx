@@ -1,3 +1,4 @@
+import { Printer, TriangleAlert } from "lucide-react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { AdminIdentity, MustShipSummary } from "@kudos/shared-types";
@@ -149,7 +150,11 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
             }`}
           >
             <span>
-              {shipAlert.urgent ? "⚠️ " : "🖨️ "}
+              {shipAlert.urgent ? (
+                <TriangleAlert className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden />
+              ) : (
+                <Printer className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden />
+              )}
               {shipAlert.text} — hit the 5-working-day deadline
             </span>
             <span className="shrink-0 underline underline-offset-2">Open queue →</span>

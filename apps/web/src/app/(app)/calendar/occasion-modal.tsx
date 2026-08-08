@@ -1,5 +1,6 @@
 "use client";
 
+import { Cake, Pin } from "lucide-react";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import type { Occasion } from "@kudos/shared-types";
@@ -171,8 +172,8 @@ export function OccasionModal({
                   <span className="inline-flex items-center gap-2">
                     {formatOccasionDate(occasion.dispatchDate)}
                     {occasion.dispatchDateOverridden && (
-                      <span title="Manually placed" aria-hidden>
-                        📌
+                      <span title="Manually placed">
+                        <Pin className="h-3.5 w-3.5" aria-hidden />
                       </span>
                     )}
                   </span>
@@ -204,9 +205,9 @@ export function OccasionModal({
               <Link
                 href={`/send?recipients=${occasion.recipientId}`}
                 onClick={onClose}
-                className="btn-accent"
+                className="btn-accent inline-flex items-center gap-1.5"
               >
-                🎂 Send a card
+                <Cake className="h-4 w-4" aria-hidden /> Send a card
               </Link>
             )}
             {isScheduled && (
