@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type {
   AdminOrderDetail,
+  CardSize,
   Customer360,
   DispatchReminderConfig,
   SeasonalDispatchRule,
@@ -20,8 +21,10 @@ import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import type { Paginated } from "../common/paginated";
 import { SeatBillingService, type SeatPriceStatus } from "../billing/seat-billing.service";
 import { DispatchConfigService } from "../dispatch/dispatch-config.service";
+import { CardSizeConfigService } from "./card-size-config.service";
 import { UpdateSeasonalRulesDto } from "./dto/update-seasonal-rules.dto";
 import { UpdateReminderConfigDto } from "./dto/update-reminder-config.dto";
+import { UpdatePrintCardSizeDto } from "./dto/update-print-card-size.dto";
 import {
   AdminService,
   type AdminOverview,
@@ -47,6 +50,7 @@ export class AdminController {
     private readonly adminCustomer: AdminCustomerService,
     private readonly seatBilling: SeatBillingService,
     private readonly dispatchConfig: DispatchConfigService,
+    private readonly cardSizeConfig: CardSizeConfigService,
   ) {}
 
   @Get("overview")
@@ -138,5 +142,25 @@ export class AdminController {
     @Body() dto: UpdateReminderConfigDto,
   ): Promise<{ config: DispatchReminderConfig }> {
     return { config: await this.dispatchConfig.updateReminderConfig(dto) };
+  }
+
+  /** The default print card size a print run opens on, plus the house default,
+   * for the ops print-size panel. Ops can still override per run in the print
+   * overlay. See docs/adr/0138-print-card-sizes.md. */
+  @Get("print/card-size")
+  async printCardSize(): Promise<{ size: CardSize; default: CardSize }> {
+    return {
+      size: await this.cardSizeConfig.getDefaultSize(),
+      default: this.cardSizeConfig.getHouseDefaultSize(),
+    };
+  }
+
+  /** Set the default print card size. Persisted, so the print run's default
+   * changes with no redeploy. See docs/adr/0138. */
+  @Put("print/card-size")
+  async updatePrintCardSize(
+    @Body() dto: UpdatePrintCardSizeDto,
+  ): Promise<{ size: CardSize }> {
+    return { size: await this.cardSizeConfig.setDefaultSize(dto.size) };
   }
 }

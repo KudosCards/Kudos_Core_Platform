@@ -1,9 +1,16 @@
 "use client";
 
-import type { DesignDocument, DesignPage } from "@kudos/shared-types";
-import { applyMergeTokens } from "@kudos/shared-types";
+import type { CardSize, DesignDocument, DesignPage } from "@kudos/shared-types";
+import {
+  applyMergeTokens,
+  CARD_SIZES,
+  cardSizeLabel,
+  DEFAULT_CARD_SIZE,
+  fittedCardMm,
+  mmToCssPx,
+} from "@kudos/shared-types";
 import dynamic from "next/dynamic";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { facesOf } from "@/components/card-preview-lightbox";
 
@@ -40,21 +47,36 @@ function occasionLabel(card: PrintRunCard): string | null {
   return card.occasionType.charAt(0).toUpperCase() + card.occasionType.slice(1);
 }
 
+/** One face of one card, ready to lay out on its own physical page. */
+interface PrintFace {
+  key: string;
+  document: DesignDocument;
+  face: DesignPage["name"];
+  recipientName: string;
+  savedDesignName: string;
+}
+
 /**
  * A print-ready sheet of an entire run's personalised card faces — **every face
- * a design has** (front, the inside message, and back), one face per page, so
- * the personalised inside (where {name} usually lives) reaches physical
- * production, not just the cover. Uses the browser's native print → "Save as
- * PDF"; the print CSS in globals.css hides the app so only these cards print.
- * See docs/adr/0032 and 0118.
+ * a design has** (front, the inside message, and back), one face per physical
+ * page at a true A5 or A6 size, so what the operator saves as a PDF is the exact
+ * card that gets printed. The design (authored 3:4) is scaled to fit the A-page
+ * without distortion and centred with a small safe margin; the same millimetre
+ * page box is both the on-screen preview and the printed page, so preview =
+ * print. Ops picks A5/A6 per run (defaulting to the super-admin default); the
+ * choice drives an injected `@page` size. See docs/adr/0032, 0118 and 0138.
  */
 export function PrintRunOverlay({
   cards,
   onClose,
+  defaultSize = DEFAULT_CARD_SIZE,
 }: {
   cards: PrintRunCard[];
   onClose: () => void;
+  defaultSize?: CardSize;
 }) {
+  const [size, setSize] = useState<CardSize>(defaultSize);
+
   // Flag the body so the print stylesheet hides everything except this overlay,
   // and lock scroll while it's open.
   useEffect(() => {
@@ -72,14 +94,68 @@ export function PrintRunOverlay({
     };
   }, [onClose]);
 
+  const { pageWidthMm, pageHeightMm, cardWidthMm } = fittedCardMm(size);
+  // Render the Konva face at the CSS-pixel width that prints at the fitted
+  // millimetre width (96dpi paged-media reference), so the canvas is physically
+  // the right size on paper — not a fixed on-screen pixel size floated on A4.
+  const cardWidthPx = mmToCssPx(cardWidthMm);
+
+  // Flatten to one entry per face so we can drop the page break after the very
+  // last one (a trailing break can emit a blank final page in some browsers).
+  const faces: PrintFace[] = cards.flatMap((card) => {
+    // Merge once per card, then print every face the design has.
+    const merged = applyMergeTokens(card.document, {
+      firstName: card.recipientFirstName,
+      lastName: card.recipientLastName,
+      occasion: occasionLabel(card),
+      occasionDate: card.occasionDate,
+      customFields: card.recipientCustomFields,
+    });
+    return facesOf(merged).map((face) => ({
+      key: `${card.jobId}-${face}`,
+      document: merged,
+      face,
+      recipientName: `${card.recipientFirstName} ${card.recipientLastName}`,
+      savedDesignName: card.savedDesignName,
+    }));
+  });
+
   return createPortal(
     <div data-print-run className="fixed inset-0 z-[60] overflow-auto bg-white">
+      {/* Physical page size for print — drives the PDF/paper page. Injected so
+          it tracks the operator's A5/A6 choice; `margin: 0` lets the card's own
+          fitted margin be the only whitespace. */}
+      <style>{`@media print { @page { size: ${pageWidthMm}mm ${pageHeightMm}mm; margin: 0; } }`}</style>
+
       {/* Toolbar — screen only; never printed. */}
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-black/10 bg-white px-6 py-3 print:hidden">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-black/10 bg-white px-6 py-3 print:hidden">
         <span className="text-sm font-medium text-black">
           {cards.length} personalised card{cards.length === 1 ? "" : "s"} — every face, one per page
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {/* A5 / A6 size picker — changes the page size live so the preview is
+              exactly what prints. */}
+          <div
+            className="flex items-center overflow-hidden rounded-full border border-black/20"
+            role="group"
+            aria-label="Print size"
+          >
+            {CARD_SIZES.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setSize(option)}
+                aria-pressed={size === option}
+                title={cardSizeLabel(option)}
+                className={`px-3 py-1.5 text-sm font-medium ${
+                  size === option ? "bg-black text-white" : "bg-white text-black hover:bg-black/5"
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          <span className="hidden text-xs text-black/50 sm:inline">{cardSizeLabel(size)}</span>
           <button
             type="button"
             onClick={() => window.print()}
@@ -97,30 +173,30 @@ export function PrintRunOverlay({
         </div>
       </div>
 
-      <div className="mx-auto flex max-w-3xl flex-col items-center gap-8 px-6 py-8 print:gap-0 print:p-0">
-        {cards.flatMap((card) => {
-          // Merge once per card, then print every face the design has, each on
-          // its own page — so the inside message prints, not just the front.
-          const merged = applyMergeTokens(card.document, {
-            firstName: card.recipientFirstName,
-            lastName: card.recipientLastName,
-            occasion: occasionLabel(card),
-            occasionDate: card.occasionDate,
-            customFields: card.recipientCustomFields,
-          });
-          return facesOf(merged).map((face) => (
+      <div className="mx-auto flex flex-col items-center gap-8 px-6 py-8 print:gap-0 print:p-0">
+        {faces.map((entry, index) => (
+          <div key={entry.key} className="flex flex-col items-center gap-2">
+            <span className="text-xs text-black/60 print:hidden">
+              {entry.recipientName} · {entry.savedDesignName} · {FACE_LABEL[entry.face]}
+            </span>
+            {/* The physical page: a true A5/A6 box (mm) that renders at real size
+                on screen and maps 1:1 to the printed page. The card is centred
+                inside with the fitted safe margin. */}
             <div
-              key={`${card.jobId}-${face}`}
-              className="flex break-after-page flex-col items-center gap-2 print:min-h-screen print:justify-center"
+              style={{ width: `${pageWidthMm}mm`, height: `${pageHeightMm}mm` }}
+              className={`flex items-center justify-center bg-white ${
+                index < faces.length - 1 ? "break-after-page" : ""
+              } border border-black/10 shadow-sm print:border-0 print:shadow-none`}
             >
-              <CardFacePreview document={merged} width={360} face={face} />
-              <span className="text-xs text-black/60 print:hidden">
-                {card.recipientFirstName} {card.recipientLastName} · {card.savedDesignName} ·{" "}
-                {FACE_LABEL[face]}
-              </span>
+              <CardFacePreview
+                document={entry.document}
+                width={cardWidthPx}
+                face={entry.face}
+                bordered={false}
+              />
             </div>
-          ));
-        })}
+          </div>
+        ))}
       </div>
     </div>,
     document.body,

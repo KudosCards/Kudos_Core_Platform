@@ -1,5 +1,5 @@
-import type { DueFilter, FulfillmentCounts } from "@kudos/shared-types";
-import { DUE_FILTERS } from "@kudos/shared-types";
+import type { CardSize, DueFilter, FulfillmentCounts } from "@kudos/shared-types";
+import { DEFAULT_CARD_SIZE, DUE_FILTERS } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import {
   FulfillmentClient,
@@ -57,9 +57,13 @@ export default async function FulfillmentPage({
     jobsQuery.set("due", due);
   }
 
-  const [result, counts] = await Promise.all([
+  const [result, counts, printSize] = await Promise.all([
     serverApiFetch<Paginated<FulfillmentJob>>(`/fulfillment/jobs?${jobsQuery.toString()}`),
     serverApiFetch<FulfillmentCounts>("/fulfillment/counts"),
+    // The super-admin default print size the print overlay opens on. Both this
+    // page and the setting live behind PlatformAdminGuard (the whole ops area),
+    // so reading the admin setting here is in-scope. See ADR 0138.
+    serverApiFetch<{ size: CardSize }>("/admin/print/card-size"),
   ]);
 
   const emptyCounts: FulfillmentCounts = {
@@ -87,6 +91,7 @@ export default async function FulfillmentPage({
       due={due}
       counts={counts ?? emptyCounts}
       dueOn={dueOn}
+      defaultPrintSize={printSize?.size ?? DEFAULT_CARD_SIZE}
     />
   );
 }

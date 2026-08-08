@@ -12,6 +12,9 @@ export const PLATFORM_SETTING_KEYS = {
   /** JSON DispatchReminderConfig — runtime knobs for the send-by-5 ops reminder
    * (on/off, send hour, lead window, escalation). See docs/adr/0117. */
   dispatchReminderConfig: "dispatch_reminder_config",
+  /** The default card size ("A5" | "A6") a print run opens on; ops can override
+   * it per run. See docs/adr/0138-print-card-sizes.md. */
+  defaultPrintCardSize: "default_print_card_size",
 } as const;
 
 /**

@@ -7,6 +7,7 @@ import { planLabel } from "@/lib/admin";
 import { SeatBillingSetup } from "./seat-billing-setup";
 import { SeasonalDispatchSetup } from "./seasonal-dispatch-setup";
 import { DispatchReminderSetup } from "./dispatch-reminder-setup";
+import { PrintSizeSetup } from "./print-size-setup";
 import { ArrivalSweepButton } from "./arrival-sweep-button";
 
 interface AdminOverview {
@@ -273,6 +274,9 @@ export default async function AdminOverviewPage() {
 
       {/* Send-by-5 dispatch reminder knobs (on/off, send time, window, escalation). */}
       <DispatchReminderSetup />
+
+      {/* Default print card size (A5/A6) the fulfilment print run opens on. */}
+      <PrintSizeSetup />
 
       {/* Force the estimated-arrival sweep for untracked stamped post (ADR 0124). */}
       <ArrivalSweepButton />
