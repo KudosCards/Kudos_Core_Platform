@@ -350,7 +350,12 @@ describe("Messages (e2e)", () => {
     expect(summary?.linkCount).toBe(2);
   });
 
-  it("links the design's message page at settlement when the send chose no page (ADR 0137)", async () => {
+  it("honours a send that chose no page even when the design links one (ADR 0137)", async () => {
+    // The send flow is authoritative: the composer pre-fills the design's linked
+    // page, so a send that arrives with no messagePageId is a deliberate "no
+    // page" — settlement must NOT silently re-attach the design's page (that
+    // would ignore the sender's opt-out). The design-linked page is resolved by
+    // the send composer (interactive) or auto-send (automatic), never here.
     const { token, accountId } = await signUp();
     await prisma.account.update({ where: { id: accountId }, data: { planId: "pro" } });
 
@@ -364,38 +369,34 @@ describe("Messages (e2e)", () => {
     // The design carries the linked page; the send passes no messagePageId.
     await createPaidOrder(token, "Pia", undefined, undefined, pageId);
 
-    // The card's QR link resolves to the design-linked page — no auto-page made.
+    // The card gets a fresh auto-page, not the design-linked page.
     const cardLink = await prisma.messagePageLink.findFirstOrThrow({
       where: { orderRecipient: { recipient: { firstName: "Pia" } } },
     });
-    expect(cardLink.messagePageId).toBe(pageId);
+    expect(cardLink.messagePageId).not.toBe(pageId);
+    const autoPage = await prisma.messagePage.findUniqueOrThrow({
+      where: { id: cardLink.messagePageId },
+    });
+    expect(autoPage.title).toBe("Your message");
+    // The design's linked page is untouched — it keeps only its standalone link.
+    const linkedPageLinks = await prisma.messagePageLink.count({
+      where: { messagePageId: pageId },
+    });
+    expect(linkedPageLinks).toBe(1);
   });
 
-  it("ignores a design's message page owned by another account, falling back to the video (ADR 0137)", async () => {
-    // A design document is user-editable JSON; it must not be able to bind a
-    // card to a page it doesn't own. Settlement validates ownership and degrades
-    // to the design's video (a fresh auto-page) when it fails.
-    const outsider = await signUp();
-    await prisma.account.update({
-      where: { id: outsider.accountId },
-      data: { planId: "pro" },
-    });
-    const foreignPage = await request(app.getHttpServer())
-      .post("/message-pages")
-      .set("Authorization", `Bearer ${outsider.token}`)
-      .send({ title: "Not yours" })
-      .expect(201);
-    const foreignPageId = (foreignPage.body as { id: string }).id;
-
+  it("mints a fresh auto-page from the design's video for a send that chose no page (ADR 0137)", async () => {
+    // A send with no chosen page always seeds a minimal auto-page from the
+    // design's video link — the design's own linked page is never consulted in
+    // the settlement path (ownership is enforced upstream, at order creation).
     const { token } = await signUp();
     const seededVideo = "https://youtu.be/dQw4w9WgXcQ";
-    await createPaidOrder(token, "Rex", seededVideo, undefined, foreignPageId);
+    await createPaidOrder(token, "Rex", seededVideo);
 
     const cardLink = await prisma.messagePageLink.findFirstOrThrow({
       where: { orderRecipient: { recipient: { firstName: "Rex" } } },
     });
-    // Not the foreign page — a fresh auto-page seeded from the design's video.
-    expect(cardLink.messagePageId).not.toBe(foreignPageId);
+    // A fresh auto-page seeded from the design's video.
     const autoPage = await prisma.messagePage.findUniqueOrThrow({
       where: { id: cardLink.messagePageId },
     });

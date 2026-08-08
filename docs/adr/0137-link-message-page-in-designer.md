@@ -61,14 +61,28 @@ A new optional `messagePageId` on `DesignDocument`, beside the existing
 
 ### Precedence (single, explicit rule)
 
-For each card at settlement:
+Each card's page is decided **at order creation** and carried on the order line;
+settlement honours that choice verbatim (it never re-derives from the design):
 
-1. **Send-time choice** — an explicit `messagePageId` on the order line
-   (the send flow / bulk composer), which the customer can override per send.
-2. **Design-linked page** — `DesignDocument.messagePageId`, validated active +
-   same account.
-3. **Raw video** — auto-create a minimal page seeded from `DesignDocument.videoUrl`.
+1. **Send-time choice** — the send/bulk composer pre-fills the design's linked
+   page as the default and lets the customer override it per send (including
+   clearing it to "no page"). Whatever the composer submits is the choice.
+2. **Auto-send fallback** — auto-send has no composer, so it resolves the
+   design's linked page itself at order creation, validated active + same
+   account, and sets it on the order line.
+3. **Raw video** — for a line with no page, settlement auto-creates a minimal
+   page seeded from `DesignDocument.videoUrl`.
 4. **None** — a plain page with no video.
+
+> **Amendment (post-implementation).** The original design resolved the
+> design-linked page **at settlement** (step 2 below), which could not tell an
+> explicit "no page" from "not chosen": a nullable `messagePageId` collapses
+> both to null, so a sender who cleared the page still had the design's page
+> re-attached — their opt-out was ignored. Resolution therefore moved *upstream*
+> to the point that knows the difference. The interactive composers already
+> carry an explicit choice; auto-send (the only path with no composer) now
+> resolves the design's linked page itself. Settlement no longer consults the
+> design document for the page, so a cleared choice is honoured everywhere.
 
 ### Phases
 
@@ -81,11 +95,12 @@ For each card at settlement:
 - **Phase 2 — Send flow.** The single-send and bulk composers pre-select the
   design's linked page as the default (still overridable), so the customer
   doesn't re-pick what they already chose in the designer.
-- **Phase 3 — Settlement.** `createForOrderRecipients` resolves the effective
-  page by the precedence above — the one change that covers single, bulk,
-  quick-send, and auto-send, because they all funnel through `settleFulfillment`.
-  The design-linked id is validated (`status: active`, `accountId` match) before
-  use; anything invalid falls through to the video/none path.
+- **Phase 3 — Settlement.** `createForOrderRecipients` mints each card's QR link
+  onto the order line's chosen page, or a fresh auto-page (seeded from the
+  design's video, else empty) when the line chose none. It does **not** re-derive
+  the design's linked page — see the amendment above: the page is chosen upstream
+  (composer or auto-send) so an explicit "no page" is preserved. The design-linked
+  id is validated (`status: active`, `accountId` match) at that upstream point.
 
 ### Phase 4–5 — Naming + preview
 
@@ -112,9 +127,13 @@ Video/Button/Replies badges) so the chosen page is tangible before send.
 - **FK column on `SavedDesign`.** Stronger integrity, but a migration, and it
   doesn't fit shared catalog templates. The JSON field with settlement-time
   validation gives equivalent safety for this ownership model.
-- **Resolve the design-linked page at order-creation in each path.** Rejected:
-  four code paths to keep in sync (and auto-send has no UI). Resolving once at
-  the shared settlement choke point is DRY and impossible to forget.
+- **Resolve the design-linked page only at the shared settlement choke point.**
+  The original choice (DRY, impossible to forget), later reversed by the
+  amendment above: settlement can't distinguish an explicit "no page" from "not
+  chosen", so it re-attached a page a sender had deliberately cleared. Resolution
+  now lives where the intent is known — the composers (which already carry an
+  explicit choice) and auto-send (the one path with no composer). Settlement
+  honours the line verbatim.
 - **Drop `videoUrl` entirely in favour of pages.** Rejected: the raw-link
   shortcut is the fastest path for a customer who just wants a video, and
   removing it would break existing designs.

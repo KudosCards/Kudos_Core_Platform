@@ -125,6 +125,37 @@ describe("Auto-send (e2e)", () => {
     return (response.body as { id: string }).id;
   }
 
+  async function createMessagePage(token: string, title: string): Promise<string> {
+    const response = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title })
+      .expect(201);
+    return (response.body as { id: string }).id;
+  }
+
+  /** Write the design-document fields the card designer sets (ADR 0132 / 0137):
+   * the linked message page and/or the default video link. */
+  async function linkDesign(
+    savedDesignId: string,
+    fields: { messagePageId?: string; videoUrl?: string },
+  ): Promise<void> {
+    const current = await prisma.savedDesign.findUniqueOrThrow({
+      where: { id: savedDesignId },
+      select: { document: true },
+    });
+    await prisma.savedDesign.update({
+      where: { id: savedDesignId },
+      data: {
+        document: {
+          ...(current.document as Record<string, unknown>),
+          ...(fields.messagePageId ? { messagePageId: fields.messagePageId } : {}),
+          ...(fields.videoUrl ? { videoUrl: fields.videoUrl } : {}),
+        },
+      },
+    });
+  }
+
   /** A pending_approval occasion dated today (so it's due once auto-send-approved). */
   async function createOccasion(token: string, recipientId: string): Promise<string> {
     const response = await request(app.getHttpServer())
@@ -294,6 +325,73 @@ describe("Auto-send (e2e)", () => {
     expect(occasion.status).toBe("approved");
     const orders = await prisma.batchOrder.findMany({ where: { accountId } });
     expect(orders).toHaveLength(0);
+  });
+
+  it("attaches the design's linked message page to an auto-sent card (ADR 0137)", async () => {
+    // Auto-send has no composer to carry a page choice, so it resolves the
+    // design's linked page itself — the one path that legitimately falls back to
+    // the design. The card's QR then resolves to that authored page, not a fresh
+    // auto-page.
+    const { token, accountId } = await signUp();
+    await enableAutoSend(accountId);
+    await creditWallet(accountId, 1000);
+    const recipientId = await createRecipient(token);
+    const savedDesignId = await createSavedDesign(token);
+    const pageId = await createMessagePage(token, "Linked in the designer");
+    await linkDesign(savedDesignId, { messagePageId: pageId });
+    const occasionId = await createOccasion(token, recipientId);
+    await approve(token, occasionId, { savedDesignId, dispatchOption: "auto_send" }).expect(201);
+
+    const ops = await opsToken();
+    await runAutoSend(ops).expect(201);
+
+    const order = await prisma.batchOrder.findFirstOrThrow({
+      where: { accountId },
+      include: { orderRecipients: true },
+    });
+    expect(order.orderRecipients[0]?.messagePageId).toBe(pageId);
+    const link = await prisma.messagePageLink.findUniqueOrThrow({
+      where: { orderRecipientId: order.orderRecipients[0]!.id },
+    });
+    expect(link.messagePageId).toBe(pageId);
+  });
+
+  it("ignores a design's linked page owned by another account, seeding from the video (ADR 0137)", async () => {
+    // The design document is user-editable JSON; auto-send must not bind a card
+    // to a page another account owns. It re-validates ownership and falls back to
+    // the design's video (a fresh auto-page) when the page isn't the account's.
+    const outsider = await signUp();
+    await enableAutoSend(outsider.accountId);
+    const foreignPageId = await createMessagePage(outsider.token, "Not yours");
+
+    const { token, accountId } = await signUp();
+    await enableAutoSend(accountId);
+    await creditWallet(accountId, 1000);
+    const recipientId = await createRecipient(token);
+    const savedDesignId = await createSavedDesign(token);
+    const seededVideo = "https://youtu.be/dQw4w9WgXcQ";
+    await linkDesign(savedDesignId, { messagePageId: foreignPageId, videoUrl: seededVideo });
+    const occasionId = await createOccasion(token, recipientId);
+    await approve(token, occasionId, { savedDesignId, dispatchOption: "auto_send" }).expect(201);
+
+    const ops = await opsToken();
+    await runAutoSend(ops).expect(201);
+
+    const order = await prisma.batchOrder.findFirstOrThrow({
+      where: { accountId },
+      include: { orderRecipients: true },
+    });
+    // Not the foreign page — the ownership check failed, so no page was bound…
+    expect(order.orderRecipients[0]?.messagePageId).toBeNull();
+    // …and settlement seeded a fresh auto-page from the design's video.
+    const link = await prisma.messagePageLink.findUniqueOrThrow({
+      where: { orderRecipientId: order.orderRecipients[0]!.id },
+    });
+    expect(link.messagePageId).not.toBe(foreignPageId);
+    const autoPage = await prisma.messagePage.findUniqueOrThrow({
+      where: { id: link.messagePageId },
+    });
+    expect(autoPage.videoUrl).toBe(seededVideo);
   });
 
   it("forbids a non-admin from triggering an auto-send run", async () => {

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import type { Occasion, Recipient } from "@prisma/client";
+import { type DesignDocument, linkedMessagePageId } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
@@ -168,6 +169,28 @@ export class AutoSendService {
         throw new Error("Occasion was already actioned");
       }
 
+      // Resolve the design's linked message page (ADR 0137). The interactive
+      // send composers carry the sender's explicit page choice; auto-send has no
+      // composer, so it resolves the design's linked page itself here — the one
+      // path that legitimately falls back to the design. Re-validated active +
+      // owned by this account, because the design document is user-editable JSON
+      // and must not bind a card to another account's (or an archived) page.
+      // Settlement then honours this verbatim, so an empty choice elsewhere is a
+      // real "no page" rather than a silently re-attached design page.
+      const design = await tx.savedDesign.findUnique({
+        where: { id: savedDesignId },
+        select: { document: true },
+      });
+      const linkedPageId = linkedMessagePageId(design?.document as DesignDocument | null);
+      let messagePageId: string | null = null;
+      if (linkedPageId) {
+        const page = await tx.messagePage.findFirst({
+          where: { id: linkedPageId, accountId: occasion.accountId, status: "active" },
+          select: { id: true },
+        });
+        messagePageId = page?.id ?? null;
+      }
+
       const order = await tx.batchOrder.create({
         data: {
           accountId: occasion.accountId,
@@ -185,6 +208,7 @@ export class AutoSendService {
           recipientId: recipient.id,
           occasionId: occasion.id,
           savedDesignId,
+          messagePageId,
           shippingAddressLine1: addressLine1,
           shippingAddressLine2: recipient.addressLine2,
           shippingAddressCity: addressCity,
