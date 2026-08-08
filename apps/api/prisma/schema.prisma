@@ -788,6 +788,7 @@ model MessagePageLink {
   messagePage    MessagePage     @relation(fields: [messagePageId], references: [id], onDelete: Cascade)
   orderRecipient OrderRecipient? @relation(fields: [orderRecipientId], references: [id], onDelete: Cascade)
   replies        MessagePageReply[]
+  events         MessagePageEvent[]
 
   @@index([messagePageId])
   @@map("message_page_links")
@@ -809,6 +810,36 @@ model MessagePageReply {
 
   @@index([messagePageLinkId])
   @@map("message_page_replies")
+}
+
+enum MessagePageEventType {
+  viewed
+  cta_clicked
+  replied
+}
+
+/// Append-only engagement event for time-series analytics (ADR 0136, Phase 2).
+/// One row per public view / CTA click / reply. Deliberately PII-free — no IP,
+/// user-agent, or free text — just which card, what kind, and when, so the
+/// recipient-facing GDPR surface stays minimal. `accountId`/`messagePageId` are
+/// DENORMALISED off the link so account- and page-level time-series never join
+/// back through links. Written dark behind MESSAGE_EVENTS_ENABLED; pruned after
+/// MESSAGE_EVENTS_RETENTION_DAYS. The lifetime counters on MessagePageLink
+/// remain the source of truth for current-state totals.
+model MessagePageEvent {
+  id                String               @id @default(uuid())
+  messagePageLinkId String               @map("message_page_link_id")
+  messagePageId     String               @map("message_page_id")
+  accountId         String               @map("account_id")
+  type              MessagePageEventType
+  createdAt         DateTime             @default(now()) @map("created_at")
+
+  messagePageLink MessagePageLink @relation(fields: [messagePageLinkId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@index([messagePageId, createdAt])
+  @@index([createdAt])
+  @@map("message_page_events")
 }
 
 // ---------------------------------------------------------------------------

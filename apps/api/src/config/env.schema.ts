@@ -139,6 +139,19 @@ export const envSchema = z.object({
     .or(z.literal("").transform(() => undefined)),
   STORAGE_REAPER_GRACE_DAYS: z.coerce.number().int().positive().default(7).catch(7),
 
+  // Message-page engagement event capture (see docs/adr/0136-message-page-analytics.md,
+  // Phase 2). Ships DARK: the public view/click/reply endpoints only write a
+  // MessagePageEvent row when this is exactly "true" or "1" (interpreted in the
+  // service, kept a plain string here so ConfigService reads it live). Unset/
+  // anything else ⇒ no events are written and nothing else changes. Kept in env,
+  // not PlatformSetting, on purpose — the switch must not depend on a DB read,
+  // since what it disables is DB write load on the public hot path. Flip it off
+  // to stop capture instantly with no redeploy.
+  MESSAGE_EVENTS_ENABLED: z
+    .string()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+
   // Airtable-sourced card catalog (see docs/adr/0011-airtable-catalog-sync.md).
   // Optional: the app boots without them; the catalog sync reports "not
   // configured" until both are set. Treat blank the same as unset.

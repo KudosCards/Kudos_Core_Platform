@@ -9,6 +9,7 @@ import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { renderBrandedEmail, escapeHtml } from "../email/email-layout";
 import type { EnvConfig } from "../config/env.schema";
 import { generateSlug } from "../common/generate-slug";
+import { MessagePageEventsService } from "./message-page-events.service";
 import type { UpdateMessagePageDto } from "./dto/update-message-page.dto";
 import type { SubmitMessageReplyDto } from "./dto/submit-message-reply.dto";
 
@@ -151,6 +152,7 @@ export class MessagesService {
     private readonly prisma: PrismaService,
     private readonly inbox: NotificationInboxService,
     private readonly config: ConfigService<EnvConfig, true>,
+    private readonly events: MessagePageEventsService,
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
   ) {}
 
@@ -272,6 +274,8 @@ export class MessagesService {
         firstViewedAt: true,
         messagePage: {
           select: {
+            id: true,
+            accountId: true,
             status: true,
             title: true,
             message: true,
@@ -334,6 +338,14 @@ export class MessagesService {
       this.logger.error(`View-count update failed for link ${link.id}: ${reasonOf(error)}`);
     }
 
+    // Time-series capture (ADR 0136) — a no-op unless MESSAGE_EVENTS_ENABLED, and
+    // never throws, so it can't affect what the recipient sees.
+    await this.events.record("viewed", {
+      messagePageLinkId: link.id,
+      messagePageId: page.id,
+      accountId: page.accountId,
+    });
+
     // Re-derive the iframe src from the stored URL so the embed helper stays the
     // single source of truth; a legacy upload keeps its direct file URL instead.
     const embedUrl =
@@ -391,6 +403,12 @@ export class MessagesService {
     const reply = await this.prisma.messagePageReply.create({
       data: { messagePageLinkId: link.id, senderName, body: dto.body.trim() },
       select: { id: true },
+    });
+
+    await this.events.record("replied", {
+      messagePageLinkId: link.id,
+      messagePageId: link.messagePage.id,
+      accountId: link.messagePage.accountId,
     });
 
     // Notifications are side effects — a failure to notify must never fail the
@@ -478,7 +496,10 @@ export class MessagesService {
   async trackCtaClick(slug: string): Promise<string> {
     const link = await this.prisma.messagePageLink.findUnique({
       where: { slug },
-      select: { id: true, messagePage: { select: { status: true, ctaUrl: true } } },
+      select: {
+        id: true,
+        messagePage: { select: { id: true, accountId: true, status: true, ctaUrl: true } },
+      },
     });
     if (!link || link.messagePage.status === "archived" || !link.messagePage.ctaUrl) {
       throw new NotFoundException("Message page not found");
@@ -486,6 +507,11 @@ export class MessagesService {
     await this.prisma.messagePageLink.update({
       where: { id: link.id },
       data: { ctaClickCount: { increment: 1 } },
+    });
+    await this.events.record("cta_clicked", {
+      messagePageLinkId: link.id,
+      messagePageId: link.messagePage.id,
+      accountId: link.messagePage.accountId,
     });
     return link.messagePage.ctaUrl;
   }
