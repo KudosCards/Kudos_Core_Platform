@@ -12,6 +12,7 @@ import { z } from "zod";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { MessagePageEventsRetentionService } from "../src/messages/message-page-events-retention.service";
 import { EMAIL_CLIENT } from "../src/email/email.client";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
@@ -450,5 +451,33 @@ describe("Message Pages library (e2e)", () => {
     await request(app.getHttpServer()).get(`/messages/${slug}`).expect(200);
     const afterArchive = await prisma.messagePageEvent.count({ where: { messagePageId: page.id } });
     expect(afterArchive).toBe(3);
+  });
+
+  it("prunes engagement events past the retention window, keeping recent ones (ADR 0136)", async () => {
+    const { token, accountId } = await signUp();
+    const created = await request(app.getHttpServer())
+      .post("/message-pages")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Old data" })
+      .expect(201);
+    const page = messagePageDetailSchema.parse(created.body);
+    const link = await prisma.messagePageLink.findFirstOrThrow({
+      where: { messagePageId: page.id },
+    });
+    const base = { messagePageLinkId: link.id, messagePageId: page.id, accountId } as const;
+
+    // One event well past the 90-day default window, one from yesterday.
+    await prisma.messagePageEvent.create({
+      data: { ...base, type: "viewed", createdAt: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000) },
+    });
+    const recent = await prisma.messagePageEvent.create({
+      data: { ...base, type: "viewed", createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    });
+
+    const result = await app.get(MessagePageEventsRetentionService).prune();
+    expect(result.deleted).toBeGreaterThanOrEqual(1);
+
+    const remaining = await prisma.messagePageEvent.findMany({ where: { messagePageId: page.id } });
+    expect(remaining.map((event) => event.id)).toEqual([recent.id]);
   });
 });

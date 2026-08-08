@@ -151,6 +151,14 @@ export const envSchema = z.object({
     .string()
     .optional()
     .or(z.literal("").transform(() => undefined)),
+  // How long a raw MessagePageEvent is kept before the daily retention cron
+  // (ADR 0136, Phase 3) prunes it. Charts only ever read a bounded window and
+  // the lifetime counters on MessagePageLink hold long-term totals, so raw
+  // events past this age are pure storage/WAL cost. Calendar days; blank/invalid
+  // falls back to the default of 90. Pruning runs regardless of
+  // MESSAGE_EVENTS_ENABLED so a table left behind after capture is switched off
+  // still drains.
+  MESSAGE_EVENTS_RETENTION_DAYS: z.coerce.number().int().positive().default(90).catch(90),
 
   // Airtable-sourced card catalog (see docs/adr/0011-airtable-catalog-sync.md).
   // Optional: the app boots without them; the catalog sync reports "not
