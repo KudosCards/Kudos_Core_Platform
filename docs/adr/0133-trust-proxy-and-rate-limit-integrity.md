@@ -75,6 +75,26 @@ single global config, and each keeps its own per-route `@Throttle(...)` limit
   unaffected — a regression guard that would fail if trust-proxy were disabled
   (both clients would collapse onto the socket IP and share a bucket).
 
+## Verified
+
+**2026-08-08 — `TRUST_PROXY_HOPS=2` confirmed correct and spoof-proof for the
+live Railway topology.** Checked against production via `GET /health/ip`:
+
+- Normal request: `x-forwarded-for` was `"<client>, <edge>"` (two hops) and
+  `resolvedIp` was the real client IP. The chain is
+  `client → edge → Railway edge (socket, 100.64.0.0/10) → app`, i.e. two
+  proxies append to XFF, so `2` is the exact hop count.
+- Spoof request (`-H 'X-Forwarded-For: 203.0.113.99'`): the injected value did
+  **not** appear in the XFF the app saw and `resolvedIp` stayed the real client
+  IP. The edge **replaces** any client-supplied `X-Forwarded-For` with the true
+  connecting IP rather than appending to it, so a forged header cannot reach —
+  let alone win — the resolution. The per-IP limit is not spoofable.
+
+The `/health/ip` diagnostic is now gated behind `IP_DIAGNOSTIC_ENABLED`
+(default off → 404); enable it temporarily to re-run this check after any change
+to the edge/proxy setup (e.g. adding or removing a CDN/WAF changes the hop
+count), then disable it again.
+
 ## Not done (deliberately, with a clear path)
 
 - **Shared store for multi-instance correctness.** The throttler's default store
