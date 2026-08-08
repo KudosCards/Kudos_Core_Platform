@@ -9,6 +9,7 @@ import {
   type MessagePageSummary,
 } from "@kudos/shared-types";
 import { FunnelBar } from "./funnel-bar";
+import { TrendSection } from "./trend-section";
 
 type SortKey = "recent" | "views" | "cards";
 type StatusFilter = "active" | "archived" | "all";
@@ -75,6 +76,7 @@ export function LibraryClient({
         <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
           <p className="section-label">Engagement across all pages</p>
           <FunnelBar funnel={insights.funnel} />
+          <TrendSection path="/message-pages/insights/timeseries" />
         </div>
       )}
 
