@@ -14,35 +14,37 @@ import { SocialLinks } from "@/components/social-links";
 const CORAL = "#ef5b52";
 
 const usedBy = [
+  "Businesses",
   "Tuition Centres",
-  "Music Schools",
-  "Sports Academies",
-  "After-School Clubs",
-  "Private Tutors",
+  "Schools",
+  "Sports Clubs",
+  "Charities",
+  "Care Teams",
+  "Individuals",
 ];
 
 const pains = [
-  "Birthday spreadsheets that nobody remembers to check",
-  "Students whose birthdays are missed — and parents who notice",
+  "Birthdays and milestones that slip through the cracks",
+  "The people who matter — customers, members, students — feeling forgotten",
   "Wasted hours shopping for cards, writing, stamping, posting",
-  "Retention suffering because students don't feel valued",
+  "Meaning to send something thoughtful, then never finding the time",
 ];
 
 const steps = [
   {
     step: "01",
-    title: "Upload your contacts",
-    body: "Import your student list with their dates of birth — from a spreadsheet or by hand. Takes less than 5 minutes for most centres.",
+    title: "Send one, or upload a list",
+    body: "Fire off a single card in a couple of clicks, or import your whole contact list — customers, members, students, staff — from a spreadsheet or by hand.",
   },
   {
     step: "02",
-    title: "Birthdays tracked automatically",
-    body: "Our system watches the calendar for you. You'll get a notification ahead of each birthday — or let it run fully on autopilot.",
+    title: "Pick the moment",
+    body: "Send right now for a one-off, or let Kudos track birthdays and key dates and send automatically — a reminder ahead of each one, or fully on autopilot.",
   },
   {
     step: "03",
     title: "We print and post the card",
-    body: "Choose from our range of card designs. We handle the printing, packing and posting. A real card arrives at the student's home.",
+    body: "Choose from our range of card designs. We handle the printing, packing and posting. A real, personalised card arrives through the recipient's door.",
   },
 ];
 
@@ -56,20 +58,20 @@ const categories = [
 
 const benefits = [
   {
-    title: "Stronger student loyalty",
-    body: "Pupils who feel valued don't look for alternatives.",
+    title: "Stronger loyalty",
+    body: "Customers, members and students who feel valued don't look elsewhere.",
   },
   {
-    title: "Delighted parents",
-    body: "A card at home becomes a talking point and earns referrals.",
+    title: "Word-of-mouth and referrals",
+    body: "A real card through the door becomes a talking point people share.",
   },
   {
     title: "Hours saved every month",
     body: "Zero admin, zero trips to the card shop.",
   },
   {
-    title: "Win back lapsed students",
-    body: "A simple birthday card can be the reason a family comes back.",
+    title: "Win back the ones who drifted",
+    body: "A simple, thoughtful card can be the reason someone comes back.",
   },
 ];
 
@@ -122,18 +124,19 @@ export default function HomePage() {
         <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 py-16 md:grid-cols-2 md:py-24">
           <div className="flex flex-col gap-6">
             <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-100">
-              🟢 Trusted by tutors, schools &amp; clubs across the UK
+              🟢 Trusted by businesses, tuition centres, schools &amp; clubs across the UK
             </span>
             <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
-              Automated Birthday Cards for Tuition Centres, Schools &amp; Clubs
+              Send one card, or automate thousands
             </h1>
             <p className="text-xl font-semibold text-slate-700">
-              You upload the contacts. We send the cards.
+              Personalised cards, printed and posted for every occasion - never miss another moment
+              worth celebrating.
             </p>
             <p className="max-w-lg text-slate-600">
-              Kudos Cards tracks every student&apos;s birthday and posts a personalised printed card
-              on your behalf — automatically, every year. No admin. No forgotten birthdays. No trips
-              to the post office.
+              From a single birthday, thank-you or congratulations to automated sends across your
+              whole contact list, Kudos Cards prints and posts a real, personalised card on your
+              behalf — so the people who matter feel remembered. No admin. No forgotten dates.
             </p>
             <div className="flex flex-wrap items-center gap-4">
               <Link
@@ -202,10 +205,10 @@ export default function HomePage() {
           <span className="w-fit rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
             SOUND FAMILIAR?
           </span>
-          <h2 className="text-3xl font-bold tracking-tight">Managing student birthdays is painful</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Remembering everyone is the hard part</h2>
           <p className="text-slate-600">
-            Most tuition centres mean well — but without a system, important moments slip through the
-            cracks.
+            Most of us mean well — but without a system, the birthdays, thank-yous and milestones
+            that matter slip through the cracks.
           </p>
           <ul className="flex flex-col gap-3">
             {pains.map((pain) => (
@@ -251,11 +254,11 @@ export default function HomePage() {
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-6 py-16 md:grid-cols-2">
         <div className="flex flex-col gap-5">
           <h2 className="text-3xl font-bold tracking-tight">
-            Personalised with every student&apos;s name
+            Personalised with every recipient&apos;s name
           </h2>
           <p className="text-slate-600">
-            Your centre&apos;s message, printed inside — automatically. Pick a design from our range,
-            add a QR code that links to a personal message from the team, and we do the rest.
+            Your message, printed inside — automatically. Pick a design from our range, add a QR code
+            that links to a personal video or note, and we do the rest.
           </p>
           <div className="flex flex-wrap gap-3">
             {categories.map((cat) => (
@@ -296,11 +299,11 @@ export default function HomePage() {
               THE DIFFERENCE IT MAKES
             </span>
             <h2 className="text-3xl font-bold tracking-tight">
-              Students who feel remembered stay longer
+              People who feel remembered stick around
             </h2>
             <p className="text-slate-600">
-              A physical birthday card does something no text message or email ever can — it shows you
-              genuinely cared enough to send something real.
+              A real card through the door does something no text message or email ever can — it shows
+              you genuinely cared enough to send something real.
             </p>
             <ul className="flex flex-col gap-4">
               {benefits.map((b) => (
@@ -340,7 +343,7 @@ export default function HomePage() {
             </span>
             <h2 className="mt-4 text-3xl font-bold tracking-tight">Don&apos;t take our word for it</h2>
             <p className="mt-3 text-slate-300">
-              Real feedback from tutors, centre owners and club managers across the UK.
+              Real feedback from the businesses, tutors and centres who use Kudos every day.
             </p>
           </div>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
@@ -355,7 +358,7 @@ export default function HomePage() {
           <div className="mt-12 grid gap-6 border-t border-white/10 pt-10 text-center sm:grid-cols-3">
             <div>
               <p className="text-3xl font-extrabold text-amber-400">100+</p>
-              <p className="text-sm text-slate-300">Tutors &amp; centres using Kudos</p>
+              <p className="text-sm text-slate-300">Businesses, tutors &amp; teams using Kudos</p>
             </div>
             <div>
               <p className="text-3xl font-extrabold text-amber-400">£2.50</p>
@@ -459,11 +462,11 @@ export default function HomePage() {
       <section className="bg-gradient-to-b from-white to-sky-50">
         <div className="mx-auto max-w-3xl px-6 py-16 text-center">
           <h2 className="text-3xl font-bold tracking-tight">
-            Never miss a student&apos;s birthday again
+            Never miss a moment that matters
           </h2>
           <p className="mt-3 text-slate-600">
-            Set it up in under 10 minutes and let Kudos Cards run on autopilot for the rest of the
-            year.
+            Send your first card in minutes — or set it up once and let Kudos Cards run on autopilot
+            for the rest of the year.
           </p>
           <Link
             href="/register"
