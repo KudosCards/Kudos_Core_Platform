@@ -29,6 +29,19 @@ function defaultVideoUrl(document: Prisma.JsonValue | null | undefined): string 
   return null;
 }
 
+/** Reads the design document's linked message-page id (set in the card
+ * designer, ADR 0137), defensively — the document is free-form JSON and the
+ * referenced page is re-validated (active + same account) before it is used. */
+function designMessagePageId(document: Prisma.JsonValue | null | undefined): string | null {
+  if (document && typeof document === "object" && !Array.isArray(document)) {
+    const value = (document as Record<string, unknown>).messagePageId;
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+  return null;
+}
+
 interface ResolvedSeededVideo {
   videoType: MessagePageVideoType;
   videoUrl: string | null;
@@ -200,11 +213,41 @@ export class MessagesService {
       return;
     }
 
+    // Resolve each card's effective page by the ADR 0137 precedence:
+    //   1. an explicit send-time choice (`orderRecipient.messagePageId`);
+    //   2. else the design's linked page (`document.messagePageId`), but only
+    //      after re-validating it's still active AND owned by the paying account
+    //      — the document is user-editable JSON, so it can't be trusted to bind
+    //      a card to another account's (or a deleted) page;
+    //   3. else null → a fresh auto-page seeded from the design's video link.
+    const designPageCandidates = new Map<string, string>(); // orderRecipientId → pageId
+    for (const recipient of pending) {
+      if (recipient.messagePageId) continue;
+      const pageId = designMessagePageId(recipient.savedDesign?.document);
+      if (pageId) designPageCandidates.set(recipient.id, pageId);
+    }
+    const validDesignPageAccount = new Map<string, string>(); // pageId → accountId
+    if (designPageCandidates.size > 0) {
+      const rows = await tx.messagePage.findMany({
+        where: { id: { in: [...new Set(designPageCandidates.values())] }, status: "active" },
+        select: { id: true, accountId: true },
+      });
+      for (const row of rows) validDesignPageAccount.set(row.id, row.accountId);
+    }
+    const effectivePageId = (recipient: (typeof pending)[number]): string | null => {
+      if (recipient.messagePageId) return recipient.messagePageId;
+      const candidate = designPageCandidates.get(recipient.id);
+      if (candidate && validDesignPageAccount.get(candidate) === recipient.batchOrder.accountId) {
+        return candidate;
+      }
+      return null;
+    };
+
     // Cards with no chosen page get a fresh one. Mint page ids up-front so the
     // pages and their links can each be written in one bulk statement
     // (createMany can't return ids), keeping this to two writes for the batch.
     const autoRows = pending
-      .filter((recipient) => !recipient.messagePageId)
+      .filter((recipient) => !effectivePageId(recipient))
       .map((recipient) => {
         // `savedDesign` is optional-chained: the settlement path always sets a
         // design, but a missing one must never throw inside this transaction and
@@ -232,7 +275,8 @@ export class MessagesService {
       });
     }
 
-    // One link per card: onto its fresh auto-page, or onto the chosen library page.
+    // One link per card: onto its fresh auto-page, or onto the chosen page
+    // (explicit send-time choice or the validated design-linked page).
     const linkData = [
       ...autoRows.map((row) => ({
         slug: generateSlug(),
@@ -240,11 +284,14 @@ export class MessagesService {
         orderRecipientId: row.orderRecipientId,
       })),
       ...pending
-        .filter((recipient) => recipient.messagePageId)
-        .map((recipient) => ({
+        .map((recipient) => ({ recipient, pageId: effectivePageId(recipient) }))
+        .filter((entry): entry is { recipient: (typeof pending)[number]; pageId: string } =>
+          entry.pageId !== null,
+        )
+        .map((entry) => ({
           slug: generateSlug(),
-          messagePageId: recipient.messagePageId!,
-          orderRecipientId: recipient.id,
+          messagePageId: entry.pageId,
+          orderRecipientId: entry.recipient.id,
         })),
     ];
     await tx.messagePageLink.createMany({

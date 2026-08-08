@@ -129,13 +129,33 @@ export const designDocumentSchema = z.object({
   version: z.literal(1),
   pages: z.array(designPageSchema).min(1),
   /**
-   * Default video the card's QR code links to. Copied onto each recipient's
-   * message page when an order is paid (and overridable per recipient from the
-   * Messages page). Only meaningful when a `qr` element is placed on the card.
+   * The account Message Page this card's QR resolves to (ADR 0137). Chosen in
+   * the designer; carried through the send flow as the default and honoured at
+   * settlement for every order path. Takes precedence over `videoUrl` — which
+   * remains a shortcut that auto-builds a minimal page. `null`/absent means "no
+   * page chosen; use the video link (if any)". A page later archived/deleted
+   * degrades to `videoUrl`/none at settlement. Only meaningful with a `qr`
+   * element on the card.
+   */
+  messagePageId: z.string().uuid().nullable().optional(),
+  /**
+   * Default video the card's QR code links to when no message page is chosen.
+   * Copied onto each recipient's auto-created message page when an order is paid
+   * (and overridable per recipient from the Messages page). Only meaningful when
+   * a `qr` element is placed on the card.
    */
   videoUrl: z.string().url().nullable().optional(),
 });
 export type DesignDocument = z.infer<typeof designDocumentSchema>;
+
+/**
+ * The Message Page a design's QR is linked to, or null. A thin accessor so web
+ * (pre-selecting the send-flow default) and any other reader share one notion
+ * of "what page did the designer choose" (ADR 0137).
+ */
+export function linkedMessagePageId(document: DesignDocument | null | undefined): string | null {
+  return document?.messagePageId ?? null;
+}
 
 /**
  * Whether a design places a QR element on any face. The QR resolves to the

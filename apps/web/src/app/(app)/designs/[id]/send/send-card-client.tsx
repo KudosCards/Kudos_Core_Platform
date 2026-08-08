@@ -95,7 +95,15 @@ export function SendCardClient({
     () => messagePages.filter((page) => page.status === "active"),
     [messagePages],
   );
-  const [messagePageId, setMessagePageId] = useState<string>("");
+  // Default to the page linked in the designer (ADR 0137) so the customer
+  // doesn't re-pick what they already chose — but only if it's still an active
+  // page, else fall back to "no page" and let them choose.
+  const designLinkedPageId = designDocument.messagePageId ?? null;
+  const [messagePageId, setMessagePageId] = useState<string>(() =>
+    designLinkedPageId && activeMessagePages.some((page) => page.id === designLinkedPageId)
+      ? designLinkedPageId
+      : "",
+  );
 
   // Address-book search. `selectedContactId` set → we're sending to an existing
   // contact (reuse it, no new record); null → adding a new contact.
@@ -395,19 +403,24 @@ export function SendCardClient({
                 personal note when they scan it.
               </p>
               {activeMessagePages.length > 0 ? (
-                <select
-                  value={messagePageId}
-                  onChange={(e) => setMessagePageId(e.target.value)}
-                  className={inputClass}
-                >
-                  <option value="">No message page</option>
-                  {activeMessagePages.map((page) => (
-                    <option key={page.id} value={page.id}>
-                      {page.emoji ? `${page.emoji} ` : ""}
-                      {page.title}
-                    </option>
-                  ))}
-                </select>
+                <>
+                  <select
+                    value={messagePageId}
+                    onChange={(e) => setMessagePageId(e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="">No message page</option>
+                    {activeMessagePages.map((page) => (
+                      <option key={page.id} value={page.id}>
+                        {page.emoji ? `${page.emoji} ` : ""}
+                        {page.title}
+                      </option>
+                    ))}
+                  </select>
+                  {designLinkedPageId && messagePageId === designLinkedPageId && (
+                    <p className="text-xs text-muted">Pre-filled from your card design.</p>
+                  )}
+                </>
               ) : (
                 <p className="text-xs text-muted">
                   {canAuthorMessagePages ? (

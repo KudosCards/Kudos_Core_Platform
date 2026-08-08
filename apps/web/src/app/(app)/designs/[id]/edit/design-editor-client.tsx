@@ -5,6 +5,7 @@ import type {
   DesignDocument,
   DesignElement,
   DesignPage,
+  MessagePageSummary,
   PageBackground,
   SavedDesign,
   ShapeKind,
@@ -195,9 +196,13 @@ function newShapeElement(
 export function DesignEditorClient({
   savedDesign,
   returnTo,
+  messagePages,
+  canAuthorMessagePages,
 }: {
   savedDesign: SavedDesign;
   returnTo?: string;
+  messagePages: MessagePageSummary[];
+  canAuthorMessagePages: boolean;
 }) {
   // Only honour an in-app bulk-send return target — never an arbitrary URL
   // (guards against an open redirect via the ?returnTo param).
@@ -308,6 +313,17 @@ export function DesignEditorClient({
 
   /** Whether a QR element is placed anywhere in the design (any face). */
   const hasQr = document_.pages.some((p) => p.elements.some((el) => el.kind === "qr"));
+
+  // The QR's destination (ADR 0137): a linked Message Page is the first-class
+  // option; a raw video link is the shortcut. `qrMode` is the intent (so a user
+  // with no pages yet can still choose "message page" and see the create
+  // prompt); `document_.messagePageId` is the persisted choice.
+  const activeQrMessagePages = messagePages.filter((mp) => mp.status === "active");
+  const [qrMode, setQrMode] = useState<"page" | "video">(
+    savedDesign.document.messagePageId ? "page" : "video",
+  );
+  const selectedQrMessagePage =
+    activeQrMessagePages.find((mp) => mp.id === document_.messagePageId) ?? null;
 
   /** Square-bracket "[name]" mistakes that should be curly-brace merge tokens. */
   const bracketMistakes = findDesignBracketTokenMistakes(document_);
@@ -920,23 +936,130 @@ export function DesignEditorClient({
           )}
 
           {hasQr && (
-            <label className="flex flex-col gap-1 rounded-lg border border-black/10 p-3 text-xs text-foreground/60 dark:border-white/10">
-              <span className="font-medium text-foreground">Video link (for the QR code)</span>
-              <input
-                type="url"
-                inputMode="url"
-                placeholder="https://youtu.be/…"
-                value={document_.videoUrl ?? ""}
-                onChange={(e) =>
-                  setDocument((doc) => ({ ...doc, videoUrl: e.target.value || null }))
-                }
-                className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
-              />
-              <span>
-                Recipients scan the QR to watch this. It&apos;s the default for every card from this
-                design — you can personalise or change it per recipient later on the Messages page.
+            <div className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 text-xs text-foreground/60 dark:border-white/10">
+              <span className="font-medium text-foreground">
+                What plays when they scan this QR?
               </span>
-            </label>
+              {/* Two ways to fill the QR (ADR 0137): a rich Message Page — the
+                  first-class option — or, as a shortcut, just a video link that
+                  auto-builds a simple page. Mode is derived from whether a page
+                  is chosen. */}
+              <div className="flex gap-2" role="group" aria-label="QR destination">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQrMode("page");
+                    // Default to the first available page so the choice is
+                    // immediately concrete; no-op if there are none yet.
+                    setDocument((doc) => ({
+                      ...doc,
+                      messagePageId: doc.messagePageId ?? activeQrMessagePages[0]?.id ?? null,
+                    }));
+                  }}
+                  aria-pressed={qrMode === "page"}
+                  className={`rounded-md px-3 py-1 font-medium transition-colors ${
+                    qrMode === "page"
+                      ? "bg-foreground text-background"
+                      : "border border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                  }`}
+                >
+                  A message page
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQrMode("video");
+                    // Clearing the page makes the video link the effective
+                    // destination (page wins at settlement otherwise).
+                    setDocument((doc) => ({ ...doc, messagePageId: null }));
+                  }}
+                  aria-pressed={qrMode === "video"}
+                  className={`rounded-md px-3 py-1 font-medium transition-colors ${
+                    qrMode === "video"
+                      ? "bg-foreground text-background"
+                      : "border border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                  }`}
+                >
+                  Just a video link
+                </button>
+              </div>
+
+              {qrMode === "page" ? (
+                activeQrMessagePages.length > 0 ? (
+                  <>
+                    <select
+                      value={document_.messagePageId ?? ""}
+                      onChange={(e) =>
+                        setDocument((doc) => ({ ...doc, messagePageId: e.target.value || null }))
+                      }
+                      className="rounded-md border border-black/10 px-2 py-1 text-sm text-foreground dark:border-white/10"
+                    >
+                      {activeQrMessagePages.map((mp) => (
+                        <option key={mp.id} value={mp.id}>
+                          {mp.emoji ? `${mp.emoji} ` : ""}
+                          {mp.title}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedQrMessagePage && (
+                      <span className="text-foreground/70">
+                        Scanning shows{" "}
+                        <span className="font-medium text-foreground">
+                          {selectedQrMessagePage.emoji ? `${selectedQrMessagePage.emoji} ` : ""}
+                          {selectedQrMessagePage.title}
+                        </span>
+                        {selectedQrMessagePage.videoProvider ? " — with your video" : ""}. Every card
+                        from this design links to it (change it per recipient later on Messages).
+                      </span>
+                    )}
+                    <a
+                      href="/message-pages/new"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-fit text-accent hover:underline"
+                    >
+                      ＋ New message page
+                    </a>
+                  </>
+                ) : (
+                  <span>
+                    {canAuthorMessagePages ? (
+                      <a
+                        href="/message-pages/new"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-accent hover:underline"
+                      >
+                        Create a message page
+                      </a>
+                    ) : (
+                      <a href="/billing" className="text-accent hover:underline">
+                        Upgrade to add message pages
+                      </a>
+                    )}{" "}
+                    to link a video and a personal note to this QR — or use just a video link below.
+                  </span>
+                )
+              ) : (
+                <label className="flex flex-col gap-1">
+                  <input
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://youtu.be/…"
+                    value={document_.videoUrl ?? ""}
+                    onChange={(e) =>
+                      setDocument((doc) => ({ ...doc, videoUrl: e.target.value || null }))
+                    }
+                    className="rounded-md border border-black/10 px-2 py-1 text-sm text-foreground dark:border-white/10"
+                  />
+                  <span>
+                    We&apos;ll build a simple page with just this video. It&apos;s the default for
+                    every card from this design — you can personalise it per recipient later on the
+                    Messages page.
+                  </span>
+                </label>
+              )}
+            </div>
           )}
 
           {/* The canvas scales itself to fit the container (see DesignCanvas),
@@ -1253,9 +1376,9 @@ export function DesignEditorClient({
           {selectedElement?.kind === "qr" && (
             <>
               <p className="text-xs text-foreground/60">
-                A QR code linking to each recipient&apos;s video message. Set the video in the
-                &ldquo;Video link&rdquo; box above, drag it on the card to position it, and size it
-                here.
+                A QR code recipients scan to open their message page. Choose what it links to in
+                &ldquo;What plays when they scan this QR?&rdquo; above, drag it on the card to
+                position it, and size it here.
               </p>
               <div className="flex flex-col gap-1.5 text-xs text-foreground/60">
                 <span>Size</span>
