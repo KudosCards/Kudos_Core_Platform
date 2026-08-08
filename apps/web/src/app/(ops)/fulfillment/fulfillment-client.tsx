@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import type {
+  CardSize,
   ClickAndDropImportStatus,
   DesignDocument,
   DueFilter,
@@ -270,6 +271,7 @@ export function FulfillmentClient({
   due,
   counts,
   dueOn,
+  defaultPrintSize,
 }: {
   initialJobs: FulfillmentJob[];
   /** The active status tab, or null when a calendar day is pinned with no
@@ -279,6 +281,9 @@ export function FulfillmentClient({
   counts: FulfillmentCounts;
   /** The dispatch-calendar drill-in day (YYYY-MM-DD), or null. See ADR 0110. */
   dueOn: string | null;
+  /** The card size the print overlay opens on (super-admin default); ops can
+   * still switch per run. See ADR 0138. */
+  defaultPrintSize: CardSize;
 }) {
   const router = useRouter();
   const [jobs, setJobs] = useState(initialJobs);
@@ -1080,7 +1085,13 @@ export function FulfillmentClient({
         </Modal>
       )}
 
-      {printCards && <PrintRunOverlay cards={printCards} onClose={() => setPrintCards(null)} />}
+      {printCards && (
+        <PrintRunOverlay
+          cards={printCards}
+          defaultSize={defaultPrintSize}
+          onClose={() => setPrintCards(null)}
+        />
+      )}
     </div>
   );
 }

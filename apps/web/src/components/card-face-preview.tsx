@@ -50,10 +50,14 @@ export function CardFacePreview({
   document,
   width = 225,
   face = "front",
+  bordered = true,
 }: {
   document: DesignDocument;
   width?: number;
   face?: DesignPage["name"];
+  /** Draw the thin frame around the face. On by default for inline previews;
+   * the print run turns it off so nothing but the artwork reaches the page. */
+  bordered?: boolean;
 }) {
   const scale = width / CANVAS_WIDTH;
   const front =
@@ -84,7 +88,11 @@ export function CardFacePreview({
         height={CANVAS_HEIGHT * scale}
         scaleX={scale}
         scaleY={scale}
-        className="rounded-md border border-black/10 bg-white dark:border-white/10"
+        className={
+          bordered
+            ? "rounded-md border border-black/10 bg-white dark:border-white/10"
+            : "bg-white"
+        }
       >
         <Layer listening={false}>
           <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#ffffff" />

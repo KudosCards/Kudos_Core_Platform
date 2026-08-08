@@ -6,6 +6,7 @@ import { AdminService } from "./admin.service";
 import { AdminCustomerService } from "./admin-customer.service";
 import { AdminTeamController } from "./admin-team.controller";
 import { AdminTeamService } from "./admin-team.service";
+import { CardSizeConfigService } from "./card-size-config.service";
 
 /** The Kudos super-admin surface (platform-wide orders, subscribers, KPIs, the
  * in-app seat-price provisioning action, and operator identity + team
@@ -14,6 +15,6 @@ import { AdminTeamService } from "./admin-team.service";
 @Module({
   imports: [BillingModule, DispatchModule],
   controllers: [AdminController, AdminTeamController],
-  providers: [AdminService, AdminCustomerService, AdminTeamService],
+  providers: [AdminService, AdminCustomerService, AdminTeamService, CardSizeConfigService],
 })
 export class AdminModule {}
