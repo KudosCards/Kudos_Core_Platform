@@ -812,7 +812,7 @@ export function DesignEditorClient({
               onClick={addQrElement}
               className="rounded-full border border-black/20 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
             >
-              Add video QR
+              Add scan-to-watch QR
             </button>
             <input
               ref={fileInputRef}
@@ -1002,15 +1002,39 @@ export function DesignEditorClient({
                       ))}
                     </select>
                     {selectedQrMessagePage && (
-                      <span className="text-foreground/70">
-                        Scanning shows{" "}
-                        <span className="font-medium text-foreground">
-                          {selectedQrMessagePage.emoji ? `${selectedQrMessagePage.emoji} ` : ""}
-                          {selectedQrMessagePage.title}
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2 rounded-md border border-black/10 bg-black/[0.02] p-2 dark:border-white/10 dark:bg-white/[0.03]">
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded bg-accent-soft text-base">
+                            {selectedQrMessagePage.emoji ?? "💌"}
+                          </span>
+                          <div className="flex min-w-0 flex-col gap-1">
+                            <span className="truncate font-medium text-foreground">
+                              {selectedQrMessagePage.title}
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {selectedQrMessagePage.videoProvider && (
+                                <span className="rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                                  Video
+                                </span>
+                              )}
+                              {selectedQrMessagePage.hasCta && (
+                                <span className="rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                                  Button
+                                </span>
+                              )}
+                              {selectedQrMessagePage.allowReplies && (
+                                <span className="rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                                  Replies
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-foreground/60">
+                          Every card from this design links to this page — you can change it per
+                          recipient later on Messages.
                         </span>
-                        {selectedQrMessagePage.videoProvider ? " — with your video" : ""}. Every card
-                        from this design links to it (change it per recipient later on Messages).
-                      </span>
+                      </div>
                     )}
                     <a
                       href="/message-pages/new"

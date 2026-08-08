@@ -2,8 +2,11 @@
 
 ## Status
 
-Accepted — Phases 1–3 implemented (designer picker, send-flow default,
-settlement resolution). Phases 4–5 (naming/preview polish) optional follow-up.
+Accepted — all phases implemented. Phases 1–3 are the spine (designer picker,
+send-flow default, settlement resolution); Phases 4–5 add the naming
+unification ("Add scan-to-watch QR", consistent "message page" language) and
+the designer's richer destination preview (emoji + title + video/button/replies
+badges).
 
 ## Context
 
@@ -84,11 +87,13 @@ For each card at settlement:
   The design-linked id is validated (`status: active`, `accountId` match) before
   use; anything invalid falls through to the video/none path.
 
-### Deferred (Phases 4–5)
+### Phase 4–5 — Naming + preview
 
-Naming unification ("Add video QR" → "Add scan-to-watch QR", consistent
-"Message page" language across designer/send/messages) and a richer destination
-preview. Cosmetic; not required for the journey to work end to end.
+The designer's "Add video QR" becomes "Add scan-to-watch QR"; the QR help text
+and the public card-preview bullet drop "video message" for "message page"
+language, since the QR now resolves to a full page, not just a video. The
+designer's destination picker shows a small preview tile (emoji, title, and
+Video/Button/Replies badges) so the chosen page is tangible before send.
 
 ## Consequences / blast radius
 
