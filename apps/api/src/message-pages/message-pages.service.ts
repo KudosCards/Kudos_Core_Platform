@@ -15,8 +15,10 @@ import {
   type MessagePageSummary,
   type MessagePageTimeSeries,
 } from "@kudos/shared-types";
+import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
+import type { EnvConfig } from "../config/env.schema";
 import { generateSlug } from "../common/generate-slug";
 import { sanitizeMessageHtml } from "../common/sanitize-message-html";
 import type { CreateMessagePageDto } from "./dto/create-message-page.dto";
@@ -78,7 +80,16 @@ export class MessagePagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly entitlements: EntitlementsService,
+    private readonly config: ConfigService<EnvConfig, true>,
   ) {}
+
+  /** The requested window, capped to the event retention window: beyond it the
+   * events are pruned (ADR 0136, Phase 3), so a longer window would present
+   * deleted history as genuine "no activity". */
+  private windowWithinRetention(days: number): number {
+    const retentionDays = this.config.get("MESSAGE_EVENTS_RETENTION_DAYS", { infer: true });
+    return Math.min(days, retentionDays);
+  }
 
   /** Authoring is a paid-plan feature. Reads (list/get) stay open so a
    * downgraded account can still see and clean up pages it already made. */
@@ -370,12 +381,12 @@ export class MessagePagesService {
     if (!page) {
       throw new NotFoundException("Message page not found");
     }
-    return this.dailySeries(days, Prisma.sql`message_page_id = ${id}`);
+    return this.dailySeries(this.windowWithinRetention(days), Prisma.sql`message_page_id = ${id}`);
   }
 
   /** Daily engagement summed across the account's pages over the last `days`. */
   async accountTimeseries(accountId: string, days: number): Promise<MessagePageTimeSeries> {
-    return this.dailySeries(days, Prisma.sql`account_id = ${accountId}`);
+    return this.dailySeries(this.windowWithinRetention(days), Prisma.sql`account_id = ${accountId}`);
   }
 
   /**

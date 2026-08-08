@@ -14,26 +14,31 @@ const RANGES = [7, 30, 90] as const;
  */
 export function TrendSection({ path }: { path: string }) {
   const [days, setDays] = useState<(typeof RANGES)[number]>(30);
-  // Store the window the data is FOR, so switching ranges shows the skeleton
-  // (series derived as null) until the matching fetch lands — no synchronous
-  // reset inside the effect.
-  const [loaded, setLoaded] = useState<{ days: number; series: MessagePageTimeSeries } | null>(null);
+  // The outcome tagged with the window it's FOR, so switching ranges shows the
+  // skeleton (derived as "loading") until the matching fetch lands — no
+  // synchronous reset inside the effect. `"error"` distinguishes a failed fetch
+  // from an in-flight one so we hide the chart instead of showing a skeleton
+  // forever.
+  const [loaded, setLoaded] = useState<{
+    days: number;
+    result: MessagePageTimeSeries | "error";
+  } | null>(null);
 
   useEffect(() => {
     let active = true;
     void clientApiFetch<MessagePageTimeSeries>(`${path}?days=${days}`)
       .then((data) => {
-        if (active) setLoaded({ days, series: data });
+        if (active) setLoaded({ days, result: data });
       })
       .catch(() => {
-        /* the trend is informational — a fetch failure just hides the chart */
+        if (active) setLoaded({ days, result: "error" });
       });
     return () => {
       active = false;
     };
   }, [path, days]);
 
-  const series = loaded && loaded.days === days ? loaded.series : null;
+  const current = loaded && loaded.days === days ? loaded.result : null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -55,10 +60,14 @@ export function TrendSection({ path }: { path: string }) {
           ))}
         </div>
       </div>
-      {series ? (
-        <TrendChart series={series} />
-      ) : (
+      {current === null ? (
         <div className="h-32 animate-pulse rounded-lg bg-foreground/5" />
+      ) : current === "error" ? (
+        <p className="rounded-lg border border-border bg-surface px-3 py-6 text-center text-xs text-muted">
+          Couldn&apos;t load the trend just now.
+        </p>
+      ) : (
+        <TrendChart series={current} />
       )}
     </div>
   );
