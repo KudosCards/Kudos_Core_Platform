@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (roadmap) — Phases 1–4 implemented; Phase 5 staged.
+Accepted — all five phases implemented.
 
 ## Context
 
@@ -70,9 +70,16 @@ daily buckets `[{ date, views, clicks, replies }]` via `date_trunc` `groupBy`
 over events. New additive `shared-types` schema. Reads stay open.
 
 ### Phase 5 — Frontend charts
-A small hand-rolled SVG sparkline/bar (no new dependency, matching the custom
-calendar-grid approach; dataviz palette + dark-mode + a11y) in the builder
-insights panel and library strip.
+A hand-rolled SVG multi-series line chart (`TrendChart`) — views/clicks/replies
+over the window, no chart dependency, matching the custom calendar-grid approach
+— with a legend, hover crosshair + per-day tooltip, and a zero-filled empty
+state. A shared `TrendSection` adds a 7/30/90-day toggle and drops it into both
+the builder insights panel (per page) and the library strip (account-wide).
+Series colours are the Okabe-Ito CVD-safe categorical set, validated with the
+dataviz palette checker on the app's light surface (the app renders light-only;
+the matching dark-surface set is validated and documented in `TrendChart` for
+when dark mode is enabled). Identity is never colour-alone — every series is in
+the legend and its value shown on hover.
 
 ## New configuration
 

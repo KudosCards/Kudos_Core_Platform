@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import type { MessagePageInsights } from "@kudos/shared-types";
 import { clientApiFetch } from "@/lib/api.client";
 import { FunnelBar } from "./funnel-bar";
+import { TrendSection } from "./trend-section";
 
-/** This page's engagement funnel, fetched on mount (Phase 3, ADR 0132). */
+/** This page's engagement — the funnel (Phase 3) plus a daily trend over a
+ * selectable window (Phase 5, ADR 0136), both fetched from the insights API. */
 export function InsightsPanel({ pageId }: { pageId: string }) {
   const [insights, setInsights] = useState<MessagePageInsights | null>(null);
 
@@ -31,6 +33,9 @@ export function InsightsPanel({ pageId }: { pageId: string }) {
     <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4">
       <p className="section-label">Engagement</p>
       <FunnelBar funnel={insights.funnel} />
+
+      <TrendSection path={`/message-pages/${pageId}/insights/timeseries`} />
+
       {insights.firstViewedAt && (
         <p className="text-xs text-muted">
           First opened{" "}
