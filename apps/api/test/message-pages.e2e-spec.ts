@@ -379,6 +379,20 @@ describe("Message Pages library (e2e)", () => {
     });
     expect(insights.firstViewedAt).not.toBeNull();
 
+    // A second open of the same card must raise the raw event total (totalViews)
+    // without inflating the distinct-cards stage (viewed) — the aggregate funnel
+    // has to keep those two apart. See docs/adr/0136-message-page-analytics.md.
+    await request(app.getHttpServer()).get(`/messages/${slug}`).expect(200);
+    const reopened = messagePageInsightsSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .get(`/message-pages/${page.id}/insights`)
+          .set("Authorization", `Bearer ${token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(reopened.funnel).toMatchObject({ sent: 1, viewed: 1, totalViews: 2 });
+
     // The account rollup sees the same journey and lists the page as a top page.
     const accountInsights = await request(app.getHttpServer())
       .get("/message-pages/insights")
