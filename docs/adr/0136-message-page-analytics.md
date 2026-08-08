@@ -112,3 +112,19 @@ nothing is required for boot, no web/Netlify vars:
   switch (must not depend on the DB it may be protecting); fine for later tuning.
 - **Rollup table from day one.** Deferred: prune-only is simpler and sufficient
   until a longer-than-retention window is actually needed.
+
+## Post-review hardening
+
+A code review of the merged phases surfaced three refinements, applied as a
+follow-up:
+
+- **Window capped to retention.** `timeseries`/`accountTimeseries` clamp the
+  requested window to `MESSAGE_EVENTS_RETENTION_DAYS` (not just the 365-day
+  contract max), so a window longer than retention can't present pruned days as
+  genuine "no activity".
+- **Concurrent capture on the hot path.** In `viewBySlug`/`trackCtaClick` the
+  counter update and the event insert are independent, so they're issued
+  concurrently (`Promise.all`) — one round-trip of added latency on the public
+  path, not two, each still swallowing its own failure.
+- **Trend chart error state.** A failed trend fetch now hides the chart with a
+  short message instead of showing the loading skeleton indefinitely.

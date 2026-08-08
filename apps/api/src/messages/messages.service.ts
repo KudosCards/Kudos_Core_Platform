@@ -322,29 +322,31 @@ export class MessagesService {
       };
     }
 
-    // The counter is analytics, not the payload — the content is already
-    // resolved. A transient write failure is logged and swallowed so it can
-    // never deny a recipient the message their card points them to.
-    try {
-      await this.prisma.messagePageLink.update({
-        where: { id: link.id },
-        data: {
-          viewCount: { increment: 1 },
-          // Stamp the first open so insights can show "first viewed" (Phase 3).
-          ...(link.firstViewedAt === null ? { firstViewedAt: new Date() } : {}),
-        },
-      });
-    } catch (error) {
-      this.logger.error(`View-count update failed for link ${link.id}: ${reasonOf(error)}`);
-    }
-
-    // Time-series capture (ADR 0136) — a no-op unless MESSAGE_EVENTS_ENABLED, and
-    // never throws, so it can't affect what the recipient sees.
-    await this.events.record("viewed", {
-      messagePageLinkId: link.id,
-      messagePageId: page.id,
-      accountId: page.accountId,
-    });
+    // The counter and the time-series event (ADR 0136) are both analytics, not
+    // the payload — the content is already resolved. They're independent writes,
+    // so we issue them CONCURRENTLY to keep the added latency on this public path
+    // to a single round-trip; each swallows its own failure so neither can deny a
+    // recipient the message their card points them to. `events.record` is a
+    // no-op unless MESSAGE_EVENTS_ENABLED and never throws.
+    await Promise.all([
+      this.prisma.messagePageLink
+        .update({
+          where: { id: link.id },
+          data: {
+            viewCount: { increment: 1 },
+            // Stamp the first open so insights can show "first viewed" (Phase 3).
+            ...(link.firstViewedAt === null ? { firstViewedAt: new Date() } : {}),
+          },
+        })
+        .catch((error: unknown) => {
+          this.logger.error(`View-count update failed for link ${link.id}: ${reasonOf(error)}`);
+        }),
+      this.events.record("viewed", {
+        messagePageLinkId: link.id,
+        messagePageId: page.id,
+        accountId: page.accountId,
+      }),
+    ]);
 
     // Re-derive the iframe src from the stored URL so the embed helper stays the
     // single source of truth; a legacy upload keeps its direct file URL instead.
@@ -504,15 +506,20 @@ export class MessagesService {
     if (!link || link.messagePage.status === "archived" || !link.messagePage.ctaUrl) {
       throw new NotFoundException("Message page not found");
     }
-    await this.prisma.messagePageLink.update({
-      where: { id: link.id },
-      data: { ctaClickCount: { increment: 1 } },
-    });
-    await this.events.record("cta_clicked", {
-      messagePageLinkId: link.id,
-      messagePageId: link.messagePage.id,
-      accountId: link.messagePage.accountId,
-    });
+    // Count the click and record the event concurrently (one round-trip of added
+    // latency, not two) before redirecting. The counter update keeps its
+    // throw-on-failure behaviour; `events.record` never throws.
+    await Promise.all([
+      this.prisma.messagePageLink.update({
+        where: { id: link.id },
+        data: { ctaClickCount: { increment: 1 } },
+      }),
+      this.events.record("cta_clicked", {
+        messagePageLinkId: link.id,
+        messagePageId: link.messagePage.id,
+        accountId: link.messagePage.accountId,
+      }),
+    ]);
     return link.messagePage.ctaUrl;
   }
 

@@ -530,7 +530,9 @@ describe("Message Pages library (e2e)", () => {
 
   it("clamps the time-series window and serves an account-wide series", async () => {
     const { token } = await signUp();
-    // Over the max clamps to 365; a non-numeric value falls back to the default 30.
+    // Over the max clamps to 365, then to the retention window (default 90) so we
+    // never present pruned days as "no activity"; a non-numeric value falls back
+    // to the default 30. See docs/adr/0136-message-page-analytics.md.
     const capped = messagePageTimeSeriesSchema.parse(
       (
         await request(app.getHttpServer())
@@ -539,7 +541,7 @@ describe("Message Pages library (e2e)", () => {
           .expect(200)
       ).body,
     );
-    expect(capped.points).toHaveLength(365);
+    expect(capped.points).toHaveLength(90);
 
     const defaulted = messagePageTimeSeriesSchema.parse(
       (
