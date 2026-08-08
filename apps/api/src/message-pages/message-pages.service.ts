@@ -293,64 +293,86 @@ export class MessagePagesService {
   async insights(accountId: string, id: string): Promise<MessagePageInsights> {
     const page = await this.prisma.messagePage.findFirst({
       where: { id, accountId },
-      include: PAGE_INCLUDE,
+      select: { id: true },
     });
     if (!page) {
       throw new NotFoundException("Message page not found");
     }
-    const firstViewedAt = page.links.reduce<Date | null>((earliest, link) => {
-      if (!link.firstViewedAt) return earliest;
-      return earliest === null || link.firstViewedAt < earliest ? link.firstViewedAt : earliest;
-    }, null);
-    return { funnel: computeFunnel(page.links), firstViewedAt };
+    const linkWhere: Prisma.MessagePageLinkWhereInput = { messagePageId: id };
+    const [funnel, firstView] = await Promise.all([
+      this.funnelFor(linkWhere),
+      this.prisma.messagePageLink.aggregate({ where: linkWhere, _min: { firstViewedAt: true } }),
+    ]);
+    return { funnel, firstViewedAt: firstView._min.firstViewedAt ?? null };
   }
 
   /** The funnel summed across every authored page, plus the most-viewed few
    * (Phase 3). Reads are open, so a downgraded account still sees its numbers. */
   async accountInsights(accountId: string): Promise<MessagePageAccountInsights> {
-    const pages = await this.prisma.messagePage.findMany({
-      where: { accountId, createdByUserId: { not: null } },
-      include: PAGE_INCLUDE,
-    });
-    const topPages = pages
-      .map((page) => ({
-        id: page.id,
-        title: page.title,
-        emoji: page.emoji,
-        totalViews: page.links.reduce((sum, link) => sum + link.viewCount, 0),
-      }))
-      .filter((page) => page.totalViews > 0)
-      .sort((a, b) => b.totalViews - a.totalViews)
-      .slice(0, 5);
+    const pageWhere: Prisma.MessagePageWhereInput = { accountId, createdByUserId: { not: null } };
+    const linkWhere: Prisma.MessagePageLinkWhereInput = { messagePage: pageWhere };
+    const [pageCount, funnel, topGroups] = await Promise.all([
+      this.prisma.messagePage.count({ where: pageWhere }),
+      this.funnelFor(linkWhere),
+      this.prisma.messagePageLink.groupBy({
+        by: ["messagePageId"],
+        where: linkWhere,
+        _sum: { viewCount: true },
+        orderBy: { _sum: { viewCount: "desc" } },
+        take: 5,
+      }),
+    ]);
+    // Resolve titles/emoji only for the (≤5) pages that actually have views.
+    const ranked = topGroups
+      .map((group) => ({ id: group.messagePageId, totalViews: group._sum.viewCount ?? 0 }))
+      .filter((group) => group.totalViews > 0);
+    const titled = ranked.length
+      ? await this.prisma.messagePage.findMany({
+          where: { id: { in: ranked.map((page) => page.id) } },
+          select: { id: true, title: true, emoji: true },
+        })
+      : [];
+    const byId = new Map(titled.map((page) => [page.id, page]));
+    const topPages = ranked.map((page) => ({
+      id: page.id,
+      title: byId.get(page.id)?.title ?? "",
+      emoji: byId.get(page.id)?.emoji ?? null,
+      totalViews: page.totalViews,
+    }));
+    return { pageCount, funnel, topPages };
+  }
+
+  /**
+   * The engagement funnel computed in the database, not in memory: a handful of
+   * indexed aggregates over the matching links (and their replies) instead of
+   * loading every link + reply row to count them in JS. `sent/viewed/clicked/
+   * replied` are DISTINCT cards at each stage; the `total*` are raw event sums.
+   * See docs/adr/0136-message-page-analytics.md.
+   */
+  private async funnelFor(
+    linkWhere: Prisma.MessagePageLinkWhereInput,
+  ): Promise<MessagePageFunnel> {
+    const [agg, viewed, clicked, totalReplies, replied] = await Promise.all([
+      this.prisma.messagePageLink.aggregate({
+        where: linkWhere,
+        _count: { _all: true },
+        _sum: { viewCount: true, ctaClickCount: true },
+      }),
+      this.prisma.messagePageLink.count({ where: { ...linkWhere, viewCount: { gt: 0 } } }),
+      this.prisma.messagePageLink.count({ where: { ...linkWhere, ctaClickCount: { gt: 0 } } }),
+      this.prisma.messagePageReply.count({ where: { messagePageLink: linkWhere } }),
+      this.prisma.messagePageLink.count({ where: { ...linkWhere, replies: { some: {} } } }),
+    ]);
     return {
-      pageCount: pages.length,
-      funnel: computeFunnel(pages.flatMap((page) => page.links)),
-      topPages,
+      sent: agg._count._all,
+      viewed,
+      clicked,
+      replied,
+      totalViews: agg._sum.viewCount ?? 0,
+      totalClicks: agg._sum.ctaClickCount ?? 0,
+      totalReplies,
     };
   }
-}
-
-/** The engagement funnel over a set of per-card links: distinct cards at each
- * stage, plus the raw event totals. */
-function computeFunnel(links: PagePayload["links"]): MessagePageFunnel {
-  const funnel: MessagePageFunnel = {
-    sent: links.length,
-    viewed: 0,
-    clicked: 0,
-    replied: 0,
-    totalViews: 0,
-    totalClicks: 0,
-    totalReplies: 0,
-  };
-  for (const link of links) {
-    funnel.totalViews += link.viewCount;
-    funnel.totalClicks += link.ctaClickCount;
-    funnel.totalReplies += link.replies.length;
-    if (link.viewCount > 0) funnel.viewed += 1;
-    if (link.ctaClickCount > 0) funnel.clicked += 1;
-    if (link.replies.length > 0) funnel.replied += 1;
-  }
-  return funnel;
 }
 
 /** The page's own standalone QR (a link with no order recipient), else its
