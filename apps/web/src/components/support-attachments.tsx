@@ -1,5 +1,6 @@
 "use client";
 
+import { Film, Image as ImageIcon } from "lucide-react";
 import { useId, useRef, useState, type ChangeEvent } from "react";
 import {
   SUPPORT_MAX_ATTACHMENTS,
@@ -152,7 +153,11 @@ export function SupportAttachmentsInput({
               className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-1.5 text-sm"
             >
               <span className="flex min-w-0 items-center gap-2">
-                <span aria-hidden>{a.kind === "video" ? "🎬" : "🖼️"}</span>
+                {a.kind === "video" ? (
+                  <Film className="h-4 w-4 shrink-0" aria-hidden />
+                ) : (
+                  <ImageIcon className="h-4 w-4 shrink-0" aria-hidden />
+                )}
                 <span className="truncate">{a.fileName}</span>
                 <span className="shrink-0 text-xs text-muted">{formatBytes(a.sizeBytes)}</span>
               </span>

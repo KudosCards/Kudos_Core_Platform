@@ -1,5 +1,6 @@
 "use client";
 
+import { Calendar, Plug, Truck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -402,7 +403,7 @@ export function FulfillmentClient({
       if (!r.enabled) {
         setCndTestResult("Click & Drop is not configured (no API key set).");
       } else {
-        const verdict = r.ok ? "✅ connected" : "❌ failed";
+        const verdict = r.ok ? "connected" : "failed";
         const detail = r.error ? `network error: ${r.error}` : `body: ${r.body || "(empty)"}`;
         setCndTestResult(
           `${verdict} · HTTP ${r.status} · ${r.authScheme} auth · ${r.endpoint}\n${detail}`,
@@ -629,13 +630,21 @@ export function FulfillmentClient({
             title="Fire one live read-only call to Royal Mail Click & Drop to check the API key + connection"
             className="rounded-full border border-black/15 px-4 py-1.5 text-sm hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
           >
-            {cndTesting ? "Testing…" : "🔌 Test Click & Drop"}
+            {cndTesting ? (
+              "Testing…"
+            ) : (
+              <>
+                <Plug className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden /> Test Click &
+                Drop
+              </>
+            )}
           </button>
           <a
             href="/fulfillment/calendar"
             className="rounded-full border border-black/15 px-4 py-1.5 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
           >
-            📅 Dispatch calendar
+            <Calendar className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden /> Dispatch
+            calendar
           </a>
         </div>
       </div>
@@ -974,7 +983,14 @@ export function FulfillmentClient({
                       title="Create a Royal Mail shipment, buy postage, and get a tracking number"
                       className="rounded-full border border-accent bg-accent-soft px-4 py-1.5 text-sm font-medium text-accent hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {pendingId === job.id ? "…" : "🚚 Dispatch (Royal Mail)"}
+                      {pendingId === job.id ? (
+                        "…"
+                      ) : (
+                        <>
+                          <Truck className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden />{" "}
+                          Dispatch (Royal Mail)
+                        </>
+                      )}
                     </button>
                   )}
                   {step && (

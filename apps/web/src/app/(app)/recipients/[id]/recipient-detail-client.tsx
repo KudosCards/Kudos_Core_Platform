@@ -1,5 +1,6 @@
 "use client";
 
+import { Cake } from "lucide-react";
 import type {
   KeyDateType,
   Occasion,
@@ -397,7 +398,7 @@ export function RecipientDetailClient({
       >
         <div className="flex flex-col gap-0.5">
           <span className="flex items-center gap-1.5 font-medium">
-            {occasion.type === "birthday" && <span aria-hidden="true">🎂</span>}
+            {occasion.type === "birthday" && <Cake className="h-4 w-4" aria-hidden />}
             {eventKind(occasion)}
           </span>
           <span className="flex flex-wrap items-center gap-2 text-sm text-muted">

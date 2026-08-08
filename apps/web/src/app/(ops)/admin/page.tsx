@@ -1,3 +1,4 @@
+import { Printer, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import type { FulfillmentCounts, MustShipSummary } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
@@ -190,9 +191,18 @@ export default async function AdminOverviewPage() {
               }`}
             >
               <span>
-                {mustShip.overdue > 0
-                  ? `⚠️ ${mustShip.overdue} card${mustShip.overdue === 1 ? "" : "s"} overdue — post now to meet the 5-working-day deadline`
-                  : `🖨️ ${mustShip.today} card${mustShip.today === 1 ? "" : "s"} must post today`}
+                {mustShip.overdue > 0 ? (
+                  <>
+                    <TriangleAlert className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden />
+                    {mustShip.overdue} card{mustShip.overdue === 1 ? "" : "s"} overdue — post now to
+                    meet the 5-working-day deadline
+                  </>
+                ) : (
+                  <>
+                    <Printer className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden />
+                    {mustShip.today} card{mustShip.today === 1 ? "" : "s"} must post today
+                  </>
+                )}
               </span>
               <span className="shrink-0 underline underline-offset-2">Open queue →</span>
             </Link>

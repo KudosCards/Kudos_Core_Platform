@@ -2,6 +2,7 @@
 
 import type { BatchOrderPreflight, PreflightBucket, PreflightIssue } from "@kudos/shared-types";
 import { useState } from "react";
+import { MailX, MapPin, PenLine, Repeat, type LucideIcon } from "lucide-react";
 
 /** How many affected recipients to list per bucket before "Show all N". */
 const PREVIEW_ROWS = 4;
@@ -12,30 +13,30 @@ type BucketKey = "missingAddress" | "invalidPostcode" | "unresolvedTokens" | "du
  * "Fix" button; the rest are advisory warnings the sender resolves elsewhere. */
 const BUCKETS: {
   key: BucketKey;
-  icon: string;
+  Icon: LucideIcon;
   label: string;
   /** Blockers can't be posted at all; warnings still send but may not look right. */
   tone: "blocker" | "warning";
   fixable: boolean;
 }[] = [
-  { key: "missingAddress", icon: "📮", label: "No postal address", tone: "blocker", fixable: true },
+  { key: "missingAddress", Icon: MailX, label: "No postal address", tone: "blocker", fixable: true },
   {
     key: "invalidPostcode",
-    icon: "📍",
+    Icon: MapPin,
     label: "Address needs checking",
     tone: "blocker",
     fixable: true,
   },
   {
     key: "unresolvedTokens",
-    icon: "✍️",
+    Icon: PenLine,
     label: "Personalisation gaps",
     tone: "warning",
     fixable: false,
   },
   {
     key: "duplicate",
-    icon: "🔁",
+    Icon: Repeat,
     label: "Recently sent this design",
     tone: "warning",
     fixable: false,
@@ -71,7 +72,7 @@ function IssueRow({
 }
 
 function BucketPanel({
-  icon,
+  Icon,
   label,
   tone,
   fixable,
@@ -79,7 +80,7 @@ function BucketPanel({
   editDesignHref,
   onFix,
 }: {
-  icon: string;
+  Icon: LucideIcon;
   label: string;
   tone: "blocker" | "warning";
   fixable: boolean;
@@ -100,7 +101,7 @@ function BucketPanel({
   return (
     <div className={`rounded-lg border px-3 py-2.5 ${ring}`}>
       <div className="flex items-center gap-2">
-        <span aria-hidden>{icon}</span>
+        <Icon className="h-4 w-4 shrink-0" aria-hidden />
         <p className="text-sm font-semibold">
           {bucket.count} {label}
         </p>
@@ -213,7 +214,7 @@ export function PreSendCheck({
           {BUCKETS.map((b) => (
             <BucketPanel
               key={b.key}
-              icon={b.icon}
+              Icon={b.Icon}
               label={b.label}
               tone={b.tone}
               fixable={b.fixable}

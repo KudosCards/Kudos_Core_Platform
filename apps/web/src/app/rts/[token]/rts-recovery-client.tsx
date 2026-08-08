@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, ThumbsUp } from "lucide-react";
 import type { ReturnCase } from "@kudos/shared-types";
 import { useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
@@ -64,9 +65,11 @@ export function RtsRecoveryClient({
     const resent = rtsCase.resolution === "resend_recipient" || rtsCase.resolution === "send_business";
     return (
       <div className="card flex flex-col items-center gap-3 p-8 text-center">
-        <span aria-hidden className="text-3xl">
-          {resent ? "✅" : "👍"}
-        </span>
+        {resent ? (
+          <Check className="h-9 w-9 text-success" aria-hidden />
+        ) : (
+          <ThumbsUp className="h-9 w-9 text-success" aria-hidden />
+        )}
         <h1 className="text-xl font-bold">
           {resent ? "That's sorted — thank you" : "All done"}
         </h1>

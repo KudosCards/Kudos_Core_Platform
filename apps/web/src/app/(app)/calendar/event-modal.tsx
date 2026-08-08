@@ -1,5 +1,6 @@
 "use client";
 
+import { Zap } from "lucide-react";
 import type {
   EventWithMembers,
   Recipient,
@@ -567,7 +568,7 @@ function SendCohort({
           title={nudge.reason}
           className="inline-flex items-center gap-1 self-start rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200"
         >
-          ⚡ {nudge.reason} Use First Class
+          <Zap className="h-3.5 w-3.5" aria-hidden /> {nudge.reason} Use First Class
         </button>
       )}
 

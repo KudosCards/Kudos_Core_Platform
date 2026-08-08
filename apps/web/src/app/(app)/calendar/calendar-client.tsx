@@ -1,5 +1,6 @@
 "use client";
 
+import { Pin } from "lucide-react";
 import type { EventSummary, Occasion } from "@kudos/shared-types";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -147,8 +148,8 @@ function OccasionPill({
         </span>
       )}
       {occasion.dispatchDateOverridden && draggable && (
-        <span aria-hidden className="shrink-0" title="Manually placed">
-          📌
+        <span className="shrink-0" title="Manually placed">
+          <Pin className="h-3 w-3" aria-hidden />
         </span>
       )}
       <span className="truncate">{occasionLabel(occasion)}</span>
