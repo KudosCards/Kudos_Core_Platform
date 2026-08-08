@@ -31,6 +31,21 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3001),
 
+  // Number of reverse-proxy hops in front of the API, set as Express's
+  // `trust proxy` (see configure-app.ts). This is what makes `req.ip` — and so
+  // the per-IP rate limiting on every public endpoint — the REAL client, not
+  // our hosting edge proxy. Without it every anonymous request shares the
+  // proxy's single IP and one global rate-limit bucket, so the per-user limits
+  // are effectively global. It MUST be an exact hop count, never `true`: with
+  // `true`, Express trusts a client-supplied X-Forwarded-For, letting anyone
+  // spoof their IP and dodge the limit — worse than no trust at all. Railway's
+  // edge is a single hop, hence the default of 1; put a CDN/WAF in front and it
+  // becomes 2. Set 0 to trust nothing (falls back to the socket IP — the old,
+  // pre-fix behaviour) as a safe escape hatch. Verify the value resolves the
+  // real client IP in staging before trusting it — see
+  // docs/adr/0133-trust-proxy-and-rate-limit-integrity.md.
+  TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(1).catch(1),
+
   DATABASE_URL: z.string().url(),
   DIRECT_URL: z.string().url(),
 

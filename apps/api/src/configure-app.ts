@@ -16,6 +16,21 @@ import { ServerTimingInterceptor } from "./observability/server-timing.intercept
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService<EnvConfig, true>);
 
+  // Trust exactly N proxy hops in front of us, so Express derives `req.ip` (and
+  // therefore the ThrottlerGuard's per-IP rate-limit key on every public route)
+  // from the X-Forwarded-For chain rather than the hosting edge proxy's own
+  // socket address. A specific hop count — never `true` — so a client can't
+  // spoof X-Forwarded-For to escape the limit. 0 disables it entirely (socket
+  // IP, the pre-fix behaviour). See TRUST_PROXY_HOPS in env.schema.ts and
+  // docs/adr/0133-trust-proxy-and-rate-limit-integrity.md.
+  const trustProxyHops = config.get("TRUST_PROXY_HOPS", { infer: true });
+  if (trustProxyHops > 0) {
+    const expressApp = app.getHttpAdapter().getInstance() as {
+      set(setting: string, value: unknown): void;
+    };
+    expressApp.set("trust proxy", trustProxyHops);
+  }
+
   app.use(helmet());
   // gzip/brotli every response above the default 1KB threshold. The API's list
   // endpoints (recipients, orders, occasions) return JSON that compresses ~70-80%,
