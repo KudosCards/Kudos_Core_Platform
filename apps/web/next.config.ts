@@ -42,4 +42,13 @@ const nextConfig: NextConfig = {
 export default withSentryConfig(nextConfig, {
   silent: true,
   sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+  // Shrink the Sentry client bundle: we don't use Session Replay (never added
+  // the integration) or debug logging, so strip those code paths from the SDK
+  // that ships on every page. Error capture is unaffected.
+  bundleSizeOptimizations: {
+    excludeDebugStatements: true,
+    excludeReplayShadowDom: true,
+    excludeReplayIframe: true,
+    excludeReplayWorker: true,
+  },
 });
