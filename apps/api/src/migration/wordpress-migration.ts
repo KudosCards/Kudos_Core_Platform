@@ -69,6 +69,9 @@ export interface AccountPlan {
   owner: { email: string; firstName: string | null; lastName: string | null };
   /** From subscription meta `_stripe_customer_id`; null for the comp account. */
   stripeCustomerId: string | null;
+  /** The saved Stripe payment method (`_stripe_source_id`, a `pm_…`) the follow-up
+   * billing script charges. Null when the account has no card on file. */
+  stripePaymentMethodId: string | null;
   /** The WooCommerce subscription id, e.g. "2377". */
   wooSubscriptionId: string;
   /** Placeholder Stripe-subscription id used until the follow-up Stripe PR wires
@@ -278,6 +281,7 @@ export function buildAccountPlan(
       lastName: nullIfBlank(meta._billing_last_name),
     },
     stripeCustomerId: nullIfBlank(meta._stripe_customer_id),
+    stripePaymentMethodId: nullIfBlank(meta._stripe_source_id),
     wooSubscriptionId: subscription.subscriptionId,
     syntheticSubscriptionId: `wc_sub_${subscription.subscriptionId}`,
     nextPaymentAt: parseWooTimestamp(meta._schedule_next_payment),

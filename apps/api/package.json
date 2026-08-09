@@ -27,6 +27,7 @@
     "prisma:seed": "prisma db seed",
     "setup:stripe-plans": "ts-node scripts/setup-stripe-plans.ts",
     "migrate:wordpress": "ts-node scripts/migrate-wordpress.ts",
+    "migrate:wordpress-billing": "ts-node scripts/migrate-wordpress-billing.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
