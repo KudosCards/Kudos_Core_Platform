@@ -157,6 +157,7 @@ describe("buildAccountPlan", () => {
     _billing_last_name: "Baptist",
     _customer_user: "50",
     _stripe_customer_id: "cus_ABC",
+    _stripe_source_id: "pm_TEST",
     _schedule_next_payment: "2026-08-19 22:33:23",
   };
 
@@ -170,6 +171,7 @@ describe("buildAccountPlan", () => {
     expect(plan.accountName).toBe("Test Centre");
     expect(plan.owner.email).toBe("owner@example.co.uk");
     expect(plan.stripeCustomerId).toBe("cus_ABC");
+    expect(plan.stripePaymentMethodId).toBe("pm_TEST");
     expect(plan.syntheticSubscriptionId).toBe("wc_sub_2377");
     expect(plan.nextPaymentAt).toBe("2026-08-19T22:33:23.000Z");
     expect(plan.recipients).toHaveLength(2);

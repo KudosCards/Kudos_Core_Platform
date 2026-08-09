@@ -26,6 +26,7 @@
  * and set-password links — they live in the gitignored ./migration-data dir and
  * are NEVER committed. See docs/adr/0139-wordpress-migration.md.
  */
+import { randomBytes } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parse } from "csv-parse/sync";
@@ -48,11 +49,16 @@ import {
 interface Args {
   dataDir: string;
   commit: boolean;
+  /** Set a per-owner temporary password and record it in the commit report, so
+   * an operator can log in to each account and verify everything BEFORE the
+   * owners are ever sent their set-password link. See docs/adr/0140. */
+  tempPassword: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
   let dataDir = "./migration-data";
   let commit = false;
+  let tempPassword = false;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (!arg) {
@@ -60,6 +66,8 @@ function parseArgs(argv: string[]): Args {
     }
     if (arg === "--commit") {
       commit = true;
+    } else if (arg === "--temp-password" || arg === "--temp-passwords") {
+      tempPassword = true;
     } else if (arg === "--data") {
       dataDir = argv[i + 1] ?? dataDir;
       i += 1;
@@ -67,7 +75,14 @@ function parseArgs(argv: string[]): Args {
       dataDir = arg.slice("--data=".length);
     }
   }
-  return { dataDir, commit };
+  return { dataDir, commit, tempPassword };
+}
+
+/** A strong, random per-account temporary password for the verify-first step.
+ * base64url gives mixed case + digits; the `Kc-` prefix guarantees a letter and
+ * a symbol so it satisfies any minimum-complexity rule. */
+function generateTempPassword(): string {
+  return `Kc-${randomBytes(15).toString("base64url")}`;
 }
 
 /** Read every `*_contacts.csv` in the data dir into typed rows. */
@@ -156,6 +171,9 @@ interface AccountOutcome {
   /** The one-time set-password link for the owner (only in --commit). */
   setPasswordLink: string | null;
   linkType: "invite" | "recovery" | null;
+  /** A temporary password for verify-first login, set only when --temp-password
+   * is passed. Null otherwise. A SECRET — lives only in the private report. */
+  tempPassword: string | null;
   recipientsCreated: number;
   recipientsUpdated: number;
   recipientsArchived: number;
@@ -388,6 +406,7 @@ async function commitPlan(
   admin: SupabaseClient,
   webAppUrl: string,
   plan: AccountPlan,
+  tempPassword: boolean,
 ): Promise<AccountOutcome> {
   const outcome: AccountOutcome = {
     accountName: plan.accountName,
@@ -395,6 +414,7 @@ async function commitPlan(
     accountId: "",
     setPasswordLink: null,
     linkType: null,
+    tempPassword: null,
     recipientsCreated: 0,
     recipientsUpdated: 0,
     recipientsArchived: 0,
@@ -406,6 +426,24 @@ async function commitPlan(
   const { userId, link, linkType } = await ensureOwnerAndLink(admin, webAppUrl, plan.owner.email);
   outcome.setPasswordLink = link;
   outcome.linkType = linkType;
+
+  // Verify-first: give the owner a known temporary password (and confirm the
+  // email so password sign-in works immediately) so an operator can log in and
+  // check the account before the owner is ever contacted. The owner's
+  // set-password link still overrides this whenever they onboard.
+  if (tempPassword) {
+    const password = generateTempPassword();
+    const { error } = await admin.auth.admin.updateUserById(userId, {
+      password,
+      email_confirm: true,
+    });
+    if (error) {
+      throw new Error(
+        `Could not set a temporary password for ${plan.owner.email}: ${error.message}`,
+      );
+    }
+    outcome.tempPassword = password;
+  }
 
   const accountId = await upsertAccount(prisma, plan, userId);
   outcome.accountId = accountId;
@@ -444,7 +482,7 @@ function writeReport(dataDir: string, payload: unknown): string {
 }
 
 async function main(): Promise<void> {
-  const { dataDir, commit } = parseArgs(process.argv.slice(2));
+  const { dataDir, commit, tempPassword } = parseArgs(process.argv.slice(2));
 
   const contacts = loadContacts(dataDir);
   const subsByCustomer = indexSubscriptionsByCustomerUser(
@@ -487,7 +525,7 @@ async function main(): Promise<void> {
   try {
     for (const plan of plans) {
       console.log(`Migrating "${plan.accountName}" (${plan.owner.email})…`);
-      outcomes.push(await commitPlan(prisma, admin, webAppUrl, plan));
+      outcomes.push(await commitPlan(prisma, admin, webAppUrl, plan, tempPassword));
     }
   } finally {
     await prisma.$disconnect();
@@ -507,9 +545,22 @@ async function main(): Promise<void> {
         `skipped ${outcome.recipientsSkipped}, birthdays ${outcome.birthdaysScheduled}`,
     );
   }
+  if (tempPassword) {
+    console.log("\nVerify-first temporary logins (in the report — SECRET):");
+    for (const outcome of outcomes) {
+      console.log(`  ${outcome.ownerEmail}  →  ${outcome.tempPassword ?? "—"}`);
+    }
+    console.log(
+      "\nLog in as each owner with the temp password above and check everything.\n" +
+        "When you're happy, send owners their set-password link (also in the report) or\n" +
+        "point them at 'Forgot password' — either overrides the temp password.",
+    );
+  } else {
+    console.log("\nNo temp passwords were set (pass --temp-password to verify accounts first).");
+  }
   console.log(
-    `\nReport (owner set-password links inside — treat as secret): ${reportFile}\n` +
-      "Send each owner their link, or point them at 'Forgot password' on the login page.",
+    `\nReport (owner set-password links${tempPassword ? " + temp passwords" : ""} inside — ` +
+      `treat as secret, delete once used): ${reportFile}`,
   );
 }
 
