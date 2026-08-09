@@ -33,3 +33,8 @@ apps/api/generated/
 
 # misc
 *.tsbuildinfo
+
+# migration exports + reports — children's personal data and set-password
+# links. Never commit these. See docs/adr/0139-wordpress-migration.md.
+apps/api/migration-data/*
+!apps/api/migration-data/README.md
