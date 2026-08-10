@@ -557,102 +557,122 @@ export function IntegrationsClient({
         </div>
       </section>
 
-      {/* API keys */}
-      <section className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold">API keys</h2>
-          <p className="text-sm text-muted">
-            Prefer to push contacts yourself? Create a key to send them in from any system. The full
-            key is shown once — store it somewhere safe.
-          </p>
-        </div>
-
-        {newKey && (
-          <div className="card flex flex-col gap-2 border-accent/30 bg-accent-soft/50 p-4">
-            <p className="text-sm font-semibold text-accent">
-              Here&apos;s your new key — copy it now, it won&apos;t be shown again.
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm">
-                {newKey.key}
-              </code>
-              <CopyButton text={newKey.key} />
+      {/* Advanced — API keys + push endpoint, collapsed by default so the
+          technical bits don't dominate the page for non-developers. */}
+      <details className="group flex flex-col rounded-xl border border-border">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4">
+          <span className="flex flex-col">
+            <span className="text-lg font-semibold">Advanced — API access</span>
+            <span className="text-sm text-muted">
+              For developers: push contacts in from your own systems with an API key.
+            </span>
+          </span>
+          <span
+            className="shrink-0 text-muted transition-transform group-open:rotate-180"
+            aria-hidden
+          >
+            ▾
+          </span>
+        </summary>
+        <div className="flex flex-col gap-8 border-t border-border p-5">
+          {/* API keys */}
+          <section className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-lg font-semibold">API keys</h2>
+              <p className="text-sm text-muted">
+                Prefer to push contacts yourself? Create a key to send them in from any system. The
+                full key is shown once — store it somewhere safe.
+              </p>
             </div>
-          </div>
-        )}
 
-        <form onSubmit={(e) => void createKey(e)} className="flex flex-col gap-2 sm:flex-row">
-          <input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="Label (e.g. Nightly sync)"
-            maxLength={80}
-            className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm sm:flex-1"
-          />
-          <button type="submit" disabled={creating} className="btn-accent w-full sm:w-auto">
-            {creating ? "Creating…" : "Create key"}
-          </button>
-        </form>
-
-        {keys.length > 0 && (
-          <div className="card divide-y divide-border overflow-hidden">
-            {keys.map((key) => {
-              const revoked = key.revokedAt !== null;
-              return (
-                <div
-                  key={key.id}
-                  className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-5"
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium">{key.label}</span>
-                    <span className="font-mono text-xs text-muted">{key.prefix}…</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
-                    <span>Created {formatDate(key.createdAt)}</span>
-                    <span>Last used {formatDate(key.lastUsedAt)}</span>
-                    {revoked ? (
-                      <span className="pill pill-muted">Revoked</span>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={revokingId === key.id}
-                        onClick={() => void revoke(key.id)}
-                        className="btn-secondary px-3 py-1.5 text-xs"
-                      >
-                        {revokingId === key.id ? "Revoking…" : "Revoke"}
-                      </button>
-                    )}
-                  </div>
+            {newKey && (
+              <div className="card flex flex-col gap-2 border-accent/30 bg-accent-soft/50 p-4">
+                <p className="text-sm font-semibold text-accent">
+                  Here&apos;s your new key — copy it now, it won&apos;t be shown again.
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm">
+                    {newKey.key}
+                  </code>
+                  <CopyButton text={newKey.key} />
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+              </div>
+            )}
 
-      {/* How-to */}
-      <section className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold">Push contacts to your account</h2>
-          <p className="text-sm text-muted">
-            Send a <code className="font-mono text-xs">POST</code> to the endpoint below with your
-            key. Re-sending a contact with the same{" "}
-            <code className="font-mono text-xs">externalId</code> updates it instead of creating a
-            duplicate.
-          </p>
+            <form onSubmit={(e) => void createKey(e)} className="flex flex-col gap-2 sm:flex-row">
+              <input
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="Label (e.g. Nightly sync)"
+                maxLength={80}
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm sm:flex-1"
+              />
+              <button type="submit" disabled={creating} className="btn-accent w-full sm:w-auto">
+                {creating ? "Creating…" : "Create key"}
+              </button>
+            </form>
+
+            {keys.length > 0 && (
+              <div className="card divide-y divide-border overflow-hidden">
+                {keys.map((key) => {
+                  const revoked = key.revokedAt !== null;
+                  return (
+                    <div
+                      key={key.id}
+                      className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-5"
+                    >
+                      <div className="flex flex-col">
+                        <span className="font-medium">{key.label}</span>
+                        <span className="font-mono text-xs text-muted">{key.prefix}…</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+                        <span>Created {formatDate(key.createdAt)}</span>
+                        <span>Last used {formatDate(key.lastUsedAt)}</span>
+                        {revoked ? (
+                          <span className="pill pill-muted">Revoked</span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={revokingId === key.id}
+                            onClick={() => void revoke(key.id)}
+                            className="btn-secondary px-3 py-1.5 text-xs"
+                          >
+                            {revokingId === key.id ? "Revoking…" : "Revoke"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* How-to */}
+          <section className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-lg font-semibold">Push contacts to your account</h2>
+              <p className="text-sm text-muted">
+                Send a <code className="font-mono text-xs">POST</code> to the endpoint below with
+                your key. Re-sending a contact with the same{" "}
+                <code className="font-mono text-xs">externalId</code> updates it instead of creating
+                a duplicate.
+              </p>
+            </div>
+            <div className="card flex items-center gap-2 p-3">
+              <code className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint}</code>
+              <CopyButton text={endpoint} label="Copy URL" />
+            </div>
+            <div className="card overflow-hidden">
+              <div className="flex items-center justify-between border-b border-border px-4 py-2">
+                <span className="section-label">Example</span>
+                <CopyButton text={curl} label="Copy curl" />
+              </div>
+              <pre className="overflow-x-auto p-4 font-mono text-xs leading-relaxed">{curl}</pre>
+            </div>
+          </section>
         </div>
-        <div className="card flex items-center gap-2 p-3">
-          <code className="min-w-0 flex-1 truncate font-mono text-sm">{endpoint}</code>
-          <CopyButton text={endpoint} />
-        </div>
-        <div className="card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border px-4 py-2">
-            <span className="section-label">Example</span>
-            <CopyButton text={curl} label="Copy curl" />
-          </div>
-          <pre className="overflow-x-auto p-4 font-mono text-xs leading-relaxed">{curl}</pre>
-        </div>
-      </section>
+      </details>
     </div>
   );
 }
