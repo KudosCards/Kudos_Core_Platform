@@ -49,7 +49,9 @@ export function OrderDetailClient({
     startOfUtcDay(new Date(scheduledDispatch)).getTime() > today.getTime();
   const anyStarted = order.orderRecipients.some((l) => l.jobStatus && l.jobStatus !== "pending");
   const canReschedule = isScheduled && !anyStarted;
-  const rescheduleWindow = deliverByWindow(order.orderRecipients[0]?.postageClass ?? "second_class");
+  const rescheduleWindow = deliverByWindow(
+    order.orderRecipients[0]?.postageClass ?? "second_class",
+  );
 
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [newDeliverBy, setNewDeliverBy] = useState(isoDay(rescheduleWindow.earliest));
@@ -121,7 +123,9 @@ export function OrderDetailClient({
       setConfirmRefund(false);
       router.refresh();
     } catch (refundError) {
-      setError(refundError instanceof ApiError ? refundError.message : "Could not cancel and refund");
+      setError(
+        refundError instanceof ApiError ? refundError.message : "Could not cancel and refund",
+      );
       setPending(null);
     }
   }
@@ -144,7 +148,9 @@ export function OrderDetailClient({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
       <div className="card grid gap-2 p-5 text-sm">
@@ -286,7 +292,7 @@ export function OrderDetailClient({
                 </div>
               )}
               <p className="text-xs text-muted">
-                Need to change the recipients instead?{" "}
+                Need to change the contacts instead?{" "}
                 <Link href="/support" className="text-accent hover:underline">
                   Contact support
                 </Link>
@@ -295,7 +301,7 @@ export function OrderDetailClient({
             </div>
           ) : (
             <p className="text-xs text-muted">
-              Paid and held until then. Need to change the recipients or cancel it?{" "}
+              Paid and held until then. Need to change the contacts or cancel it?{" "}
               <Link href="/support" className="text-accent hover:underline">
                 Contact support
               </Link>{" "}
@@ -366,7 +372,11 @@ export function OrderDetailClient({
                   {line.recipientFirstName} {line.recipientLastName}
                 </span>
                 <span className="text-xs text-muted">
-                  {[line.shippingAddressLine1, line.shippingAddressCity, line.shippingAddressPostcode]
+                  {[
+                    line.shippingAddressLine1,
+                    line.shippingAddressCity,
+                    line.shippingAddressPostcode,
+                  ]
                     .filter(Boolean)
                     .join(", ")}{" "}
                   · {line.postageClass === "first_class" ? "First class" : "Second class"} ·{" "}

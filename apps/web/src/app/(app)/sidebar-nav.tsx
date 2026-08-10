@@ -31,7 +31,7 @@ const GROUPS: NavGroup[] = [
   {
     title: "Grow relationships",
     items: [
-      { label: "Recipients", href: "/recipients", icon: "recipients" },
+      { label: "Contacts", href: "/recipients", icon: "recipients" },
       { label: "Segments", href: "/segments", icon: "segments" },
       { label: "Designs", href: "/designs", icon: "designs" },
       { label: "Message pages", href: "/message-pages", icon: "messages" },

@@ -6,7 +6,7 @@ import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 
 const REASON_LABELS: Record<string, string> = {
-  moved: "The recipient has moved",
+  moved: "The contact has moved",
   incomplete_address: "The address was incomplete",
   incorrect_address: "The address was incorrect",
   undeliverable: "Delivery wasn't possible",
@@ -34,14 +34,17 @@ export function ReturnRecoveryPanel({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [businessFor, setBusinessFor] = useState<string | null>(null);
 
-  const open = cases.filter((c) => c.status === "awaiting_address" || c.status === "awaiting_resend");
+  const open = cases.filter(
+    (c) => c.status === "awaiting_address" || c.status === "awaiting_resend",
+  );
   if (open.length === 0) return null;
 
   function applyUpdated(updated: ReturnCase) {
     setCases((list) => list.map((c) => (c.id === updated.id ? updated : c)));
     // When a case resolves and no other stays open, the contact's flag clears.
     const stillOpen = cases.some(
-      (c) => c.id !== updated.id && (c.status === "awaiting_address" || c.status === "awaiting_resend"),
+      (c) =>
+        c.id !== updated.id && (c.status === "awaiting_address" || c.status === "awaiting_resend"),
     );
     const nowOpen = updated.status === "awaiting_address" || updated.status === "awaiting_resend";
     if (!nowOpen && !stillOpen) {
@@ -100,16 +103,24 @@ export function ReturnRecoveryPanel({
         <h2 className="text-lg font-semibold text-amber-900">Address needs attention</h2>
       </div>
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
       {open.map((c) => {
         const busy = pendingId === c.id;
         return (
-          <div key={c.id} className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-surface p-4">
+          <div
+            key={c.id}
+            className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-surface p-4"
+          >
             <p className="text-sm text-foreground">
-              A card to <strong>{c.recipientName}</strong> (order ORD-{c.orderNumber}) was returned to us.{" "}
-              <span className="text-muted">{REASON_LABELS[c.reason] ?? "Returned by Royal Mail"}.</span>
+              A card to <strong>{c.recipientName}</strong> (order ORD-{c.orderNumber}) was returned
+              to us.{" "}
+              <span className="text-muted">
+                {REASON_LABELS[c.reason] ?? "Returned by Royal Mail"}.
+              </span>
             </p>
             <p className="text-xs text-muted">
               Kudos Promise: once the address is corrected, we&apos;ll resend this card{" "}
@@ -123,10 +134,33 @@ export function ReturnRecoveryPanel({
               >
                 <p className="text-sm font-medium">Update the address</p>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <input name="addressLine1" required placeholder="Address line 1" defaultValue={recipient.addressLine1 ?? ""} className={inputClass} />
-                  <input name="addressLine2" placeholder="Address line 2 (optional)" defaultValue={recipient.addressLine2 ?? ""} className={inputClass} />
-                  <input name="addressCity" required placeholder="City" defaultValue={recipient.addressCity ?? ""} className={inputClass} />
-                  <input name="addressPostcode" required placeholder="Postcode" defaultValue={recipient.addressPostcode ?? ""} className={inputClass} />
+                  <input
+                    name="addressLine1"
+                    required
+                    placeholder="Address line 1"
+                    defaultValue={recipient.addressLine1 ?? ""}
+                    className={inputClass}
+                  />
+                  <input
+                    name="addressLine2"
+                    placeholder="Address line 2 (optional)"
+                    defaultValue={recipient.addressLine2 ?? ""}
+                    className={inputClass}
+                  />
+                  <input
+                    name="addressCity"
+                    required
+                    placeholder="City"
+                    defaultValue={recipient.addressCity ?? ""}
+                    className={inputClass}
+                  />
+                  <input
+                    name="addressPostcode"
+                    required
+                    placeholder="Postcode"
+                    defaultValue={recipient.addressPostcode ?? ""}
+                    className={inputClass}
+                  />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button type="submit" disabled={busy} className="btn-accent">
@@ -144,11 +178,13 @@ export function ReturnRecoveryPanel({
               </form>
             ) : (
               <div className="flex flex-col gap-3">
-                <p className="text-sm font-medium">Address updated — choose how to recover this card</p>
+                <p className="text-sm font-medium">
+                  Address updated — choose how to recover this card
+                </p>
                 {c.resend.birthdayPassed && (
                   <p className="rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900">
-                    This birthday has already passed, so it can&apos;t be resent in time — you can still
-                    have the original card hand-delivered to your business, or archive it.
+                    This birthday has already passed, so it can&apos;t be resent in time — you can
+                    still have the original card hand-delivered to your business, or archive it.
                   </p>
                 )}
                 <div className="flex flex-wrap items-center gap-2">
@@ -187,10 +223,29 @@ export function ReturnRecoveryPanel({
                   >
                     <p className="text-sm font-medium">Your business address (for hand delivery)</p>
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <input name="addressLine1" required placeholder="Address line 1" className={inputClass} />
-                      <input name="addressLine2" placeholder="Address line 2 (optional)" className={inputClass} />
-                      <input name="addressCity" required placeholder="City" className={inputClass} />
-                      <input name="addressPostcode" required placeholder="Postcode" className={inputClass} />
+                      <input
+                        name="addressLine1"
+                        required
+                        placeholder="Address line 1"
+                        className={inputClass}
+                      />
+                      <input
+                        name="addressLine2"
+                        placeholder="Address line 2 (optional)"
+                        className={inputClass}
+                      />
+                      <input
+                        name="addressCity"
+                        required
+                        placeholder="City"
+                        className={inputClass}
+                      />
+                      <input
+                        name="addressPostcode"
+                        required
+                        placeholder="Postcode"
+                        className={inputClass}
+                      />
                     </div>
                     <button type="submit" disabled={busy} className="btn-accent self-start">
                       {busy ? "Working…" : "Send to my business"}

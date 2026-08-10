@@ -34,7 +34,7 @@ export function ReminderEmailsToggle({ initial }: { initial: boolean }) {
       <div>
         <p className="text-sm font-medium">Upcoming-birthday reminder emails</p>
         <p className="text-xs text-muted">
-          A weekly heads-up when recipients have birthdays coming up.
+          A weekly heads-up when contacts have birthdays coming up.
         </p>
         {error && <p className="mt-1 text-xs font-medium text-accent">{error}</p>}
       </div>

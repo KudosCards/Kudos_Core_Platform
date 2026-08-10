@@ -1254,7 +1254,7 @@ export function DesignEditorClient({
                   />
                   <span>
                     We&apos;ll build a simple page with just this video. It&apos;s the default for
-                    every card from this design — you can personalise it per recipient later on the
+                    every card from this design — you can personalise it per contact later on the
                     Messages page.
                   </span>
                 </label>
@@ -1360,7 +1360,7 @@ export function DesignEditorClient({
                   to its placeholder after each pick so the same field can be
                   inserted again. */}
               <label className="flex flex-col gap-1 text-xs text-foreground/60">
-                Insert merge field — fills in per recipient when sent
+                Insert merge field — fills in per contact when sent
                 <select
                   aria-label="Insert merge field"
                   value=""

@@ -154,9 +154,12 @@ function BrevoConnector({
     setResult(null);
     setBusy("sync");
     try {
-      const syncResult = await clientApiFetch<CrmSyncResult>("/integrations/connections/brevo/sync", {
-        method: "POST",
-      });
+      const syncResult = await clientApiFetch<CrmSyncResult>(
+        "/integrations/connections/brevo/sync",
+        {
+          method: "POST",
+        },
+      );
       setResult(syncResult);
       if (connection) onChange({ ...connection, lastSyncedAt: new Date(), lastSyncStatus: "ok" });
     } catch (syncError) {
@@ -174,7 +177,9 @@ function BrevoConnector({
       onChange(null);
       setResult(null);
     } catch (disconnectError) {
-      setError(disconnectError instanceof ApiError ? disconnectError.message : "Could not disconnect");
+      setError(
+        disconnectError instanceof ApiError ? disconnectError.message : "Could not disconnect",
+      );
     } finally {
       setBusy(null);
     }
@@ -427,7 +432,10 @@ export function IntegrationsClient({
       };
     }
     if (errorProvider) {
-      return { tone: "bad", text: `We couldn't connect ${labelFor(errorProvider)}. Please try again.` };
+      return {
+        tone: "bad",
+        text: `We couldn't connect ${labelFor(errorProvider)}. Please try again.`,
+      };
     }
     return null;
   });
@@ -502,12 +510,14 @@ export function IntegrationsClient({
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Integrations</h1>
         <p className="text-sm text-muted sm:text-base">
           Bring recipients in from your CRM or any other system. Contacts you sync or push appear on
-          the Recipients page tagged with their source.
+          the Contacts page tagged with their source.
         </p>
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
       {/* CRM connectors */}

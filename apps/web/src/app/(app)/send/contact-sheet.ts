@@ -83,7 +83,12 @@ ${bodyHtml}
 
 /** Turn a design name into a filesystem-safe slug for the download filename. */
 function fileSlug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "run";
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "run"
+  );
 }
 
 /** Hand the browser a downloadable .html file (which the recipient can open and
@@ -169,7 +174,7 @@ export function buildContactSheetHtml(
   return wrapSheet(
     `Proof sheet — ${design.name}`,
     metaLine,
-    `<tr><th class="num">#</th><th>Recipient</th><th>Posts to</th><th>Personalised message</th></tr>`,
+    `<tr><th class="num">#</th><th>Contact</th><th>Posts to</th><th>Personalised message</th></tr>`,
     rows,
   );
 }
@@ -248,7 +253,7 @@ export function buildOrderProofSheetHtml(order: BatchOrderDetail): string {
   return wrapSheet(
     `${reference} — proof sheet`,
     metaLine,
-    `<tr><th class="num">#</th><th>Recipient</th><th>Posted to</th><th>Postage</th><th>Price</th><th>Status</th><th>Tracking</th></tr>`,
+    `<tr><th class="num">#</th><th>Contact</th><th>Posted to</th><th>Postage</th><th>Price</th><th>Status</th><th>Tracking</th></tr>`,
     rows,
   );
 }

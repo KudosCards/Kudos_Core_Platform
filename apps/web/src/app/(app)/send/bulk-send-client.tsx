@@ -654,7 +654,7 @@ export function BulkSendClient({
           {selectedDesign && sendable.length > 0 && (
             <section className="card flex flex-col gap-3 p-6">
               <div className="flex flex-col gap-1">
-                <h2 className="font-semibold">Personalised for each recipient</h2>
+                <h2 className="font-semibold">Personalised for each contact</h2>
                 <p className="text-sm text-muted">
                   {personalises ? (
                     <>Each card is printed with that person&apos;s name. </>
@@ -669,7 +669,7 @@ export function BulkSendClient({
                       >
                         Edit / personalise
                       </Link>{" "}
-                      to include each recipient&apos;s name.{" "}
+                      to include each contact&apos;s name.{" "}
                     </>
                   )}
                   Click any card to flip through every face and check the address.
@@ -715,8 +715,8 @@ export function BulkSendClient({
                         : "rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-foreground/[0.04]"
                     }
                   >
-                    <Search className="mr-1.5 inline h-4 w-4 align-text-bottom" aria-hidden /> Review
-                    all {sendable.length} cards
+                    <Search className="mr-1.5 inline h-4 w-4 align-text-bottom" aria-hidden />{" "}
+                    Review all {sendable.length} cards
                   </button>
                 </div>
               )}
@@ -782,8 +782,8 @@ export function BulkSendClient({
             <fieldset className="flex flex-col gap-2 border-t border-border pt-3">
               <legend className="mb-1 text-sm font-medium">Message page</legend>
               <p className="text-xs text-muted">
-                This design has a QR code. Attach a message page so recipients see a video
-                and a personal note when they scan it.
+                This design has a QR code. Attach a message page so recipients see a video and a
+                personal note when they scan it.
               </p>
               {activeMessagePages.length > 0 ? (
                 <select
@@ -887,7 +887,7 @@ export function BulkSendClient({
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
           <div className="flex flex-col leading-tight">
             <span className="text-xs text-muted">
-              {(preflight ? preflight.price.cardCount : sendable.length)} card
+              {preflight ? preflight.price.cardCount : sendable.length} card
               {(preflight ? preflight.price.cardCount : sendable.length) === 1 ? "" : "s"} ·{" "}
               {preflight ? "total" : "estimated"}
             </span>

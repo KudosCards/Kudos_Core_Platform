@@ -19,8 +19,26 @@ import { InsightsPanel } from "./insights-panel";
 const INPUT = "w-full rounded-md border border-border bg-surface px-3 py-2.5 text-base sm:text-sm";
 
 const EMOJI_CHOICES = [
-  "🎉", "🎂", "🎈", "🥳", "🎁", "👏", "🙌", "💐", "🌟", "✨",
-  "❤️", "💙", "🏆", "🎓", "☀️", "🙏", "🤝", "💌", "🎊", "🕊️",
+  "🎉",
+  "🎂",
+  "🎈",
+  "🥳",
+  "🎁",
+  "👏",
+  "🙌",
+  "💐",
+  "🌟",
+  "✨",
+  "❤️",
+  "💙",
+  "🏆",
+  "🎓",
+  "☀️",
+  "🙏",
+  "🤝",
+  "💌",
+  "🎊",
+  "🕊️",
 ];
 
 interface FormState {
@@ -78,7 +96,9 @@ export function MessagePageBuilder({ page }: { page: MessagePageDetail | null })
       return;
     }
     if (videoWarning) {
-      setError("That video link isn't from a supported provider (YouTube, Vimeo, Loom or Google Drive).");
+      setError(
+        "That video link isn't from a supported provider (YouTube, Vimeo, Loom or Google Drive).",
+      );
       return;
     }
     if (ctaHalf) {
@@ -112,7 +132,9 @@ export function MessagePageBuilder({ page }: { page: MessagePageDetail | null })
         return;
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't save your page. Please try again.");
+      setError(
+        err instanceof ApiError ? err.message : "Couldn't save your page. Please try again.",
+      );
     } finally {
       setSaving(false);
     }
@@ -120,7 +142,11 @@ export function MessagePageBuilder({ page }: { page: MessagePageDetail | null })
 
   async function archive() {
     if (!page) return;
-    if (!window.confirm("Archive this page? Any cards already sent keep working; it just leaves your library.")) {
+    if (
+      !window.confirm(
+        "Archive this page? Any cards already sent keep working; it just leaves your library.",
+      )
+    ) {
       return;
     }
     setSaving(true);
@@ -186,10 +212,7 @@ export function MessagePageBuilder({ page }: { page: MessagePageDetail | null })
           </div>
         </Field>
 
-        <Field
-          label="Video link"
-          hint="YouTube, Vimeo, Loom or Google Drive"
-        >
+        <Field label="Video link" hint="YouTube, Vimeo, Loom or Google Drive">
           <input
             type="url"
             value={form.videoUrl}
@@ -198,7 +221,9 @@ export function MessagePageBuilder({ page }: { page: MessagePageDetail | null })
             className={INPUT}
           />
           {embed && (
-            <p className="mt-1 text-xs text-success">✓ {VIDEO_PROVIDER_LABELS[embed.provider]} video</p>
+            <p className="mt-1 text-xs text-success">
+              ✓ {VIDEO_PROVIDER_LABELS[embed.provider]} video
+            </p>
           )}
           {videoWarning && (
             <p className="mt-1 text-xs text-danger">
@@ -237,7 +262,9 @@ export function MessagePageBuilder({ page }: { page: MessagePageDetail | null })
           </Field>
         </div>
         {ctaHalf && (
-          <p className="-mt-3 text-xs text-danger">Add both a label and a link, or leave both blank.</p>
+          <p className="-mt-3 text-xs text-danger">
+            Add both a label and a link, or leave both blank.
+          </p>
         )}
 
         <Field label="Greeting name" hint="Used when this page isn't tied to a contact">
@@ -260,17 +287,12 @@ export function MessagePageBuilder({ page }: { page: MessagePageDetail | null })
           />
           <span className="flex flex-col">
             <span className="text-sm font-medium">Allow replies</span>
-            <span className="text-xs text-muted">Recipients can write back — coming soon.</span>
+            <span className="text-xs text-muted">Contacts can write back — coming soon.</span>
           </span>
         </label>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving}
-            className="btn-accent"
-          >
+          <button type="button" onClick={save} disabled={saving} className="btn-accent">
             {saving ? "Saving…" : page ? "Save changes" : "Create page"}
           </button>
           {page && (
@@ -340,7 +362,13 @@ function QrPanel({ slug, stats }: { slug: string; stats: MessagePageDetail }) {
     <div className="mt-4 flex items-center gap-4 rounded-2xl border border-border bg-surface p-4">
       {dataUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- data-URL QR
-        <img src={dataUrl} alt="QR code for this page" width={80} height={80} className="rounded-md border border-border" />
+        <img
+          src={dataUrl}
+          alt="QR code for this page"
+          width={80}
+          height={80}
+          className="rounded-md border border-border"
+        />
       ) : (
         <div className="size-20 shrink-0 animate-pulse rounded-md bg-foreground/5" />
       )}
@@ -352,7 +380,11 @@ function QrPanel({ slug, stats }: { slug: string; stats: MessagePageDetail }) {
           {stats.totalCtaClicks === 1 ? "click" : "clicks"}
         </p>
         {dataUrl && (
-          <a href={dataUrl} download={`kudos-qr-${slug}.png`} className="text-xs text-accent hover:underline">
+          <a
+            href={dataUrl}
+            download={`kudos-qr-${slug}.png`}
+            className="text-xs text-accent hover:underline"
+          >
             Download QR
           </a>
         )}
