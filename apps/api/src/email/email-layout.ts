@@ -21,8 +21,7 @@ export const BRAND = {
   border: "#e7e3dd",
 } as const;
 
-const FONT_STACK =
-  "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const FONT_STACK = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 export interface BrandedEmailOptions {
   /** Base URL of the web app — sources the hosted logo and footer links. */
@@ -73,6 +72,10 @@ export function emailButton(url: string, label: string): string {
 export function renderBrandedEmail(options: BrandedEmailOptions): string {
   const { webAppUrl, preheader, heading, bodyHtml, cta, showLinkFallback, footerNote } = options;
   const logoUrl = `${webAppUrl}/marketing/logo.png`;
+  // The footer link text is derived from the web app's host so it always matches
+  // where the link actually goes (rather than a hardcoded domain that can drift
+  // from the deployed host).
+  const displayHost = webAppUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const year = new Date().getUTCFullYear();
   const ctaHtml = cta ? emailButton(cta.url, cta.label) : "";
   const linkFallbackHtml =
@@ -134,7 +137,7 @@ export function renderBrandedEmail(options: BrandedEmailOptions): string {
                 Automated cards that mean something — sent on time, every time.
               </p>
               <p style="margin:0;font-family:${FONT_STACK};font-size:12px;line-height:18px;color:${BRAND.muted}">
-                <a href="${webAppUrl}" style="color:${BRAND.muted};text-decoration:underline">kudoscards.co.uk</a>
+                <a href="${webAppUrl}" style="color:${BRAND.muted};text-decoration:underline">${displayHost}</a>
                 &nbsp;·&nbsp; &copy; ${year} Kudos Cards
               </p>
             </td>

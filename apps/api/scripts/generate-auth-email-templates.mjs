@@ -19,9 +19,12 @@ import { renderBrandedEmail } from "../dist/email/email-layout.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "..", "..", "..", "docs", "email-templates");
 
-// The public host the logo is served from. The web app exposes it at
-// /marketing/logo.png; swap this if the app moves hosts (see README).
-const WEB_APP_URL = "https://kudoscards.co.uk";
+// The public host the logo + footer link are served from — the LIVE web app,
+// which exposes /marketing/logo.png. This must be the deployed app host
+// (kudos-cards.co.uk), NOT the legacy WordPress store (kudoscards.co.uk): a
+// wrong host 404s the logo and the email looks broken/untrustworthy. Override
+// with WEB_APP_URL when regenerating for a different environment.
+const WEB_APP_URL = (process.env.WEB_APP_URL ?? "https://kudos-cards.co.uk").replace(/\/$/, "");
 
 /** Supabase's confirmation-link placeholder, passed straight through. */
 const CONFIRMATION_URL = "{{ .ConfirmationURL }}";
