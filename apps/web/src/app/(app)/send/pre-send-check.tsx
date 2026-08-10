@@ -19,7 +19,13 @@ const BUCKETS: {
   tone: "blocker" | "warning";
   fixable: boolean;
 }[] = [
-  { key: "missingAddress", Icon: MailX, label: "No postal address", tone: "blocker", fixable: true },
+  {
+    key: "missingAddress",
+    Icon: MailX,
+    label: "No postal address",
+    tone: "blocker",
+    fixable: true,
+  },
   {
     key: "invalidPostcode",
     Icon: MapPin,
@@ -96,7 +102,8 @@ function BucketPanel({
   // On a huge run the sample is capped, so more may exist than we can list.
   const beyondSample = bucket.count - bucket.sample.length;
 
-  const ring = tone === "blocker" ? "border-accent/30 bg-accent-soft" : "border-amber-300 bg-amber-50";
+  const ring =
+    tone === "blocker" ? "border-accent/30 bg-accent-soft" : "border-amber-300 bg-amber-50";
 
   return (
     <div className={`rounded-lg border px-3 py-2.5 ${ring}`}>
@@ -125,7 +132,7 @@ function BucketPanel({
       )}
       {!fixable && label === "Personalisation gaps" && (
         <p className="mt-1.5 text-xs text-muted">
-          These tokens have no value for the recipient, so they&apos;d print as-is.{" "}
+          These tokens have no value for the contact, so they&apos;d print as-is.{" "}
           <a href={editDesignHref} className="text-accent hover:underline">
             Edit the design
           </a>{" "}

@@ -7,7 +7,7 @@ import { ApiError } from "@/lib/api";
 import { publicApiPost } from "@/lib/api.public";
 
 const REASON_LABELS: Record<string, string> = {
-  moved: "the recipient has moved",
+  moved: "the contact has moved",
   incomplete_address: "the address was incomplete",
   incorrect_address: "the address was incorrect",
   undeliverable: "delivery wasn't possible",
@@ -62,7 +62,8 @@ export function RtsRecoveryClient({
 
   // Terminal states — the customer is done.
   if (rtsCase.status === "resolved" || rtsCase.status === "archived") {
-    const resent = rtsCase.resolution === "resend_recipient" || rtsCase.resolution === "send_business";
+    const resent =
+      rtsCase.resolution === "resend_recipient" || rtsCase.resolution === "send_business";
     return (
       <div className="card flex flex-col items-center gap-3 p-8 text-center">
         {resent ? (
@@ -70,9 +71,7 @@ export function RtsRecoveryClient({
         ) : (
           <ThumbsUp className="h-9 w-9 text-success" aria-hidden />
         )}
-        <h1 className="text-xl font-bold">
-          {resent ? "That's sorted — thank you" : "All done"}
-        </h1>
+        <h1 className="text-xl font-bold">{resent ? "That's sorted — thank you" : "All done"}</h1>
         <p className="text-sm text-muted">
           {rtsCase.resolution === "send_business"
             ? `We'll hand-deliver ${rtsCase.recipientName}'s card to your business address. That's your free Kudos Promise recovery.`
@@ -89,22 +88,33 @@ export function RtsRecoveryClient({
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-bold">A card to {rtsCase.recipientName} came back</h1>
         <p className="text-sm text-muted">
-          We couldn&apos;t deliver it because {REASON_LABELS[rtsCase.reason] ?? "it was returned"}. As
-          part of our Kudos Promise, we&apos;ll resend it <strong>free of charge</strong> once you
-          confirm the address.
+          We couldn&apos;t deliver it because {REASON_LABELS[rtsCase.reason] ?? "it was returned"}.
+          As part of our Kudos Promise, we&apos;ll resend it <strong>free of charge</strong> once
+          you confirm the address.
         </p>
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
       {rtsCase.status === "awaiting_address" ? (
         <form onSubmit={(e) => submitAddress(e, "address")} className="flex flex-col gap-3">
           <p className="text-sm font-medium">Update the delivery address</p>
           <div className="grid gap-2 sm:grid-cols-2">
-            <input name="addressLine1" required placeholder="Address line 1" className={inputClass} />
-            <input name="addressLine2" placeholder="Address line 2 (optional)" className={inputClass} />
+            <input
+              name="addressLine1"
+              required
+              placeholder="Address line 1"
+              className={inputClass}
+            />
+            <input
+              name="addressLine2"
+              placeholder="Address line 2 (optional)"
+              className={inputClass}
+            />
             <input name="addressCity" required placeholder="City" className={inputClass} />
             <input name="addressPostcode" required placeholder="Postcode" className={inputClass} />
           </div>
@@ -167,10 +177,24 @@ export function RtsRecoveryClient({
             >
               <p className="text-sm font-medium">Your business address (for hand delivery)</p>
               <div className="grid gap-2 sm:grid-cols-2">
-                <input name="addressLine1" required placeholder="Address line 1" className={inputClass} />
-                <input name="addressLine2" placeholder="Address line 2 (optional)" className={inputClass} />
+                <input
+                  name="addressLine1"
+                  required
+                  placeholder="Address line 1"
+                  className={inputClass}
+                />
+                <input
+                  name="addressLine2"
+                  placeholder="Address line 2 (optional)"
+                  className={inputClass}
+                />
                 <input name="addressCity" required placeholder="City" className={inputClass} />
-                <input name="addressPostcode" required placeholder="Postcode" className={inputClass} />
+                <input
+                  name="addressPostcode"
+                  required
+                  placeholder="Postcode"
+                  className={inputClass}
+                />
               </div>
               <button type="submit" disabled={pending} className="btn-accent self-start">
                 {pending ? "Working…" : "Send to my business"}

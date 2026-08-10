@@ -16,7 +16,13 @@ import { OCCASION_TYPE_LABELS, formatOccasionDate } from "@/lib/occasions";
 import { ReturnRecoveryPanel } from "./return-recovery-panel";
 
 /** Types a subscriber can add by hand — birthdays come from the DOB, not here. */
-const EVENT_TYPES = ["achievement", "leaver", "staff_recognition", "seasonal", "bespoke_campaign"] as const;
+const EVENT_TYPES = [
+  "achievement",
+  "leaver",
+  "staff_recognition",
+  "seasonal",
+  "bespoke_campaign",
+] as const;
 
 /** How far along the card pipeline each status is — drives the badge colour. */
 const STATUS_STYLES: Record<string, string> = {
@@ -132,7 +138,9 @@ export function RecipientDetailClient({
 
   const isArchived = recipient.status === "archived";
   const hasPostalAddress = Boolean(
-    recipient.addressLine1?.trim() && recipient.addressCity?.trim() && recipient.addressPostcode?.trim(),
+    recipient.addressLine1?.trim() &&
+    recipient.addressCity?.trim() &&
+    recipient.addressPostcode?.trim(),
   );
 
   function sortEvents(list: Occasion[]): Occasion[] {
@@ -195,7 +203,9 @@ export function RecipientDetailClient({
         : await clientApiFetch<Recipient>(`/recipients/${recipient.id}`, { method: "DELETE" });
       setRecipient(updated);
     } catch (archiveError) {
-      setError(archiveError instanceof ApiError ? archiveError.message : "Could not update the recipient");
+      setError(
+        archiveError instanceof ApiError ? archiveError.message : "Could not update the contact",
+      );
     } finally {
       setArchiving(false);
     }
@@ -225,7 +235,9 @@ export function RecipientDetailClient({
         })),
       );
     } catch (saveError) {
-      setError(saveError instanceof ApiError ? saveError.message : "Could not save the card fields");
+      setError(
+        saveError instanceof ApiError ? saveError.message : "Could not save the card fields",
+      );
     } finally {
       setSavingFields(false);
     }
@@ -289,10 +301,14 @@ export function RecipientDetailClient({
     setError(null);
     setPendingId(id);
     try {
-      const updated = await clientApiFetch<Occasion>(`/occasions/${id}/prepare`, { method: "POST" });
+      const updated = await clientApiFetch<Occasion>(`/occasions/${id}/prepare`, {
+        method: "POST",
+      });
       setEvents((current) => current.map((e) => (e.id === id ? updated : e)));
     } catch (prepareError) {
-      setError(prepareError instanceof ApiError ? prepareError.message : "Could not prepare a card");
+      setError(
+        prepareError instanceof ApiError ? prepareError.message : "Could not prepare a card",
+      );
     } finally {
       setPendingId(null);
     }
@@ -305,7 +321,9 @@ export function RecipientDetailClient({
       await clientApiFetch(`/occasions/${id}`, { method: "DELETE" });
       setEvents((current) => current.filter((e) => e.id !== id));
     } catch (removeError) {
-      setError(removeError instanceof ApiError ? removeError.message : "Could not remove the event");
+      setError(
+        removeError instanceof ApiError ? removeError.message : "Could not remove the event",
+      );
     } finally {
       setPendingId(null);
     }
@@ -350,7 +368,9 @@ export function RecipientDetailClient({
       setKeyDates((current) => current.filter((k) => k.type !== type));
       await refreshEvents();
     } catch (removeError) {
-      setError(removeError instanceof ApiError ? removeError.message : "Could not remove the key date");
+      setError(
+        removeError instanceof ApiError ? removeError.message : "Could not remove the key date",
+      );
     } finally {
       setPendingKeyDate(null);
     }
@@ -367,11 +387,22 @@ export function RecipientDetailClient({
           >
             <label className="flex flex-[2] flex-col gap-1 text-sm">
               <span className="text-muted">Name</span>
-              <input name="title" defaultValue={occasion.title ?? ""} placeholder={eventKind(occasion)} className={inputClass} />
+              <input
+                name="title"
+                defaultValue={occasion.title ?? ""}
+                placeholder={eventKind(occasion)}
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-1 flex-col gap-1 text-sm">
               <span className="text-muted">Date</span>
-              <input type="date" name="occasionDate" defaultValue={toDateInput(occasion.occasionDate)} required className={inputClass} />
+              <input
+                type="date"
+                name="occasionDate"
+                defaultValue={toDateInput(occasion.occasionDate)}
+                required
+                className={inputClass}
+              />
             </label>
             <div className="flex items-center gap-2">
               <button type="submit" disabled={pendingId === occasion.id} className="btn-accent">
@@ -472,7 +503,7 @@ export function RecipientDetailClient({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <Link href="/recipients" className="text-sm text-muted hover:text-foreground">
-            ← Recipients
+            ← Contacts
           </Link>
           <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight">
             {recipient.firstName} {recipient.lastName}
@@ -491,7 +522,11 @@ export function RecipientDetailClient({
         </div>
         <div className="flex items-center gap-2">
           {!editingDetails && (
-            <button type="button" onClick={() => openEditor(false)} className="btn-secondary text-sm">
+            <button
+              type="button"
+              onClick={() => openEditor(false)}
+              className="btn-secondary text-sm"
+            >
               Edit details
             </button>
           )}
@@ -507,7 +542,9 @@ export function RecipientDetailClient({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
       <ReturnRecoveryPanel
@@ -581,7 +618,9 @@ export function RecipientDetailClient({
 
           <dl className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-0.5">
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted">Date of birth</dt>
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted">
+                Date of birth
+              </dt>
               <dd className="text-sm">
                 {recipient.dateOfBirth ? (
                   formatOccasionDate(recipient.dateOfBirth)
@@ -593,7 +632,11 @@ export function RecipientDetailClient({
             <div className="flex flex-col gap-0.5">
               <dt className="text-xs font-medium uppercase tracking-wide text-muted">Email</dt>
               <dd className="text-sm">
-                {recipient.email ? recipient.email : <span className="text-muted">Not on file</span>}
+                {recipient.email ? (
+                  recipient.email
+                ) : (
+                  <span className="text-muted">Not on file</span>
+                )}
               </dd>
             </div>
           </dl>
@@ -601,26 +644,49 @@ export function RecipientDetailClient({
       )}
 
       {editingDetails && (
-        <form onSubmit={(event) => void handleSaveDetails(event)} className="card flex flex-col gap-4 p-6">
+        <form
+          onSubmit={(event) => void handleSaveDetails(event)}
+          className="card flex flex-col gap-4 p-6"
+        >
           <h2 className="text-lg font-semibold">
             {openedForAddress && !hasPostalAddress ? "Add postal address" : "Edit details"}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">First name</span>
-              <input name="firstName" defaultValue={recipient.firstName} required className={inputClass} />
+              <input
+                name="firstName"
+                defaultValue={recipient.firstName}
+                required
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Last name</span>
-              <input name="lastName" defaultValue={recipient.lastName} required className={inputClass} />
+              <input
+                name="lastName"
+                defaultValue={recipient.lastName}
+                required
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Date of birth</span>
-              <input type="date" name="dateOfBirth" defaultValue={toDateInput(recipient.dateOfBirth)} className={inputClass} />
+              <input
+                type="date"
+                name="dateOfBirth"
+                defaultValue={toDateInput(recipient.dateOfBirth)}
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Email</span>
-              <input type="email" name="email" defaultValue={recipient.email ?? ""} className={inputClass} />
+              <input
+                type="email"
+                name="email"
+                defaultValue={recipient.email ?? ""}
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Address line 1</span>
@@ -633,15 +699,27 @@ export function RecipientDetailClient({
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Address line 2</span>
-              <input name="addressLine2" defaultValue={recipient.addressLine2 ?? ""} className={inputClass} />
+              <input
+                name="addressLine2"
+                defaultValue={recipient.addressLine2 ?? ""}
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">City</span>
-              <input name="addressCity" defaultValue={recipient.addressCity ?? ""} className={inputClass} />
+              <input
+                name="addressCity"
+                defaultValue={recipient.addressCity ?? ""}
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Postcode</span>
-              <input name="addressPostcode" defaultValue={recipient.addressPostcode ?? ""} className={inputClass} />
+              <input
+                name="addressPostcode"
+                defaultValue={recipient.addressPostcode ?? ""}
+                className={inputClass}
+              />
             </label>
           </div>
           <div className="flex items-center gap-2">
@@ -688,7 +766,11 @@ export function RecipientDetailClient({
                   defaultValue={existing ? toDateInput(existing.date) : ""}
                   className={inputClass}
                 />
-                <button type="submit" disabled={pendingKeyDate === type} className="btn-accent text-sm">
+                <button
+                  type="submit"
+                  disabled={pendingKeyDate === type}
+                  className="btn-accent text-sm"
+                >
                   {pendingKeyDate === type ? "Saving…" : existing ? "Update" : "Set"}
                 </button>
                 {existing && (
@@ -790,7 +872,9 @@ export function RecipientDetailClient({
           <div className="flex flex-col gap-5">
             {upcomingEvents.length > 0 && (
               <div className="flex flex-col gap-1">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Upcoming</h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  Upcoming
+                </h3>
                 <ul className="flex flex-col divide-y divide-border">
                   {upcomingEvents.map(renderEvent)}
                 </ul>
@@ -815,7 +899,7 @@ export function RecipientDetailClient({
             Extra details you can drop into a card design as a merge token. A field named{" "}
             <code className="rounded bg-foreground/10 px-1">teacher</code> becomes{" "}
             <code className="rounded bg-foreground/10 px-1">{"{teacher}"}</code>, personalised per
-            recipient when the card is sent.
+            contact when the card is sent.
           </p>
         </div>
 

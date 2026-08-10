@@ -14,8 +14,8 @@ import { Modal } from "@/components/modal";
 export function isMailable(recipient: Recipient): boolean {
   return Boolean(
     recipient.addressLine1?.trim() &&
-      recipient.addressCity?.trim() &&
-      recipient.addressPostcode?.trim(),
+    recipient.addressCity?.trim() &&
+    recipient.addressPostcode?.trim(),
   );
 }
 
@@ -26,8 +26,18 @@ export const PER_PAGE = 30;
 
 /** Month labels for the birthday-month filter; index 0 = January. */
 const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 /** Friendly labels for where a recipient came from (see the integrations spine). */
@@ -220,7 +230,7 @@ export function RecipientsClient({
         setPage(targetPage);
         setError(null);
       } catch (reloadError) {
-        setError(reloadError instanceof ApiError ? reloadError.message : "Could not load recipients");
+        setError(reloadError instanceof ApiError ? reloadError.message : "Could not load contacts");
       } finally {
         setPaginating(false);
       }
@@ -347,7 +357,7 @@ export function RecipientsClient({
       await reload(1, null, "", "recent");
       void refreshMeta();
     } catch (submitError) {
-      setError(submitError instanceof ApiError ? submitError.message : "Could not add recipient");
+      setError(submitError instanceof ApiError ? submitError.message : "Could not add contact");
     } finally {
       setAddingRecipient(false);
     }
@@ -450,7 +460,11 @@ export function RecipientsClient({
   async function deleteActiveList() {
     if (!activeListId) return;
     const current = lists.find((l) => l.id === activeListId);
-    if (!window.confirm(`Delete "${current?.name ?? "this list"}"? The recipients stay; only the list is removed.`)) {
+    if (
+      !window.confirm(
+        `Delete "${current?.name ?? "this list"}"? The contacts stay; only the list is removed.`,
+      )
+    ) {
       return;
     }
     setError(null);
@@ -509,8 +523,9 @@ export function RecipientsClient({
               body: JSON.stringify({ status: "active" }),
             })
           : await clientApiFetch<Recipient>(`/recipients/${recipient.id}`, { method: "DELETE" });
-      const stillInView =
-        archivedViewRef.current ? updated.status === "archived" : updated.status !== "archived";
+      const stillInView = archivedViewRef.current
+        ? updated.status === "archived"
+        : updated.status !== "archived";
       if (stillInView) {
         setRecipients((current) => current.map((r) => (r.id === recipient.id ? updated : r)));
       } else {
@@ -518,7 +533,9 @@ export function RecipientsClient({
       }
       void refreshMeta();
     } catch (archiveError) {
-      setError(archiveError instanceof ApiError ? archiveError.message : "Could not update the recipient");
+      setError(
+        archiveError instanceof ApiError ? archiveError.message : "Could not update the contact",
+      );
     } finally {
       setRowBusyId(null);
     }
@@ -545,7 +562,7 @@ export function RecipientsClient({
       setSelected(new Set());
       void refreshMeta();
     } catch (bulkError) {
-      setError(bulkError instanceof ApiError ? bulkError.message : "Could not update the recipients");
+      setError(bulkError instanceof ApiError ? bulkError.message : "Could not update the contacts");
     } finally {
       setListBusy(false);
     }
@@ -556,8 +573,14 @@ export function RecipientsClient({
     const rows = recipients.filter((r) => selected.has(r.id));
     if (rows.length === 0) return;
     const header = [
-      "First name", "Last name", "Date of birth",
-      "Address line 1", "Address line 2", "City", "Postcode", "Source",
+      "First name",
+      "Last name",
+      "Date of birth",
+      "Address line 1",
+      "Address line 2",
+      "City",
+      "Postcode",
+      "Source",
     ];
     const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const lines = rows.map((r) =>
@@ -579,7 +602,7 @@ export function RecipientsClient({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `recipients-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `contacts-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -587,14 +610,14 @@ export function RecipientsClient({
   const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
   const activeList = activeListId ? lists.find((l) => l.id === activeListId) : null;
   const emptyMessage = archivedView
-    ? "No archived recipients."
+    ? "No archived contacts."
     : missingOnly
-      ? "Every recipient has a mailable address. 🎉"
+      ? "Every contact has a mailable address. 🎉"
       : activeList
-        ? "No recipients on this list yet."
+        ? "No contacts on this list yet."
         : search || birthMonth || source
-          ? "No recipients match your filters."
-          : "No recipients yet — add one or import a CSV to get started.";
+          ? "No contacts match your filters."
+          : "No contacts yet — add one or import a CSV to get started.";
   // The true people count for the header (unfiltered), not the filtered table total.
   const peopleCount = archivedView ? archivedCount : activeCount;
   const showMissingBanner = !missingOnly && !archivedView && missingTotal > 0;
@@ -602,7 +625,7 @@ export function RecipientsClient({
     total === 0
       ? null
       : total <= recipients.length
-        ? `Showing all ${total} ${archivedView ? "archived" : "active"} recipient${total === 1 ? "" : "s"}`
+        ? `Showing all ${total} ${archivedView ? "archived" : "active"} contact${total === 1 ? "" : "s"}`
         : `Showing ${recipients.length} of ${total}`;
 
   return (
@@ -611,10 +634,10 @@ export function RecipientsClient({
           the add form + CSV import live in dialogs so the list stays the focus. */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-bold tracking-tight">Recipients</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Contacts</h1>
           <p className="max-w-md text-sm text-muted">
             {peopleCount} {peopleCount === 1 ? "person" : "people"}. We post real cards, so every
-            recipient needs a full postal address.
+            contact needs a full postal address.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -625,13 +648,15 @@ export function RecipientsClient({
             Import CSV
           </button>
           <button type="button" onClick={() => setAddOpen(true)} className="btn-accent">
-            Add recipient
+            Add contact
           </button>
         </div>
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
       {/* Missing-address banner — the worklist nudge, front and centre. */}
@@ -639,7 +664,7 @@ export function RecipientsClient({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
           <p className="text-accent">
             <span className="font-semibold">
-              {missingTotal} recipient{missingTotal === 1 ? "" : "s"} can&apos;t be posted to.
+              {missingTotal} contact{missingTotal === 1 ? "" : "s"} can&apos;t be posted to.
             </span>{" "}
             {joinNames(missing.slice(0, 3).map((r) => `${r.firstName} ${r.lastName}`))}{" "}
             {missingTotal === 1 ? "is" : "are"} missing an address.
@@ -685,7 +710,7 @@ export function RecipientsClient({
             onChange={(e) => changeSearch(e.target.value)}
             placeholder="Search by name, postcode or town…"
             className={`${inputClass} w-full pr-8`}
-            aria-label="Search recipients"
+            aria-label="Search contacts"
           />
           {search && (
             <button
@@ -705,7 +730,7 @@ export function RecipientsClient({
           aria-label="Filter by list"
           className={inputClass}
         >
-          <option value="">All recipients</option>
+          <option value="">All contacts</option>
           {lists.map((list) => (
             <option key={list.id} value={list.id}>
               {list.name} ({list.memberCount})
@@ -751,17 +776,31 @@ export function RecipientsClient({
               <span>
                 Showing <span className="font-medium text-foreground">{activeList.name}</span>
               </span>
-              <button type="button" onClick={() => void renameActiveList()} disabled={listBusy} className="underline hover:text-foreground">
+              <button
+                type="button"
+                onClick={() => void renameActiveList()}
+                disabled={listBusy}
+                className="underline hover:text-foreground"
+              >
                 Rename
               </button>
-              <button type="button" onClick={() => void deleteActiveList()} disabled={listBusy} className="underline hover:text-accent">
+              <button
+                type="button"
+                onClick={() => void deleteActiveList()}
+                disabled={listBusy}
+                className="underline hover:text-accent"
+              >
                 Delete list
               </button>
             </>
           )}
           {missingOnly && (
-            <button type="button" onClick={() => setMissingFilter(false)} className="underline hover:text-foreground">
-              Showing only recipients that need an address — show all
+            <button
+              type="button"
+              onClick={() => setMissingFilter(false)}
+              className="underline hover:text-foreground"
+            >
+              Showing only contacts that need an address — show all
             </button>
           )}
         </div>
@@ -837,10 +876,22 @@ export function RecipientsClient({
                 />
               </th>
               <th className="section-label px-5 py-3">
-                <SortHeader label="Name & address" ascKey="name_asc" descKey="name_desc" sort={sort} onSort={changeSort} />
+                <SortHeader
+                  label="Name & address"
+                  ascKey="name_asc"
+                  descKey="name_desc"
+                  sort={sort}
+                  onSort={changeSort}
+                />
               </th>
               <th className="section-label px-5 py-3">
-                <SortHeader label="Date of birth" ascKey="dob_asc" descKey="dob_desc" sort={sort} onSort={changeSort} />
+                <SortHeader
+                  label="Date of birth"
+                  ascKey="dob_asc"
+                  descKey="dob_desc"
+                  sort={sort}
+                  onSort={changeSort}
+                />
               </th>
               <th className="section-label px-5 py-3">Next birthday</th>
               <th className="section-label px-5 py-3">Postcode</th>
@@ -857,12 +908,14 @@ export function RecipientsClient({
               </tr>
             ) : (
               recipients.map((recipient) => {
-                const fromIntegration =
-                  recipient.source !== "manual" && recipient.source !== "csv";
+                const fromIntegration = recipient.source !== "manual" && recipient.source !== "csv";
                 const mailable = isMailable(recipient);
                 const birthday = nextBirthday(recipient.dateOfBirth);
                 return (
-                  <tr key={recipient.id} className="border-b border-border last:border-0 hover:bg-foreground/[0.02]">
+                  <tr
+                    key={recipient.id}
+                    className="border-b border-border last:border-0 hover:bg-foreground/[0.02]"
+                  >
                     <td className="px-5 py-3 align-top">
                       <input
                         type="checkbox"
@@ -874,7 +927,10 @@ export function RecipientsClient({
                     <td className="px-5 py-3">
                       <div className="flex flex-col">
                         <span className="font-medium">
-                          <Link href={`/recipients/${recipient.id}`} className="hover:text-accent hover:underline">
+                          <Link
+                            href={`/recipients/${recipient.id}`}
+                            className="hover:text-accent hover:underline"
+                          >
                             {recipient.firstName} {recipient.lastName}
                           </Link>
                           {recipient.addressVerificationRequired && (
@@ -931,7 +987,10 @@ export function RecipientsClient({
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-3 text-sm">
-                        <Link href={`/recipients/${recipient.id}`} className="text-accent hover:underline">
+                        <Link
+                          href={`/recipients/${recipient.id}`}
+                          className="text-accent hover:underline"
+                        >
                           Edit
                         </Link>
                         <button
@@ -970,8 +1029,7 @@ export function RecipientsClient({
               {allOnPageSelected ? "Clear selection" : "Select all on this page"}
             </button>
             {recipients.map((recipient) => {
-              const fromIntegration =
-                recipient.source !== "manual" && recipient.source !== "csv";
+              const fromIntegration = recipient.source !== "manual" && recipient.source !== "csv";
               const mailable = isMailable(recipient);
               const birthday = nextBirthday(recipient.dateOfBirth);
               return (
@@ -1100,25 +1158,30 @@ export function RecipientsClient({
       )}
 
       {/* Add-recipient dialog. */}
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add a recipient">
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add a contact">
         <form onSubmit={(event) => void handleAddRecipient(event)} className="flex flex-col gap-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <input name="firstName" placeholder="First name" required className={inputClass} />
             <input name="lastName" placeholder="Last name" required className={inputClass} />
-            <input type="date" name="dateOfBirth" aria-label="Date of birth" className={`${inputClass} sm:col-span-2`} />
+            <input
+              type="date"
+              name="dateOfBirth"
+              aria-label="Date of birth"
+              className={`${inputClass} sm:col-span-2`}
+            />
           </div>
           <AddressFields key={addFormKey} required={false} />
           <p className="text-xs text-muted">
             The address is optional — save the contact now and add it later. We&apos;ll flag anyone
-            without one and won&apos;t let a card be sent until it&apos;s added. A date of birth puts
-            their birthday on the calendar automatically.
+            without one and won&apos;t let a card be sent until it&apos;s added. A date of birth
+            puts their birthday on the calendar automatically.
           </p>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setAddOpen(false)} className="btn-secondary">
               Cancel
             </button>
             <button type="submit" disabled={addingRecipient} className="btn-accent">
-              {addingRecipient ? "Adding…" : "Add recipient"}
+              {addingRecipient ? "Adding…" : "Add contact"}
             </button>
           </div>
         </form>

@@ -385,7 +385,7 @@ export function CalendarClient({
         <div className="flex flex-col gap-1">
           <h1 className="text-3xl font-bold tracking-tight">Calendar</h1>
           <p className="text-muted">
-            Every recipient&apos;s upcoming moment. Approve and order ahead of time.
+            Every contact&apos;s upcoming moment. Approve and order ahead of time.
           </p>
         </div>
         <div className="flex items-center gap-2">

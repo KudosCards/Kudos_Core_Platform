@@ -269,13 +269,15 @@ export function BatchOrdersClient({
           <Link href="/send" className="text-accent hover:underline">
             Send a card
           </Link>{" "}
-          is the quicker route. You can send up to {maxPerOrder} cards per order; Kudos Cards prints,
-          packs and posts each one straight to your recipient — no shipping admin on your end.
+          is the quicker route. You can send up to {maxPerOrder} cards per order; Kudos Cards
+          prints, packs and posts each one straight to your contact — no shipping admin on your end.
         </p>
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
       {notice && (
         <p className="rounded-lg bg-[#e8f1ea] px-4 py-3 text-sm font-medium text-[#2f7d54]">
@@ -367,14 +369,16 @@ export function BatchOrdersClient({
             );
             if (flagged.length === 0) return null;
             const names = flagged
-              .map((o) => (o.recipient ? `${o.recipient.firstName} ${o.recipient.lastName}` : "A contact"))
+              .map((o) =>
+                o.recipient ? `${o.recipient.firstName} ${o.recipient.lastName}` : "A contact",
+              )
               .join(", ");
             return (
               <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
                 <p className="font-semibold">⚠️ Check the address before sending</p>
                 <p className="mt-1">
-                  A card to {names} was recently returned. Update the address on the contact record if
-                  it&apos;s changed — otherwise it may come back again. You can still send now.
+                  A card to {names} was recently returned. Update the address on the contact record
+                  if it&apos;s changed — otherwise it may come back again. You can still send now.
                 </p>
               </div>
             );
@@ -390,12 +394,12 @@ export function BatchOrdersClient({
             return (
               <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
                 <p className="font-semibold">
-                  ⚠️ {missingName.length} contact{missingName.length === 1 ? " is" : "s are"} missing a
-                  first name
+                  ⚠️ {missingName.length} contact{missingName.length === 1 ? " is" : "s are"}{" "}
+                  missing a first name
                 </p>
                 <p className="mt-1">
-                  Cards use the first name in the greeting, so these may read oddly. Add a first name on
-                  the contact record before sending, or continue if that&apos;s intended.
+                  Cards use the first name in the greeting, so these may read oddly. Add a first
+                  name on the contact record before sending, or continue if that&apos;s intended.
                 </p>
               </div>
             );

@@ -47,10 +47,32 @@ export default function DashboardPage() {
 /** The three things a subscriber most often wants to do, front and centre — the
  * quickest paths to sending a card. Static, so it paints in the first flush. */
 function QuickActions() {
-  const actions: { href: string; label: string; sub: string; Icon: LucideIcon; primary?: boolean }[] = [
-    { href: "/send", label: "Send a card", sub: "Pick a design, add a recipient, pay", Icon: Cake, primary: true },
-    { href: "/get-started", label: "Upload contacts", sub: "Import your list from a CSV", Icon: Contact },
-    { href: "/calendar", label: "View calendar", sub: "Upcoming birthdays & dispatches", Icon: Calendar },
+  const actions: {
+    href: string;
+    label: string;
+    sub: string;
+    Icon: LucideIcon;
+    primary?: boolean;
+  }[] = [
+    {
+      href: "/send",
+      label: "Send a card",
+      sub: "Pick a design, add a contact, pay",
+      Icon: Cake,
+      primary: true,
+    },
+    {
+      href: "/get-started",
+      label: "Upload contacts",
+      sub: "Import your list from a CSV",
+      Icon: Contact,
+    },
+    {
+      href: "/calendar",
+      label: "View calendar",
+      sub: "Upcoming birthdays & dispatches",
+      Icon: Calendar,
+    },
   ];
   return (
     <div className="grid gap-3 sm:grid-cols-3">
@@ -116,7 +138,7 @@ async function DashboardOverview() {
       hint: "Top up",
     },
     {
-      label: "Recipients",
+      label: "Contacts",
       value: String(summary?.recipientCount ?? 0),
       href: "/recipients",
       hint: "Manage list",
@@ -133,7 +155,9 @@ async function DashboardOverview() {
     <>
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Welcome, {account?.name}</h1>
-        <p className="text-muted">Here&apos;s what&apos;s happening with your recognition programme.</p>
+        <p className="text-muted">
+          Here&apos;s what&apos;s happening with your recognition programme.
+        </p>
       </div>
 
       {summary && (
