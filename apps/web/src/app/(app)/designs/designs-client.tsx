@@ -162,7 +162,10 @@ export function DesignsClient({
       const baseName = file.name.replace(/\.[^.]+$/, "").trim() || "My artwork";
       const created = await clientApiFetch<SavedDesign>("/saved-designs", {
         method: "POST",
-        body: JSON.stringify({ name: baseName.slice(0, 120), document: artworkDocument(signed.publicUrl) }),
+        body: JSON.stringify({
+          name: baseName.slice(0, 120),
+          document: artworkDocument(signed.publicUrl),
+        }),
       });
       router.push(`/designs/${created.id}/edit`);
     } catch (uploadCatchError) {
@@ -187,7 +190,9 @@ export function DesignsClient({
       });
       setSavedDesigns((current) => current.map((d) => (d.id === design.id ? updated : d)));
     } catch (renameError) {
-      setError(renameError instanceof ApiError ? renameError.message : "Could not rename the design");
+      setError(
+        renameError instanceof ApiError ? renameError.message : "Could not rename the design",
+      );
     } finally {
       setPendingDesignId(null);
     }
@@ -203,7 +208,9 @@ export function DesignsClient({
     } catch (deleteError) {
       // A design attached to an occasion/order can't be deleted (the API guards
       // it) — surface that instead of silently doing nothing.
-      setError(deleteError instanceof ApiError ? deleteError.message : "Could not delete the design");
+      setError(
+        deleteError instanceof ApiError ? deleteError.message : "Could not delete the design",
+      );
     } finally {
       setPendingDesignId(null);
     }
@@ -219,7 +226,9 @@ export function DesignsClient({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
       {/* My designs, front and centre — this is what members come back to. */}
@@ -252,8 +261,9 @@ export function DesignsClient({
           ) : (
             <Link
               href="/billing"
-              className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-foreground/[0.03]"
+              className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent-soft px-4 py-2 text-sm font-semibold text-accent transition-colors hover:bg-accent/15"
             >
+              <span aria-hidden>🔒</span>
               Upgrade to upload your own artwork →
             </Link>
           )}
@@ -320,7 +330,9 @@ export function DesignsClient({
       <section className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
           <h2 className="text-xl font-semibold">Templates</h2>
-          <p className="text-sm text-muted">Pick a design to personalise — it&apos;s saved to My designs.</p>
+          <p className="text-sm text-muted">
+            Pick a design to personalise — it&apos;s saved to My designs.
+          </p>
         </div>
 
         {categories.length > 1 && (
