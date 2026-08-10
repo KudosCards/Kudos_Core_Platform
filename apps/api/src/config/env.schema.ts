@@ -294,6 +294,14 @@ export const envSchema = z.object({
     .min(1)
     .optional()
     .or(z.literal("").transform(() => undefined)),
+  // Brevo marketing lists that new subscribers are added to at signup, split by
+  // account type (see docs/adr/0152-subscriber-marketing-lists.md). Defaults are
+  // the platform's real list ids (5 = personal/individual, 6 = organisation), so
+  // the split works out-of-the-box; override per-environment if they differ.
+  // `.catch(default)` so a blank/non-numeric value degrades to the default rather
+  // than crashing the whole API on boot, matching the other Brevo config.
+  BREVO_LIST_ID_INDIVIDUAL: z.coerce.number().int().positive().catch(5).default(5),
+  BREVO_LIST_ID_ORGANISATION: z.coerce.number().int().positive().catch(6).default(6),
   // The sender emails come from. Must be a VERIFIED sender in the Brevo account.
   // Optional when every email uses a Brevo template (the template carries its own
   // sender); required for the built-in HTML fallbacks. `.trim()` tolerates stray
@@ -311,7 +319,12 @@ export const envSchema = z.object({
   // crashing the whole API on boot.
   BREVO_REMINDER_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
   BREVO_GUEST_RECEIPT_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
-  BREVO_ORDER_CONFIRMATION_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  BREVO_ORDER_CONFIRMATION_TEMPLATE_ID: z.coerce
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .catch(undefined),
   BREVO_DISPATCH_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
   // Estimated-arrival "your card should have arrived" email (see ADR 0124).
   BREVO_ARRIVAL_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
