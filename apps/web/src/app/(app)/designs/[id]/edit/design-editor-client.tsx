@@ -52,6 +52,54 @@ const FONT_GROUPS = FONT_CATEGORY_ORDER.map(({ category, label }) => ({
 /** Longest side (in design units) a freshly-inserted image is scaled to fit. */
 const IMAGE_INSERT_MAX = 200;
 
+// --- Local draft autosave -------------------------------------------------
+// The editor mirrors unsaved edits into localStorage (debounced) so a session
+// timeout, a crash, an accidental Back, or a failed save can never lose work —
+// on the next visit we offer to restore. Cleared once the design is saved to
+// the server. See docs/adr/0143.
+const DRAFT_KEY_PREFIX = "kudos:design-draft:";
+const draftKey = (designId: string): string => `${DRAFT_KEY_PREFIX}${designId}`;
+
+interface DesignDraft {
+  name: string;
+  document: DesignDocument;
+  /** When the local edit was captured (ms epoch). */
+  ts: number;
+}
+
+/** Parse the stored draft for a design, tolerating absence, corruption, or a
+ * browser that blocks storage (private mode) — always returns null rather than
+ * throwing so the editor never breaks over a bad draft. */
+function readDraft(designId: string): DesignDraft | null {
+  try {
+    const raw = window.localStorage.getItem(draftKey(designId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<DesignDraft>;
+    if (!parsed || typeof parsed.name !== "string" || typeof parsed.document !== "object") {
+      return null;
+    }
+    return parsed as DesignDraft;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(designId: string, draft: DesignDraft): void {
+  try {
+    window.localStorage.setItem(draftKey(designId), JSON.stringify(draft));
+  } catch {
+    /* Storage full or blocked — a best-effort backup, never fatal. */
+  }
+}
+
+function clearDraft(designId: string): void {
+  try {
+    window.localStorage.removeItem(draftKey(designId));
+  } catch {
+    /* ignore */
+  }
+}
+
 interface SignedUpload {
   path: string;
   token: string;
@@ -219,6 +267,20 @@ export function DesignEditorClient({
   const [bgUploading, setBgUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  // A save/send failure, kept as a persistent, actionable banner (not a
+  // disappearing line) so the member always has a clear next step. `authExpired`
+  // tailors the copy when the session timed out. See docs/adr/0143.
+  const [saveError, setSaveError] = useState<{ message: string; authExpired: boolean } | null>(
+    null,
+  );
+  // An unsaved local draft found on mount (newer than the server copy) — offered
+  // for one-click restore instead of silently losing the member's work.
+  const [recoverable, setRecoverable] = useState<DesignDraft | null>(null);
+  // The exact edit that was last mirrored to localStorage (a name+document
+  // snapshot string). Compared against the current edit during render to derive
+  // whether the member's work is backed up on this device — no effect-synced
+  // boolean, so the "backed up" chip stays a pure function of state.
+  const [backedUpSnapshot, setBackedUpSnapshot] = useState<string | null>(null);
   // When on (the default), resizing an image keeps its aspect ratio so it can't
   // be stretched out of shape; turn it off for deliberate stretching (#11).
   const [lockImageAspect, setLockImageAspect] = useState(true);
@@ -255,7 +317,11 @@ export function DesignEditorClient({
   const [savedSnapshot, setSavedSnapshot] = useState(() =>
     JSON.stringify({ name: savedDesign.name, document: savedDesign.document }),
   );
-  const isDirty = JSON.stringify({ name, document: document_ }) !== savedSnapshot;
+  const currentSnapshot = JSON.stringify({ name, document: document_ });
+  const isDirty = currentSnapshot !== savedSnapshot;
+  // Derived (not effect-synced): the current unsaved edits have been mirrored to
+  // localStorage, so the status chip can reassure the member their work is safe.
+  const locallyBackedUp = isDirty && backedUpSnapshot === currentSnapshot;
 
   // Guard a full-page navigation / refresh while there are unsaved edits (the
   // in-app "Back to designs" link is guarded separately, as SPA navigation
@@ -269,6 +335,33 @@ export function DesignEditorClient({
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
+
+  // On mount, surface any unsaved local draft that differs from the server copy
+  // — the member left mid-edit (timeout, crash, accidental Back) and we can give
+  // their work back rather than lose it. Runs once.
+  useEffect(() => {
+    const draft = readDraft(savedDesign.id);
+    if (draft && JSON.stringify({ name: draft.name, document: draft.document }) !== savedSnapshot) {
+      // Reading a persisted draft from localStorage on mount is the legitimate
+      // "sync from an external system" case — it can't run during render (SSR
+      // has no localStorage, and a lazy initialiser would hydration-mismatch).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRecoverable(draft);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mirror unsaved edits into localStorage, debounced, so nothing is lost if the
+  // tab dies, the session times out, or a save fails. Cleared on a real save.
+  useEffect(() => {
+    if (!isDirty) return;
+    const snapshot = currentSnapshot;
+    const timer = window.setTimeout(() => {
+      writeDraft(savedDesign.id, { name, document: document_, ts: Date.now() });
+      setBackedUpSnapshot(snapshot);
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [isDirty, currentSnapshot, name, document_, savedDesign.id]);
 
   const page = document_.pages.find((p) => p.name === activePage) ?? document_.pages[0]!;
   const selectedElement = page.elements.find((el) => el.id === selectedElementId) ?? null;
@@ -382,7 +475,12 @@ export function DesignEditorClient({
    * repeat a laid-out element without redoing it. */
   function duplicateSelected() {
     if (!selectedElement) return;
-    const copy = { ...selectedElement, id: crypto.randomUUID(), x: selectedElement.x + 16, y: selectedElement.y + 16 };
+    const copy = {
+      ...selectedElement,
+      id: crypto.randomUUID(),
+      x: selectedElement.x + 16,
+      y: selectedElement.y + 16,
+    };
     updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, copy] }));
     selectElement(copy.id);
   }
@@ -632,15 +730,31 @@ export function DesignEditorClient({
     });
     setSavedSnapshot(JSON.stringify({ name, document: document_ }));
     setSavedAt(new Date());
+    // Safely on the server now — the local backup is no longer needed.
+    clearDraft(savedDesign.id);
+    setSaveError(null);
+  }
+
+  /** Turn any save/send failure into a persistent, actionable banner. A 401
+   * means the session timed out; the member's work is still backed up locally,
+   * so we reassure + point them to re-authenticate rather than dead-end them. */
+  function reportSaveFailure(err: unknown, fallback: string): void {
+    const authExpired = err instanceof ApiError && err.status === 401;
+    const message = authExpired
+      ? "Your session timed out, so we couldn't save."
+      : err instanceof ApiError
+        ? err.message
+        : fallback;
+    setSaveError({ message, authExpired });
   }
 
   async function handleSave() {
-    setError(null);
+    setSaveError(null);
     setSaving(true);
     try {
       await persist();
-    } catch (saveError) {
-      setError(saveError instanceof ApiError ? saveError.message : "Could not save");
+    } catch (saveErr) {
+      reportSaveFailure(saveErr, "Could not save.");
     } finally {
       setSaving(false);
     }
@@ -649,14 +763,14 @@ export function DesignEditorClient({
   /** Save any unsaved edits first, then go to the send flow — so the card that's
    * sent is always what's on screen, not the last-saved version. */
   async function handleSendThisCard() {
-    setError(null);
+    setSaveError(null);
     setSending(true);
     try {
       if (isDirty) await persist();
       // Full navigation so the send page re-reads the freshly-saved design.
       window.location.assign(`/designs/${savedDesign.id}/send`);
-    } catch (sendError) {
-      setError(sendError instanceof ApiError ? sendError.message : "Could not save before sending");
+    } catch (sendErr) {
+      reportSaveFailure(sendErr, "Could not save before sending.");
       setSending(false);
     }
   }
@@ -665,15 +779,13 @@ export function DesignEditorClient({
    * here — so a mid-bulk design edit doesn't lose the recipient selection. */
   async function handleReturnToBulk() {
     if (!bulkReturnTo) return;
-    setError(null);
+    setSaveError(null);
     setSending(true);
     try {
       if (isDirty) await persist();
       window.location.assign(bulkReturnTo);
-    } catch (returnError) {
-      setError(
-        returnError instanceof ApiError ? returnError.message : "Could not save your changes",
-      );
+    } catch (returnErr) {
+      reportSaveFailure(returnErr, "Could not save your changes.");
       setSending(false);
     }
   }
@@ -707,7 +819,9 @@ export function DesignEditorClient({
           />
           <div className="flex items-center gap-3">
             {isDirty ? (
-              <span className="text-xs text-foreground/50">Unsaved changes</span>
+              <span className="text-xs text-foreground/50">
+                {locallyBackedUp ? "Unsaved · backed up on this device" : "Unsaved changes"}
+              </span>
             ) : savedAt ? (
               <span className="text-xs text-foreground/50">
                 Saved {savedAt.toLocaleTimeString()}
@@ -743,6 +857,55 @@ export function DesignEditorClient({
           </div>
         </div>
       </div>
+
+      {recoverable && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+          <span className="flex-1">
+            You have <strong>unsaved changes</strong> from a previous session on this device.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setName(recoverable.name);
+              setDocument(recoverable.document);
+              setRecoverable(null);
+            }}
+            className="rounded-full bg-amber-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+          >
+            Restore them
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              clearDraft(savedDesign.id);
+              setRecoverable(null);
+            }}
+            className="rounded-full border border-amber-400 px-4 py-1.5 text-xs font-medium hover:bg-amber-100 dark:hover:bg-amber-500/20"
+          >
+            Discard
+          </button>
+        </div>
+      )}
+
+      {saveError && (
+        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200">
+          <p className="font-medium">{saveError.message}</p>
+          <p className="mt-1 text-red-700 dark:text-red-300/90">
+            Your work is backed up on this device, so nothing is lost
+            {saveError.authExpired
+              ? " — sign in again in another tab, then come back and press Save."
+              : "."}
+          </p>
+          <button
+            type="button"
+            disabled={saving || sending}
+            onClick={() => void handleSave()}
+            className="mt-2 rounded-full border border-red-400 px-4 py-1.5 text-xs font-semibold hover:bg-red-100 disabled:opacity-50 dark:hover:bg-red-500/20"
+          >
+            {saving ? "Saving…" : "Try saving again"}
+          </button>
+        </div>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -1306,7 +1469,10 @@ export function DesignEditorClient({
                     value={selectedElement.width ?? ""}
                     onChange={(e) => {
                       const raw = e.target.value.trim();
-                      const next = raw === "" ? undefined : Math.min(CARD_WIDTH, Math.max(40, Number(raw) || 40));
+                      const next =
+                        raw === ""
+                          ? undefined
+                          : Math.min(CARD_WIDTH, Math.max(40, Number(raw) || 40));
                       updateElement({ ...selectedElement, width: next });
                     }}
                     className="w-full rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
@@ -1373,7 +1539,10 @@ export function DesignEditorClient({
                   onChange={(e) => {
                     const width = Number(e.target.value) || 1;
                     const height = lockImageAspect
-                      ? Math.max(1, Math.round(width * (selectedElement.height / selectedElement.width)))
+                      ? Math.max(
+                          1,
+                          Math.round(width * (selectedElement.height / selectedElement.width)),
+                        )
                       : selectedElement.height;
                     updateElement({ ...selectedElement, width, height });
                   }}
@@ -1389,7 +1558,10 @@ export function DesignEditorClient({
                   onChange={(e) => {
                     const height = Number(e.target.value) || 1;
                     const width = lockImageAspect
-                      ? Math.max(1, Math.round(height * (selectedElement.width / selectedElement.height)))
+                      ? Math.max(
+                          1,
+                          Math.round(height * (selectedElement.width / selectedElement.height)),
+                        )
                       : selectedElement.width;
                     updateElement({ ...selectedElement, width, height });
                   }}
@@ -1621,10 +1793,10 @@ export function DesignEditorClient({
               </div>
               {/* Discoverability for the on-canvas handles + shortcuts. */}
               <p className="text-[11px] text-foreground/50">
-                Drag the handles to resize or rotate. Dragging snaps to the card centre, safe margins,
-                and other elements — hold Alt to move freely. Arrow keys nudge · Shift+arrows move
-                further · ⌘/Ctrl+D duplicates · ⌘/Ctrl+]/[ change layer order · Delete removes · Esc
-                deselects.
+                Drag the handles to resize or rotate. Dragging snaps to the card centre, safe
+                margins, and other elements — hold Alt to move freely. Arrow keys nudge ·
+                Shift+arrows move further · ⌘/Ctrl+D duplicates · ⌘/Ctrl+]/[ change layer order ·
+                Delete removes · Esc deselects.
               </p>
             </div>
           )}
