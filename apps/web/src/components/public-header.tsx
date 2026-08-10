@@ -16,7 +16,8 @@ export interface PublicNavLink {
 /**
  * The shared header for the public, logged-out site (home + card library +
  * basket) — Moonpig-style, catering to one-off visitors: browse nav, a
- * Reminders prompt that nudges sign-up, a Basket with a live count, and Sign in.
+ * Reminders prompt that nudges sign-up, a Basket with a live count, and a
+ * Log in link + a primary Sign up button (the conversion action).
  * Marketing-styled (coral accent), independent of the app shell. See
  * docs/adr/0025.
  */
@@ -50,10 +51,16 @@ export function PublicHeader({ navLinks = [] }: { navLinks?: PublicNavLink[] }) 
           <BasketButton />
           <Link
             href="/login"
+            className="inline-flex min-h-11 items-center px-2 text-sm font-semibold text-slate-600 transition-colors hover:text-slate-900"
+          >
+            Log in
+          </Link>
+          <Link
+            href="/register"
             className="inline-flex min-h-11 items-center rounded-full px-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 sm:px-4"
             style={{ backgroundColor: CORAL }}
           >
-            Sign in
+            Sign up
           </Link>
           {navLinks.length > 0 && <MobileNav navLinks={navLinks} />}
         </div>
@@ -124,7 +131,16 @@ function MobileNav({ navLinks }: { navLinks: PublicNavLink[] }) {
 
 function MenuIcon() {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
       <path d="M3 6h18M3 12h18M3 18h18" />
     </svg>
   );
@@ -254,7 +270,17 @@ function RemindersButton() {
 
 function BellIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </svg>
@@ -263,7 +289,17 @@ function BellIcon() {
 
 function BagIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
       <path d="M3 6h18" />
       <path d="M16 10a4 4 0 0 1-8 0" />
