@@ -28,6 +28,7 @@
     "setup:stripe-plans": "ts-node scripts/setup-stripe-plans.ts",
     "migrate:wordpress": "ts-node scripts/migrate-wordpress.ts",
     "migrate:wordpress-billing": "ts-node scripts/migrate-wordpress-billing.ts",
+    "backfill:brevo-lists": "ts-node scripts/backfill-brevo-lists.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

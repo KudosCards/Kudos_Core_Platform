@@ -68,3 +68,22 @@ Regenerating the templates currently needs a human to re-paste them into the
 Supabase dashboard. If we later adopt the Supabase CLI with a committed
 `config.toml`, the templates + SMTP settings could be version-controlled and
 applied on deploy — worth revisiting, out of scope here.
+
+## Correction (2026-08-10) — the sender domain is un-hyphenated
+
+When custom SMTP was actually configured, the verified Brevo senders turned out
+to be on **`kudoscards.co.uk` (no hyphen)** — `support@`, `noreply@`,
+`tech@` — **not** `@kudos-cards.co.uk` (hyphenated) as the "Sender" section above
+assumes. The two domains do genuinely different jobs and this ADR conflated them:
+
+- **Sending** (SMTP `MAIL FROM`, `EMAIL_FROM_ADDRESS`): `kudoscards.co.uk`
+  (no hyphen) — where the verified Brevo senders + SPF/DKIM live.
+- **Logo / links inside the email**: `kudos-cards.co.uk` (hyphen) — the live app
+  host that serves `/marketing/logo.png`.
+
+So the content fix in this ADR (logo host → hyphenated app domain) was correct and
+stands. Only the sender guidance was wrong: use **`noreply@kudoscards.co.uk`**
+(no hyphen) for the Supabase SMTP sender and for the app's `EMAIL_FROM_ADDRESS`.
+The authoritative, corrected steps (plus two operational gotchas — the SMTP login
+is the `@smtp-brevo.com` one, and don't enable Brevo IP-blocking) now live in
+`docs/email-templates/README.md`.

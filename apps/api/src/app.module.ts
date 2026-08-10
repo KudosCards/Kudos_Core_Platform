@@ -32,6 +32,7 @@ import { AutoSendModule } from "./auto-send/auto-send.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
 import { GuestModule } from "./guest/guest.module";
 import { EmailModule } from "./email/email.module";
+import { MarketingModule } from "./marketing/marketing.module";
 import { RemindersModule } from "./reminders/reminders.module";
 import { TeamModule } from "./team/team.module";
 import { NotificationsModule } from "./notifications/notifications.module";
@@ -97,6 +98,7 @@ import { PlatformNotificationsModule } from "./platform-notifications/platform-n
     IntegrationsModule,
     GuestModule,
     EmailModule,
+    MarketingModule,
     RemindersModule,
     TeamModule,
     NotificationsModule,

@@ -15,6 +15,10 @@ export type PendingAccountType = "individual" | "organisation";
 export interface PendingAccount {
   type: PendingAccountType;
   name: string;
+  /** Individuals only: captured at /register so onboarding can sync an exact
+   * first/last name to Brevo after the email-confirmation hop. See ADR 0152. */
+  firstName?: string;
+  lastName?: string;
 }
 
 function isType(value: unknown): value is PendingAccountType {
@@ -24,7 +28,15 @@ function isType(value: unknown): value is PendingAccountType {
 export function setPendingAccount(account: PendingAccount): void {
   if (!isType(account.type) || !account.name.trim()) return;
   try {
-    window.localStorage.setItem(KEY, JSON.stringify({ type: account.type, name: account.name }));
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        type: account.type,
+        name: account.name,
+        firstName: account.firstName,
+        lastName: account.lastName,
+      }),
+    );
   } catch {
     // Private mode / storage disabled — non-fatal; onboarding falls back to its
     // own set-up form.
@@ -47,7 +59,12 @@ export function parsePendingAccount(raw: string | null): PendingAccount | null {
   try {
     const parsed = JSON.parse(raw) as Partial<PendingAccount>;
     if (isType(parsed.type) && typeof parsed.name === "string" && parsed.name.trim()) {
-      return { type: parsed.type, name: parsed.name };
+      return {
+        type: parsed.type,
+        name: parsed.name,
+        firstName: typeof parsed.firstName === "string" ? parsed.firstName : undefined,
+        lastName: typeof parsed.lastName === "string" ? parsed.lastName : undefined,
+      };
     }
     return null;
   } catch {

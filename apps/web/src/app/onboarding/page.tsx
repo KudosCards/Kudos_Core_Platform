@@ -1,14 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type FormEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch, ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -102,7 +95,13 @@ export default function OnboardingPage() {
       try {
         await apiFetch("/accounts", session.access_token, {
           method: "POST",
-          body: JSON.stringify({ type: pendingAccount.type, name: pendingAccount.name }),
+          body: JSON.stringify({
+            type: pendingAccount.type,
+            name: pendingAccount.name,
+            ...(pendingAccount.type === "individual"
+              ? { firstName: pendingAccount.firstName, lastName: pendingAccount.lastName }
+              : {}),
+          }),
         });
         clearPendingAccount();
         router.push(readPendingCardId() ? "/start" : "/get-started");
@@ -122,7 +121,18 @@ export default function OnboardingPage() {
     setSubmitting(true);
 
     const formData = new FormData(event.currentTarget);
-    const name = String(formData.get("name"));
+    // Individuals give first + last name (captured exactly for the Brevo list);
+    // organisations give a single organisation name. See ADR 0152.
+    const firstName = String(formData.get("firstName") ?? "").trim();
+    const lastName = String(formData.get("lastName") ?? "").trim();
+    const name =
+      accountType === "individual"
+        ? [firstName, lastName].filter(Boolean).join(" ")
+        : String(formData.get("name")).trim();
+    const contactName =
+      accountType === "individual"
+        ? { firstName: firstName || undefined, lastName: lastName || undefined }
+        : {};
 
     const supabase = createClient();
     const {
@@ -138,7 +148,7 @@ export default function OnboardingPage() {
     try {
       await apiFetch("/accounts", session.access_token, {
         method: "POST",
-        body: JSON.stringify({ type: accountType, name }),
+        body: JSON.stringify({ type: accountType, name, ...contactName }),
       });
     } catch (apiError) {
       setSubmitting(false);
@@ -211,15 +221,41 @@ export default function OnboardingPage() {
               ))}
             </div>
           </div>
-          <label className="flex flex-col gap-1 text-sm">
-            {accountType === "individual" ? "Your name" : "Organisation name"}
-            <input
-              type="text"
-              name="name"
-              required
-              className="rounded-md border border-border bg-surface px-3 py-2"
-            />
-          </label>
+          {accountType === "individual" ? (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-sm">
+                First name
+                <input
+                  type="text"
+                  name="firstName"
+                  required
+                  autoComplete="given-name"
+                  className="rounded-md border border-border bg-surface px-3 py-2"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                Last name
+                <input
+                  type="text"
+                  name="lastName"
+                  required
+                  autoComplete="family-name"
+                  className="rounded-md border border-border bg-surface px-3 py-2"
+                />
+              </label>
+            </div>
+          ) : (
+            <label className="flex flex-col gap-1 text-sm">
+              Organisation name
+              <input
+                type="text"
+                name="name"
+                required
+                autoComplete="organization"
+                className="rounded-md border border-border bg-surface px-3 py-2"
+              />
+            </label>
+          )}
           <button type="submit" disabled={submitting} className="btn-accent">
             {submitting ? "Setting up…" : "Continue"}
           </button>

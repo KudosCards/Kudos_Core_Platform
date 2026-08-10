@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Account } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { MarketingContactsService } from "../marketing/marketing-contacts.service";
 import type { CreateAccountDto } from "./dto/create-account.dto";
 
 /** An account safe to return over the API — without the claim-token secret. */
@@ -23,7 +24,10 @@ export const SAFE_ACCOUNT_SELECT = {
 
 @Injectable()
 export class AccountsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly marketing: MarketingContactsService,
+  ) {}
 
   /** `email` (the signing-up user's, from their verified JWT) is stored as the
    * account's contactEmail so birthday reminders have somewhere to go. */
@@ -33,15 +37,26 @@ export class AccountsService {
       throw new ConflictException("This user already belongs to an account");
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const account = await tx.account.create({
+    const account = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.account.create({
         data: { type: dto.type, name: dto.name, planId: "free", contactEmail: email },
       });
       await tx.membership.create({
-        data: { accountId: account.id, userId, role: "owner", email },
+        data: { accountId: created.id, userId, role: "owner", email },
       });
-      return account;
+      return created;
     });
+
+    // Add the new subscriber to our Brevo marketing list for their account type
+    // (individual vs organisation). Best-effort: the service swallows and logs
+    // any error, so a Brevo hiccup can never fail a signup. Explicit first/last
+    // name (individuals) is passed through for exact capture. See ADR 0152.
+    await this.marketing.syncSubscriber(account, email, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+    });
+
+    return account;
   }
 
   /** Toggle birthday-reminder emails for the account (opt-out). */
