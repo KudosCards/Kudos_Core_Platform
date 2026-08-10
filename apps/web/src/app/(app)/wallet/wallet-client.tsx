@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { WalletEntryType, WalletSummary } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -38,6 +38,57 @@ export function WalletClient({
   const [customPounds, setCustomPounds] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pendingAmount, setPendingAmount] = useState<number | null>(null);
+  // The balance/ledger shown, so we can update it live after a top-up returns
+  // rather than making the member refresh the page.
+  const [summary, setSummary] = useState(initialSummary);
+  // A successful top-up is credited by an async Stripe webhook, so on return the
+  // balance can lag a moment — poll briefly until it lands.
+  const [refreshing, setRefreshing] = useState(topupStatus === "success");
+
+  const refetch = useCallback(async () => {
+    try {
+      const next = await clientApiFetch<WalletSummary>("/wallet");
+      setSummary(next);
+      return next;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (topupStatus !== "success") return;
+    let cancelled = false;
+    let timer = 0;
+    const startBalance = initialSummary.balanceMinor;
+    let attempts = 0;
+    const tick = async () => {
+      attempts += 1;
+      const next = await refetch();
+      if (cancelled) return;
+      // Stop once the credit lands (balance moved) or after a few attempts.
+      if ((next && next.balanceMinor !== startBalance) || attempts >= 6) {
+        setRefreshing(false);
+        return;
+      }
+      timer = window.setTimeout(tick, 2000);
+    };
+    timer = window.setTimeout(tick, 1500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // initialSummary is the mount-time snapshot; re-run only if the return status changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topupStatus, refetch]);
+
+  // Returning here via the browser's back/forward cache (e.g. pressing Back from
+  // Stripe) restores React state as-is, which would leave the top-up buttons
+  // stuck disabled ("Redirecting…"). Re-enable them whenever the page is shown.
+  useEffect(() => {
+    const onPageShow = () => setPendingAmount(null);
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
 
   async function topUp(amountMinor: number) {
     setError(null);
@@ -78,9 +129,11 @@ export function WalletClient({
       </div>
 
       {topupStatus === "success" && (
-        <p className="rounded-lg bg-[#e8f1ea] px-4 py-3 text-sm font-medium text-[#2f7d54]">
-          Payment received — your balance updates within a few moments of Stripe confirming it.
-          Refresh if you don&apos;t see it yet.
+        <p className="flex items-center gap-2 rounded-lg bg-[#e8f1ea] px-4 py-3 text-sm font-medium text-[#2f7d54]">
+          {refreshing && (
+            <span className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-[#2f7d54]/30 border-t-[#2f7d54]" />
+          )}
+          Payment received — your balance updates here automatically.
         </p>
       )}
       {topupStatus === "cancelled" && (
@@ -90,14 +143,14 @@ export function WalletClient({
       )}
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
       <div className="card p-6">
         <p className="section-label">Current balance</p>
-        <p className="mt-1 text-4xl font-bold tracking-tight">
-          {formatGbp(initialSummary.balanceMinor)}
-        </p>
+        <p className="mt-1 text-4xl font-bold tracking-tight">{formatGbp(summary.balanceMinor)}</p>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -142,11 +195,11 @@ export function WalletClient({
 
       <div className="flex flex-col gap-3">
         <h2 className="font-semibold">Recent activity</h2>
-        {initialSummary.entries.length === 0 ? (
+        {summary.entries.length === 0 ? (
           <div className="card p-8 text-center text-sm text-muted">No wallet activity yet.</div>
         ) : (
           <div className="card flex flex-col divide-y divide-border overflow-hidden">
-            {initialSummary.entries.map((entry) => (
+            {summary.entries.map((entry) => (
               <div key={entry.id} className="flex items-center justify-between px-5 py-3 text-sm">
                 <div className="flex flex-col">
                   <span className="font-medium">{ENTRY_LABELS[entry.type]}</span>
@@ -164,7 +217,9 @@ export function WalletClient({
                 </div>
                 <span
                   className={
-                    entry.amountMinor < 0 ? "font-semibold text-foreground" : "font-semibold text-[#2f7d54]"
+                    entry.amountMinor < 0
+                      ? "font-semibold text-foreground"
+                      : "font-semibold text-[#2f7d54]"
                   }
                 >
                   {entry.amountMinor > 0 ? "+" : ""}
