@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { SAFE_ACCOUNT_SELECT, type SafeAccount } from "../accounts/accounts.service";
+import { MarketingContactsService } from "../marketing/marketing-contacts.service";
 import type { AuthenticatedUser } from "../auth/types";
 
 /** Turn a guest buyer's email into a friendly default account name. */
@@ -21,7 +22,10 @@ function deriveAccountName(email: string): string {
  */
 @Injectable()
 export class GuestClaimService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly marketing: MarketingContactsService,
+  ) {}
 
   /** Public prefill — the buyer's email for the claim form, or 404 if the token
    * is unknown or expired. Reveals only the email tied to the token the caller
@@ -49,7 +53,7 @@ export class GuestClaimService {
     }
     const email = user.email;
 
-    return this.prisma.$transaction(async (tx) => {
+    const claimed = await this.prisma.$transaction(async (tx) => {
       const account = await tx.account.findFirst({
         where: { claimToken: token, claimTokenExpiresAt: { gt: new Date() } },
       });
@@ -64,9 +68,7 @@ export class GuestClaimService {
       // order across accounts is a later enhancement — see docs/adr/0025).
       const existing = await tx.membership.findFirst({ where: { userId: user.id } });
       if (existing) {
-        throw new ConflictException(
-          "You already have an account — log in to see your orders",
-        );
+        throw new ConflictException("You already have an account — log in to see your orders");
       }
 
       await tx.membership.create({
@@ -78,5 +80,13 @@ export class GuestClaimService {
         select: SAFE_ACCOUNT_SELECT,
       });
     });
+
+    // A guest buyer who just claimed their account is now a subscriber — add
+    // them to our Brevo INDIVIDUAL marketing list (they're always a person, so
+    // never the organisation list). Best-effort: the service swallows and logs
+    // any error, so it can never fail the claim. See ADR 0152.
+    await this.marketing.syncGuestBuyerToIndividualList(email);
+
+    return claimed;
   }
 }

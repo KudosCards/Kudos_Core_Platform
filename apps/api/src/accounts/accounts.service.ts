@@ -49,8 +49,12 @@ export class AccountsService {
 
     // Add the new subscriber to our Brevo marketing list for their account type
     // (individual vs organisation). Best-effort: the service swallows and logs
-    // any error, so a Brevo hiccup can never fail a signup. See ADR 0152.
-    await this.marketing.syncSubscriber(account, email);
+    // any error, so a Brevo hiccup can never fail a signup. Explicit first/last
+    // name (individuals) is passed through for exact capture. See ADR 0152.
+    await this.marketing.syncSubscriber(account, email, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+    });
 
     return account;
   }

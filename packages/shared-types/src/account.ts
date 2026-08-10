@@ -25,6 +25,11 @@ export type UpdateNotificationsInput = z.infer<typeof updateNotificationsInputSc
 export const createAccountInputSchema = z.object({
   type: accountTypeSchema,
   name: z.string().min(1).max(200),
+  /** Individuals only: given/family name captured explicitly at signup so an
+   * exact FIRSTNAME/LASTNAME is synced to the Brevo marketing list (rather than
+   * best-effort splitting `name`). Optional. See docs/adr/0152. */
+  firstName: z.string().min(1).max(100).optional(),
+  lastName: z.string().min(1).max(100).optional(),
 });
 export type CreateAccountInput = z.infer<typeof createAccountInputSchema>;
 

@@ -34,7 +34,10 @@ export class AccountsController {
     @CurrentMembership() membership: CurrentMembershipContext,
     @Body() dto: UpdateNotificationsDto,
   ): Promise<SafeAccount> {
-    return this.accountsService.updateNotifications(membership.accountId, dto.reminderEmailsEnabled);
+    return this.accountsService.updateNotifications(
+      membership.accountId,
+      dto.reminderEmailsEnabled,
+    );
   }
 
   @UseGuards(MembershipGuard)
@@ -58,9 +61,7 @@ export class AccountsController {
   /** Home-screen counts + wallet balance for the dashboard. */
   @UseGuards(MembershipGuard)
   @Get("me/summary")
-  getSummary(
-    @CurrentMembership() membership: CurrentMembershipContext,
-  ): Promise<DashboardSummary> {
+  getSummary(@CurrentMembership() membership: CurrentMembershipContext): Promise<DashboardSummary> {
     return this.dashboard.getSummary(membership.accountId);
   }
 

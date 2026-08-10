@@ -4,6 +4,7 @@ import type { App } from "supertest/types";
 import request from "supertest";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
+import { PrismaService } from "../src/prisma/prisma.service";
 import { MARKETING_CONTACTS_CLIENT } from "../src/marketing/marketing-contacts.client";
 import type {
   MarketingContactInput,
@@ -64,6 +65,31 @@ describe("Subscriber marketing lists (e2e)", () => {
     });
   });
 
+  it("uses explicit first/last name for an individual when the fields are provided", async () => {
+    // A surname with spaces ("van der Berg") is exactly the case a last-space
+    // split gets wrong — explicit fields must be sent verbatim.
+    const token = await mintToken(randomUUID(), "anna@example.com");
+    await request(app.getHttpServer())
+      .post("/accounts")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        type: "individual",
+        name: "Anna van der Berg",
+        firstName: "Anna",
+        lastName: "van der Berg",
+      })
+      .expect(201);
+
+    expect(client.calls).toHaveLength(1);
+    expect(client.calls[0]).toEqual({
+      email: "anna@example.com",
+      firstName: "Anna",
+      lastName: "van der Berg",
+      company: undefined,
+      listId: 5,
+    });
+  });
+
   it("adds an organisation subscriber to the organisation list (6) with the company name", async () => {
     const token = await mintToken(randomUUID(), "ops@sunrise.example.com");
     await request(app.getHttpServer())
@@ -94,5 +120,40 @@ describe("Subscriber marketing lists (e2e)", () => {
       .expect(201);
 
     expect(client.calls).toHaveLength(1);
+  });
+
+  it("adds a claimed guest buyer to the INDIVIDUAL list, whatever the account type", async () => {
+    // A guest checkout creates the account (here an organisation-typed one) with
+    // a claim token + contactEmail. When the buyer claims it, they're a person,
+    // so they must land on the individual list (5), not the organisation list.
+    const prisma = app.get(PrismaService);
+    const email = `guest-${randomUUID()}@example.com`;
+    const claimToken = `claim-${randomUUID()}`;
+    await prisma.account.create({
+      data: {
+        type: "organisation",
+        name: "Guest Buyer Ltd",
+        planId: "free",
+        contactEmail: email,
+        claimToken,
+        claimTokenExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const token = await mintToken(randomUUID(), email);
+    await request(app.getHttpServer())
+      .post("/guest/claim")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ claimToken })
+      .expect(201);
+
+    expect(client.calls).toHaveLength(1);
+    expect(client.calls[0]).toEqual({
+      email,
+      firstName: undefined,
+      lastName: undefined,
+      company: undefined,
+      listId: 5,
+    });
   });
 });

@@ -17,10 +17,10 @@ audiences can be messaged separately as we grow:
 or company name (organisations).
 
 There is already a Brevo integration in the codebase, but it points the other
-way: `integrations/brevo` uses a **per-customer** API key to *read* that
+way: `integrations/brevo` uses a **per-customer** API key to _read_ that
 customer's contacts into Kudos (CRM import, ADR 0015). This feature is the
 opposite direction — using our **platform** Brevo key (the same `Brevo_API` that
-sends transactional email) to *write* our subscribers into our marketing lists.
+sends transactional email) to _write_ our subscribers into our marketing lists.
 So it's a new, separate client, not a reuse of the CRM one.
 
 ## Decision
@@ -47,13 +47,34 @@ into the Brevo list for their account type.
   `BREVO_LIST_ID_INDIVIDUAL` (default **5**) and `BREVO_LIST_ID_ORGANISATION`
   (default **6**). Defaults mean it works out-of-the-box; envs let a different
   environment point elsewhere without a code change.
-- **Name capture — derive from what we already collect.** Signup captures one
-  `name` field (a person's name for individuals, the company name for orgs). A
-  pure helper (`deriveContactName`) maps it to Brevo's `FIRSTNAME` / `LASTNAME`
-  (individuals: split on the last space, so the surname is the final token) /
-  `COMPANY` (organisations). This ships the two lists immediately with no funnel
-  change; explicit first/last-name fields at signup are a clean follow-up that
-  callers can feed straight through the same client.
+- **Name capture — explicit fields for individuals, derive as the fallback.**
+  The signup form now collects **First name + Last name** for individuals (the
+  account's display `name` is the two joined; organisations still give a single
+  organisation name). Those explicit fields are passed straight through to the
+  client so the surname is exact even when it contains spaces ("van der Berg").
+  When they're absent (older clients, the deferred email-confirmation path before
+  this change, organisations), `deriveContactName` maps the single `name` to
+  `FIRSTNAME`/`LASTNAME` (individuals: split on the last space) or `COMPANY`
+  (organisations). The explicit names cross the email-confirmation hop in the
+  `pendingAccount` localStorage stash, same as the type + name.
+
+## Follow-ups included
+
+- **Explicit first/last name at signup (individuals).** Added to
+  `CreateAccountDto`, the `createAccountInput` shared type, and both signup web
+  paths (`/register` inline + `/onboarding` deferred), fed straight through
+  `syncSubscriber`.
+- **Backfill of existing subscribers.** `scripts/backfill-brevo-lists.ts`
+  (`pnpm --filter @kudos/api run backfill:brevo-lists`) reuses the same client +
+  `deriveContactName` to add historical accounts to the two lists. Dry-run by
+  default; `--apply` writes; idempotent (Brevo upserts on email); paced ~5/s.
+  Email is the owner membership's, falling back to the account's contactEmail.
+- **Guest one-off buyers, synced on claim → the INDIVIDUAL list.** A guest buyer
+  isn't a registered subscriber until they attach a login (claim their account),
+  so `GuestClaimService.claim` now calls `syncGuestBuyerToIndividualList` after
+  the claim commits. They're always a person, so they go on the individual list
+  regardless of the account's type; only the email is known at that point (the
+  account name is a derived placeholder), so no name attributes are sent.
 
 ## Consequences
 

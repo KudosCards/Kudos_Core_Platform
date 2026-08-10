@@ -25,9 +25,23 @@ export default function RegisterPage() {
     setSubmitting(true);
 
     const formData = new FormData(event.currentTarget);
-    const name = String(formData.get("name"));
     const email = String(formData.get("email"));
     const password = String(formData.get("password"));
+
+    // Individuals give their first + last name (so we capture an exact surname
+    // for the Brevo list); organisations give a single organisation name. For an
+    // individual the account's display `name` is the two joined. `firstName` /
+    // `lastName` are sent to the API only for individuals. See ADR 0152.
+    const firstName = String(formData.get("firstName") ?? "").trim();
+    const lastName = String(formData.get("lastName") ?? "").trim();
+    const name =
+      accountType === "individual"
+        ? [firstName, lastName].filter(Boolean).join(" ")
+        : String(formData.get("name")).trim();
+    const contactName =
+      accountType === "individual"
+        ? { firstName: firstName || undefined, lastName: lastName || undefined }
+        : {};
 
     // A visitor who arrived via "Personalise this card" carries their chosen
     // card in ?card= (and usually localStorage already). Persist it so /start
@@ -69,7 +83,7 @@ export default function RegisterPage() {
       // gets created once they confirm and log in (see /onboarding). Stash the
       // chosen type + name so onboarding finishes set-up without asking for the
       // organisation name a second time; the pending card/plan wait alongside it.
-      setPendingAccount({ type: accountType, name });
+      setPendingAccount({ type: accountType, name, ...contactName });
       setSubmitting(false);
       setCheckEmail(true);
       return;
@@ -78,7 +92,7 @@ export default function RegisterPage() {
     try {
       await apiFetch("/accounts", data.session.access_token, {
         method: "POST",
-        body: JSON.stringify({ type: accountType, name }),
+        body: JSON.stringify({ type: accountType, name, ...contactName }),
       });
       // Created inline — no confirmation hop — so drop any stale stash.
       clearPendingAccount();
@@ -110,7 +124,9 @@ export default function RegisterPage() {
     <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
       <h1 className="text-xl font-bold tracking-tight">Create your account</h1>
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
       <div className="flex flex-col gap-1.5 text-sm">
         <span>Who&apos;s this for?</span>
@@ -137,15 +153,41 @@ export default function RegisterPage() {
           ))}
         </div>
       </div>
-      <label className="flex flex-col gap-1 text-sm">
-        {accountType === "individual" ? "Your name" : "Organisation name"}
-        <input
-          type="text"
-          name="name"
-          required
-          className="rounded-md border border-border bg-surface px-3 py-2"
-        />
-      </label>
+      {accountType === "individual" ? (
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            First name
+            <input
+              type="text"
+              name="firstName"
+              required
+              autoComplete="given-name"
+              className="rounded-md border border-border bg-surface px-3 py-2"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Last name
+            <input
+              type="text"
+              name="lastName"
+              required
+              autoComplete="family-name"
+              className="rounded-md border border-border bg-surface px-3 py-2"
+            />
+          </label>
+        </div>
+      ) : (
+        <label className="flex flex-col gap-1 text-sm">
+          Organisation name
+          <input
+            type="text"
+            name="name"
+            required
+            autoComplete="organization"
+            className="rounded-md border border-border bg-surface px-3 py-2"
+          />
+        </label>
+      )}
       <label className="flex flex-col gap-1 text-sm">
         Email
         <input
