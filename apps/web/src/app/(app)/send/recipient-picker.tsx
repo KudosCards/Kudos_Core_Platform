@@ -50,6 +50,45 @@ export function RecipientPicker({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const didMount = useRef(false);
+  // Inline "add a new contact" — so someone who isn't in the list yet can be
+  // created and selected without leaving the send / event flow (the dead-end
+  // that early feedback flagged when a contact didn't exist yet).
+  const [addingNew, setAddingNew] = useState(false);
+  const [newFirst, setNewFirst] = useState("");
+  const [newLast, setNewLast] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  async function createContact() {
+    const firstName = newFirst.trim();
+    const lastName = newLast.trim();
+    if (!firstName || !lastName) {
+      setCreateError("Enter a first and last name");
+      return;
+    }
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const created = await clientApiFetch<Recipient>("/recipients", {
+        method: "POST",
+        body: JSON.stringify({ firstName, lastName }),
+      });
+      // Surface it at the top of the list, already selected, and clear the form
+      // so several new people can be added in a row.
+      setData((current) => ({
+        ...current,
+        items: [created, ...current.items.filter((r) => r.id !== created.id)],
+        total: current.total + 1,
+      }));
+      onToggle(created);
+      setNewFirst("");
+      setNewLast("");
+    } catch (err) {
+      setCreateError(err instanceof ApiError ? err.message : "Could not add the contact");
+    } finally {
+      setCreating(false);
+    }
+  }
 
   // Debounce the search box so we don't fire a request per keystroke; a new
   // search resets to the first page. (The list filter resets the page in its
@@ -125,7 +164,60 @@ export function RecipientPicker({
             Select all shown
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => {
+            setAddingNew((v) => !v);
+            setCreateError(null);
+          }}
+          className="shrink-0 rounded-md border border-border px-3 py-2 text-sm hover:bg-foreground/[0.03]"
+        >
+          ＋ New contact
+        </button>
       </div>
+
+      {addingNew && (
+        <div className="flex flex-col gap-2 rounded-lg border border-border bg-foreground/[0.02] p-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <input
+              value={newFirst}
+              onChange={(e) => setNewFirst(e.target.value)}
+              placeholder="First name"
+              className="rounded-md border border-border bg-surface px-3 py-2 text-sm"
+            />
+            <input
+              value={newLast}
+              onChange={(e) => setNewLast(e.target.value)}
+              placeholder="Last name"
+              className="rounded-md border border-border bg-surface px-3 py-2 text-sm"
+            />
+          </div>
+          {createError && <p className="text-xs font-medium text-accent">{createError}</p>}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void createContact()}
+              disabled={creating}
+              className="btn-accent disabled:opacity-60"
+            >
+              {creating ? "Adding…" : "Add & select"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAddingNew(false);
+                setCreateError(null);
+              }}
+              className="rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-foreground/[0.03]"
+            >
+              Done
+            </button>
+            <span className="text-xs text-muted">
+              Add the postal address later, before sending.
+            </span>
+          </div>
+        </div>
+      )}
 
       {lists.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -167,7 +259,22 @@ export function RecipientPicker({
       <ul className="max-h-80 divide-y divide-border overflow-y-auto rounded-lg border border-border">
         {data.items.length === 0 ? (
           <li className="px-4 py-6 text-center text-sm text-muted">
-            {loading ? "Loading…" : "No contacts found."}
+            {loading ? (
+              "Loading…"
+            ) : (
+              <>
+                <span className="block">No contacts found.</span>
+                {!addingNew && (
+                  <button
+                    type="button"
+                    onClick={() => setAddingNew(true)}
+                    className="mt-1 font-medium text-accent hover:underline"
+                  >
+                    ＋ Add a contact
+                  </button>
+                )}
+              </>
+            )}
           </li>
         ) : (
           data.items.map((recipient) => {
