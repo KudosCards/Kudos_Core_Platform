@@ -323,18 +323,23 @@ export function DesignEditorClient({
   // localStorage, so the status chip can reassure the member their work is safe.
   const locallyBackedUp = isDirty && backedUpSnapshot === currentSnapshot;
 
-  // Guard a full-page navigation / refresh while there are unsaved edits (the
-  // in-app "Back to designs" link is guarded separately, as SPA navigation
-  // doesn't fire beforeunload; "Send this card" saves first, so it won't warn).
+  // Guard a full-page navigation / refresh while there are unsaved edits — but
+  // only until the debounced autosave has mirrored them to localStorage. Once
+  // the work is backed up on this device (and restorable on return), the harsh
+  // native "leave site?" prompt is redundant, so we drop it: adding an image no
+  // longer nags a second later. The brief pre-autosave window (and a storage-
+  // blocked browser, where locallyBackedUp never becomes true) still gets it.
+  // The in-app "Back to designs" link is guarded separately below; "Send this
+  // card" saves first, so it won't warn.
   useEffect(() => {
-    if (!isDirty) return;
+    if (!isDirty || locallyBackedUp) return;
     const handler = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [isDirty]);
+  }, [isDirty, locallyBackedUp]);
 
   // On mount, surface any unsaved local draft that differs from the server copy
   // — the member left mid-edit (timeout, crash, accidental Back) and we can give
@@ -802,7 +807,14 @@ export function DesignEditorClient({
         <Link
           href={bulkReturnTo ?? "/designs"}
           onClick={(event) => {
-            if (isDirty && !window.confirm("You have unsaved changes. Leave without saving?")) {
+            // Once the edit is backed up on this device it's restorable on
+            // return, so leaving is safe — no confirm. Only nag while a dirty
+            // edit hasn't been mirrored yet.
+            if (
+              isDirty &&
+              !locallyBackedUp &&
+              !window.confirm("You have unsaved changes. Leave without saving?")
+            ) {
               event.preventDefault();
             }
           }}
@@ -935,7 +947,9 @@ export function DesignEditorClient({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 border-b border-black/10 pb-2 dark:border-white/10">
+      {/* Page switcher (front / inside / back). Sticky so it stays reachable
+          when the toolbar + canvas push it off-screen on a long scroll. */}
+      <div className="sticky top-0 z-10 flex flex-wrap gap-2 border-b border-black/10 bg-background/95 py-2 backdrop-blur dark:border-white/10">
         {PAGE_NAMES.map((pageName) => (
           <button
             key={pageName}
