@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, type OccasionStatus } from "@prisma/client";
+import { type BatchOrderStatus, isOccasionSent } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { SavedDesignsService } from "../saved-designs/saved-designs.service";
@@ -19,8 +20,13 @@ import type { OrderEventDto } from "./dto/order-event.dto";
 /** Statuses whose member occasion is still un-ordered — editable, removable,
  * and sendable. Anything else is queued-or-later (historical) or skipped. */
 const SENDABLE_STATUSES: OccasionStatus[] = ["scheduled", "pending_approval", "approved"];
-/** A member's card has physically gone into fulfilment (queued-or-later). */
-const SENT_STATUSES = new Set<OccasionStatus>(["queued", "printed", "posted", "delivered"]);
+/** A member occasion that's been checked out onto an order (queued-or-later),
+ * used only to block destroying an order's history on delete. Deliberately NOT
+ * the same as "sent" for display: an occasion is queued at checkout *before*
+ * payment, so whether a card has actually gone out is order-aware — see
+ * `isOccasionSent`. A draft/pending_payment order still references its member
+ * occasion, so it must block deletion even though the card isn't "sent" yet. */
+const ORDERED_STATUSES = new Set<OccasionStatus>(["queued", "printed", "posted", "delivered"]);
 
 /** The order line an event member was checked out on, so the detail view can
  * link straight to it — mirrors the occasion order-link (ADR 0055). */
@@ -47,6 +53,14 @@ const MEMBER_INCLUDE = {
 } as const;
 
 type MemberOccasion = Prisma.OccasionGetPayload<{ include: typeof MEMBER_INCLUDE }>;
+
+/** Lightweight occasion shape for the summary rollup: just the status plus the
+ * linked order's status, so `sentCount` can be order-aware without loading the
+ * full member. */
+const SUMMARY_OCCASION_SELECT = {
+  status: true,
+  orderRecipients: MEMBER_ORDER_LINK,
+} as const;
 
 export interface EventMember {
   occasionId: string;
@@ -172,7 +186,7 @@ export class EventsService {
         }),
       },
       orderBy: { eventDate: "asc" },
-      include: { occasions: { select: { status: true } } },
+      include: { occasions: { select: SUMMARY_OCCASION_SELECT } },
     });
 
     await this.audit.record({
@@ -187,11 +201,7 @@ export class EventsService {
     return events.map((event) => this.toSummary(event, event.occasions));
   }
 
-  async findOne(
-    accountId: string,
-    actorUserId: string,
-    id: string,
-  ): Promise<EventWithMembers> {
+  async findOne(accountId: string, actorUserId: string, id: string): Promise<EventWithMembers> {
     const event = await this.prisma.event.findFirst({
       where: { id, accountId },
       include: {
@@ -369,7 +379,7 @@ export class EventsService {
     if (!event) {
       throw new NotFoundException("Event not found");
     }
-    if (event.occasions.some((o) => SENT_STATUSES.has(o.status))) {
+    if (event.occasions.some((o) => ORDERED_STATUSES.has(o.status))) {
       throw new ConflictException(
         "Some cards on this event have already been sent — it can't be deleted",
       );
@@ -418,7 +428,9 @@ export class EventsService {
     const missing = members.filter((m) => !m.recipient || !hasMailableAddress(m.recipient));
     if (missing.length > 0) {
       const names = missing
-        .map((m) => (m.recipient ? `${m.recipient.firstName} ${m.recipient.lastName}` : "a contact"))
+        .map((m) =>
+          m.recipient ? `${m.recipient.firstName} ${m.recipient.lastName}` : "a contact",
+        )
         .join(", ");
       throw new BadRequestException(
         `These contacts need a full UK postal address before you can send to them: ${names}`,
@@ -465,7 +477,11 @@ export class EventsService {
       action: "order",
       targetType: "Event",
       targetId: id,
-      metadata: { batchOrderId: order.id, cards: memberIds.length, savedDesignId: dto.savedDesignId },
+      metadata: {
+        batchOrderId: order.id,
+        cards: memberIds.length,
+        savedDesignId: dto.savedDesignId,
+      },
     });
 
     return order;
@@ -483,8 +499,20 @@ export class EventsService {
   }
 
   private toSummary(
-    event: { id: string; accountId: string; title: string; type: string; eventDate: Date; notes: string | null; createdAt: Date; updatedAt: Date },
-    occasions: { status: OccasionStatus }[],
+    event: {
+      id: string;
+      accountId: string;
+      title: string;
+      type: string;
+      eventDate: Date;
+      notes: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    occasions: {
+      status: OccasionStatus;
+      orderRecipients: { batchOrder: { status: BatchOrderStatus } | null }[];
+    }[],
   ): EventSummary {
     return {
       id: event.id,
@@ -494,7 +522,11 @@ export class EventsService {
       eventDate: event.eventDate,
       notes: event.notes,
       memberCount: occasions.length,
-      sentCount: occasions.filter((o) => SENT_STATUSES.has(o.status)).length,
+      // Order-aware: a member only counts as sent once its order is actually
+      // paid — `queued` alone happens at checkout, before payment. See ADR 0141.
+      sentCount: occasions.filter((o) =>
+        isOccasionSent(o.status, o.orderRecipients[0]?.batchOrder?.status ?? null),
+      ).length,
       createdAt: event.createdAt,
       updatedAt: event.updatedAt,
     };

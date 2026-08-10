@@ -110,15 +110,14 @@ function OccasionPill({
   draggable?: boolean;
   onDragStart?: (occasion: Occasion) => void;
 }) {
-  const progress = occasionProgress(occasion.status);
+  const progress = occasionProgress(occasion.status, occasion.order?.status);
   const color =
     progress === "sent"
       ? OCCASION_SENT_COLOR
       : progress === "skipped"
         ? OCCASION_SKIPPED_COLOR
         : (OCCASION_TYPE_COLORS[occasion.type] ?? OCCASION_TYPE_COLORS.bespoke_campaign);
-  const stateNote =
-    progress === "sent" ? " · Sent" : progress === "skipped" ? " · Skipped" : "";
+  const stateNote = progress === "sent" ? " · Sent" : progress === "skipped" ? " · Skipped" : "";
   return (
     <button
       type="button"
@@ -159,17 +158,9 @@ function OccasionPill({
 
 /** A shared event, collapsed to one calendar entry (not N per-contact pills):
  * its title plus a "sent / total" progress, opening the manage pop-up. */
-function EventPill({
-  event,
-  onOpen,
-}: {
-  event: EventSummary;
-  onOpen: (id: string) => void;
-}) {
+function EventPill({ event, onOpen }: { event: EventSummary; onOpen: (id: string) => void }) {
   const allSent = event.memberCount > 0 && event.sentCount === event.memberCount;
-  const color = allSent
-    ? OCCASION_SENT_COLOR
-    : "bg-indigo-100 text-indigo-800 border-indigo-200";
+  const color = allSent ? OCCASION_SENT_COLOR : "bg-indigo-100 text-indigo-800 border-indigo-200";
   return (
     <button
       type="button"
@@ -452,7 +443,9 @@ export function CalendarClient({
             Dispatch dates
           </label>
           {showDispatch && view !== "list" && (
-            <span className="hidden text-xs text-muted sm:inline">Drag a card to re-time its dispatch</span>
+            <span className="hidden text-xs text-muted sm:inline">
+              Drag a card to re-time its dispatch
+            </span>
           )}
           <select
             value={typeFilter}
@@ -484,7 +477,9 @@ export function CalendarClient({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
       <CalendarLegend />
@@ -600,67 +595,70 @@ function GridView({
         </div>
         <div className="grid grid-cols-7">
           {days.map((day) => {
-          const key = ymdUTC(day);
-          const inMonth = view === "week" || day.getUTCMonth() === anchor.getUTCMonth();
-          const isToday = key === todayKey;
-          const dayEvents = eventsByDay.get(key) ?? [];
-          const dayOccasions = byDay.get(key) ?? [];
-          const cap = view === "week" ? 12 : 3;
-          const shown = dayOccasions.slice(0, Math.max(0, cap - dayEvents.length));
-          const extra = dayOccasions.length - shown.length;
-          return (
-            <div
-              key={key}
-              onDoubleClick={() => onCreateForDate(key)}
-              onDragOver={showDispatch ? (e) => e.preventDefault() : undefined}
-              onDrop={
-                showDispatch
-                  ? (e) => {
-                      e.preventDefault();
-                      const id = e.dataTransfer.getData("text/plain");
-                      if (id) onMoveDispatch(id, key);
+            const key = ymdUTC(day);
+            const inMonth = view === "week" || day.getUTCMonth() === anchor.getUTCMonth();
+            const isToday = key === todayKey;
+            const dayEvents = eventsByDay.get(key) ?? [];
+            const dayOccasions = byDay.get(key) ?? [];
+            const cap = view === "week" ? 12 : 3;
+            const shown = dayOccasions.slice(0, Math.max(0, cap - dayEvents.length));
+            const extra = dayOccasions.length - shown.length;
+            return (
+              <div
+                key={key}
+                onDoubleClick={() => onCreateForDate(key)}
+                onDragOver={showDispatch ? (e) => e.preventDefault() : undefined}
+                onDrop={
+                  showDispatch
+                    ? (e) => {
+                        e.preventDefault();
+                        const id = e.dataTransfer.getData("text/plain");
+                        if (id) onMoveDispatch(id, key);
+                      }
+                    : undefined
+                }
+                title="Double-click to create an event"
+                className={`group ${cellHeight} flex flex-col gap-1 border-t border-l border-border p-1.5 first:border-l-0 ${
+                  isToday ? "bg-accent-soft/50" : inMonth ? "" : "bg-foreground/[0.02] text-muted"
+                } ${showDispatch ? "hover:bg-accent-soft/30" : ""}`}
+              >
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => onCreateForDate(key)}
+                    aria-label="Create an event on this day"
+                    className="text-xs text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
+                  >
+                    + event
+                  </button>
+                  <span
+                    className={`text-xs ${
+                      isToday
+                        ? "flex h-5 w-5 items-center justify-center rounded-full bg-foreground font-semibold text-white"
+                        : "text-muted"
+                    }`}
+                  >
+                    {day.getUTCDate()}
+                  </span>
+                </div>
+                {dayEvents.map((event) => (
+                  <EventPill key={event.id} event={event} onOpen={onOpenEvent} />
+                ))}
+                {shown.map((occasion) => (
+                  <OccasionPill
+                    key={occasion.id}
+                    occasion={occasion}
+                    onOpen={onOpen}
+                    draggable={
+                      showDispatch &&
+                      occasionProgress(occasion.status, occasion.order?.status) === "upcoming"
                     }
-                  : undefined
-              }
-              title="Double-click to create an event"
-              className={`group ${cellHeight} flex flex-col gap-1 border-t border-l border-border p-1.5 first:border-l-0 ${
-                isToday ? "bg-accent-soft/50" : inMonth ? "" : "bg-foreground/[0.02] text-muted"
-              } ${showDispatch ? "hover:bg-accent-soft/30" : ""}`}
-            >
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => onCreateForDate(key)}
-                  aria-label="Create an event on this day"
-                  className="text-xs text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
-                >
-                  + event
-                </button>
-                <span
-                  className={`text-xs ${
-                    isToday
-                      ? "flex h-5 w-5 items-center justify-center rounded-full bg-foreground font-semibold text-white"
-                      : "text-muted"
-                  }`}
-                >
-                  {day.getUTCDate()}
-                </span>
+                  />
+                ))}
+                {extra > 0 && <span className="px-1 text-xs text-muted">+{extra} more</span>}
               </div>
-              {dayEvents.map((event) => (
-                <EventPill key={event.id} event={event} onOpen={onOpenEvent} />
-              ))}
-              {shown.map((occasion) => (
-                <OccasionPill
-                  key={occasion.id}
-                  occasion={occasion}
-                  onOpen={onOpen}
-                  draggable={showDispatch && occasionProgress(occasion.status) === "upcoming"}
-                />
-              ))}
-              {extra > 0 && <span className="px-1 text-xs text-muted">+{extra} more</span>}
-            </div>
-          );
-        })}
+            );
+          })}
         </div>
       </div>
     </div>
@@ -722,7 +720,10 @@ function ListView({
   return (
     <div className="flex flex-col gap-4">
       {groups.map((group) => (
-        <div key={group.monthKey} className="card flex flex-col divide-y divide-border overflow-hidden">
+        <div
+          key={group.monthKey}
+          className="card flex flex-col divide-y divide-border overflow-hidden"
+        >
           <div className="flex items-baseline justify-between gap-2 bg-foreground/[0.02] px-4 py-2.5">
             <h2 className="text-sm font-semibold">
               {relativeMonthLabel(group.monthDate, todayKey)}

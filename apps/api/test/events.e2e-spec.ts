@@ -97,7 +97,9 @@ describe("Events (e2e)", () => {
     // The member occasions carry the shared-event source + the event title.
     const occasions = await prisma.occasion.findMany({ where: { eventId: event.id } });
     expect(occasions).toHaveLength(2);
-    expect(occasions.every((o) => o.source === "shared_event" && o.title === "End of Year")).toBe(true);
+    expect(occasions.every((o) => o.source === "shared_event" && o.title === "End of Year")).toBe(
+      true,
+    );
 
     // It appears in the account's event list (date-ranged for the calendar).
     const listed = await request(app.getHttpServer())
@@ -146,7 +148,7 @@ describe("Events (e2e)", () => {
     expect(occasion.title).toBe("SATs week");
   });
 
-  it("orders the whole cohort into one draft order, then blocks deletion", async () => {
+  it("orders the cohort into a draft (unpaid = not sent), blocks deletion, reads sent once paid", async () => {
     const { token } = await signUp();
     const a = await createRecipient(token, "Eve");
     const b = await createRecipient(token, "Fay");
@@ -155,7 +157,12 @@ describe("Events (e2e)", () => {
     const created = await request(app.getHttpServer())
       .post("/events")
       .set("Authorization", `Bearer ${token}`)
-      .send({ title: "Results Day", type: "achievement", eventDate: "2026-08-20", recipientIds: [a, b] })
+      .send({
+        title: "Results Day",
+        type: "achievement",
+        eventDate: "2026-08-20",
+        recipientIds: [a, b],
+      })
       .expect(201);
     const eventId = (created.body as EventBody).id;
 
@@ -164,21 +171,34 @@ describe("Events (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ savedDesignId: designId, postageClass: "second_class" })
       .expect(201);
-    const body = order.body as { status: string; orderRecipients: unknown[] };
+    const body = order.body as { id: string; status: string; orderRecipients: unknown[] };
     expect(body.status).toBe("draft");
     expect(body.orderRecipients).toHaveLength(2);
 
-    // Members are consumed into the order (queued), so the event can't be deleted.
+    // The members are queued onto the order, but the order is unpaid (draft), so
+    // NONE of them count as sent — `queued` alone happens at checkout, before
+    // payment. Regression guard for the "abandoned order shows as Sent" bug
+    // (ADR 0141).
     const afterOrder = await request(app.getHttpServer())
       .get(`/events/${eventId}`)
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
-    expect((afterOrder.body as EventBody).sentCount).toBe(2);
+    expect((afterOrder.body as EventBody).sentCount).toBe(0);
 
+    // Being ordered (queued) still blocks deletion — that's about not destroying
+    // an order's history, independent of payment.
     await request(app.getHttpServer())
       .delete(`/events/${eventId}`)
       .set("Authorization", `Bearer ${token}`)
       .expect(409);
+
+    // Once the order is paid, the same queued members read as sent.
+    await prisma.batchOrder.update({ where: { id: body.id }, data: { status: "paid" } });
+    const afterPaid = await request(app.getHttpServer())
+      .get(`/events/${eventId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect((afterPaid.body as EventBody).sentCount).toBe(2);
   });
 
   it("refuses to order when a contact has no postal address", async () => {
