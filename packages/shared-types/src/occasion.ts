@@ -1,12 +1,65 @@
 import { z } from "zod";
 import {
+  type BatchOrderStatus,
   batchOrderStatusSchema,
   dispatchOptionSchema,
+  type OccasionStatus,
   occasionSourceSchema,
   occasionStatusSchema,
   occasionTypeSchema,
   postageClassSchema,
 } from "./enums";
+
+/** Batch-order statuses that mean the customer has actually paid. */
+export const PAID_BATCH_ORDER_STATUSES = [
+  "paid",
+  "fulfilling",
+  "completed",
+] as const satisfies readonly BatchOrderStatus[];
+
+/**
+ * Whether an occasion's card has genuinely been sent — i.e. paid for and in or
+ * through fulfilment. **Order-aware on purpose.** An occasion enters `queued` at
+ * checkout, *before* payment, and stays `queued` all the way through settlement
+ * (settlement never re-touches occasion status), so `queued` alone cannot tell a
+ * paid card apart from one where the customer clicked Send but never paid. It
+ * therefore counts as sent only when its order is actually paid. `printed` /
+ * `posted` / `delivered` are only ever reached after settlement, so they always
+ * count. This is the single source of truth for "sent" across the calendar and
+ * events views — it replaced three drifting copies that keyed off occasion
+ * status alone and so showed an abandoned unpaid order as "Sent". See ADR 0141.
+ */
+export function isOccasionSent(
+  status: OccasionStatus,
+  orderStatus?: BatchOrderStatus | null,
+): boolean {
+  if (status === "printed" || status === "posted" || status === "delivered") {
+    return true;
+  }
+  if (status === "queued") {
+    return (
+      orderStatus != null && (PAID_BATCH_ORDER_STATUSES as readonly string[]).includes(orderStatus)
+    );
+  }
+  return false;
+}
+
+export type OccasionProgress = "upcoming" | "sent" | "skipped";
+
+/**
+ * The calendar's three-way progress for an occasion. `skipped` is terminal;
+ * otherwise it's `sent` (paid + in/through fulfilment, see isOccasionSent) or
+ * `upcoming`. Order-aware — pass the linked order's status.
+ */
+export function occasionProgress(
+  status: OccasionStatus,
+  orderStatus?: BatchOrderStatus | null,
+): OccasionProgress {
+  if (status === "skipped") {
+    return "skipped";
+  }
+  return isOccasionSent(status, orderStatus) ? "sent" : "upcoming";
+}
 
 /**
  * The batch order an occasion was sent on, nested onto the occasion so the

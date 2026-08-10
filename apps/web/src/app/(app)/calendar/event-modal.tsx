@@ -7,7 +7,7 @@ import type {
   RecipientListSummary,
   SavedDesign,
 } from "@kudos/shared-types";
-import { suggestFirstClass } from "@kudos/shared-types";
+import { isOccasionSent, suggestFirstClass } from "@kudos/shared-types";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
@@ -18,8 +18,6 @@ import { OCCASION_TYPES } from "./calendar-utils";
 import { RecipientPicker, type Paginated } from "../send/recipient-picker";
 
 type PostageClass = "first_class" | "second_class";
-
-const SENT_STATUSES = new Set(["queued", "printed", "posted", "delivered"]);
 
 /** A searchable contact multi-select that owns its own first-page fetch, so the
  * event modal can drop it in without the parent pre-loading recipients. */
@@ -151,7 +149,9 @@ function CreateEvent({
   return (
     <div className="flex flex-col gap-4">
       {error && (
-        <p className="rounded-lg bg-accent-soft px-3 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-3 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm text-muted sm:col-span-2">
@@ -318,7 +318,7 @@ function ManageEvent({
   if (error && !event) return <p className="text-sm text-accent">{error}</p>;
   if (!event) return <p className="text-sm text-muted">Loading…</p>;
 
-  const unsent = event.members.filter((m) => !SENT_STATUSES.has(m.status));
+  const unsent = event.members.filter((m) => !isOccasionSent(m.status, m.order?.status));
 
   if (sending) {
     return (
@@ -334,7 +334,9 @@ function ManageEvent({
   return (
     <div className="flex flex-col gap-4">
       {error && (
-        <p className="rounded-lg bg-accent-soft px-3 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-3 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
       <div className="flex flex-col gap-0.5">
@@ -385,7 +387,7 @@ function ManageEvent({
       ) : (
         <div className="max-h-64 divide-y divide-border overflow-y-auto rounded-lg border border-border">
           {event.members.map((m) => {
-            const sent = SENT_STATUSES.has(m.status);
+            const sent = isOccasionSent(m.status, m.order?.status);
             return (
               <div key={m.occasionId} className="flex items-center justify-between gap-2 px-3 py-2">
                 <div className="min-w-0">
@@ -579,7 +581,9 @@ function SendCohort({
           disabled={submitting || !designId}
           className="btn-accent disabled:opacity-60"
         >
-          {submitting ? "Starting checkout…" : `Pay for ${unsentCount} card${unsentCount === 1 ? "" : "s"}`}
+          {submitting
+            ? "Starting checkout…"
+            : `Pay for ${unsentCount} card${unsentCount === 1 ? "" : "s"}`}
         </button>
         <button
           type="button"
