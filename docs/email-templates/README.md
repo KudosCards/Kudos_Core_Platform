@@ -23,19 +23,57 @@ lands in spam and, in the words of a real customer, looks like it "could be
 malware". The templates below can't fix the _sender_.
 
 So before (or alongside) installing the templates, configure **custom SMTP** so
-auth emails come from a verified `@kudos-cards.co.uk` sender — the same Brevo
-account the app already uses for its own email:
+auth emails come from a **verified Brevo sender** — the same Brevo account the app
+already uses for its own transactional email:
 
 1. Supabase dashboard → **Authentication → Emails → SMTP Settings** → enable
    **Custom SMTP**.
-2. Point it at Brevo (`smtp-relay.brevo.com`, port 587) with the Brevo SMTP key,
-   and set the **sender** to the same verified address/name as the app's
-   `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` (e.g. `Kudos Cards
-<hello@kudos-cards.co.uk>`). The domain must be verified in Brevo (SPF/DKIM)
-   — it already is for the app's transactional email.
+2. Fill in:
+
+   | Field        | Value                                                          |
+   | ------------ | -------------------------------------------------------------- |
+   | Sender email | `noreply@kudoscards.co.uk`  (see the domain note below)        |
+   | Sender name  | `Kudos Cards`                                                  |
+   | Host         | `smtp-relay.brevo.com`                                         |
+   | Port         | `587`                                                          |
+   | Username     | your Brevo **SMTP login** (see gotcha #1)                      |
+   | Password     | a Brevo **SMTP key** (Brevo → SMTP & API → SMTP → generate)    |
+
 3. Raise the auth rate limits if needed (the default sender is heavily throttled).
 
 Without this, a perfectly branded template still arrives from a stranger.
+
+### ⚠️ The domain split — sender vs. logo are DIFFERENT domains
+
+This trips people up. The two hosts look almost identical but do different jobs,
+and using the wrong one for the sender makes Brevo reject the mail:
+
+| Purpose                          | Domain                            | Why                                                         |
+| -------------------------------- | --------------------------------- | ---------------------------------------------------------- |
+| **Sending** (SMTP `MAIL FROM`)   | `kudoscards.co.uk` — **no hyphen** | that's where the verified Brevo senders + SPF/DKIM live    |
+| **Logo & links inside the email** | `kudos-cards.co.uk` — **hyphen**  | that's the live app host that serves `/marketing/logo.png` |
+
+So an auth email is **sent from** the no-hyphen domain but **shows a logo from**
+the hyphen domain. That is intentional — they are genuinely different domains.
+The verified Brevo senders are `support@`, `noreply@`, `tech@kudoscards.co.uk`;
+use **`noreply@kudoscards.co.uk`** for automated auth mail. Brevo rejects a
+`MAIL FROM` that isn't a verified sender even if the domain is verified, so pick
+one of those three exactly.
+
+> The app's own `EMAIL_FROM_ADDRESS` env var must likewise be a verified
+> `@kudoscards.co.uk` (no-hyphen) sender, or left unset so Brevo falls back to the
+> account's default verified sender. It must **not** be a `@kudos-cards.co.uk`
+> (hyphenated) address — that domain is not a verified Brevo sender.
+
+### Two gotchas
+
+1. **The SMTP username is the `@smtp-brevo.com` login, not your Brevo account
+   email.** Brevo → **SMTP & API → SMTP** shows a "Login" like
+   `xxxxxxx@smtp-brevo.com` — that is the SMTP username. Signing in with your
+   human account email will fail auth.
+2. **Do NOT enable Brevo's "block unauthorized IPs" for SMTP keys.** Supabase
+   sends from its own rotating infrastructure IPs that you can't enumerate; IP
+   allow-listing will start bouncing all auth mail. Leave it off.
 
 ## Installing the auth templates in Supabase
 
@@ -71,10 +109,12 @@ node scripts/generate-auth-email-templates.mjs
 The generator (`apps/api/scripts/generate-auth-email-templates.mjs`) holds the
 per-email subject, heading, and body copy. The logo + footer link point at the
 **live web app** — `https://kudos-cards.co.uk/marketing/logo.png` — which is the
-host that actually serves the asset. (The legacy WordPress store lives at the
-un-hyphenated `kudoscards.co.uk`; pointing the logo there 404s it and the email
-looks broken.) Override the host with `WEB_APP_URL` when regenerating for another
-environment:
+host that actually serves the asset. (The un-hyphenated `kudoscards.co.uk` is the
+legacy WordPress store and does **not** serve `/marketing/logo.png`, so pointing
+the logo there 404s it and the email looks broken. Note that same un-hyphenated
+domain _is_ the verified Brevo **email-sending** domain — see the domain-split
+note above; sender ≠ asset host.) Override the host with `WEB_APP_URL` when
+regenerating for another environment:
 
 ```bash
 cd apps/api
