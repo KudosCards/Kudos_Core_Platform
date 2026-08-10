@@ -1,6 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ENTERPRISE_PLAN, PLAN_CATALOG, formatPlanPrice, planCardPriceLabel } from "@kudos/shared-types";
+import {
+  ENTERPRISE_PLAN,
+  PLAN_CATALOG,
+  formatPlanPrice,
+  planCardPriceLabel,
+} from "@kudos/shared-types";
 import { PublicHeader } from "@/components/public-header";
 import { SocialLinks } from "@/components/social-links";
 
@@ -24,27 +29,27 @@ const usedBy = [
 ];
 
 const pains = [
-  "Birthdays and milestones that slip through the cracks",
-  "The people who matter — customers, members, students — feeling forgotten",
-  "Wasted hours shopping for cards, writing, stamping, posting",
+  "Birthdays and milestones that quietly slip past",
+  "Customers, members and students who start to feel forgotten",
+  "Hours lost buying cards, writing them, stamping and posting",
   "Meaning to send something thoughtful, then never finding the time",
 ];
 
 const steps = [
   {
-    step: "01",
-    title: "Send one, or upload a list",
-    body: "Fire off a single card in a couple of clicks, or import your whole contact list — customers, members, students, staff — from a spreadsheet or by hand.",
+    step: "1",
+    title: "Add the people you care about",
+    body: "Send a single card to one person, or upload your whole list from a spreadsheet. Customers, members, students, staff, family, whoever matters to you.",
   },
   {
-    step: "02",
-    title: "Pick the moment",
-    body: "Send right now for a one-off, or let Kudos track birthdays and key dates and send automatically — a reminder ahead of each one, or fully on autopilot.",
+    step: "2",
+    title: "Choose when it goes",
+    body: "Send it now for a one-off, or tell us the birthdays and key dates and we'll post a card every year. We can remind you first, or just get on with it for you.",
   },
   {
-    step: "03",
-    title: "We print and post the card",
-    body: "Choose from our range of card designs. We handle the printing, packing and posting. A real, personalised card arrives through the recipient's door.",
+    step: "3",
+    title: "We print it and post it",
+    body: "Pick a design and add your message. We print the card, pop it in an envelope and post it, so a real card lands on their doormat.",
   },
 ];
 
@@ -130,13 +135,13 @@ export default function HomePage() {
               Send one card, or automate thousands
             </h1>
             <p className="text-xl font-semibold text-slate-700">
-              Personalised cards, printed and posted for every occasion - never miss another moment
-              worth celebrating.
+              Real, personalised cards, printed and posted for you. So you never miss another
+              birthday, thank-you or big moment.
             </p>
             <p className="max-w-lg text-slate-600">
-              From a single birthday, thank-you or congratulations to automated sends across your
-              whole contact list, Kudos Cards prints and posts a real, personalised card on your
-              behalf — so the people who matter feel remembered. No admin. No forgotten dates.
+              Whether it&apos;s a single birthday card or a thank-you to your whole customer list,
+              we print and post real cards for you. The people who matter feel remembered, and you
+              never have to remember a date again. No admin, no forgotten birthdays.
             </p>
             <div className="flex flex-wrap items-center gap-4">
               <Link
@@ -144,19 +149,24 @@ export default function HomePage() {
                 className="rounded-full px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90"
                 style={{ backgroundColor: CORAL }}
               >
-                Start Free — No Card Needed
+                Start for free, no card needed
               </Link>
-              <a href="#how" className="text-sm font-medium text-slate-600 underline hover:text-slate-900">
+              <a
+                href="#how"
+                className="text-sm font-medium text-slate-600 underline hover:text-slate-900"
+              >
                 See how it works ↓
               </a>
             </div>
             <div className="mt-2 w-fit rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
               <Stars />
               <p className="mt-1 max-w-sm text-sm text-slate-600 italic">
-                &quot;Set it up in 10 minutes. Cards just go out. Parents message us to say thank you —
-                that never happened before.&quot;
+                &quot;Set it up in 10 minutes. Cards just go out. Parents message us to say thank
+                you — that never happened before.&quot;
               </p>
-              <p className="mt-1 text-sm font-semibold">Sarah T. — Tuition Centre Owner, Manchester</p>
+              <p className="mt-1 text-sm font-semibold">
+                Sarah T. — Tuition Centre Owner, Manchester
+              </p>
             </div>
           </div>
           <div className="relative mx-auto w-full max-w-sm">
@@ -205,10 +215,12 @@ export default function HomePage() {
           <span className="w-fit rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
             SOUND FAMILIAR?
           </span>
-          <h2 className="text-3xl font-bold tracking-tight">Remembering everyone is the hard part</h2>
+          <h2 className="text-3xl font-bold tracking-tight">
+            Remembering everyone is the hard part
+          </h2>
           <p className="text-slate-600">
-            Most of us mean well — but without a system, the birthdays, thank-yous and milestones
-            that matter slip through the cracks.
+            Most of us mean well. But without a system, the birthdays, thank-yous and milestones
+            that matter quietly slip past.
           </p>
           <ul className="flex flex-col gap-3">
             {pains.map((pain) => (
@@ -219,7 +231,7 @@ export default function HomePage() {
             ))}
           </ul>
           <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-            ✓ Kudos Cards fixes all of this automatically — in under 10 minutes to set up.
+            ✓ Kudos Cards takes care of all of it, and takes about 10 minutes to set up.
           </p>
         </div>
       </section>
@@ -231,14 +243,20 @@ export default function HomePage() {
             <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
               SIMPLE BY DESIGN
             </span>
-            <h2 className="mt-4 text-3xl font-bold tracking-tight">Up and running in three steps</h2>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight">
+              Up and running in three steps
+            </h2>
             <p className="mt-3 text-slate-600">
-              No technical knowledge needed. If you can upload a spreadsheet, you can use Kudos Cards.
+              No technical knowledge needed. If you can upload a spreadsheet, you can use Kudos
+              Cards.
             </p>
           </div>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
             {steps.map((s) => (
-              <div key={s.step} className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+              <div
+                key={s.step}
+                className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100"
+              >
                 <p className="text-xs font-bold tracking-widest" style={{ color: CORAL }}>
                   STEP {s.step}
                 </p>
@@ -257,8 +275,8 @@ export default function HomePage() {
             Personalised with every recipient&apos;s name
           </h2>
           <p className="text-slate-600">
-            Your message, printed inside — automatically. Pick a design from our range, add a QR code
-            that links to a personal video or note, and we do the rest.
+            Your own message, printed inside every card. Pick a design you like, add a QR code that
+            links to a personal video or note if you want to, and we do the rest.
           </p>
           <div className="flex flex-wrap gap-3">
             {categories.map((cat) => (
@@ -302,16 +320,16 @@ export default function HomePage() {
               People who feel remembered stick around
             </h2>
             <p className="text-slate-600">
-              A real card through the door does something no text message or email ever can — it shows
-              you genuinely cared enough to send something real.
+              A real card on the doormat does something no text or email ever can. It shows you
+              cared enough to send something real.
             </p>
             <ul className="flex flex-col gap-4">
               {benefits.map((b) => (
                 <li key={b.title} className="flex items-start gap-3">
                   <span className="text-emerald-500">✓</span>
                   <span>
-                    <span className="font-semibold">{b.title}</span>{" "}
-                    <span className="text-slate-600">— {b.body}</span>
+                    <span className="font-semibold">{b.title}.</span>{" "}
+                    <span className="text-slate-600">{b.body}</span>
                   </span>
                 </li>
               ))}
@@ -321,7 +339,7 @@ export default function HomePage() {
               className="w-fit rounded-full px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90"
               style={{ backgroundColor: CORAL }}
             >
-              Start Free — No Credit Card Needed
+              Start for free, no card needed
             </Link>
           </div>
           <Image
@@ -341,14 +359,19 @@ export default function HomePage() {
             <span className="rounded-full bg-amber-400/20 px-3 py-1 text-xs font-semibold text-amber-300">
               VERIFIED REVIEWS
             </span>
-            <h2 className="mt-4 text-3xl font-bold tracking-tight">Don&apos;t take our word for it</h2>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight">
+              Don&apos;t take our word for it
+            </h2>
             <p className="mt-3 text-slate-300">
               Real feedback from the businesses, tutors and centres who use Kudos every day.
             </p>
           </div>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
             {reviews.map((r) => (
-              <div key={r.name} className="flex flex-col gap-3 rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
+              <div
+                key={r.name}
+                className="flex flex-col gap-3 rounded-2xl bg-white/5 p-6 ring-1 ring-white/10"
+              >
                 <Stars />
                 <p className="text-sm text-slate-200">{r.body}</p>
                 <p className="mt-auto text-sm font-semibold">{r.name}</p>
@@ -386,11 +409,13 @@ export default function HomePage() {
             <div
               key={plan.id}
               className={`flex flex-col gap-4 rounded-2xl p-6 ring-1 ${
-                plan.highlight
-                  ? "bg-white shadow-xl ring-2"
-                  : "bg-white shadow-sm ring-slate-100"
+                plan.highlight ? "bg-white shadow-xl ring-2" : "bg-white shadow-sm ring-slate-100"
               }`}
-              style={plan.highlight ? { borderColor: CORAL, boxShadow: "0 10px 40px rgba(239,91,82,0.15)" } : undefined}
+              style={
+                plan.highlight
+                  ? { borderColor: CORAL, boxShadow: "0 10px 40px rgba(239,91,82,0.15)" }
+                  : undefined
+              }
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -407,14 +432,14 @@ export default function HomePage() {
                 )}
               </div>
               <p>
-                <span className="text-3xl font-extrabold">{formatPlanPrice(plan.monthlyPriceMinor)}</span>
+                <span className="text-3xl font-extrabold">
+                  {formatPlanPrice(plan.monthlyPriceMinor)}
+                </span>
                 <span className="text-slate-500">/mo</span>
               </p>
               <p className="text-sm font-medium text-emerald-600">{planCardPriceLabel(plan)}</p>
               <ul className="flex flex-col gap-2 text-sm text-slate-600">
-                {plan.inherits && (
-                  <li className="font-medium text-slate-500">{plan.inherits}</li>
-                )}
+                {plan.inherits && <li className="font-medium text-slate-500">{plan.inherits}</li>}
                 {plan.features.map((f) => (
                   <li key={f} className="flex items-start gap-2">
                     <span className="mt-0.5 text-emerald-500">✓</span>
@@ -445,7 +470,7 @@ export default function HomePage() {
               </span>
             </div>
             <p className="max-w-xl text-sm text-slate-300">
-              {ENTERPRISE_PLAN.tagline} — volume card pricing, multiple sites and unlimited seats,
+              {ENTERPRISE_PLAN.tagline}. Volume card pricing, multiple sites and unlimited seats,
               onboarding and a dedicated account manager.
             </p>
           </div>
@@ -461,19 +486,17 @@ export default function HomePage() {
       {/* Final CTA */}
       <section className="bg-gradient-to-b from-white to-sky-50">
         <div className="mx-auto max-w-3xl px-6 py-16 text-center">
-          <h2 className="text-3xl font-bold tracking-tight">
-            Never miss a moment that matters
-          </h2>
+          <h2 className="text-3xl font-bold tracking-tight">Never miss a moment that matters</h2>
           <p className="mt-3 text-slate-600">
-            Send your first card in minutes — or set it up once and let Kudos Cards run on autopilot
-            for the rest of the year.
+            Send your first card in minutes. Or set it up once and let Kudos Cards look after the
+            rest of the year for you.
           </p>
           <Link
             href="/register"
             className="mt-6 inline-block rounded-full px-8 py-3 font-semibold text-white transition-opacity hover:opacity-90"
             style={{ backgroundColor: CORAL }}
           >
-            Start Free — No Card Needed
+            Start for free, no card needed
           </Link>
         </div>
       </section>
