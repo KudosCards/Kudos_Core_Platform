@@ -42,17 +42,20 @@ export function SendTimingPicker({
   idPrefix = "send-timing",
 }: {
   postageClass: PostageClass;
-  value: SendTiming;
+  // Null = no choice made yet. This is deliberately unselected by default so a
+  // sender can't absent-mindedly leave "Send now" as a pre-ticked default —
+  // callers make the choice a required gate before paying. See ADR 0159.
+  value: SendTiming | null;
   onChange: (next: SendTiming) => void;
   idPrefix?: string;
 }) {
   const { earliest, latest } = deliverByWindow(postageClass);
   const min = isoDay(earliest);
   const max = isoDay(latest);
-  const selected = value.mode === "scheduled" ? value.deliverBy : min;
+  const selected = value?.mode === "scheduled" ? value.deliverBy : min;
 
   const postsOn =
-    value.mode === "scheduled"
+    value?.mode === "scheduled"
       ? isoDay(computeDispatchDate(new Date(`${selected}T00:00:00.000Z`), POSTAGE_LEAD_DAYS[postageClass]))
       : null;
 
@@ -65,7 +68,7 @@ export function SendTimingPicker({
           type="radio"
           name={idPrefix}
           className="mt-0.5"
-          checked={value.mode === "now"}
+          checked={value?.mode === "now"}
           onChange={() => onChange({ mode: "now" })}
         />
         <span>
@@ -79,7 +82,7 @@ export function SendTimingPicker({
           type="radio"
           name={idPrefix}
           className="mt-0.5"
-          checked={value.mode === "scheduled"}
+          checked={value?.mode === "scheduled"}
           onChange={() => onChange({ mode: "scheduled", deliverBy: selected })}
         />
         <span className="flex-1">
@@ -87,7 +90,7 @@ export function SendTimingPicker({
           <span className="block text-xs text-muted">
             Pay now — we post it timed to arrive around your date.
           </span>
-          {value.mode === "scheduled" && (
+          {value?.mode === "scheduled" && (
             <span className="mt-2 flex flex-col gap-1">
               <input
                 type="date"
