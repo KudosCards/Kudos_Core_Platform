@@ -17,7 +17,11 @@ const SECONDARY_BTN = "btn-secondary flex-1 sm:flex-none";
 
 /** Provider slug → the name we show. Falls back to a capitalised slug. */
 function labelFor(provider: string): string {
-  const known: Record<string, string> = { brevo: "Brevo", hubspot: "HubSpot" };
+  const known: Record<string, string> = {
+    brevo: "Brevo",
+    hubspot: "HubSpot",
+    gohighlevel: "GoHighLevel",
+  };
   return known[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
@@ -287,12 +291,20 @@ function BrevoConnector({
   );
 }
 
-/** HubSpot uses OAuth: no API key to paste — "Connect" bounces the user through
- * HubSpot's consent screen and back. The connected state mirrors Brevo's. */
-function HubSpotConnector({
+/** OAuth CRM connector (HubSpot, GoHighLevel): no API key to paste — "Connect"
+ * bounces the user through the provider's consent screen and back with
+ * ?connected=<provider>. The connected state mirrors Brevo's. One component
+ * serves every OAuth provider; only the slug, name and blurb differ. */
+function OAuthConnector({
+  provider,
+  name,
+  description,
   connection,
   onChange,
 }: {
+  provider: string;
+  name: string;
+  description: ReactNode;
   connection: CrmConnection | undefined;
   onChange: (next: CrmConnection | null) => void;
 }) {
@@ -304,14 +316,16 @@ function HubSpotConnector({
     setError(null);
     setBusy("connect");
     try {
-      // The API builds HubSpot's consent URL (with a signed state); we redirect
-      // the browser to it. HubSpot returns to the API callback, which lands us
-      // back here with ?connected=hubspot.
-      const { url } = await clientApiFetch<{ url: string }>("/integrations/oauth/hubspot/start");
+      // The API builds the provider's consent URL (with a signed state); we
+      // redirect the browser to it. The provider returns to the API callback,
+      // which lands us back here with ?connected=<provider>.
+      const { url } = await clientApiFetch<{ url: string }>(
+        `/integrations/oauth/${provider}/start`,
+      );
       window.location.href = url;
     } catch (connectError) {
       setError(
-        connectError instanceof ApiError ? connectError.message : "Could not start HubSpot connect",
+        connectError instanceof ApiError ? connectError.message : `Could not start ${name} connect`,
       );
       setBusy(null);
     }
@@ -323,7 +337,7 @@ function HubSpotConnector({
     setBusy("sync");
     try {
       const syncResult = await clientApiFetch<CrmSyncResult>(
-        "/integrations/connections/hubspot/sync",
+        `/integrations/connections/${provider}/sync`,
         { method: "POST" },
       );
       setResult(syncResult);
@@ -339,7 +353,7 @@ function HubSpotConnector({
     setError(null);
     setBusy("disconnect");
     try {
-      await clientApiFetch("/integrations/connections/hubspot", { method: "DELETE" });
+      await clientApiFetch(`/integrations/connections/${provider}`, { method: "DELETE" });
       onChange(null);
       setResult(null);
     } catch (disconnectError) {
@@ -353,7 +367,7 @@ function HubSpotConnector({
 
   return (
     <ConnectorShell
-      name="HubSpot"
+      name={name}
       status={connection ? CONNECTED_PILL : null}
       actions={
         connection ? (
@@ -388,12 +402,7 @@ function HubSpotConnector({
       }
     >
       {error && <p className="text-sm font-medium text-accent">{error}</p>}
-      {!connection && (
-        <p className="text-xs text-muted">
-          Connect your HubSpot account to import contacts. You&apos;ll be sent to HubSpot to approve
-          read-only access to your contacts — no password is shared with us.
-        </p>
-      )}
+      {!connection && <p className="text-xs text-muted">{description}</p>}
       {connection && <LastSynced connection={connection} />}
       {result && <SyncSummary result={result} />}
     </ConnectorShell>
@@ -442,6 +451,7 @@ export function IntegrationsClient({
 
   const brevo = connections.find((c) => c.provider === "brevo");
   const hubspot = connections.find((c) => c.provider === "hubspot");
+  const gohighlevel = connections.find((c) => c.provider === "gohighlevel");
 
   function updateConnection(provider: string, next: CrmConnection | null) {
     setConnections((current) => {
@@ -536,9 +546,12 @@ export function IntegrationsClient({
         )}
         <div className="flex flex-col gap-3">
           <BrevoConnector connection={brevo} onChange={(next) => updateConnection("brevo", next)} />
-          <HubSpotConnector
+          <OAuthConnector
+            provider="hubspot"
+            name="HubSpot"
             connection={hubspot}
             onChange={(next) => updateConnection("hubspot", next)}
+            description="Connect your HubSpot account to import contacts. You'll be sent to HubSpot to approve read-only access to your contacts — no password is shared with us."
           />
           <ConnectorShell
             name="Zapier"
@@ -550,9 +563,12 @@ export function IntegrationsClient({
               start importing contacts.
             </p>
           </ConnectorShell>
-          <ConnectorShell
+          <OAuthConnector
+            provider="gohighlevel"
             name="GoHighLevel"
-            status={<span className="pill pill-muted">Coming soon</span>}
+            connection={gohighlevel}
+            onChange={(next) => updateConnection("gohighlevel", next)}
+            description="Connect your GoHighLevel account to import contacts. You'll be sent to GoHighLevel to choose a location and approve read-only access to its contacts — no password is shared with us."
           />
         </div>
       </section>

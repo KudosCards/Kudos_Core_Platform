@@ -19,8 +19,13 @@ import {
   type IngestResult,
   type NormalizedContact,
 } from "../recipients/recipients.service";
+import type { OAuthCrmClient } from "./oauth-crm-client";
 import { BREVO_CLIENT, type BrevoClient } from "./brevo/brevo-client";
-import { DEFAULT_BREVO_MAPPING, mapBrevoContact, type BrevoFieldMapping } from "./brevo/brevo.mapper";
+import {
+  DEFAULT_BREVO_MAPPING,
+  mapBrevoContact,
+  type BrevoFieldMapping,
+} from "./brevo/brevo.mapper";
 import {
   HUBSPOT_AUTHORIZE_URL,
   HUBSPOT_CLIENT,
@@ -32,6 +37,16 @@ import {
   hubspotProperties,
   mapHubSpotContact,
 } from "./hubspot/hubspot.mapper";
+import {
+  GOHIGHLEVEL_AUTHORIZE_URL,
+  GOHIGHLEVEL_CLIENT,
+  GOHIGHLEVEL_SCOPES,
+  type GoHighLevelClient,
+} from "./gohighlevel/gohighlevel-client";
+import {
+  DEFAULT_GOHIGHLEVEL_MAPPING,
+  mapGoHighLevelContact,
+} from "./gohighlevel/gohighlevel.mapper";
 
 /** How a provider authenticates. Drives which connect path and sync fetch it uses. */
 type AuthType = "api_key" | "oauth";
@@ -41,6 +56,7 @@ type AuthType = "api_key" | "oauth";
 export const CRM_PROVIDERS = {
   brevo: { authType: "api_key" },
   hubspot: { authType: "oauth" },
+  gohighlevel: { authType: "oauth" },
 } as const satisfies Record<string, { authType: AuthType }>;
 
 export type CrmProvider = keyof typeof CRM_PROVIDERS;
@@ -96,7 +112,58 @@ export class CrmConnectionsService {
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(BREVO_CLIENT) private readonly brevo: BrevoClient,
     @Inject(HUBSPOT_CLIENT) private readonly hubspot: HubSpotClient,
+    @Inject(GOHIGHLEVEL_CLIENT) private readonly ghl: GoHighLevelClient,
   ) {}
+
+  /** Per-provider OAuth wiring — the authorize URL, scopes, redirect/client id,
+   * the token client, and whether it's configured on this server. Adding an OAuth
+   * CRM is a case here plus its client + mapper; the flow below is shared. */
+  private oauthDescriptor(provider: CrmProvider): {
+    client: OAuthCrmClient;
+    clientId: string;
+    redirectUri: string;
+    authorizeUrl: string;
+    scope: string;
+    configured: boolean;
+  } {
+    switch (provider) {
+      case "hubspot": {
+        const clientId = this.config.get("HUBSPOT_CLIENT_ID", { infer: true });
+        const clientSecret = this.config.get("HUBSPOT_CLIENT_SECRET", { infer: true });
+        const redirectUri = this.config.get("HUBSPOT_REDIRECT_URI", { infer: true });
+        return {
+          client: this.hubspot,
+          clientId: clientId ?? "",
+          redirectUri: redirectUri ?? "",
+          authorizeUrl: HUBSPOT_AUTHORIZE_URL,
+          scope: HUBSPOT_SCOPES.join(" "),
+          configured: Boolean(clientId && clientSecret && redirectUri),
+        };
+      }
+      case "gohighlevel": {
+        const clientId = this.config.get("GOHIGHLEVEL_CLIENT_ID", { infer: true });
+        const clientSecret = this.config.get("GOHIGHLEVEL_CLIENT_SECRET", { infer: true });
+        const redirectUri = this.config.get("GOHIGHLEVEL_REDIRECT_URI", { infer: true });
+        return {
+          client: this.ghl,
+          clientId: clientId ?? "",
+          redirectUri: redirectUri ?? "",
+          authorizeUrl: GOHIGHLEVEL_AUTHORIZE_URL,
+          scope: GOHIGHLEVEL_SCOPES.join(" "),
+          configured: Boolean(clientId && clientSecret && redirectUri),
+        };
+      }
+      default:
+        // brevo (api_key) never reaches an OAuth path.
+        throw new BadRequestException(`${provider} doesn't connect via OAuth`);
+    }
+  }
+
+  private assertOAuthConfigured(provider: CrmProvider): void {
+    if (!this.oauthDescriptor(provider).configured) {
+      throw new ServiceUnavailableException(`${provider} isn't enabled on this server yet`);
+    }
+  }
 
   private assertProvider(provider: string): asserts provider is CrmProvider {
     if (!(provider in CRM_PROVIDERS)) {
@@ -173,7 +240,8 @@ export class CrmConnectionsService {
       throw new BadRequestException(`${provider} doesn't connect via OAuth`);
     }
     this.assertCryptoConfigured();
-    this.assertHubSpotConfigured();
+    this.assertOAuthConfigured(provider);
+    const descriptor = this.oauthDescriptor(provider);
 
     const state = this.signState({
       accountId,
@@ -184,12 +252,13 @@ export class CrmConnectionsService {
     });
 
     const params = new URLSearchParams({
-      client_id: this.config.get("HUBSPOT_CLIENT_ID", { infer: true }) ?? "",
-      redirect_uri: this.config.get("HUBSPOT_REDIRECT_URI", { infer: true }) ?? "",
-      scope: HUBSPOT_SCOPES.join(" "),
+      response_type: "code",
+      client_id: descriptor.clientId,
+      redirect_uri: descriptor.redirectUri,
+      scope: descriptor.scope,
       state,
     });
-    return { url: `${HUBSPOT_AUTHORIZE_URL}?${params.toString()}` };
+    return { url: `${descriptor.authorizeUrl}?${params.toString()}` };
   }
 
   /** Handles the OAuth callback: validates state, exchanges the code for tokens,
@@ -204,14 +273,15 @@ export class CrmConnectionsService {
       throw new BadRequestException(`${provider} doesn't connect via OAuth`);
     }
     this.assertCryptoConfigured();
-    this.assertHubSpotConfigured();
+    this.assertOAuthConfigured(provider);
 
     const state = this.verifyState(rawState);
     if (state.provider !== provider) {
       throw new BadRequestException("OAuth state does not match the provider");
     }
 
-    const tokens = await this.hubspot.exchangeCode(code);
+    const tokens = await this.oauthDescriptor(provider).client.exchangeCode(code);
+    const tokenExpiresAt = new Date(Date.now() + tokens.expiresInSeconds * 1000);
 
     const connection = await this.prisma.crmConnection.upsert({
       where: { accountId_provider: { accountId: state.accountId, provider } },
@@ -221,14 +291,17 @@ export class CrmConnectionsService {
         authType: "oauth",
         encryptedAccessToken: this.crypto.encrypt(tokens.accessToken),
         encryptedRefreshToken: this.crypto.encrypt(tokens.refreshToken),
-        tokenExpiresAt: new Date(Date.now() + tokens.expiresInSeconds * 1000),
+        tokenExpiresAt,
+        // GoHighLevel: the locationId the token is scoped to (null for HubSpot).
+        externalAccountId: tokens.externalAccountId ?? null,
       },
       update: {
         authType: "oauth",
         encryptedAccessToken: this.crypto.encrypt(tokens.accessToken),
         encryptedRefreshToken: this.crypto.encrypt(tokens.refreshToken),
-        tokenExpiresAt: new Date(Date.now() + tokens.expiresInSeconds * 1000),
+        tokenExpiresAt,
         syncEnabled: true,
+        ...(tokens.externalAccountId && { externalAccountId: tokens.externalAccountId }),
       },
     });
 
@@ -325,6 +398,8 @@ export class CrmConnectionsService {
         return this.fetchBrevoContacts(connection);
       case "hubspot":
         return this.fetchHubSpotContacts(connection);
+      case "gohighlevel":
+        return this.fetchGoHighLevelContacts(connection);
       default:
         throw new BadRequestException(`Unsupported CRM provider "${connection.provider}"`);
     }
@@ -348,8 +423,8 @@ export class CrmConnectionsService {
   private async fetchHubSpotContacts(
     connection: CrmConnection,
   ): Promise<{ contacts: NormalizedContact[]; fetched: number }> {
-    this.assertHubSpotConfigured();
-    const accessToken = await this.validHubSpotAccessToken(connection);
+    this.assertOAuthConfigured("hubspot");
+    const accessToken = await this.validAccessToken("hubspot", connection);
     const mapping = this.resolveMapping(connection.fieldMapping, DEFAULT_HUBSPOT_MAPPING);
     const raw = await this.hubspot.fetchContacts(accessToken, hubspotProperties(mapping));
     const contacts = raw
@@ -358,9 +433,34 @@ export class CrmConnectionsService {
     return { contacts, fetched: raw.length };
   }
 
-  /** Returns a usable HubSpot access token, refreshing (and persisting the new
-   * tokens) first if the stored one is missing or about to expire. */
-  private async validHubSpotAccessToken(connection: CrmConnection): Promise<string> {
+  private async fetchGoHighLevelContacts(
+    connection: CrmConnection,
+  ): Promise<{ contacts: NormalizedContact[]; fetched: number }> {
+    this.assertOAuthConfigured("gohighlevel");
+    // GoHighLevel scopes contacts to the location the token was granted for; we
+    // persisted that locationId as externalAccountId at connect time.
+    const locationId = connection.externalAccountId;
+    if (!locationId) {
+      throw new BadRequestException(
+        "GoHighLevel connection is missing its location — please reconnect it",
+      );
+    }
+    const accessToken = await this.validAccessToken("gohighlevel", connection);
+    const mapping = this.resolveMapping(connection.fieldMapping, DEFAULT_GOHIGHLEVEL_MAPPING);
+    const raw = await this.ghl.fetchContacts(accessToken, locationId);
+    const contacts = raw
+      .map((contact) => mapGoHighLevelContact(contact, mapping))
+      .filter((c): c is NormalizedContact => c !== null);
+    return { contacts, fetched: raw.length };
+  }
+
+  /** Returns a usable access token for an OAuth provider, refreshing (and
+   * persisting the new tokens) first if the stored one is missing or about to
+   * expire. Works for any OAuth CRM via its `oauthDescriptor` client. */
+  private async validAccessToken(
+    provider: CrmProvider,
+    connection: CrmConnection,
+  ): Promise<string> {
     const stillValid =
       connection.encryptedAccessToken &&
       connection.tokenExpiresAt &&
@@ -371,10 +471,10 @@ export class CrmConnectionsService {
     }
 
     if (!connection.encryptedRefreshToken) {
-      throw new UnauthorizedException("HubSpot connection has no refresh token — reconnect it");
+      throw new UnauthorizedException(`${provider} connection has no refresh token — reconnect it`);
     }
     const refreshToken = this.crypto.decrypt(connection.encryptedRefreshToken);
-    const tokens = await this.hubspot.refreshTokens(refreshToken);
+    const tokens = await this.oauthDescriptor(provider).client.refreshTokens(refreshToken);
 
     await this.prisma.crmConnection.update({
       where: { id: connection.id },
@@ -382,6 +482,7 @@ export class CrmConnectionsService {
         encryptedAccessToken: this.crypto.encrypt(tokens.accessToken),
         encryptedRefreshToken: this.crypto.encrypt(tokens.refreshToken),
         tokenExpiresAt: new Date(Date.now() + tokens.expiresInSeconds * 1000),
+        ...(tokens.externalAccountId && { externalAccountId: tokens.externalAccountId }),
       },
     });
     return tokens.accessToken;
@@ -390,20 +491,6 @@ export class CrmConnectionsService {
   // ---------------------------------------------------------------------------
   // Helpers.
   // ---------------------------------------------------------------------------
-
-  private isHubSpotConfigured(): boolean {
-    return Boolean(
-      this.config.get("HUBSPOT_CLIENT_ID", { infer: true }) &&
-        this.config.get("HUBSPOT_CLIENT_SECRET", { infer: true }) &&
-        this.config.get("HUBSPOT_REDIRECT_URI", { infer: true }),
-    );
-  }
-
-  private assertHubSpotConfigured(): void {
-    if (!this.isHubSpotConfigured()) {
-      throw new ServiceUnavailableException("HubSpot isn't enabled on this server yet");
-    }
-  }
 
   /** Merges a stored partial mapping over the provider's defaults. */
   private resolveMapping<T extends object>(stored: Prisma.JsonValue | null, defaults: T): T {

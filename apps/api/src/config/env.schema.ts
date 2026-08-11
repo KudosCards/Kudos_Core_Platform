@@ -284,6 +284,28 @@ export const envSchema = z.object({
     .optional()
     .or(z.literal("").transform(() => undefined)),
 
+  // GoHighLevel (HighLevel) Marketplace-app OAuth credentials, for the per-account
+  // contact import (see docs/adr/0015-crm-integrations.md). All three optional at
+  // boot: without them the app runs and connecting GoHighLevel returns a clean
+  // "not configured" until all are set. The redirect URI must exactly match the
+  // one registered in the Marketplace app (…/integrations/oauth/gohighlevel/callback
+  // on this API's public host). Treat blank the same as unset.
+  GOHIGHLEVEL_CLIENT_ID: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  GOHIGHLEVEL_CLIENT_SECRET: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  GOHIGHLEVEL_REDIRECT_URI: z
+    .string()
+    .url()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+
   // Transactional email via Brevo (birthday reminders, guest receipts — see
   // docs/adr/0025). A PLATFORM key (not the per-account CRM keys). Named
   // `Brevo_API` to match the Railway variable. Optional: the app boots without
