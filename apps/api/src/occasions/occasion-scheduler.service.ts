@@ -6,6 +6,15 @@ import { buildScheduledBirthdayOccasion, startOfUtcDay } from "./birthday-occasi
 import { buildScheduledKeyDateOccasion } from "./key-date-occasion.util";
 
 /**
+ * How many rows the recurring scheduler pulls per page. The job runs across
+ * EVERY tenant's contacts, so it must never load the whole table into memory —
+ * it keyset-paginates on the primary key (stable, index-backed) and writes each
+ * page's occasions before fetching the next, keeping memory flat regardless of
+ * how large the platform grows. See docs/adr/0154.
+ */
+const SCHEDULER_PAGE_SIZE = 1_000;
+
+/**
  * Only birthdays are auto-scheduled — see docs/adr/0006-phase-2-scope.md for
  * why the other five OccasionTypes are always created manually via the API.
  *
@@ -33,45 +42,19 @@ export class OccasionSchedulerService {
     const lookaheadEnd = new Date(today);
     lookaheadEnd.setUTCDate(lookaheadEnd.getUTCDate() + BIRTHDAY_LOOKAHEAD_DAYS);
 
-    const recipients = await this.prisma.recipient.findMany({
-      where: { status: "active", dateOfBirth: { not: null } },
-      select: { id: true, accountId: true, dateOfBirth: true },
-    });
-
     // 1. Ensure a scheduled birthday occasion exists for every recipient's next
-    //    birthday. skipDuplicates + occasion_idempotency_key make this a no-op
+    //    birthday, and (1b) the same for renewal/anniversary key dates. Both
+    //    stream through the tables in pages rather than materialising them whole.
+    //    skipDuplicates + the occasion idempotency key make each write a no-op
     //    for occasions that already exist (whatever their current status).
-    if (recipients.length > 0) {
-      await this.prisma.occasion.createMany({
-        data: recipients.map((recipient) =>
-          buildScheduledBirthdayOccasion(
-            { id: recipient.id, accountId: recipient.accountId, dateOfBirth: recipient.dateOfBirth as Date },
-            today,
-          ),
-        ),
-        skipDuplicates: true,
-      });
-    }
-
-    // 1b. Same for renewal/anniversary key dates — ensure each has a scheduled
-    //     occasion for its next annual occurrence. Recipients created/edited
-    //     through the app get this eagerly (recipients.service); this is the
-    //     catch-all + the yearly roll-forward once a date has passed.
-    const keyDates = await this.prisma.recipientKeyDate.findMany({
-      where: { recipient: { status: "active" } },
-      select: { accountId: true, recipientId: true, type: true, date: true, label: true },
-    });
-    if (keyDates.length > 0) {
-      await this.prisma.occasion.createMany({
-        data: keyDates.map((keyDate) => buildScheduledKeyDateOccasion(keyDate, today)),
-        skipDuplicates: true,
-      });
-    }
+    const recipientCount = await this.ensureScheduledBirthdays(today);
+    const keyDateCount = await this.ensureScheduledKeyDates(today);
 
     // 2. Promote the recurring occasions now within the lookahead window into the
     //    approvals queue. Their occasionDate is always today-or-later
     //    (nextBirthdayOccurrence never returns a past date), so an upper bound is
-    //    all that's needed.
+    //    all that's needed. This is a single set-based UPDATE — no rows are read
+    //    into the app, so it scales without a page loop.
     const { count } = await this.prisma.occasion.updateMany({
       where: {
         type: { in: ["birthday", "renewal", "anniversary"] },
@@ -84,8 +67,83 @@ export class OccasionSchedulerService {
     });
 
     this.logger.log(
-      `Recurring scheduler: ${recipients.length} recipient(s) with a DOB, ${keyDates.length} key date(s), ${count} occasion(s) promoted into the ${BIRTHDAY_LOOKAHEAD_DAYS}-day approval window`,
+      `Recurring scheduler: ${recipientCount} recipient(s) with a DOB, ${keyDateCount} key date(s), ${count} occasion(s) promoted into the ${BIRTHDAY_LOOKAHEAD_DAYS}-day approval window`,
     );
     return count;
+  }
+
+  /**
+   * Ensure a `scheduled` birthday occasion exists for every active recipient
+   * with a DOB. Keyset-paginated on `recipient.id` so memory stays flat: each
+   * page is written and discarded before the next is fetched. Returns the number
+   * of recipients seen (for the run log), not the number of occasions created —
+   * skipDuplicates means most pages create nothing on a steady-state run.
+   */
+  private async ensureScheduledBirthdays(today: Date): Promise<number> {
+    let processed = 0;
+    let cursor: string | undefined;
+
+    for (;;) {
+      const recipients = await this.prisma.recipient.findMany({
+        where: { status: "active", dateOfBirth: { not: null } },
+        select: { id: true, accountId: true, dateOfBirth: true },
+        orderBy: { id: "asc" },
+        take: SCHEDULER_PAGE_SIZE,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
+      if (recipients.length === 0) break;
+
+      await this.prisma.occasion.createMany({
+        data: recipients.map((recipient) =>
+          buildScheduledBirthdayOccasion(
+            {
+              id: recipient.id,
+              accountId: recipient.accountId,
+              dateOfBirth: recipient.dateOfBirth as Date,
+            },
+            today,
+          ),
+        ),
+        skipDuplicates: true,
+      });
+
+      processed += recipients.length;
+      cursor = recipients[recipients.length - 1]!.id;
+      if (recipients.length < SCHEDULER_PAGE_SIZE) break;
+    }
+
+    return processed;
+  }
+
+  /**
+   * Same catch-all + yearly roll-forward for renewal/anniversary key dates as
+   * `ensureScheduledBirthdays` does for birthdays. Keyset-paginated on
+   * `recipientKeyDate.id`.
+   */
+  private async ensureScheduledKeyDates(today: Date): Promise<number> {
+    let processed = 0;
+    let cursor: string | undefined;
+
+    for (;;) {
+      const keyDates = await this.prisma.recipientKeyDate.findMany({
+        where: { recipient: { status: "active" } },
+        select: { id: true, accountId: true, recipientId: true, type: true, date: true, label: true },
+        orderBy: { id: "asc" },
+        take: SCHEDULER_PAGE_SIZE,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
+      if (keyDates.length === 0) break;
+
+      await this.prisma.occasion.createMany({
+        data: keyDates.map((keyDate) => buildScheduledKeyDateOccasion(keyDate, today)),
+        skipDuplicates: true,
+      });
+
+      processed += keyDates.length;
+      cursor = keyDates[keyDates.length - 1]!.id;
+      if (keyDates.length < SCHEDULER_PAGE_SIZE) break;
+    }
+
+    return processed;
   }
 }
