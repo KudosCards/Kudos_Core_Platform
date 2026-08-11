@@ -83,7 +83,9 @@ export function SendCardClient({
 }) {
   const [postageClass, setPostageClass] = useState<"second_class" | "first_class">("second_class");
   // Send now, or pay now and schedule delivery for a chosen date (ADR 0130).
-  const [timing, setTiming] = useState<SendTiming>({ mode: "now" });
+  // Unselected by default — the sender must actively choose the timing before
+  // paying, so nothing goes out on a default (ADR 0159).
+  const [timing, setTiming] = useState<SendTiming | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -172,6 +174,10 @@ export function SendCardClient({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    if (!timing) {
+      setError("Please choose when to send — Send now or Schedule delivery.");
+      return;
+    }
     const trimmed: AddressForm = {
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
@@ -461,13 +467,20 @@ export function SendCardClient({
           </p>
           <div className="border-t border-border pt-3">
             <SendTimingPicker postageClass={postageClass} value={timing} onChange={setTiming} />
+            {timing === null && (
+              <p className="mt-2 text-xs text-muted">Choose when to send to continue.</p>
+            )}
           </div>
           {/* Desktop keeps the CTA in the summary column; on mobile it moves to
               the sticky bar below so the total + Pay are always in reach. */}
-          <button type="submit" disabled={busy} className="btn-accent hidden w-full lg:block">
+          <button
+            type="submit"
+            disabled={busy || !timing}
+            className="btn-accent hidden w-full disabled:opacity-50 lg:block"
+          >
             {busy
               ? "Taking you to payment…"
-              : `Pay & ${timing.mode === "scheduled" ? "schedule" : "send"} →`}
+              : `Pay & ${timing?.mode === "scheduled" ? "schedule" : "send"} →`}
           </button>
           <p className="text-center text-xs text-muted">Secure payment powered by Stripe</p>
         </div>
@@ -485,12 +498,12 @@ export function SendCardClient({
           <button
             type="submit"
             form="send-card-form"
-            disabled={busy}
-            className="btn-accent flex-1 whitespace-nowrap"
+            disabled={busy || !timing}
+            className="btn-accent flex-1 whitespace-nowrap disabled:opacity-50"
           >
             {busy
               ? "Taking you to payment…"
-              : `Pay & ${timing.mode === "scheduled" ? "schedule" : "send"} →`}
+              : `Pay & ${timing?.mode === "scheduled" ? "schedule" : "send"} →`}
           </button>
         </div>
       </div>

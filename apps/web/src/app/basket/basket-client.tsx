@@ -42,8 +42,10 @@ export function BasketClient() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Send now, or pay now and schedule the whole basket to arrive on a date.
+  // Unselected by default (null) so the buyer must actively choose — nothing
+  // ships on an absent-minded default (ADR 0159).
   const scheduleWindow = deliverByWindow("second_class");
-  const [scheduled, setScheduled] = useState(false);
+  const [timing, setTiming] = useState<"now" | "scheduled" | null>(null);
   const [deliverBy, setDeliverBy] = useState(isoDay(scheduleWindow.earliest));
 
   // Guests pay full price (no plan discount), second-class postage per card —
@@ -58,13 +60,17 @@ export function BasketClient() {
   async function handleCheckout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    if (!timing) {
+      setError("Please choose when to send — Send now or Schedule delivery.");
+      return;
+    }
     setSubmitting(true);
 
     const data = new FormData(event.currentTarget);
     const body: GuestCartCheckoutInput = {
       buyerEmail: String(data.get("buyerEmail") ?? "").trim(),
       items: items.map(toApiItem),
-      ...(scheduled && { deliverBy }),
+      ...(timing === "scheduled" && { deliverBy }),
     };
 
     try {
@@ -193,8 +199,8 @@ export function BasketClient() {
               type="radio"
               name="basket-timing"
               className="mt-0.5"
-              checked={!scheduled}
-              onChange={() => setScheduled(false)}
+              checked={timing === "now"}
+              onChange={() => setTiming("now")}
             />
             <span>
               <span className="font-medium">Send now</span>
@@ -206,15 +212,15 @@ export function BasketClient() {
               type="radio"
               name="basket-timing"
               className="mt-0.5"
-              checked={scheduled}
-              onChange={() => setScheduled(true)}
+              checked={timing === "scheduled"}
+              onChange={() => setTiming("scheduled")}
             />
             <span className="flex-1">
               <span className="font-medium">Schedule delivery</span>
               <span className="block text-xs text-slate-400">
                 Pay now — we post it to arrive around your date.
               </span>
-              {scheduled && (
+              {timing === "scheduled" && (
                 <span className="mt-2 flex flex-col gap-1">
                   <input
                     type="date"
@@ -238,6 +244,9 @@ export function BasketClient() {
               )}
             </span>
           </label>
+          {timing === null && (
+            <p className="text-xs text-slate-500">Choose when to send to continue.</p>
+          )}
         </fieldset>
 
         {error && (
@@ -246,13 +255,13 @@ export function BasketClient() {
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || !timing}
           className="rounded-full px-6 py-3 text-center font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
           style={{ backgroundColor: CORAL }}
         >
           {submitting
             ? "Taking you to checkout…"
-            : `Pay ${formatGBP(total)}${scheduled ? " & schedule" : ""}`}
+            : `Pay ${formatGBP(total)}${timing === "scheduled" ? " & schedule" : ""}`}
         </button>
         <p className="text-center text-xs text-slate-500">
           Secure payment by Stripe. No account needed.

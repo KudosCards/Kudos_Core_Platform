@@ -150,7 +150,10 @@ export function BulkSendClient({
   );
   const [postageClass, setPostageClass] = useState<"second_class" | "first_class">("second_class");
   // Send now, or pay now and schedule delivery for a chosen date (ADR 0130).
-  const [timing, setTiming] = useState<SendTiming>({ mode: "now" });
+  // Unselected by default — the sender must actively choose "Send now" or
+  // "Schedule delivery" before paying (see ADR 0159), so nothing goes out on an
+  // absent-minded default.
+  const [timing, setTiming] = useState<SendTiming | null>(null);
   // The "＋ New design" template chooser, and the template mid-create (so the
   // grid disables while we mint the saved design and hand off to the editor).
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -363,7 +366,7 @@ export function BulkSendClient({
   }
 
   async function handleSend() {
-    if (!selectedDesignId || sendable.length === 0) return;
+    if (!selectedDesignId || sendable.length === 0 || !timing) return;
     setError(null);
     setBusy(true);
     try {
@@ -406,12 +409,14 @@ export function BulkSendClient({
     }
   }
 
-  const canPay = !busy && !!selectedDesignId && sendable.length > 0;
+  // A send-timing choice is required — the picker starts unselected so it can't
+  // be left on a default (ADR 0159).
+  const canPay = !busy && !!selectedDesignId && sendable.length > 0 && timing !== null;
   // Scale-adaptive routing (ADR 0118): a large run pays through the deliberate
   // "Review & confirm" gate; a small run keeps the frictionless one-tap pay.
   const largeRun = sendable.length >= REVIEW_ALL_THRESHOLD;
   const cardNoun = `${sendable.length} card${sendable.length === 1 ? "" : "s"}`;
-  const payVerb = timing.mode === "scheduled" ? "schedule" : "send";
+  const payVerb = timing?.mode === "scheduled" ? "schedule" : "send";
   const primaryCtaLabel = largeRun
     ? `Review & confirm ${sendable.length} cards →`
     : busy
@@ -845,6 +850,9 @@ export function BulkSendClient({
 
           <div className="border-t border-border pt-3">
             <SendTimingPicker postageClass={postageClass} value={timing} onChange={setTiming} />
+            {timing === null && sendable.length > 0 && (
+              <p className="mt-2 text-xs text-muted">Choose when to send to continue.</p>
+            )}
           </div>
 
           {/* Desktop keeps the CTA in the summary column; on mobile it moves to
