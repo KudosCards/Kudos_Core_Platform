@@ -2,8 +2,7 @@
 
 ## Status
 
-Accepted — implemented (items 1–3). Item 4 (per-order card cap) deferred pending
-a business decision.
+Accepted — implemented (items 1–4).
 
 ## Context
 
@@ -42,15 +41,16 @@ cancelling an unfinished order (which releases its occasions back to `approved`)
 or paying from the wallet (which consumes them) left the list stale. Both paths
 now call `router.refresh()`, so the list reflects reality without a reload.
 
-**4. Per-order card cap — deferred (business decision).** Investigation
-confirmed every send path — checkout batch order, bulk send, and segment send —
-is capped at the plan's `batchOrderMaxSize` (`batch-orders.service.ts`), seeded
-free 10 / pro 200 / centre 500. So "thousands per order" is not possible on any
-plan today, and the checkout copy is accurate. Raising the cap changes the money
-path (each card is a Stripe line + a fulfilment job) and is a pricing decision,
-so we are **not** inventing new numbers. Left unchanged pending the target
-per-plan limits; when chosen, it's a seed value + a migration updating existing
-`plan_entitlements` rows, plus the (already dynamic) copy.
+**4. Per-order card cap — reconcile drift to the package limits.** Every send
+path — checkout batch order, bulk send, and segment send — is capped at the
+plan's `batchOrderMaxSize` (`batch-orders.service.ts`). The intended per-order
+limits match the subscription packages: **free 10 / pro 200 / centre 500**
+(enterprise 5000), and `prisma/seed.ts` already carries those. But an account
+was observed capped at **20** — production runs `prisma migrate deploy` only
+(never the seed), so a row seeded by an earlier version had drifted. Migration
+`20260811140000_align_batch_order_limits` resets the three standard plans to
+their package limits (idempotent — a no-op where the values already match). No
+schema or code change; the checkout copy is already dynamic (`{maxPerOrder}`).
 
 ## Consequences
 
