@@ -321,6 +321,37 @@ describe("Admin — super admin dashboard (e2e)", () => {
     // The paid order this test just made contributes to the latest month.
     const latestMonth = overview.monthlyRevenueMinor[overview.monthlyRevenueMinor.length - 1]!;
     expect(latestMonth.minor).toBeGreaterThanOrEqual(totalMinor);
+
+    // The per-plan breakdown must account for every signed-up account exactly
+    // once (this is what the null-planId → "free" bucketing in the DB-side
+    // aggregate guarantees).
+    const plannedTotal = overview.subscribersByPlan.reduce((sum, p) => sum + p.count, 0);
+    expect(plannedTotal).toBe(overview.accounts.total);
+  });
+
+  it("flags an account with no active subscription and no recent activity as at-risk", async () => {
+    const adminToken = await createAdmin();
+    const { accountId } = await signUp();
+
+    // Backdate signup to 40 days ago with no subscription and no orders, so its
+    // only activity signal (signup) is well past the 30-day at-risk threshold.
+    const fortyDaysAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+    await prisma.account.update({
+      where: { id: accountId },
+      data: { createdAt: fortyDaysAgo },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/admin/overview")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    const overview = overviewSchema.parse(res.body);
+
+    expect(overview.atRiskCount).toBeGreaterThanOrEqual(1);
+    const flagged = overview.needsAttention.find((a) => a.id === accountId);
+    expect(flagged).toBeDefined();
+    // ~40 days idle (allow a day of slack for timing).
+    expect(flagged!.lastActivityDays).toBeGreaterThanOrEqual(39);
   });
 
   it("lists orders cross-account, newest first, with account name + card count", async () => {
