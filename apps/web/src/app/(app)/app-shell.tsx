@@ -151,8 +151,9 @@ export function AppShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile top bar */}
-        <header className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3 lg:hidden">
+        {/* Mobile top bar — sticky so page content scrolls under an opaque bar,
+            not under the phone's status bar; safe-area padding clears the notch. */}
+        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:hidden">
           <button
             type="button"
             aria-label="Open menu"

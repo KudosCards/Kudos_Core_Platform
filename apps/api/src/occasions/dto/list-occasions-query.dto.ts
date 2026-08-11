@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { OccasionStatus, OccasionType } from "@prisma/client";
+import { DispatchOption, OccasionStatus, OccasionType } from "@prisma/client";
 import { IsDateString, IsEnum, IsOptional, IsString, IsUUID } from "class-validator";
 
 export class ListOccasionsQueryDto {
@@ -7,6 +7,11 @@ export class ListOccasionsQueryDto {
   @IsOptional()
   @IsEnum(OccasionStatus)
   status?: OccasionStatus;
+
+  @ApiPropertyOptional({ enum: DispatchOption, description: "Filter by dispatch option" })
+  @IsOptional()
+  @IsEnum(DispatchOption)
+  dispatchOption?: DispatchOption;
 
   @ApiPropertyOptional({ description: "Only occasions/events for this recipient" })
   @IsOptional()

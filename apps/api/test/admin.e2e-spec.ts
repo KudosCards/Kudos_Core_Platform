@@ -146,7 +146,11 @@ describe("Admin — super admin dashboard (e2e)", () => {
   }
 
   /** Drives a signup all the way to a paid order and returns its ids + total. */
-  async function createPaidOrder(): Promise<{ accountId: string; batchOrderId: string; totalMinor: number }> {
+  async function createPaidOrder(): Promise<{
+    accountId: string;
+    batchOrderId: string;
+    totalMinor: number;
+  }> {
     const { token, accountId } = await signUp();
 
     const recipient = await request(app.getHttpServer())
@@ -220,7 +224,10 @@ describe("Admin — super admin dashboard (e2e)", () => {
     const { token } = await signUp();
     for (const path of ["/admin/overview", "/admin/orders", "/admin/subscribers"]) {
       await request(app.getHttpServer()).get(path).expect(401);
-      await request(app.getHttpServer()).get(path).set("Authorization", `Bearer ${token}`).expect(403);
+      await request(app.getHttpServer())
+        .get(path)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(403);
     }
   });
 
@@ -249,21 +256,35 @@ describe("Admin — super admin dashboard (e2e)", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .send({
         rules: [
-          { label: "Bad", from: { month: 1, day: 40 }, to: { month: 1, day: 2 }, extraLeadDays: 1, suggestFirstClass: false },
+          {
+            label: "Bad",
+            from: { month: 1, day: 40 },
+            to: { month: 1, day: 2 },
+            extraLeadDays: 1,
+            suggestFirstClass: false,
+          },
         ],
       })
       .expect(400);
 
     // A valid update is stored and echoed back.
     const custom = [
-      { label: "Summer holidays", from: { month: 7, day: 15 }, to: { month: 8, day: 31 }, extraLeadDays: 2, suggestFirstClass: false },
+      {
+        label: "Summer holidays",
+        from: { month: 7, day: 15 },
+        to: { month: 8, day: 31 },
+        extraLeadDays: 2,
+        suggestFirstClass: false,
+      },
     ];
     const updated = await request(app.getHttpServer())
       .put("/admin/dispatch/seasonal-rules")
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ rules: custom })
       .expect(200);
-    expect((updated.body as { rules: { label: string }[] }).rules[0]?.label).toBe("Summer holidays");
+    expect((updated.body as { rules: { label: string }[] }).rules[0]?.label).toBe(
+      "Summer holidays",
+    );
 
     const afterUpdate = await request(app.getHttpServer())
       .get("/admin/dispatch/seasonal-rules")
@@ -328,9 +349,8 @@ describe("Admin — super admin dashboard (e2e)", () => {
   it("filters orders server-side by search + paginates (no 100-order cap)", async () => {
     const adminToken = await createAdmin();
     const { batchOrderId } = await createPaidOrder();
-    const orderNumber = (
-      await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } })
-    ).orderNumber;
+    const orderNumber = (await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } }))
+      .orderNumber;
 
     // Search by the human order number resolves in SQL — it finds the order even
     // if it's far past the newest 100 (the old in-memory filter would miss it).
@@ -456,9 +476,11 @@ describe("Admin — super admin dashboard (e2e)", () => {
       .get("/admin/subscribers?search=zzz-no-such-account-xyz")
       .set("Authorization", `Bearer ${adminToken}`)
       .expect(200);
-    expect(paginated(subscriberRowSchema).parse(none.body).items.some((s) => s.id === accountId)).toBe(
-      false,
-    );
+    expect(
+      paginated(subscriberRowSchema)
+        .parse(none.body)
+        .items.some((s) => s.id === accountId),
+    ).toBe(false);
 
     // Pagination metadata is honoured.
     const paged = await request(app.getHttpServer())
@@ -469,5 +491,33 @@ describe("Admin — super admin dashboard (e2e)", () => {
     expect(pagedBody.items).toHaveLength(1);
     expect(pagedBody.perPage).toBe(1);
     expect(pagedBody.total).toBeGreaterThanOrEqual(1);
+  });
+
+  it("filters subscribers by plan, including free-plan accounts (planId 'free')", async () => {
+    const adminToken = await createAdmin();
+    const { accountId } = await signUp(); // a fresh signup defaults to planId = "free"
+
+    // The Free filter must find it — the bug was matching planId=null, but signup
+    // stores the string "free".
+    const free = await request(app.getHttpServer())
+      .get("/admin/subscribers?plan=free&perPage=100")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    expect(
+      paginated(subscriberRowSchema)
+        .parse(free.body)
+        .items.some((s) => s.id === accountId),
+    ).toBe(true);
+
+    // A paid-plan filter excludes the free account.
+    const pro = await request(app.getHttpServer())
+      .get("/admin/subscribers?plan=pro&perPage=100")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    expect(
+      paginated(subscriberRowSchema)
+        .parse(pro.body)
+        .items.some((s) => s.id === accountId),
+    ).toBe(false);
   });
 });

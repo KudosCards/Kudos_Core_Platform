@@ -75,3 +75,19 @@ in the existing Approvals queue (design + go-ahead); automation takes over only 
   definitions used by both interactive and automated payment — no divergence risk.
 - Auto-approval with default designs remains a clean future addition on top of this, if the business
   later wants a fully hands-off tier.
+
+## Addendum — visibility + cancel (subscriber feedback)
+
+Approving with auto-send moves the occasion `pending_approval → approved` (dispatchOption
+`auto_send`), then the daily cron consumes it near its dispatch date. Between those two points the
+card was invisible outside each contact's Events, and there was no way to call it off. Two additions,
+no schema change:
+
+- **Visible list.** The Approvals page now also loads `approved` + `auto_send` occasions (a new
+  `dispatchOption` filter on `GET /occasions`) and shows them as **"Scheduled to auto-send"** with the
+  recipient, design and dispatch date — so approved auto-sends don't vanish.
+- **Cancel.** `POST /occasions/:id/unapprove` returns an approved occasion to the queue
+  (`approved → pending_approval`, dispatchOption reset to `asap`, design kept). It's status-guarded in
+  the `where` clause, so once the cron has consumed the occasion (`queued`) the cancel is a clean
+  409 "already sent", never a partial undo of a placed order. The subscriber can then Skip to dismiss
+  it or re-approve.

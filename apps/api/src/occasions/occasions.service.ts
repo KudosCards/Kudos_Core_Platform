@@ -164,10 +164,7 @@ export class OccasionsService {
     } catch (error) {
       // The idempotency key is (recipientId, type, occasionDate) — a duplicate
       // event of the same type on the same day for the same recipient collides.
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         throw new ConflictException(
           "That recipient already has an event of this type on this date",
         );
@@ -247,6 +244,7 @@ export class OccasionsService {
     const where: Prisma.OccasionWhereInput = {
       accountId,
       ...(query.status && { status: query.status }),
+      ...(query.dispatchOption && { dispatchOption: query.dispatchOption }),
       ...(query.type && { type: query.type }),
       ...(query.recipientId && { recipientId: query.recipientId }),
       // Hide occasions for archived recipients from the account-wide views
@@ -476,6 +474,44 @@ export class OccasionsService {
       targetId: id,
     });
     return occasion;
+  }
+
+  /**
+   * Cancel an approval before it's actioned, returning the occasion to the
+   * approvals queue (`approved` → `pending_approval`). This is how a subscriber
+   * calls off a scheduled **auto-send** after ticking it — the card hasn't been
+   * ordered yet (the auto-send cron only consumes it near the dispatch date). The
+   * status guard is in the where clause: once the cron has taken it (status
+   * `queued`) or it's otherwise moved on, count is 0 and we report it can no
+   * longer be cancelled. dispatchOption resets to `asap` so a re-approval starts
+   * from a clean choice; the chosen design is kept so re-approving is quick.
+   */
+  async unapprove(accountId: string, actorUserId: string, id: string): Promise<Occasion> {
+    const { count } = await this.prisma.occasion.updateMany({
+      where: { id, accountId, status: "approved" },
+      data: { status: "pending_approval", dispatchOption: "asap" },
+    });
+    if (count === 0) {
+      const existing = await this.prisma.occasion.findFirst({ where: { id, accountId } });
+      if (!existing) {
+        throw new NotFoundException("Occasion not found");
+      }
+      throw new ConflictException(
+        `This card is "${existing.status}" and can no longer be cancelled — it may have already been sent`,
+      );
+    }
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "unapprove",
+      targetType: "Occasion",
+      targetId: id,
+    });
+    return this.prisma.occasion.findFirstOrThrow({
+      where: { id, accountId },
+      include: { recipient: RECIPIENT_SELECT },
+    });
   }
 
   /**

@@ -33,7 +33,20 @@ const THIRTY_DAYS_MS = 30 * DAY_MS;
 /** An account with no active subscription and no activity for this long is "at risk". */
 export const AT_RISK_MS = THIRTY_DAYS_MS;
 
-const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 /** An account's derived health, shown as a pill in the subscribers view. */
 export type AccountHealth = "active" | "at_risk" | "churned" | "none";
@@ -216,7 +229,10 @@ export class AdminService {
         allTime: allTime._sum.totalMinor ?? 0,
         last30Days: last30._sum.totalMinor ?? 0,
       },
-      monthlyRevenueMinor: [...monthBuckets.values()].map((b) => ({ label: b.label, minor: b.minor })),
+      monthlyRevenueMinor: [...monthBuckets.values()].map((b) => ({
+        label: b.label,
+        minor: b.minor,
+      })),
       cardsSent,
       funnel: {
         signedUp: accounts.length,
@@ -482,7 +498,13 @@ export class AdminService {
     // filtered after computing — the admin account count is modest.
     const where: Prisma.AccountWhereInput = {
       ...(search && { name: { contains: search, mode: "insensitive" } }),
-      ...(query.plan && { planId: query.plan === "free" ? null : query.plan }),
+      // Free-plan accounts store planId = "free" (signup sets it), but very early
+      // / migrated accounts may have null — both mean "free", so match either.
+      // Paid plans match their exact id. See docs/adr/0041.
+      ...(query.plan &&
+        (query.plan === "free"
+          ? { OR: [{ planId: "free" }, { planId: null }] }
+          : { planId: query.plan })),
     };
 
     const accounts = await this.prisma.account.findMany({
@@ -526,9 +548,7 @@ export class AdminService {
             _count: true,
           }),
     ]);
-    const recipientCountByAccount = new Map(
-      recipientCounts.map((r) => [r.accountId, r._count]),
-    );
+    const recipientCountByAccount = new Map(recipientCounts.map((r) => [r.accountId, r._count]));
 
     const stats = new Map<
       string,
