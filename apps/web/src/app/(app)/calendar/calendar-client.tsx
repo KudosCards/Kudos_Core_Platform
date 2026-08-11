@@ -775,20 +775,34 @@ function ListView({
                       <EventPill event={event} onOpen={onOpenEvent} />
                     </div>
                   ))}
-                  {(byDay.get(key) ?? []).map((occasion) => (
-                    <div key={occasion.id} className="flex max-w-56 items-center gap-1.5">
-                      {occasion.status === "approved" && (
-                        <input
-                          type="checkbox"
-                          checked={orderSelection.has(occasion.id)}
-                          onChange={() => onToggleOrder(occasion.id)}
-                          title="Select to include in an order"
-                          className="accent-accent"
-                        />
-                      )}
-                      <OccasionPill occasion={occasion} onOpen={onOpen} />
-                    </div>
-                  ))}
+                  {(byDay.get(key) ?? []).map((occasion) => {
+                    // Only an approved occasion (a design has been chosen) can be
+                    // ticked straight into an order. An upcoming one still needs
+                    // approving first — show a muted placeholder in the checkbox
+                    // column so the row lines up, and explain why on hover/click.
+                    const orderable = occasion.status === "approved";
+                    const needsApproval = occasion.status === "pending_approval";
+                    return (
+                      <div key={occasion.id} className="flex max-w-56 items-center gap-1.5">
+                        {orderable ? (
+                          <input
+                            type="checkbox"
+                            checked={orderSelection.has(occasion.id)}
+                            onChange={() => onToggleOrder(occasion.id)}
+                            title="Select to include in an order"
+                            className="accent-accent"
+                          />
+                        ) : needsApproval ? (
+                          <span
+                            aria-hidden
+                            title="Approve this occasion (choose a design in Approvals) to add it to an order"
+                            className="inline-block size-3 shrink-0 rounded-[3px] border border-amber-400/70 bg-amber-100"
+                          />
+                        ) : null}
+                        <OccasionPill occasion={occasion} onOpen={onOpen} />
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );

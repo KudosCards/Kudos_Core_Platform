@@ -18,11 +18,10 @@ import { PricingBreakdownCard } from "@/components/pricing-breakdown";
 import { downloadOrderProofSheet } from "@/app/(app)/send/contact-sheet";
 import {
   ORDER_RECIPIENT_STATUS_LABELS,
-  ORDER_STATUS_CLASSES,
-  ORDER_STATUS_LABELS,
   formatGbp,
   formatOrderDate,
   isPayable,
+  orderHeaderStatus,
 } from "@/lib/orders";
 
 export function OrderDetailClient({
@@ -140,9 +139,13 @@ export function OrderDetailClient({
           <h1 className="text-3xl font-bold tracking-tight">
             {order.orderRecipients.length} card{order.orderRecipients.length === 1 ? "" : "s"}
           </h1>
-          <span className={`pill ${ORDER_STATUS_CLASSES[order.status]}`}>
-            {ORDER_STATUS_LABELS[order.status]}
-          </span>
+          {(() => {
+            const header = orderHeaderStatus(
+              order.status,
+              order.orderRecipients.map((l) => l.status),
+            );
+            return <span className={`pill ${header.className}`}>{header.label}</span>;
+          })()}
         </div>
         <p className="text-sm text-muted">Ordered {formatOrderDate(order.createdAt)}</p>
       </div>
