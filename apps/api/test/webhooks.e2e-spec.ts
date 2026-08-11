@@ -17,12 +17,18 @@ import { mintToken } from "./util/test-jwks";
  * re-derives the typed event itself, so this doesn't need to satisfy
  * Stripe's (much larger) TS Event type, just its real wire shape.
  */
-function buildStripeEventPayload(type: string, dataObject: Record<string, unknown>): string {
+function buildStripeEventPayload(
+  type: string,
+  dataObject: Record<string, unknown>,
+  // event.created (epoch seconds). Defaults to now; a test overrides it to model
+  // an out-of-order / replayed delivery, which the subscription handler orders on.
+  createdSeconds: number = Math.floor(Date.now() / 1000),
+): string {
   return JSON.stringify({
     id: `evt_${randomUUID()}`,
     object: "event",
     api_version: "2025-01-01",
-    created: Math.floor(Date.now() / 1000),
+    created: createdSeconds,
     livemode: false,
     pending_webhooks: 0,
     request: null,
@@ -418,6 +424,105 @@ describe("Webhooks (e2e)", () => {
 
     const revertedAccount = await prisma.account.findUniqueOrThrow({ where: { id: accountId } });
     expect(revertedAccount.planId).toBe("free");
+  });
+
+  it("does not resurrect a cancelled subscription when a stale 'active' event arrives after the cancellation", async () => {
+    const { accountId } = await signUp();
+    const stripeSubscriptionId = `sub_test_${randomUUID()}`;
+    const periodEnd = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+    const baseCreated = Math.floor(Date.now() / 1000);
+
+    // 1. The subscription goes active (event created at T).
+    await postWebhook(
+      buildStripeEventPayload(
+        "customer.subscription.created",
+        {
+          id: stripeSubscriptionId,
+          status: "active",
+          metadata: { accountId, planId: "pro" },
+          items: { data: [{ current_period_end: periodEnd }] },
+        },
+        baseCreated,
+      ),
+    ).expect(201);
+
+    // 2. It's cancelled a minute later (event created at T+60) → account on free.
+    await postWebhook(
+      buildStripeEventPayload(
+        "customer.subscription.deleted",
+        {
+          id: stripeSubscriptionId,
+          status: "canceled",
+          metadata: { accountId, planId: "pro" },
+          items: { data: [{ current_period_end: periodEnd }] },
+        },
+        baseCreated + 60,
+      ),
+    ).expect(201);
+
+    // 3. Stripe redelivers the original 'active' update out of order (created at
+    //    T+30, i.e. before the cancellation). It must be dropped — the row stays
+    //    cancelled and the account stays on free.
+    await postWebhook(
+      buildStripeEventPayload(
+        "customer.subscription.updated",
+        {
+          id: stripeSubscriptionId,
+          status: "active",
+          metadata: { accountId, planId: "pro" },
+          items: { data: [{ current_period_end: periodEnd }] },
+        },
+        baseCreated + 30,
+      ),
+    ).expect(201);
+
+    const subscription = await prisma.subscription.findUniqueOrThrow({
+      where: { stripeSubscriptionId },
+    });
+    expect(subscription.status).toBe("canceled");
+
+    const account = await prisma.account.findUniqueOrThrow({ where: { id: accountId } });
+    expect(account.planId).toBe("free");
+  });
+
+  it("ignores a subscription update that predates the last applied event", async () => {
+    const { accountId } = await signUp();
+    const stripeSubscriptionId = `sub_test_${randomUUID()}`;
+    const periodEnd = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+    const baseCreated = Math.floor(Date.now() / 1000);
+
+    // Newest state first: past_due at T+100.
+    await postWebhook(
+      buildStripeEventPayload(
+        "customer.subscription.updated",
+        {
+          id: stripeSubscriptionId,
+          status: "past_due",
+          metadata: { accountId, planId: "pro" },
+          items: { data: [{ current_period_end: periodEnd }] },
+        },
+        baseCreated + 100,
+      ),
+    ).expect(201);
+
+    // A stale 'active' redelivery from T (long before) must not overwrite it.
+    await postWebhook(
+      buildStripeEventPayload(
+        "customer.subscription.updated",
+        {
+          id: stripeSubscriptionId,
+          status: "active",
+          metadata: { accountId, planId: "pro" },
+          items: { data: [{ current_period_end: periodEnd }] },
+        },
+        baseCreated,
+      ),
+    ).expect(201);
+
+    const subscription = await prisma.subscription.findUniqueOrThrow({
+      where: { stripeSubscriptionId },
+    });
+    expect(subscription.status).toBe("past_due");
   });
 
   it("releases an abandoned checkout back to draft on checkout.session.expired", async () => {

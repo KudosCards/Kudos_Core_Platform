@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { runSerializable } from "../common/run-serializable";
 import { AuditService } from "../audit/audit.service";
 import { BatchOrdersService } from "../batch-orders/batch-orders.service";
 import { WalletService } from "../wallet/wallet.service";
@@ -73,7 +74,10 @@ export class WebhooksService {
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted":
-        await this.handleSubscriptionEvent(event.data.object);
+        // event.created is the ordering key — Stripe delivers at-least-once and
+        // out of order, so the handler drops any event older than the one it
+        // last applied to the row.
+        await this.handleSubscriptionEvent(event.data.object, event.created);
         break;
       default:
         this.logger.debug(`Ignoring unhandled Stripe event type: ${event.type}`);
@@ -437,7 +441,10 @@ export class WebhooksService {
     });
   }
 
-  private async handleSubscriptionEvent(subscription: Stripe.Subscription): Promise<void> {
+  private async handleSubscriptionEvent(
+    subscription: Stripe.Subscription,
+    eventCreatedSeconds: number,
+  ): Promise<void> {
     const accountId = subscription.metadata.accountId;
     const planId = subscription.metadata.planId;
     if (!accountId || !planId) {
@@ -454,6 +461,7 @@ export class WebhooksService {
       return;
     }
     const currentPeriodEnd = new Date(currentPeriodEndSeconds * 1000);
+    const eventCreatedAt = new Date(eventCreatedSeconds * 1000);
 
     // Keep the local extra-seat count aligned with the subscription's per-seat
     // line item, so a change made via proration, the Stripe dashboard, or a
@@ -477,8 +485,35 @@ export class WebhooksService {
       accountData.extraSeats = seatQuantity;
     }
 
-    await this.prisma.$transaction([
-      this.prisma.subscription.upsert({
+    // Serializable read-then-write: Stripe delivers subscription webhooks
+    // at-least-once and out of order, so we compare against what's already
+    // persisted and drop anything stale before touching the account's plan. The
+    // read + guarded write must be atomic against a concurrent redelivery, hence
+    // Serializable rather than the previous plain multi-statement transaction.
+    const applied = await runSerializable(this.prisma, async (tx) => {
+      const existing = await tx.subscription.findUnique({
+        where: { stripeSubscriptionId: subscription.id },
+        select: { status: true, lastEventAt: true },
+      });
+
+      if (existing) {
+        // Terminal guard: a Stripe subscription id never re-activates once
+        // cancelled — a resubscribe issues a brand-new id. So any non-cancel
+        // event arriving for an already-cancelled row can only be a stale or
+        // replayed `updated`; applying it would wrongly restore the paid plan.
+        if (existing.status === "canceled" && !canceled) {
+          return false;
+        }
+        // Ordering guard: ignore an event strictly older than the last one
+        // applied. Equal timestamps pass through — a genuine same-second
+        // transition (e.g. updated then deleted) must still land, and a true
+        // duplicate simply rewrites identical data.
+        if (existing.lastEventAt && eventCreatedAt < existing.lastEventAt) {
+          return false;
+        }
+      }
+
+      await tx.subscription.upsert({
         where: { stripeSubscriptionId: subscription.id },
         create: {
           accountId,
@@ -486,11 +521,21 @@ export class WebhooksService {
           stripeSubscriptionId: subscription.id,
           status,
           currentPeriodEnd,
+          lastEventAt: eventCreatedAt,
         },
-        update: { planId, status, currentPeriodEnd },
-      }),
-      this.prisma.account.update({ where: { id: accountId }, data: accountData }),
-    ]);
+        update: { planId, status, currentPeriodEnd, lastEventAt: eventCreatedAt },
+      });
+      await tx.account.update({ where: { id: accountId }, data: accountData });
+      return true;
+    });
+
+    if (!applied) {
+      this.logger.log(
+        `Ignoring stale/out-of-order Stripe subscription event for ${subscription.id} ` +
+          `(status=${status}, event created ${eventCreatedAt.toISOString()})`,
+      );
+      return;
+    }
 
     await this.audit.record({
       accountId,
