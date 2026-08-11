@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { serverApiFetch } from "@/lib/api.server";
 import { Icons, type IconName } from "@/components/icons";
 import { ReminderEmailsToggle } from "./reminder-emails-toggle";
+import { DeleteAccountSection } from "./delete-account-section";
 
 interface SettingCard {
   label: string;
@@ -50,6 +51,12 @@ export default async function SettingsPage() {
     redirect("/login");
   }
 
+  // The "delete account" danger zone is owner-only. `/team` reports the viewer's
+  // role as `yourRole`; a fetch failure just hides the section (the API enforces
+  // owner-only regardless).
+  const team = await serverApiFetch<{ yourRole: string }>("/team").catch(() => null);
+  const isOwner = team?.yourRole === "owner";
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <div className="flex flex-col gap-1">
@@ -84,6 +91,8 @@ export default async function SettingsPage() {
           <ReminderEmailsToggle initial={account.reminderEmailsEnabled} />
         </div>
       </section>
+
+      {isOwner && <DeleteAccountSection accountName={account.name} />}
     </div>
   );
 }

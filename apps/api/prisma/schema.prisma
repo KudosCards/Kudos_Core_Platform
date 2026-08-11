@@ -572,6 +572,11 @@ model SavedDesign {
   cardDesignId String?  @map("card_design_id")
   name         String
   document     Json
+  /// Soft-delete marker. A design used by a past order (OrderRecipient) or an
+  /// approved occasion can't be hard-deleted without breaking that immutable
+  /// history — deleting it archives it out of the library instead. The gallery
+  /// lists only rows where this is null. See docs/adr/0158-design-archive.md.
+  archivedAt   DateTime? @map("archived_at")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

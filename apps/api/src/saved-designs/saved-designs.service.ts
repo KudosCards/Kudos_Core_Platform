@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -69,14 +68,18 @@ export class SavedDesignsService {
   }
 
   list(accountId: string): Promise<SavedDesign[]> {
+    // Archived designs (soft-deleted but still referenced by order/occasion
+    // history) never appear in the library.
     return this.prisma.savedDesign.findMany({
-      where: { accountId },
+      where: { accountId, archivedAt: null },
       orderBy: { updatedAt: "desc" },
     });
   }
 
   async findOne(accountId: string, id: string): Promise<SavedDesign> {
-    const design = await this.prisma.savedDesign.findFirst({ where: { id, accountId } });
+    const design = await this.prisma.savedDesign.findFirst({
+      where: { id, accountId, archivedAt: null },
+    });
     if (!design) {
       throw new NotFoundException("Saved design not found");
     }
@@ -87,7 +90,7 @@ export class SavedDesignsService {
     const document = dto.document ? this.parseDocument(dto.document) : undefined;
 
     const { count } = await this.prisma.savedDesign.updateMany({
-      where: { id, accountId },
+      where: { id, accountId, archivedAt: null },
       data: {
         ...(dto.name && { name: dto.name }),
         ...(document && { document: document as Prisma.InputJsonValue }),
@@ -100,20 +103,38 @@ export class SavedDesignsService {
     return this.prisma.savedDesign.findFirstOrThrow({ where: { id, accountId } });
   }
 
-  async remove(accountId: string, id: string): Promise<void> {
+  /**
+   * "Delete" a saved design. If nothing references it, it's hard-deleted. If a
+   * past order (OrderRecipient) or an approved occasion still points at it, the
+   * row can't be removed without breaking that history — so it's archived out of
+   * the library instead. Either way the design leaves "My designs"; the caller
+   * learns which happened via the returned `archived` flag.
+   */
+  async remove(accountId: string, id: string): Promise<{ archived: boolean }> {
+    // Confirm ownership (and that it isn't already archived) up front, so a
+    // missing/foreign id is a clean 404 rather than a swallowed no-op.
+    const existing = await this.prisma.savedDesign.findFirst({
+      where: { id, accountId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundException("Saved design not found");
+    }
+
     try {
-      const { count } = await this.prisma.savedDesign.deleteMany({ where: { id, accountId } });
-      if (count === 0) {
-        throw new NotFoundException("Saved design not found");
-      }
+      await this.prisma.savedDesign.delete({ where: { id } });
+      return { archived: false };
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === FOREIGN_KEY_VIOLATION
       ) {
-        throw new ConflictException(
-          "This design is attached to an approved occasion and can't be deleted",
-        );
+        // Still referenced by order/occasion history — soft-delete instead.
+        await this.prisma.savedDesign.update({
+          where: { id },
+          data: { archivedAt: new Date() },
+        });
+        return { archived: true };
       }
       throw error;
     }

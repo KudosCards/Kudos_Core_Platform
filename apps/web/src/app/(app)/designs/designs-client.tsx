@@ -109,6 +109,7 @@ export function DesignsClient({
   const [pendingDesignId, setPendingDesignId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const artworkInputRef = useRef<HTMLInputElement>(null);
 
@@ -201,13 +202,23 @@ export function DesignsClient({
   async function deleteDesign(design: SavedDesign) {
     if (!window.confirm(`Delete "${design.name}"? This can't be undone.`)) return;
     setError(null);
+    setNotice(null);
     setPendingDesignId(design.id);
     try {
-      await clientApiFetch(`/saved-designs/${design.id}`, { method: "DELETE" });
+      // The API removes the design if nothing references it, or archives it out
+      // of the library if a past order/occasion still points at it (that history
+      // can't be broken). Either way it leaves the gallery — reflect which.
+      const result = await clientApiFetch<{ archived: boolean }>(
+        `/saved-designs/${design.id}`,
+        { method: "DELETE" },
+      );
       setSavedDesigns((current) => current.filter((d) => d.id !== design.id));
+      setNotice(
+        result.archived
+          ? `“${design.name}” was removed from your library. It's kept on the past orders that used it.`
+          : `“${design.name}” was deleted.`,
+      );
     } catch (deleteError) {
-      // A design attached to an occasion/order can't be deleted (the API guards
-      // it) — surface that instead of silently doing nothing.
       setError(
         deleteError instanceof ApiError ? deleteError.message : "Could not delete the design",
       );
@@ -228,6 +239,12 @@ export function DesignsClient({
       {error && (
         <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
           {error}
+        </p>
+      )}
+
+      {notice && (
+        <p className="rounded-lg border border-border bg-surface px-4 py-2 text-sm text-muted">
+          {notice}
         </p>
       )}
 

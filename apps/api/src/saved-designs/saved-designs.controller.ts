@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -56,12 +55,13 @@ export class SavedDesignsController {
     return this.savedDesignsService.update(membership.accountId, id, dto);
   }
 
+  /** Returns `{ archived }` — true when the design was kept (soft-deleted) because
+   * order/occasion history still references it, false when fully removed. */
   @Delete(":id")
-  @HttpCode(204)
   remove(
     @CurrentMembership() membership: CurrentMembershipContext,
     @Param("id", ParseUUIDPipe) id: string,
-  ): Promise<void> {
+  ): Promise<{ archived: boolean }> {
     return this.savedDesignsService.remove(membership.accountId, id);
   }
 }

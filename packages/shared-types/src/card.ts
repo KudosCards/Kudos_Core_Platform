@@ -194,10 +194,22 @@ export const savedDesignSchema = z.object({
   cardDesignId: z.string().uuid().nullable(),
   name: z.string(),
   document: designDocumentSchema,
+  /** Set when a design that's referenced by past orders/occasions is "deleted":
+   * it can't be hard-removed without breaking that history, so it's archived out
+   * of the library instead. The gallery only ever lists un-archived designs, so
+   * this is null there — present for completeness. See docs/adr/0158. */
+  archivedAt: z.coerce.date().nullable().optional(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });
 export type SavedDesign = z.infer<typeof savedDesignSchema>;
+
+/** Result of DELETE /saved-designs/:id — whether the design was fully removed or
+ * archived (kept for the order/occasion history that still references it). */
+export const deleteSavedDesignResultSchema = z.object({
+  archived: z.boolean(),
+});
+export type DeleteSavedDesignResult = z.infer<typeof deleteSavedDesignResultSchema>;
 
 /**
  * A reusable image an account uploaded in the designer — the "Your uploads"
