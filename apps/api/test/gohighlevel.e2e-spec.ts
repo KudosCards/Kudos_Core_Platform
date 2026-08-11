@@ -20,8 +20,10 @@ import { mintToken } from "./util/test-jwks";
 process.env.CREDENTIALS_ENCRYPTION_KEY ??= "0".repeat(64);
 process.env.GOHIGHLEVEL_CLIENT_ID ??= "test-ghl-client-id";
 process.env.GOHIGHLEVEL_CLIENT_SECRET ??= "test-ghl-client-secret";
+// Registered under the white-label-safe "leadconnector" slug (GoHighLevel
+// rejects a redirect URL containing "gohighlevel"); the controller maps it back.
 process.env.GOHIGHLEVEL_REDIRECT_URI ??=
-  "https://api.test.example/integrations/oauth/gohighlevel/callback";
+  "https://api.test.example/integrations/oauth/leadconnector/callback";
 
 const LOCATION_ID = "loc-abc-123";
 
@@ -142,7 +144,7 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
   async function connectGoHighLevel(token: string): Promise<void> {
     const state = await startAndGetState(token);
     await request(app.getHttpServer())
-      .get("/integrations/oauth/gohighlevel/callback")
+      .get("/integrations/oauth/leadconnector/callback")
       .query({ code: "good-code", state })
       .expect(302)
       .expect("location", /connected=gohighlevel/);
@@ -174,7 +176,7 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
   it("rejects a forged/invalid state — no connection is created", async () => {
     const { accountId } = await signUp();
     await request(app.getHttpServer())
-      .get("/integrations/oauth/gohighlevel/callback")
+      .get("/integrations/oauth/leadconnector/callback")
       .query({ code: "good-code", state: "not-a-real-signed-state" })
       .expect(302)
       .expect("location", /error=gohighlevel/);
@@ -184,7 +186,7 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
 
   it("redirects with an error when GoHighLevel denies (no code)", async () => {
     await request(app.getHttpServer())
-      .get("/integrations/oauth/gohighlevel/callback")
+      .get("/integrations/oauth/leadconnector/callback")
       .query({ error: "access_denied" })
       .expect(302)
       .expect("location", /error=gohighlevel/);

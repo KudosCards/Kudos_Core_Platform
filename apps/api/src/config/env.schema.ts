@@ -288,8 +288,11 @@ export const envSchema = z.object({
   // contact import (see docs/adr/0015-crm-integrations.md). All three optional at
   // boot: without them the app runs and connecting GoHighLevel returns a clean
   // "not configured" until all are set. The redirect URI must exactly match the
-  // one registered in the Marketplace app (…/integrations/oauth/gohighlevel/callback
-  // on this API's public host). Treat blank the same as unset.
+  // one registered in the Marketplace app. GoHighLevel's white-label policy
+  // rejects a redirect URL containing "highlevel"/"gohighlevel", so it's
+  // registered under the neutral slug: …/integrations/oauth/leadconnector/callback
+  // on this API's public host (the controller maps that slug back to the
+  // gohighlevel provider — see ADR 0156). Treat blank the same as unset.
   GOHIGHLEVEL_CLIENT_ID: z
     .string()
     .min(1)
