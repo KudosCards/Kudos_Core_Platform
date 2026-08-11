@@ -394,6 +394,61 @@ describe("Auto-send (e2e)", () => {
     expect(autoPage.videoUrl).toBe(seededVideo);
   });
 
+  it("lists scheduled auto-sends and cancels one back to the approvals queue", async () => {
+    const { token, accountId } = await signUp();
+    await enableAutoSend(accountId);
+    const recipientId = await createRecipient(token);
+    const savedDesignId = await createSavedDesign(token);
+    const occasionId = await createOccasion(token, recipientId);
+    await approve(token, occasionId, { savedDesignId, dispatchOption: "auto_send" }).expect(201);
+
+    // It's visible in the "scheduled to auto-send" list the Approvals page reads.
+    const scheduled = await request(app.getHttpServer())
+      .get("/occasions?status=approved&dispatchOption=auto_send&perPage=50")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect((scheduled.body as { items: { id: string }[] }).items.map((o) => o.id)).toContain(
+      occasionId,
+    );
+
+    // Cancel → returned to pending_approval with dispatch reset to asap.
+    const cancelled = await request(app.getHttpServer())
+      .post(`/occasions/${occasionId}/unapprove`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    expect((cancelled.body as { status: string }).status).toBe("pending_approval");
+    const row = await prisma.occasion.findUniqueOrThrow({ where: { id: occasionId } });
+    expect(row.status).toBe("pending_approval");
+    expect(row.dispatchOption).toBe("asap");
+
+    // The auto-send run no longer considers it (it's not approved anymore).
+    const ops = await opsToken();
+    await runAutoSend(ops).expect(201);
+    const after = await prisma.occasion.findUniqueOrThrow({ where: { id: occasionId } });
+    expect(after.status).toBe("pending_approval");
+    const orders = await prisma.batchOrder.findMany({ where: { accountId } });
+    expect(orders).toHaveLength(0);
+  });
+
+  it("cannot cancel an auto-send once it's already been sent", async () => {
+    const { token, accountId } = await signUp();
+    await enableAutoSend(accountId);
+    await creditWallet(accountId, 1000);
+    const recipientId = await createRecipient(token);
+    const savedDesignId = await createSavedDesign(token);
+    const occasionId = await createOccasion(token, recipientId); // dated today → due now
+    await approve(token, occasionId, { savedDesignId, dispatchOption: "auto_send" }).expect(201);
+
+    const ops = await opsToken();
+    await runAutoSend(ops).expect(201); // consumes it → status "queued"
+
+    // Cancelling after it's been actioned is a conflict, not a silent no-op.
+    await request(app.getHttpServer())
+      .post(`/occasions/${occasionId}/unapprove`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+  });
+
   it("forbids a non-admin from triggering an auto-send run", async () => {
     const { token } = await signUp();
     await runAutoSend(token).expect(403);

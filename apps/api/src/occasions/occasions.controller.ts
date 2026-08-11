@@ -89,6 +89,17 @@ export class OccasionsController {
     return this.occasionsService.skip(membership.accountId, user.id, id);
   }
 
+  /** Cancel an approval (e.g. a scheduled auto-send) before it's sent, returning
+   * the occasion to the approvals queue. */
+  @Post(":id/unapprove")
+  unapprove(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<Occasion> {
+    return this.occasionsService.unapprove(membership.accountId, user.id, id);
+  }
+
   /** Edit a scheduled event's label or date (scheduled-only). */
   @Patch(":id")
   updateEvent(

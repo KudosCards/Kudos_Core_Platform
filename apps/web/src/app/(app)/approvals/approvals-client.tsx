@@ -16,14 +16,20 @@ type PostageClass = "first_class" | "second_class";
 
 export function ApprovalsClient({
   initialOccasions,
+  initialScheduledSends,
   savedDesigns,
   autoSendEnabled,
 }: {
   initialOccasions: OccasionWithRecipient[];
+  initialScheduledSends: OccasionWithRecipient[];
   savedDesigns: SavedDesign[];
   autoSendEnabled: boolean;
 }) {
   const [occasions, setOccasions] = useState(initialOccasions);
+  // Cards already approved for auto-send but not yet posted (the cron picks them
+  // up near their dispatch date). Shown so they're visible after approval, and
+  // cancellable until then.
+  const [scheduledSends, setScheduledSends] = useState(initialScheduledSends);
   const [selectedDesignByOccasion, setSelectedDesignByOccasion] = useState<Record<string, string>>(
     {},
   );
@@ -75,6 +81,29 @@ export function ApprovalsClient({
     }
   }
 
+  /** Cancel a scheduled auto-send: the API returns it to the approvals queue, so
+   * move it out of the scheduled list and back to the top of the pending list. */
+  async function cancelScheduled(occasion: OccasionWithRecipient) {
+    setError(null);
+    setPendingAction(occasion.id);
+    try {
+      const returned = await clientApiFetch<OccasionWithRecipient>(
+        `/occasions/${occasion.id}/unapprove`,
+        { method: "POST" },
+      );
+      setScheduledSends((current) => current.filter((o) => o.id !== occasion.id));
+      setOccasions((current) => [returned, ...current]);
+    } catch (cancelError) {
+      setError(cancelError instanceof ApiError ? cancelError.message : "Could not cancel");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  function designName(savedDesignId: string | null): string {
+    return savedDesigns.find((d) => d.id === savedDesignId)?.name ?? "your chosen design";
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -88,7 +117,9 @@ export function ApprovalsClient({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          {error}
+        </p>
       )}
 
       {occasions.length === 0 ? (
@@ -170,7 +201,9 @@ export function ApprovalsClient({
                         }
                         className="accent-accent"
                       />
-                      <span>Auto-send — we order, pay from your wallet, and post it automatically</span>
+                      <span>
+                        Auto-send — we order, pay from your wallet, and post it automatically
+                      </span>
                     </label>
                     {autoSend &&
                       (() => {
@@ -220,6 +253,60 @@ export function ApprovalsClient({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {scheduledSends.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold tracking-tight">Scheduled to auto-send</h2>
+            <p className="text-sm text-muted">
+              Approved and waiting — we&apos;ll order, pay from your wallet, and post each one
+              automatically near its date. Cancel any time before then to bring it back for review.
+            </p>
+          </div>
+          {scheduledSends.map((occasion) => (
+            <div
+              key={occasion.id}
+              className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-[#e8f1ea] text-xs font-semibold text-[#2f7d54]">
+                  {(OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type).slice(0, 3)}
+                </div>
+                <div>
+                  <p className="font-semibold">
+                    {occasion.recipient
+                      ? `${occasion.recipient.firstName} ${occasion.recipient.lastName}`
+                      : (OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type)}
+                  </p>
+                  <p className="text-sm text-muted">
+                    {OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type} ·{" "}
+                    {formatOccasionDate(occasion.occasionDate)} ·{" "}
+                    {designName(occasion.savedDesignId)}
+                  </p>
+                  {occasion.dispatchDate && (
+                    <p className="text-xs text-muted">
+                      Posts around {formatOccasionDate(occasion.dispatchDate)}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-[#e8f1ea] px-2.5 py-0.5 text-xs font-medium text-[#2f7d54]">
+                  Auto-send on
+                </span>
+                <button
+                  type="button"
+                  disabled={pendingAction === occasion.id}
+                  onClick={() => void cancelScheduled(occasion)}
+                  className="btn-secondary"
+                >
+                  {pendingAction === occasion.id ? "Cancelling…" : "Cancel"}
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
