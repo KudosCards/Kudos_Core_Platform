@@ -13,7 +13,7 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
-import { Throttle } from "@nestjs/throttler";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { ApiBearerAuth, ApiSecurity, ApiTags } from "@nestjs/swagger";
 import { ConfigService } from "@nestjs/config";
 import type { AccountApiKey } from "@prisma/client";
@@ -194,8 +194,12 @@ export class IntegrationsController {
 
   /** The provider redirects the browser here after consent. Public (no JWT — the
    * signed `state` is what we trust). Always ends in a redirect back to the web
-   * app's Integrations page, flagged success or error. */
+   * app's Integrations page, flagged success or error. Throttled per IP: it's an
+   * unauthenticated endpoint, and while the signed state is the real guard, a
+   * rate limit stops it from being hammered with forged callbacks. */
   @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Get("oauth/:provider/callback")
   async oauthCallback(
     @Param("provider") provider: string,

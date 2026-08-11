@@ -1,0 +1,13 @@
+-- Add subscriptions.last_event_at: the event.created timestamp of the most
+-- recent Stripe subscription webhook applied to the row.
+--
+-- Stripe redelivers webhooks at-least-once and does not guarantee delivery
+-- order, so a stale or replayed `customer.subscription.updated (active)` can
+-- arrive AFTER a `customer.subscription.deleted` and — without this guard —
+-- resurrect a cancelled subscription and restore the paid plan. The webhook
+-- handler now drops any subscription event that predates last_event_at.
+--
+-- Nullable, no backfill: existing rows have NULL (unknown), which the handler
+-- treats as "no prior event applied", so the first event after deploy sets the
+-- baseline. See ADR 0153.
+ALTER TABLE "subscriptions" ADD COLUMN "last_event_at" TIMESTAMP(3);
