@@ -451,6 +451,7 @@ export function IntegrationsClient({
 
   const brevo = connections.find((c) => c.provider === "brevo");
   const hubspot = connections.find((c) => c.provider === "hubspot");
+  const gohighlevel = connections.find((c) => c.provider === "gohighlevel");
 
   function updateConnection(provider: string, next: CrmConnection | null) {
     setConnections((current) => {
@@ -562,14 +563,12 @@ export function IntegrationsClient({
               start importing contacts.
             </p>
           </ConnectorShell>
-          {/* GoHighLevel: the backend connector is built and deployed, but the
-              customer-facing card stays "Coming soon" until our GoHighLevel
-              Marketplace app clears their review. Swap this back to an
-              <OAuthConnector provider="gohighlevel" …/> (see git history / the
-              HubSpot connector) to switch it on. */}
-          <ConnectorShell
+          <OAuthConnector
+            provider="gohighlevel"
             name="GoHighLevel"
-            status={<span className="pill pill-muted">Coming soon</span>}
+            connection={gohighlevel}
+            onChange={(next) => updateConnection("gohighlevel", next)}
+            description="Connect your GoHighLevel sub-account to import contacts. You'll be sent to GoHighLevel to choose a location and approve read-only access to its contacts — no password is shared with us."
           />
         </div>
       </section>

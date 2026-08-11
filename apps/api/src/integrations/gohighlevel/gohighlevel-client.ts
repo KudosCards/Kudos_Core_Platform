@@ -14,7 +14,8 @@ export const GOHIGHLEVEL_CLIENT = Symbol("GOHIGHLEVEL_CLIENT");
  * grant us — the token that comes back is scoped to that location, whose id we
  * persist and must pass on every contacts call.
  */
-export const GOHIGHLEVEL_AUTHORIZE_URL = "https://marketplace.gohighlevel.com/oauth/chooselocation";
+export const GOHIGHLEVEL_AUTHORIZE_URL =
+  "https://marketplace.gohighlevel.com/v2/oauth/chooselocation";
 
 /**
  * The scopes we request. `contacts.readonly` is read-only contact access — we ask
