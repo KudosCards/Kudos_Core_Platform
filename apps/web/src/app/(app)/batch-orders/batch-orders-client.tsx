@@ -2,6 +2,7 @@
 
 import { Zap } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { AccountPricing } from "@kudos/shared-types";
 import { computePricingBreakdown, suggestFirstClass } from "@kudos/shared-types";
@@ -74,6 +75,7 @@ export function BatchOrdersClient({
   /** Plan's `batchOrderMaxSize` — the most cards allowed in a single order. */
   maxPerOrder: number;
 }) {
+  const router = useRouter();
   const occasionById = useMemo(
     () => new Map(initialOccasions.map((o) => [o.id, o])),
     [initialOccasions],
@@ -209,6 +211,9 @@ export function BatchOrdersClient({
   async function payWithWallet(orderId: string): Promise<void> {
     await clientApiFetch(`/wallet/pay/${orderId}`, { method: "POST" });
     setUnfinishedOrders((current) => current.filter((o) => o.id !== orderId));
+    // Paid occasions are now queued (no longer "approved"), so re-fetch to drop
+    // them from the list rather than leave a stale, still-selectable row.
+    router.refresh();
   }
 
   async function payOrderWithWallet(orderId: string) {
@@ -249,6 +254,9 @@ export function BatchOrdersClient({
     try {
       await clientApiFetch(`/batch-orders/${orderId}/cancel`, { method: "POST" });
       setUnfinishedOrders((current) => current.filter((o) => o.id !== orderId));
+      // Cancelling releases the order's occasions back to "approved" — re-fetch so
+      // they reappear in the list below without a manual page reload.
+      router.refresh();
     } catch (cancelError) {
       setError(cancelError instanceof ApiError ? cancelError.message : "Could not cancel order");
     } finally {
