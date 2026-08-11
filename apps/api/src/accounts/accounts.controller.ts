@@ -1,10 +1,20 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { Account, PlanEntitlement } from "@prisma/client";
 import { AccountsService, type SafeAccount } from "./accounts.service";
 import { DashboardService, type DashboardSummary, type NavBadges } from "./dashboard.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { CreateAccountDto } from "./dto/create-account.dto";
+import { DeleteAccountDto } from "./dto/delete-account.dto";
 import { UpdateNotificationsDto } from "./dto/update-notifications.dto";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { CurrentMembership } from "../auth/current-membership.decorator";
@@ -46,6 +56,22 @@ export class AccountsController {
     @CurrentMembership() membership: CurrentMembershipContext,
   ): Promise<SafeAccount> {
     return this.accountsService.findById(membership.accountId);
+  }
+
+  /** Permanently delete the account and all its data (owner-only, irreversible).
+   * Cancels any live Stripe subscription and removes the Supabase logins. */
+  @UseGuards(MembershipGuard)
+  @Delete("me")
+  @HttpCode(204)
+  async deleteCurrentAccount(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Body() dto: DeleteAccountDto,
+  ): Promise<void> {
+    await this.accountsService.deleteAccount(
+      membership.accountId,
+      membership.role,
+      dto.confirmName,
+    );
   }
 
   /** The account's plan limits and feature gates — lets the UI show/hide

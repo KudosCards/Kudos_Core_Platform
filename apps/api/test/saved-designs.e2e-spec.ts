@@ -169,8 +169,8 @@ describe("Saved designs (e2e)", () => {
     expect(savedDesignSchema.parse(updateResponse.body).name).toBe("Renamed");
   });
 
-  it("deletes a saved design, but not one referenced by an approved occasion", async () => {
-    const { token, accountId } = await signUp();
+  it("hard-deletes an unreferenced design", async () => {
+    const { token } = await signUp();
     const [template] = z
       .array(cardDesignSchema)
       .parse(
@@ -189,25 +189,39 @@ describe("Saved designs (e2e)", () => {
       .expect(201);
     const created = savedDesignSchema.parse(createResponse.body);
 
-    await request(app.getHttpServer())
+    const deleteResponse = await request(app.getHttpServer())
       .delete(`/saved-designs/${created.id}`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(204);
+      .expect(200);
+    expect(deleteResponse.body).toEqual({ archived: false });
 
     await request(app.getHttpServer())
       .get(`/saved-designs/${created.id}`)
       .set("Authorization", `Bearer ${token}`)
       .expect(404);
+  });
 
-    // Re-create and attach it to an occasion directly via Prisma (approve
-    // endpoint is covered in occasions.e2e-spec.ts) to verify the FK-restrict
-    // -> clean 409 mapping.
-    const recreateResponse = await request(app.getHttpServer())
+  it("archives (not 409s) a design referenced by an approved occasion, and hides it", async () => {
+    const { token, accountId } = await signUp();
+    const [template] = z
+      .array(cardDesignSchema)
+      .parse(
+        (
+          await request(app.getHttpServer())
+            .get("/card-designs")
+            .set("Authorization", `Bearer ${token}`)
+            .expect(200)
+        ).body,
+      );
+
+    // Attach the design to an occasion directly via Prisma (approve endpoint is
+    // covered in occasions.e2e-spec.ts) so the FK-restrict path is exercised.
+    const createResponse = await request(app.getHttpServer())
       .post("/saved-designs")
       .set("Authorization", `Bearer ${token}`)
       .send({ cardDesignId: template?.id, name: "Attached to an occasion" })
       .expect(201);
-    const recreated = savedDesignSchema.parse(recreateResponse.body);
+    const created = savedDesignSchema.parse(createResponse.body);
 
     await prisma.occasion.create({
       data: {
@@ -216,14 +230,29 @@ describe("Saved designs (e2e)", () => {
         source: "one_off_campaign",
         occasionDate: new Date(),
         status: "approved",
-        savedDesignId: recreated.id,
+        savedDesignId: created.id,
       },
     });
 
-    await request(app.getHttpServer())
-      .delete(`/saved-designs/${recreated.id}`)
+    // Delete now archives (kept for the occasion's history) rather than 409ing.
+    const deleteResponse = await request(app.getHttpServer())
+      .delete(`/saved-designs/${created.id}`)
       .set("Authorization", `Bearer ${token}`)
-      .expect(409);
+      .expect(200);
+    expect(deleteResponse.body).toEqual({ archived: true });
+
+    // The row still exists (history intact) but is out of the library and API.
+    expect(await prisma.savedDesign.findUnique({ where: { id: created.id } })).not.toBeNull();
+    await request(app.getHttpServer())
+      .get(`/saved-designs/${created.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(404);
+    const listResponse = await request(app.getHttpServer())
+      .get("/saved-designs")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const designs = z.array(savedDesignSchema).parse(listResponse.body);
+    expect(designs.some((d) => d.id === created.id)).toBe(false);
   });
 
   it("rejects custom artwork (no template) on the free plan", async () => {
