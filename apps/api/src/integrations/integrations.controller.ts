@@ -81,6 +81,20 @@ function toNormalized(dto: ExternalContactDto): NormalizedContact {
   };
 }
 
+/**
+ * URL-facing OAuth callback slug → our internal provider key.
+ *
+ * GoHighLevel's Marketplace enforces a white-label policy that rejects any
+ * registered redirect URL containing "highlevel"/"gohighlevel" — so our natural
+ * `…/oauth/gohighlevel/callback` path can't be saved there. GHL's own docs use
+ * the neutral name "leadconnector" (their token host is leadconnectorhq.com),
+ * so the app registers `…/oauth/leadconnector/callback` and we map that slug
+ * back to the `gohighlevel` provider on the way in. Everything else — the DB
+ * `provider` value, the GOHIGHLEVEL_* env vars, the web connector — is unchanged.
+ * See docs/adr/0156.
+ */
+const OAUTH_CALLBACK_SLUG_ALIASES: Record<string, string> = { leadconnector: "gohighlevel" };
+
 @ApiTags("integrations")
 @Controller("integrations")
 export class IntegrationsController {
@@ -202,12 +216,15 @@ export class IntegrationsController {
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Get("oauth/:provider/callback")
   async oauthCallback(
-    @Param("provider") provider: string,
+    @Param("provider") providerParam: string,
     @Res() res: Response,
     @Query("code") code?: string,
     @Query("state") state?: string,
     @Query("error") error?: string,
   ): Promise<void> {
+    // Resolve any white-label URL slug (e.g. GoHighLevel's "leadconnector") back
+    // to our internal provider key before anything downstream uses it.
+    const provider = OAUTH_CALLBACK_SLUG_ALIASES[providerParam] ?? providerParam;
     const webAppUrl = (this.config.get("WEB_APP_URL", { infer: true }) ?? "").replace(/\/$/, "");
     const back = (status: string) =>
       `${webAppUrl}/integrations?${status}=${encodeURIComponent(provider)}`;
