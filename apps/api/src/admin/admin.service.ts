@@ -99,6 +99,27 @@ interface RawProgressRow {
   import_errors: number;
 }
 
+/** overview() aggregate rows — computed in Postgres so no table is read into
+ * app memory. created_at is a `timestamp` (no tz) storing UTC, so EXTRACT lines
+ * up exactly with JS getUTCFullYear()/getUTCMonth(). See docs/adr/0155. */
+interface MonthlyRevenueRow {
+  year: number;
+  month: number; // 1–12 (Postgres EXTRACT is 1-based)
+  minor: bigint; // SUM(...)::bigint — converted with Number() at these magnitudes
+}
+interface FunnelRow {
+  placed_first_order: number;
+  cards_fulfilled: number;
+}
+interface ActiveSubRow {
+  active: number;
+}
+interface AtRiskRow {
+  id: string;
+  name: string;
+  last_activity: Date;
+}
+
 /** A zeroed progress record — the default for an order with no fulfilment jobs
  * yet (not paid), and the accumulator base for the detail view. */
 function emptyProgress(): OrderFulfillmentProgress {
@@ -143,86 +164,126 @@ export class AdminService {
     const now = Date.now();
     const since30 = new Date(now - THIRTY_DAYS_MS);
     const since12mo = startOfMonthsAgo(11);
+    const atRiskCutoff = new Date(now - AT_RISK_MS);
     const paidWhere = { status: { in: PAID_STATUSES } };
+    // Enum values as text for the raw aggregates (matches the `status::text`
+    // pattern already used by progressForOrders below).
+    const paidText = PAID_STATUSES.map((s) => s.toString());
+    const activeText = ACTIVE_SUB_STATUSES.map((s) => s.toString());
 
-    const [accounts, subs, allTime, last30, cardsSent, recentPaid, placedFirst, fulfilled] =
-      await Promise.all([
-        this.prisma.account.findMany({
-          select: { id: true, name: true, type: true, planId: true, createdAt: true },
-        }),
-        this.prisma.subscription.findMany({ select: { accountId: true, status: true } }),
-        this.prisma.batchOrder.aggregate({
-          where: paidWhere,
-          _count: true,
-          _sum: { totalMinor: true },
-        }),
-        this.prisma.batchOrder.aggregate({
-          where: { ...paidWhere, createdAt: { gte: since30 } },
-          _count: true,
-          _sum: { totalMinor: true },
-        }),
-        this.prisma.orderRecipient.count({ where: { batchOrder: paidWhere } }),
-        // Paid orders in the last 12 months → revenue chart + per-account last order.
-        this.prisma.batchOrder.findMany({
-          where: { ...paidWhere, createdAt: { gte: since12mo } },
-          select: { accountId: true, createdAt: true, totalMinor: true },
-        }),
-        this.prisma.batchOrder.groupBy({ by: ["accountId"], where: paidWhere }),
-        this.prisma.batchOrder.groupBy({
-          by: ["accountId"],
-          where: { status: BatchOrderStatus.completed },
-        }),
-      ]);
+    // Everything here is a DB-side COUNT/SUM/GROUP BY — no table is materialised
+    // into app memory. Only the at-risk query returns rows, and it returns just
+    // the at-risk accounts (a small set), not every account. See docs/adr/0155.
+    const [
+      accountTotal,
+      accountsByType,
+      accountsByPlan,
+      allTime,
+      last30,
+      cardsSent,
+      monthlyRows,
+      funnelRows,
+      activeRows,
+      atRiskRows,
+    ] = await Promise.all([
+      this.prisma.account.count(),
+      this.prisma.account.groupBy({ by: ["type"], _count: true }),
+      this.prisma.account.groupBy({ by: ["planId"], _count: true }),
+      this.prisma.batchOrder.aggregate({
+        where: paidWhere,
+        _count: true,
+        _sum: { totalMinor: true },
+      }),
+      this.prisma.batchOrder.aggregate({
+        where: { ...paidWhere, createdAt: { gte: since30 } },
+        _count: true,
+        _sum: { totalMinor: true },
+      }),
+      this.prisma.orderRecipient.count({ where: { batchOrder: paidWhere } }),
+      // Paid revenue bucketed by calendar month over the last 12 months.
+      this.prisma.$queryRaw<MonthlyRevenueRow[]>(Prisma.sql`
+        SELECT
+          EXTRACT(YEAR FROM created_at)::int AS year,
+          EXTRACT(MONTH FROM created_at)::int AS month,
+          COALESCE(SUM(total_minor), 0)::bigint AS minor
+        FROM batch_orders
+        WHERE status::text IN (${Prisma.join(paidText)})
+          AND created_at >= ${since12mo}
+        GROUP BY 1, 2
+      `),
+      // Funnel: distinct accounts that placed a paid order / had one completed.
+      this.prisma.$queryRaw<FunnelRow[]>(Prisma.sql`
+        SELECT
+          count(DISTINCT account_id) FILTER (WHERE status::text IN (${Prisma.join(paidText)}))::int
+            AS placed_first_order,
+          count(DISTINCT account_id) FILTER (WHERE status::text = 'completed')::int
+            AS cards_fulfilled
+        FROM batch_orders
+      `),
+      // Distinct accounts with an active subscription.
+      this.prisma.$queryRaw<ActiveSubRow[]>(Prisma.sql`
+        SELECT count(DISTINCT account_id)::int AS active
+        FROM subscriptions
+        WHERE status::text IN (${Prisma.join(activeText)})
+      `),
+      // At-risk: no active subscription, and no paid order (within the 12-month
+      // window — anything older already clears the 30-day threshold) for 30+
+      // days; falls back to signup date when there's no qualifying order. Returns
+      // only the at-risk accounts, ordered most-idle first.
+      this.prisma.$queryRaw<AtRiskRow[]>(Prisma.sql`
+        SELECT a.id, a.name,
+               COALESCE(MAX(o.created_at), a.created_at) AS last_activity
+        FROM accounts a
+        LEFT JOIN batch_orders o
+          ON o.account_id = a.id
+          AND o.status::text IN (${Prisma.join(paidText)})
+          AND o.created_at >= ${since12mo}
+        WHERE NOT EXISTS (
+          SELECT 1 FROM subscriptions s
+          WHERE s.account_id = a.id
+            AND s.status::text IN (${Prisma.join(activeText)})
+        )
+        GROUP BY a.id, a.name, a.created_at
+        HAVING COALESCE(MAX(o.created_at), a.created_at) <= ${atRiskCutoff}
+        ORDER BY last_activity ASC
+      `),
+    ]);
 
     // Accounts breakdown.
-    const organisations = accounts.filter((a) => a.type === "organisation").length;
-    const individuals = accounts.filter((a) => a.type === "individual").length;
+    const organisations =
+      accountsByType.find((g) => g.type === "organisation")?._count ?? 0;
+    const individuals = accountsByType.find((g) => g.type === "individual")?._count ?? 0;
     const byPlan = new Map<string, number>();
-    for (const account of accounts) {
-      const plan = account.planId ?? "free";
-      byPlan.set(plan, (byPlan.get(plan) ?? 0) + 1);
+    for (const group of accountsByPlan) {
+      // A null planId is the free plan (same bucketing the old in-memory pass used).
+      const plan = group.planId ?? "free";
+      byPlan.set(plan, (byPlan.get(plan) ?? 0) + group._count);
     }
 
-    // Subscriptions.
-    const activeSet = new Set(
-      subs.filter((s) => ACTIVE_SUB_STATUSES.includes(s.status)).map((s) => s.accountId),
-    );
-
-    // Last paid-order date per account (within the 12-month window is enough:
-    // anything older already clears the at-risk threshold).
-    const lastOrderByAccount = new Map<string, number>();
+    // Monthly revenue: drop each aggregated month into its 12-month bucket.
     const monthBuckets = buildMonthBuckets(11);
-    for (const order of recentPaid) {
-      const t = order.createdAt.getTime();
-      const prev = lastOrderByAccount.get(order.accountId) ?? 0;
-      if (t > prev) lastOrderByAccount.set(order.accountId, t);
-      const key = monthKey(order.createdAt);
-      const bucket = monthBuckets.get(key);
-      if (bucket) bucket.minor += order.totalMinor;
+    for (const row of monthlyRows) {
+      // Postgres EXTRACT(MONTH) is 1-based; the bucket key uses JS's 0-based month.
+      const bucket = monthBuckets.get(`${row.year}-${row.month - 1}`);
+      if (bucket) bucket.minor += Number(row.minor);
     }
 
-    // At-risk: no active subscription, and no activity for 30+ days.
-    const atRisk: { id: string; name: string; lastActivityDays: number }[] = [];
-    for (const account of accounts) {
-      if (activeSet.has(account.id)) continue;
-      const lastActivity = lastOrderByAccount.get(account.id) ?? account.createdAt.getTime();
-      const idleMs = now - lastActivity;
-      if (idleMs >= AT_RISK_MS) {
-        atRisk.push({
-          id: account.id,
-          name: account.name,
-          lastActivityDays: Math.floor(idleMs / DAY_MS),
-        });
-      }
-    }
-    atRisk.sort((a, b) => b.lastActivityDays - a.lastActivityDays);
+    // At-risk rows already exclude active-sub accounts and are ordered most-idle
+    // first by the query, so no further filtering or sorting is needed.
+    const atRisk = atRiskRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      lastActivityDays: Math.floor((now - row.last_activity.getTime()) / DAY_MS),
+    }));
+
+    const funnel = funnelRows[0] ?? { placed_first_order: 0, cards_fulfilled: 0 };
 
     return {
-      accounts: { total: accounts.length, organisations, individuals },
+      accounts: { total: accountTotal, organisations, individuals },
       subscribersByPlan: [...byPlan.entries()]
         .map(([plan, count]) => ({ plan, count }))
         .sort((a, b) => b.count - a.count),
-      activeSubscriptions: activeSet.size,
+      activeSubscriptions: activeRows[0]?.active ?? 0,
       atRiskCount: atRisk.length,
       orders: { paid: allTime._count, last30Days: last30._count },
       revenueMinor: {
@@ -235,9 +296,9 @@ export class AdminService {
       })),
       cardsSent,
       funnel: {
-        signedUp: accounts.length,
-        placedFirstOrder: placedFirst.length,
-        cardsFulfilled: fulfilled.length,
+        signedUp: accountTotal,
+        placedFirstOrder: funnel.placed_first_order,
+        cardsFulfilled: funnel.cards_fulfilled,
       },
       needsAttention: atRisk.slice(0, 6),
     };
@@ -630,10 +691,6 @@ export function accountHealth(input: {
 function startOfMonthsAgo(n: number): Date {
   const d = new Date();
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - n, 1));
-}
-
-function monthKey(date: Date): string {
-  return `${date.getUTCFullYear()}-${date.getUTCMonth()}`;
 }
 
 /** 12 ordered month buckets (oldest → current) keyed by year-month. */
