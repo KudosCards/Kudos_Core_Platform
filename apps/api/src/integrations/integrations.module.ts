@@ -9,6 +9,7 @@ import { CrmConnectionsService } from "./crm-connections.service";
 import { CrmSyncScheduler } from "./crm-sync.scheduler";
 import { brevoClientProvider } from "./brevo/brevo-client.provider";
 import { hubspotClientProvider } from "./hubspot/hubspot-client.provider";
+import { gohighlevelClientProvider } from "./gohighlevel/gohighlevel-client.provider";
 
 @Module({
   imports: [RecipientsModule, AuditModule],
@@ -21,6 +22,7 @@ import { hubspotClientProvider } from "./hubspot/hubspot-client.provider";
     CrmSyncScheduler,
     brevoClientProvider,
     hubspotClientProvider,
+    gohighlevelClientProvider,
   ],
 })
 export class IntegrationsModule {}

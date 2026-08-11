@@ -3,18 +3,21 @@ import { notFound } from "next/navigation";
 import type { Customer360 } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { serverApiFetch } from "@/lib/api.server";
-import { formatGbp, formatOrderDate, ORDER_STATUS_CLASSES, ORDER_STATUS_LABELS } from "@/lib/orders";
+import {
+  formatGbp,
+  formatOrderDate,
+  ORDER_STATUS_CLASSES,
+  ORDER_STATUS_LABELS,
+} from "@/lib/orders";
 import { HEALTH_CLASSES, HEALTH_LABELS, formatOrderNumber, planLabel } from "@/lib/admin";
 import type { BatchOrderStatus } from "@kudos/shared-types";
 
-const ENGAGEMENT: Record<
-  Customer360["engagement"]["level"],
-  { label: string; className: string }
-> = {
-  activated: { label: "Activated", className: "bg-[#e8f1ea] text-[#2f7d54]" },
-  onboarding: { label: "Onboarding", className: "bg-[#fff4e5] text-[#a8630a]" },
-  dormant: { label: "Dormant", className: "bg-foreground/[0.07] text-muted" },
-};
+const ENGAGEMENT: Record<Customer360["engagement"]["level"], { label: string; className: string }> =
+  {
+    activated: { label: "Activated", className: "bg-[#e8f1ea] text-[#2f7d54]" },
+    onboarding: { label: "Onboarding", className: "bg-[#fff4e5] text-[#a8630a]" },
+    dormant: { label: "Dormant", className: "bg-foreground/[0.07] text-muted" },
+  };
 
 const SOURCE_LABELS: Record<string, string> = {
   manual: "Added by hand",
@@ -22,6 +25,7 @@ const SOURCE_LABELS: Record<string, string> = {
   api: "API / Zapier",
   brevo: "Brevo",
   hubspot: "HubSpot",
+  gohighlevel: "GoHighLevel",
 };
 const sourceLabel = (s: string) => SOURCE_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -53,7 +57,9 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{customer.name}</h1>
-          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${engagement.className}`}>
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${engagement.className}`}
+          >
             {engagement.label}
           </span>
           {customer.health !== "none" && (
@@ -89,7 +95,9 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
             {signalRows.map((s) => (
               <li key={s.label} className="flex items-center justify-between text-sm">
                 <span>{s.label}</span>
-                <span className={s.on ? "text-[#2f7d54]" : "text-muted"}>{s.on ? "✓ Yes" : "— No"}</span>
+                <span className={s.on ? "text-[#2f7d54]" : "text-muted"}>
+                  {s.on ? "✓ Yes" : "— No"}
+                </span>
               </li>
             ))}
           </ul>
@@ -158,7 +166,11 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
                     API key <span className="text-muted">({k.label})</span>
                   </span>
                   <span className="text-muted">
-                    {k.revoked ? "Revoked" : k.lastUsedAt ? `Used ${formatOrderDate(k.lastUsedAt)}` : "Never used"}
+                    {k.revoked
+                      ? "Revoked"
+                      : k.lastUsedAt
+                        ? `Used ${formatOrderDate(k.lastUsedAt)}`
+                        : "Never used"}
                   </span>
                 </div>
               ))}
@@ -243,12 +255,16 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
                         {ORDER_STATUS_LABELS[o.status as BatchOrderStatus]}
                       </span>
                     </td>
-                    <td className="py-2.5 pr-4 text-right tabular-nums text-muted">{o.cardCount}</td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums text-muted">
+                      {o.cardCount}
+                    </td>
                     <td className="py-2.5 pr-4 text-right font-semibold tabular-nums">
                       {formatGbp(o.totalMinor)}
                     </td>
                     <td className="py-2.5 pr-4 capitalize text-muted">{o.paymentMethod ?? "—"}</td>
-                    <td className="py-2.5 whitespace-nowrap text-muted">{formatOrderDate(o.createdAt)}</td>
+                    <td className="py-2.5 whitespace-nowrap text-muted">
+                      {formatOrderDate(o.createdAt)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

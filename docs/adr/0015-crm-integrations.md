@@ -17,7 +17,7 @@ per connected account and giving up control of the mapping and of customer crede
 
 ## Decision: a hybrid model, three lanes into one funnel
 
-Every integration is just a *producer* of normalized contacts. They all pour into a single
+Every integration is just a _producer_ of normalized contacts. They all pour into a single
 internal ingest step, so the hard part — mapping, dedupe, cap enforcement, audit — is written once.
 
 ```
@@ -35,7 +35,7 @@ Lane C  Long tail (inbound API, CSV,  ─┤   a public front door
 - **One-way only** (CRM → Kudos). No write-back; no cross-source identity merge (the same person in
   two CRMs stays two rows, keyed by source). Both are deliberate non-goals to keep this tractable.
 - **Dedupe/identity:** `Recipient` gains `source` + `externalId`, unique per `(accountId, source,
-  externalId)` — the same `externalId` trick the Airtable catalog sync already uses, so re-syncing
+externalId)` — the same `externalId` trick the Airtable catalog sync already uses, so re-syncing
   a contact updates it instead of duplicating. Manual/CSV recipients keep `externalId = null`
   (Postgres treats NULLs as distinct, so they never collide) and still fall under the existing
   name+postcode+DOB dedupe key.
@@ -151,11 +151,35 @@ with the vendor's tooling" shape as the HubSpot app.
 - **Nango / a platform for OAuth CRMs** — revisit when we're onboarding many OAuth CRMs and
   hand-writing each one's OAuth quirks stops paying off. In-house stays the choice while the count is
   small. If adopted, self-host remains favoured (keeps CRM tokens in our infra).
-- **GoHighLevel** (the second OAuth CRM) — a new adapter slotting into the same funnel; no new write
-  path. `externalAccountId` is reserved on `CrmConnection` for displaying the connected portal/account.
 - **Field-mapping UI** (a visual mapper for CRM attribute → Kudos field, replacing the JSON
   `fieldMapping`) and **provider-driven incremental/webhook syncs** — later phases. (The Zapier app
   shipped in Phase 4.)
+
+## Phase 5 — GoHighLevel (the second OAuth CRM)
+
+GoHighLevel (HighLevel) slots into the same funnel as a new adapter — a client + mapper + one
+`CRM_PROVIDERS` entry (`gohighlevel: { authType: "oauth" }`); no schema change, no new write path.
+Because it's the second OAuth CRM, the HubSpot-specific bits of `CrmConnectionsService` were
+generalised: an `oauthDescriptor(provider)` supplies the authorize URL, scopes, client id/redirect and
+token client, and `completeOAuth` / token-refresh / config checks now dispatch by provider. Adding a
+third OAuth CRM is a client, a mapper and a descriptor case.
+
+GoHighLevel's deltas from HubSpot, all contained in its client:
+
+- **Endpoints** — authorize at `marketplace.gohighlevel.com/oauth/chooselocation`; token + contacts
+  on `services.leadconnectorhq.com`. Every API call carries the required `Version: 2021-07-28` header.
+- **Location scoping** — the OAuth grant is tied to a **location** (sub-account). The token exchange
+  returns a `locationId`, persisted in the (already-present) `externalAccountId` column and passed on
+  every contacts fetch. The token request uses `user_type: "Location"` for a location-scoped token.
+- **Read-only** — we request only `contacts.readonly`, consistent with the one-way-import stance
+  above (no write-back).
+- **Config** — `GOHIGHLEVEL_CLIENT_ID` / `_CLIENT_SECRET` / `_REDIRECT_URI`, all optional at boot;
+  unset ⇒ connecting GoHighLevel returns a clean "not enabled" (mirrors HubSpot). Requires a
+  GoHighLevel **Marketplace app** (client id/secret + the redirect URI registered on it) — an ops
+  prerequisite, like the HubSpot app.
+
+Imported contacts land as `source = "gohighlevel"`; the nightly `CrmSyncScheduler` already sweeps
+every enabled connection, so GoHighLevel is picked up with no scheduler change.
 
 ## Consequences
 
