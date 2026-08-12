@@ -140,9 +140,26 @@ export function DispatchReminderSetup() {
                 <span className="text-muted">wd late (0 = off)</span>
               </span>
             </label>
+
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-xs tracking-wide text-muted uppercase">Same-day cut-off</span>
+              <select
+                value={config.sameDayCutoffHour}
+                onChange={(e) => patch({ sameDayCutoffHour: Number(e.target.value) })}
+                className={cell}
+              >
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>
+                    {`${String(h).padStart(2, "0")}:00 UK`}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           <p className="text-xs text-muted">
-            Cards overdue by the escalation threshold get a louder alert to super admins.
+            Cards overdue by the escalation threshold get a louder alert to super admins. A
+            &ldquo;Send now&rdquo; order placed at or after the same-day cut-off (UK time) posts the
+            next working day.
           </p>
 
           <div className="flex flex-wrap items-center gap-2">

@@ -9,6 +9,7 @@ import {
   MAX_SCHEDULE_AHEAD_DAYS,
   POSTAGE_LEAD_DAYS,
   seasonalDispatchRuleFor,
+  sendNowDispatchDate,
   setSeasonalDispatchRules,
   suggestFirstClass,
   UK_BANK_HOLIDAYS,
@@ -225,5 +226,31 @@ describe("deliverByWindow (scheduled sends)", () => {
     expect(isoDay(computeDispatchDate(utc(2026, 7, 28), POSTAGE_LEAD_DAYS.second_class))).toBe(
       "2026-08-21",
     );
+  });
+});
+
+describe("sendNowDispatchDate", () => {
+  it("posts today when ordered on a working day before the cut-off", () => {
+    // Mon 12 Jan 2026, 10:00 GMT — before the 15:00 cut-off.
+    expect(isoDay(sendNowDispatchDate(new Date("2026-01-12T10:00:00Z"), 15))).toBe("2026-01-12");
+  });
+
+  it("rolls to the next working day when ordered at/after the cut-off", () => {
+    // Mon 12 Jan 2026, 16:00 GMT — after the cut-off → Tue 13 Jan.
+    expect(isoDay(sendNowDispatchDate(new Date("2026-01-12T16:00:00Z"), 15))).toBe("2026-01-13");
+  });
+
+  it("judges the cut-off in UK local time, not UTC (BST)", () => {
+    // 12 Aug 2026 (BST, UTC+1). 14:30 UTC is 15:30 London — past the 15:00
+    // cut-off — so it must roll to the next working day (Thu 13 Aug). A naive UTC
+    // comparison (14:30 < 15) would wrongly keep it today.
+    expect(isoDay(sendNowDispatchDate(new Date("2026-08-12T14:30:00Z"), 15))).toBe("2026-08-13");
+    // 13:30 UTC is 14:30 London — still before the cut-off → posts today.
+    expect(isoDay(sendNowDispatchDate(new Date("2026-08-12T13:30:00Z"), 15))).toBe("2026-08-12");
+  });
+
+  it("rolls a weekend order to the next working day regardless of the hour", () => {
+    // Sat 10 Jan 2026, 09:00 — nothing ships at the weekend → Mon 12 Jan.
+    expect(isoDay(sendNowDispatchDate(new Date("2026-01-10T09:00:00Z"), 15))).toBe("2026-01-12");
   });
 });

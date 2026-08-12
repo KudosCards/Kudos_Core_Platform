@@ -25,6 +25,7 @@ import {
   computeDispatchDate,
   computePricingBreakdown,
   deliverByWindow,
+  sendNowDispatchDate,
   startOfUtcDay,
   unresolvedMergeTokens,
   type BatchOrderPreflight,
@@ -165,7 +166,11 @@ export class BatchOrdersService {
   ): { occasionDate: Date; dispatchDate: Date; scheduled: boolean } {
     const today = startOfUtcDay(new Date());
     if (!deliverBy) {
-      return { occasionDate: today, dispatchDate: today, scheduled: false };
+      // "Send now" posts today only if we're still before the same-day cut-off on
+      // a working day; after it (or on a weekend/holiday) it posts the next
+      // working day, so the ops queue reads it as due then rather than as
+      // overdue-today for a collection that has already gone. See ADR 0160.
+      return { occasionDate: today, dispatchDate: sendNowDispatchDate(), scheduled: false };
     }
     const arriveBy = startOfUtcDay(new Date(`${deliverBy}T00:00:00.000Z`));
     if (Number.isNaN(arriveBy.getTime())) {
@@ -335,29 +340,38 @@ export class BatchOrdersService {
     const occasionIdByRecipient = new Map<string, string>();
 
     // Reconciled recipients: reuse the matched natural occasion. Attach the
-    // design, make it an asap send that ships today, and move it to `approved`
-    // so the shared create() consumes it exactly like a one-off — but keep its
-    // own occasionDate (the birthday) and type (birthday), so the send stays on
-    // the real date and classification. One updateMany for the whole batch; the
-    // shared `data` is identical across them.
-    const reuseIds = [...reconciledByRecipient.values()];
-    for (const [recipientId, occasionId] of reconciledByRecipient) {
+    // design and move it to `approved` so the shared create() consumes it exactly
+    // like a one-off — keeping its own occasionDate (the birthday) and type. The
+    // post-by date is computed from that occasion's OWN date, never the batch's
+    // send-timing: a segment send to "upcoming birthdays" posts each card timed
+    // to that person's birthday, not all on one shared date. Grouped by computed
+    // dispatch date so it's one updateMany per distinct date, not per card. The
+    // manual "Schedule delivery" date the composer hides for event sends is only
+    // consulted for the fresh bespoke occasions below. See ADR 0160.
+    for (const [recipientId, { occasionId }] of reconciledByRecipient) {
       occasionIdByRecipient.set(recipientId, occasionId);
     }
-    if (reuseIds.length > 0) {
-      await this.prisma.occasion.updateMany({
-        where: { id: { in: reuseIds }, accountId },
-        data: {
-          savedDesignId: savedDesign.id,
-          dispatchOption: "asap",
-          postageClass: dto.postageClass,
-          // Keep the natural occasionDate (the birthday) but set the post-by date
-          // from the send timing: today for "send now", the scheduled post date
-          // otherwise. dispatchDate is what actually drives when it's posted.
-          dispatchDate: schedule.dispatchDate,
-          status: "approved",
-        },
-      });
+    if (reconciledByRecipient.size > 0) {
+      const idsByDispatch = new Map<number, string[]>();
+      for (const { occasionId, occasionDate } of reconciledByRecipient.values()) {
+        const dispatchDate = computeDispatchDate(occasionDate, POSTAGE_LEAD_DAYS[dto.postageClass]);
+        const key = dispatchDate.getTime();
+        const ids = idsByDispatch.get(key) ?? [];
+        ids.push(occasionId);
+        idsByDispatch.set(key, ids);
+      }
+      for (const [dispatchTime, ids] of idsByDispatch) {
+        await this.prisma.occasion.updateMany({
+          where: { id: { in: ids }, accountId },
+          data: {
+            savedDesignId: savedDesign.id,
+            dispatchOption: "asap",
+            postageClass: dto.postageClass,
+            dispatchDate: new Date(dispatchTime),
+            status: "approved",
+          },
+        });
+      }
     }
 
     // Every other recipient gets a fresh approved one-off occasion carrying the
@@ -571,8 +585,8 @@ export class BatchOrdersService {
   private async resolveReconcile(
     accountId: string,
     dto: BulkSendDto,
-  ): Promise<Map<string, string>> {
-    const result = new Map<string, string>();
+  ): Promise<Map<string, { occasionId: string; occasionDate: Date }>> {
+    const result = new Map<string, { occasionId: string; occasionDate: Date }>();
     if (!dto.reconcile?.length) return result;
 
     const selected = new Set(dto.recipientIds);
@@ -587,14 +601,16 @@ export class BatchOrdersService {
         source: { not: "one_off_campaign" },
         status: { in: [...RECONCILABLE_OCCASION_STATUSES] },
       },
-      select: { id: true, recipientId: true },
+      // occasionDate drives the reused occasion's own post-by date (the birthday),
+      // so a segment send stays timed to each person's date. See ADR 0160.
+      select: { id: true, recipientId: true, occasionDate: true },
     });
     const validByPair = new Map(valid.map((o) => [`${o.recipientId}:${o.id}`, o]));
 
     for (const { recipientId, occasionId } of requested) {
       const match = validByPair.get(`${recipientId}:${occasionId}`);
       if (match) {
-        result.set(recipientId, match.id);
+        result.set(recipientId, { occasionId: match.id, occasionDate: match.occasionDate });
       }
     }
     return result;

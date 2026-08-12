@@ -262,6 +262,72 @@ export function computeDispatchDate(
   return dispatch;
 }
 
+/**
+ * The same-day posting cut-off, as a UK-local hour (0–23). A "Send now" card
+ * ordered on a working day *before* this hour still posts today; ordered at or
+ * after it — or on a weekend / bank holiday — it posts the next working day,
+ * because the day's Royal Mail collection has gone and nothing ships after it.
+ * Admin-configurable (see `setSameDayCutoffHour`); this is the bundled default.
+ */
+export const DEFAULT_SAME_DAY_CUTOFF_HOUR = 15;
+
+/**
+ * The active same-day cut-off hour the engine uses. Process-wide and mutable,
+ * seeded with the default — the API pushes the admin-configured value into it on
+ * boot and whenever it changes (mirroring `setSeasonalDispatchRules`), so
+ * `sendNowDispatchDate` honours it with no per-call plumbing. The web never sets
+ * it, so it keeps the sensible default there. See docs/adr/0160.
+ */
+let activeSameDayCutoffHour: number = DEFAULT_SAME_DAY_CUTOFF_HOUR;
+
+/** Replace the active same-day cut-off hour (admin config). */
+export function setSameDayCutoffHour(hour: number): void {
+  activeSameDayCutoffHour = hour;
+}
+
+/** The active same-day cut-off hour the engine is currently using. */
+export function getSameDayCutoffHour(): number {
+  return activeSameDayCutoffHour;
+}
+
+/** The London-local calendar parts of an instant, so the same-day cut-off is
+ * judged in UK time (BST/GMT) rather than the server's UTC clock. Uses the
+ * built-in `Intl` time-zone database — no dependency, works in Node and the
+ * browser alike. */
+function londonParts(date: Date): { year: number; month: number; day: number; hour: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? "0");
+  let hour = get("hour");
+  if (hour === 24) hour = 0; // some runtimes emit "24" for midnight
+  return { year: get("year"), month: get("month"), day: get("day"), hour };
+}
+
+/**
+ * The dispatch date for a "Send now" card, honouring the same-day cut-off: a
+ * card ordered on a working day before `cutoffHour` (UK local time) posts today;
+ * ordered at or after the cut-off — or on a weekend / bank holiday — it posts the
+ * next working day. Returns UTC midnight of the chosen calendar day, matching
+ * `computeDispatchDate`. Pure aside from reading the clock via `now`.
+ */
+export function sendNowDispatchDate(
+  now: Date = new Date(),
+  cutoffHour: number = activeSameDayCutoffHour,
+  options: DispatchDateOptions = {},
+): Date {
+  const holidays = options.holidays ?? UK_BANK_HOLIDAYS;
+  const { year, month, day, hour } = londonParts(now);
+  const today = new Date(Date.UTC(year, month - 1, day));
+  const missedToday = hour >= cutoffHour || !isWorkingDay(today, holidays);
+  return missedToday ? addWorkingDays(today, 1, holidays) : today;
+}
+
 /** The longest ahead a send may be scheduled, in calendar days from today. */
 export const MAX_SCHEDULE_AHEAD_DAYS = 365;
 
@@ -347,13 +413,18 @@ export const dispatchReminderConfigSchema = z.object({
   /** Overdue-by threshold (working days) that escalates a card to super admins;
    * 0 disables escalation. */
   escalateAfterWorkingDays: z.number().int().min(0).max(15),
+  /** Same-day posting cut-off (UK local hour, 0–23): a "Send now" card ordered
+   * at or after this hour posts the next working day. Default 15 (3pm). */
+  sameDayCutoffHour: z.number().int().min(0).max(23),
 });
 export type DispatchReminderConfig = z.infer<typeof dispatchReminderConfigSchema>;
 
-/** The out-of-the-box reminder config: on, 07:00 UTC, send-by-5, escalate at 3 wd late. */
+/** The out-of-the-box reminder config: on, 07:00 UTC, send-by-5, escalate at 3 wd
+ * late, 3pm same-day cut-off. */
 export const DEFAULT_DISPATCH_REMINDER_CONFIG: DispatchReminderConfig = {
   enabled: true,
   sendHourUtc: 7,
   leadWorkingDays: 5,
   escalateAfterWorkingDays: 3,
+  sameDayCutoffHour: DEFAULT_SAME_DAY_CUTOFF_HOUR,
 };

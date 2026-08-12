@@ -99,7 +99,7 @@ export interface RoyalMailServiceCodes {
   second_class?: string;
 }
 
-/** A card in a standard envelope: Large Letter weight band, in grams. */
+/** A card in a standard envelope: Letter weight band, in grams. */
 const CARD_WEIGHT_GRAMS = 100;
 
 /**
@@ -161,7 +161,7 @@ export class HttpRoyalMailClient implements RoyalMailClient {
           postcode: input.postcode,
           countryCode: input.country,
         },
-        packages: [{ weightInGrams: CARD_WEIGHT_GRAMS, packageType: "largeLetter" }],
+        packages: [{ weightInGrams: CARD_WEIGHT_GRAMS, packageType: "letter" }],
       }),
     });
 
