@@ -30,4 +30,12 @@ export class UpdateReminderConfigDto {
   @Min(0)
   @Max(15)
   escalateAfterWorkingDays!: number;
+
+  @ApiProperty({
+    description: "Same-day posting cut-off (UK local hour, 0–23): a 'Send now' order at or after it posts the next working day",
+  })
+  @IsInt()
+  @Min(0)
+  @Max(23)
+  sameDayCutoffHour!: number;
 }

@@ -56,7 +56,13 @@ describe("Dispatch reminder config (e2e)", () => {
     const updated = await request(app.getHttpServer())
       .put("/admin/dispatch/reminder-config")
       .set("Authorization", `Bearer ${token}`)
-      .send({ enabled: false, sendHourUtc: 9, leadWorkingDays: 7, escalateAfterWorkingDays: 2 })
+      .send({
+        enabled: false,
+        sendHourUtc: 9,
+        leadWorkingDays: 7,
+        escalateAfterWorkingDays: 2,
+        sameDayCutoffHour: 16,
+      })
       .expect(200);
     expect((updated.body as { config: { sendHourUtc: number } }).config.sendHourUtc).toBe(9);
 
@@ -78,7 +84,13 @@ describe("Dispatch reminder config (e2e)", () => {
     await request(app.getHttpServer())
       .put("/admin/dispatch/reminder-config")
       .set("Authorization", `Bearer ${token}`)
-      .send({ enabled: true, sendHourUtc: 25, leadWorkingDays: 5, escalateAfterWorkingDays: 3 })
+      .send({
+        enabled: true,
+        sendHourUtc: 25,
+        leadWorkingDays: 5,
+        escalateAfterWorkingDays: 3,
+        sameDayCutoffHour: 15,
+      })
       .expect(400);
   });
 

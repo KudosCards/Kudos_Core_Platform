@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type Konva from "konva";
 import { Stage, Layer, Rect, Text, Group, Image as KonvaImage } from "react-konva";
 import useImage from "use-image";
@@ -14,6 +14,7 @@ import {
 } from "@kudos/shared-types";
 import { FontPreloader, resolveFontFamily } from "@/lib/editor-fonts";
 import { useFontsReady } from "@/lib/use-fonts-ready";
+import { qrDataUrl } from "@/lib/qr";
 import { PageBackground } from "@/components/page-background";
 import { ShapePrimitive } from "@/components/card-shape";
 
@@ -38,6 +39,66 @@ function ImageNode({ element }: { element: Extract<DesignElement, { kind: "image
 }
 
 /**
+ * A QR element rendered as its *real* scannable code when `qrUrl` is supplied
+ * (the print run passes each card's /r/<slug> link) — otherwise a plain marked
+ * square, so the designer preview keeps showing the QR's position without a code
+ * that doesn't exist yet. The PNG is generated off-thread by `qrDataUrl` and
+ * drawn once ready; until then (or with no url) the placeholder square shows.
+ */
+function QrNode({
+  element,
+  qrUrl,
+}: {
+  element: Extract<DesignElement, { kind: "qr" }>;
+  qrUrl?: string;
+}) {
+  // Keyed to the url it was generated for, so a changed qrUrl invalidates the
+  // stale code without a synchronous state reset inside the effect.
+  const [rendered, setRendered] = useState<{ url: string; data: string } | null>(null);
+
+  useEffect(() => {
+    if (!qrUrl) return;
+    let active = true;
+    void qrDataUrl(qrUrl).then((data) => {
+      if (active) setRendered({ url: qrUrl, data });
+    });
+    return () => {
+      active = false;
+    };
+  }, [qrUrl]);
+
+  const dataUrl = qrUrl && rendered?.url === qrUrl ? rendered.data : null;
+  const [image] = useImage(dataUrl ?? "");
+  if (dataUrl && image) {
+    return (
+      <KonvaImage
+        image={image}
+        x={element.x}
+        y={element.y}
+        width={element.size}
+        height={element.size}
+        rotation={element.rotation}
+      />
+    );
+  }
+
+  // QR placeholder — no real code available (designer preview) or still
+  // rendering; a plain marked square keeps its position visible.
+  return (
+    <Rect
+      x={element.x}
+      y={element.y}
+      width={element.size}
+      height={element.size}
+      rotation={element.rotation}
+      fill="#0000000d"
+      stroke="#00000026"
+      strokeWidth={1}
+    />
+  );
+}
+
+/**
  * A non-interactive render of one of a design's faces — used to show a card
  * exactly as it'll print, including merged {name} text (pass a document that's
  * already been through applyMergeTokens). Defaults to the `front` face; pass
@@ -51,6 +112,7 @@ export function CardFacePreview({
   width = 225,
   face = "front",
   bordered = true,
+  qrUrl,
 }: {
   document: DesignDocument;
   width?: number;
@@ -58,6 +120,10 @@ export function CardFacePreview({
   /** Draw the thin frame around the face. On by default for inline previews;
    * the print run turns it off so nothing but the artwork reaches the page. */
   bordered?: boolean;
+  /** The absolute link this card's QR should encode (e.g. /r/<slug>). When set,
+   * QR elements render as a real scannable code; without it they stay a marked
+   * placeholder square (designer preview, before a code is minted). */
+  qrUrl?: string;
 }) {
   const scale = width / CANVAS_WIDTH;
   const front =
@@ -128,21 +194,9 @@ export function CardFacePreview({
                 </Group>
               );
             }
-            // QR placeholder — the real per-card code is minted at fulfilment; a
-            // plain marked square keeps its position visible in previews.
-            return (
-              <Rect
-                key={element.id}
-                x={element.x}
-                y={element.y}
-                width={element.size}
-                height={element.size}
-                rotation={element.rotation}
-                fill="#0000000d"
-                stroke="#00000026"
-                strokeWidth={1}
-              />
-            );
+            // Real per-card QR when a link is supplied (print run), else a marked
+            // placeholder square (designer preview, before a code is minted).
+            return <QrNode key={element.id} element={element} qrUrl={qrUrl} />;
           })}
         </Layer>
       </Stage>

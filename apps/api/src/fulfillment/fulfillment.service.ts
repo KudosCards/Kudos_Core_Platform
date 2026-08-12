@@ -83,6 +83,10 @@ const DETAIL_SELECT = {
       recipient: { select: { firstName: true, lastName: true, customFields: true } },
       occasion: { select: { type: true, title: true, occasionDate: true, dispatchDate: true } },
       savedDesign: { select: { id: true, name: true, document: true } },
+      // This card's own QR slug (minted at settlement). The print run encodes it
+      // into the real /r/<slug> QR so a printed card scans to its message page —
+      // without it the QR element renders as an empty placeholder box.
+      messagePageLink: { select: { slug: true } },
     },
   },
 } satisfies Prisma.FulfillmentJobSelect;
@@ -116,6 +120,9 @@ export interface PrintRunCard {
   occasionDate: Date | null;
   savedDesignName: string;
   document: Prisma.JsonValue;
+  /** This card's QR slug, or null if none was minted. The web builds the
+   * absolute /r/<slug> link from it and renders the real QR onto the print. */
+  messagePageSlug: string | null;
 }
 
 /** One card's dispatch label, returned by the audited export. */
@@ -894,6 +901,7 @@ export class FulfillmentService {
         occasionDate: job.orderRecipient.occasion?.occasionDate ?? null,
         savedDesignName: job.orderRecipient.savedDesign.name,
         document: job.orderRecipient.savedDesign.document,
+        messagePageSlug: job.orderRecipient.messagePageLink?.slug ?? null,
       }));
     });
   }

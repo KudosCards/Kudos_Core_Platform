@@ -25,6 +25,7 @@ describe("DispatchReminderService", () => {
     leadWorkingDays: 5,
     // High by default so escalation is off unless a test opts in.
     escalateAfterWorkingDays: 99,
+    sameDayCutoffHour: 15,
   };
 
   function build(

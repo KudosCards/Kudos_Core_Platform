@@ -37,6 +37,9 @@ export interface PrintRunCard {
   occasionDate: string | null;
   savedDesignName: string;
   document: DesignDocument;
+  /** This card's QR slug (minted at settlement), or null. Used to render the
+   * real /r/<slug> QR onto the print. */
+  messagePageSlug: string | null;
 }
 
 /** Human occasion label for {occasion}: a custom title wins, else the type
@@ -54,6 +57,8 @@ interface PrintFace {
   face: DesignPage["name"];
   recipientName: string;
   savedDesignName: string;
+  /** Absolute /r/<slug> link this card's QR encodes, or undefined if none. */
+  qrUrl?: string;
 }
 
 /**
@@ -111,12 +116,19 @@ export function PrintRunOverlay({
       occasionDate: card.occasionDate,
       customFields: card.recipientCustomFields,
     });
+    // The absolute link this card's QR encodes — built from its own slug the
+    // same way the Messages page does, so a scanned printed card lands on /r/<slug>.
+    const qrUrl =
+      card.messagePageSlug && typeof window !== "undefined"
+        ? `${window.location.origin}/r/${card.messagePageSlug}`
+        : undefined;
     return facesOf(merged).map((face) => ({
       key: `${card.jobId}-${face}`,
       document: merged,
       face,
       recipientName: `${card.recipientFirstName} ${card.recipientLastName}`,
       savedDesignName: card.savedDesignName,
+      qrUrl,
     }));
   });
 
@@ -193,6 +205,7 @@ export function PrintRunOverlay({
                 width={cardWidthPx}
                 face={entry.face}
                 bordered={false}
+                qrUrl={entry.qrUrl}
               />
             </div>
           </div>

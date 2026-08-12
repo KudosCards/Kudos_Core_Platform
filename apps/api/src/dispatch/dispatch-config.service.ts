@@ -6,6 +6,7 @@ import {
   dispatchReminderConfigSchema,
   getSeasonalDispatchRules,
   seasonalDispatchRulesSchema,
+  setSameDayCutoffHour,
   setSeasonalDispatchRules,
   type DispatchReminderConfig,
   type SeasonalDispatchRule,
@@ -40,10 +41,13 @@ export class DispatchConfigService implements OnModuleInit {
   async reload(): Promise<void> {
     try {
       setSeasonalDispatchRules(await this.load());
+      // The same-day cut-off rides the reminder config; push it into the engine
+      // so "Send now" dispatch dates honour an admin edit on any instance.
+      setSameDayCutoffHour((await this.getReminderConfig()).sameDayCutoffHour);
     } catch (error) {
       // Never let a bad stored value break dispatch maths — keep the last-good
       // (or default) rules and log it for ops.
-      this.logger.error(`Failed to load seasonal dispatch rules: ${String(error)}`);
+      this.logger.error(`Failed to load dispatch config: ${String(error)}`);
     }
   }
 
@@ -104,8 +108,11 @@ export class DispatchConfigService implements OnModuleInit {
       PLATFORM_SETTING_KEYS.dispatchReminderConfig,
       JSON.stringify(parsed.data),
     );
+    // Apply the same-day cut-off immediately so send-now dispatch honours it
+    // on this instance without waiting for the next reload tick.
+    setSameDayCutoffHour(parsed.data.sameDayCutoffHour);
     this.logger.log(
-      `Dispatch reminder config updated (enabled=${parsed.data.enabled}, hour=${parsed.data.sendHourUtc})`,
+      `Dispatch reminder config updated (enabled=${parsed.data.enabled}, hour=${parsed.data.sendHourUtc}, cutoff=${parsed.data.sameDayCutoffHour})`,
     );
     return parsed.data;
   }

@@ -6,6 +6,7 @@ import {
   computeDispatchDate,
   deliverByWindow,
   isoDay,
+  sendNowDispatchDate,
 } from "@kudos/shared-types";
 
 /** The sender's send-timing choice: post it now, or schedule it to arrive on a
@@ -59,6 +60,13 @@ export function SendTimingPicker({
       ? isoDay(computeDispatchDate(new Date(`${selected}T00:00:00.000Z`), POSTAGE_LEAD_DAYS[postageClass]))
       : null;
 
+  // When "Send now" actually posts, honouring the same-day cut-off: today if
+  // we're on a working day before the cut-off, else the next working day. The
+  // API is authoritative; this uses the standard cut-off so the customer sees
+  // the real posting day up front rather than an implied "today". See ADR 0160.
+  const sendNowPostsOn = isoDay(sendNowDispatchDate());
+  const sendNowIsToday = sendNowPostsOn === isoDay(new Date());
+
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-1 text-sm font-medium text-foreground">When should this go?</legend>
@@ -73,7 +81,15 @@ export function SendTimingPicker({
         />
         <span>
           <span className="font-medium">Send now</span>
-          <span className="block text-xs text-muted">Posted as soon as it&apos;s printed.</span>
+          <span className="block text-xs text-muted">
+            {sendNowIsToday ? (
+              <>Posted today, as soon as it&apos;s printed.</>
+            ) : (
+              <>
+                Today&apos;s post has gone — we post it <strong>{formatLong(sendNowPostsOn)}</strong>.
+              </>
+            )}
+          </span>
         </span>
       </label>
 

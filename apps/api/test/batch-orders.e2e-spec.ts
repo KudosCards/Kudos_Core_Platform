@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import { accountSchema, startOfUtcDay, type BatchOrderPreflight } from "@kudos/shared-types";
+import {
+  accountSchema,
+  computeDispatchDate,
+  POSTAGE_LEAD_DAYS,
+  startOfUtcDay,
+  type BatchOrderPreflight,
+} from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import type Stripe from "stripe";
@@ -991,9 +997,10 @@ describe("Batch orders (e2e)", () => {
 
       // The reused occasion keeps its birthday classification AND its own
       // birthday date — the card's calendar event sits on the real birthday, not
-      // the send day. It now carries the bulk design, was checked out (queued),
-      // and — being an asap send paid now — dispatches TODAY so it never reads as
-      // overdue.
+      // the send day. It now carries the bulk design and was checked out (queued),
+      // and its post-by date is computed from that birthday (send-by-5 working
+      // days before it), NOT the send day — so a birthday-segment send posts each
+      // card timed to arrive for the birthday, not all today. See ADR 0160.
       const sent = occasions[0]!;
       expect(sent.id).toBe(birthday.id);
       expect(sent.type).toBe("birthday");
@@ -1003,7 +1010,9 @@ describe("Batch orders (e2e)", () => {
       expect(sent.dispatchOption).toBe("asap");
       expect(sent.status).toBe("queued");
       expect(sent.occasionDate.getTime()).toBe(startOfUtcDay(birthdayDate).getTime());
-      expect(sent.dispatchDate?.getTime()).toBe(startOfUtcDay(new Date()).getTime());
+      expect(sent.dispatchDate?.getTime()).toBe(
+        computeDispatchDate(birthdayDate, POSTAGE_LEAD_DAYS.second_class).getTime(),
+      );
     });
 
     it("blocks the send and names contacts missing a postal address (no order created)", async () => {

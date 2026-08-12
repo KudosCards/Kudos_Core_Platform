@@ -102,10 +102,11 @@ export interface ClickAndDropServiceCodes {
   second_class?: string;
 }
 
-/** A card in a standard envelope: Large Letter format, ~100g. Matches the
- * Shipping API client's weight band. */
+/** A card in a standard envelope: Letter format, ~100g. Matches the Shipping
+ * API client's weight band. Letter (not Large Letter) is the cheaper Royal Mail
+ * format our A6 cards qualify for — see docs/adr/0160-letter-format-cutoff-birthday-qr.md. */
 const CARD_WEIGHT_GRAMS = 100;
-const PACKAGE_FORMAT = "largeLetter";
+const PACKAGE_FORMAT = "letter";
 
 /**
  * A rejected line in a Click & Drop `failedOrders` response. Royal Mail's field

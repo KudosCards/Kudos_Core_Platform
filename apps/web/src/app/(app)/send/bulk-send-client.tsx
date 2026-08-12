@@ -206,12 +206,26 @@ export function BulkSendClient({
   );
   // A noun for the toggle copy: the shared occasion type when they all match,
   // else a generic "occasion" — pluralised by how many are being consumed.
-  const reconcileNoun = useMemo(() => {
+  // The shared occasion type when they all match, else a generic "occasion".
+  const reconcileNounSingular = useMemo(() => {
     const types = [...new Set(reconcileMatches.map((m) => m.occasionType))];
-    const singular =
-      types.length === 1 ? (OCCASION_TYPE_LABEL[types[0]!] ?? "occasion") : "occasion";
-    return `${singular}${reconcileMatches.length === 1 ? "" : "s"}`;
+    return types.length === 1 ? (OCCASION_TYPE_LABEL[types[0]!] ?? "occasion") : "occasion";
   }, [reconcileMatches]);
+  // Pluralised by how many are being consumed, for the reconcile toggle copy.
+  const reconcileNoun = `${reconcileNounSingular}${reconcileMatches.length === 1 ? "" : "s"}`;
+
+  // A pure event send: every card being sent maps to a real occasion (a birthday
+  // segment, say) that we're consuming. These cards post timed to their OWN date,
+  // never a manually-picked one — so the send-timing picker is hidden and the
+  // date is decided per card server-side. A mixed send (some fresh contacts) keeps
+  // the picker for those. See ADR 0160.
+  const isEventSend =
+    markHandled && reconcileMatches.length > 0 && reconcileMatches.length === sendable.length;
+
+  // An event send has no manual timing choice — the cards post on their own
+  // dates. We treat timing as "now" (ignored per-card for reconciled occasions)
+  // so the pay gate is satisfied without the hidden picker leaving it unchosen.
+  const effectiveTiming: SendTiming | null = isEventSend ? { mode: "now" } : timing;
 
   const selectedDesign = useMemo(
     () => designs.find((d) => d.id === selectedDesignId),
@@ -366,7 +380,7 @@ export function BulkSendClient({
   }
 
   async function handleSend() {
-    if (!selectedDesignId || sendable.length === 0 || !timing) return;
+    if (!selectedDesignId || sendable.length === 0 || !effectiveTiming) return;
     setError(null);
     setBusy(true);
     try {
@@ -380,8 +394,9 @@ export function BulkSendClient({
           // Attach the chosen message page to every card's QR (only meaningful
           // when the design carries a QR element). See docs/adr/0132.
           messagePageId: designHasQr && messagePageId ? messagePageId : undefined,
-          // Undefined for "send now"; an arrive-by date for a scheduled send.
-          deliverBy: timingDeliverBy(timing),
+          // Undefined for "send now" (and for event sends, whose per-card dates
+          // are decided server-side); an arrive-by date for a scheduled send.
+          deliverBy: timingDeliverBy(effectiveTiming),
           // Consume the matched natural occasions (unless the sender opted out),
           // so they aren't sent a second time. See docs/adr/0107.
           reconcile:
@@ -411,12 +426,12 @@ export function BulkSendClient({
 
   // A send-timing choice is required — the picker starts unselected so it can't
   // be left on a default (ADR 0159).
-  const canPay = !busy && !!selectedDesignId && sendable.length > 0 && timing !== null;
+  const canPay = !busy && !!selectedDesignId && sendable.length > 0 && effectiveTiming !== null;
   // Scale-adaptive routing (ADR 0118): a large run pays through the deliberate
   // "Review & confirm" gate; a small run keeps the frictionless one-tap pay.
   const largeRun = sendable.length >= REVIEW_ALL_THRESHOLD;
   const cardNoun = `${sendable.length} card${sendable.length === 1 ? "" : "s"}`;
-  const payVerb = timing?.mode === "scheduled" ? "schedule" : "send";
+  const payVerb = effectiveTiming?.mode === "scheduled" ? "schedule" : "send";
   const primaryCtaLabel = largeRun
     ? `Review & confirm ${sendable.length} cards →`
     : busy
@@ -849,9 +864,25 @@ export function BulkSendClient({
           </p>
 
           <div className="border-t border-border pt-3">
-            <SendTimingPicker postageClass={postageClass} value={timing} onChange={setTiming} />
-            {timing === null && sendable.length > 0 && (
-              <p className="mt-2 text-xs text-muted">Choose when to send to continue.</p>
+            {isEventSend ? (
+              <div className="text-sm">
+                <p className="font-medium text-foreground">When these go</p>
+                <p className="mt-1 text-xs text-muted">
+                  Each card posts automatically, timed to arrive for its own {reconcileNounSingular}{" "}
+                  — you don&apos;t need to pick a delivery date.
+                </p>
+              </div>
+            ) : (
+              <>
+                <SendTimingPicker
+                  postageClass={postageClass}
+                  value={timing}
+                  onChange={setTiming}
+                />
+                {timing === null && sendable.length > 0 && (
+                  <p className="mt-2 text-xs text-muted">Choose when to send to continue.</p>
+                )}
+              </>
             )}
           </div>
 
