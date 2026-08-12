@@ -165,7 +165,7 @@ describe("design layout guard rails", () => {
 
   describe("computeSnap", () => {
     const centreX = CARD_WIDTH / 2; // 225
-    const centreY = CARD_HEIGHT / 2; // 300
+    const centreY = CARD_HEIGHT / 2; // 317
     const targets = cardSnapLines();
 
     it("snaps a box's centre to the card centre when within threshold", () => {

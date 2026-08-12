@@ -66,12 +66,14 @@ export interface FittedCardMm {
 }
 
 /**
- * Fit the authored card face (CARD_WIDTH × CARD_HEIGHT design units — a 3:4 box)
- * onto a physical A-size page, centred, keeping its aspect ratio (never
- * distorted) and staying `marginMm` in from every edge. Because the design's 3:4
- * shape is a touch taller than the A-series 1:√2, the fit is width-bound on both
- * A6 and A5 — but we clamp on height too so the maths is correct for any future
- * size. Pure, so it can be unit-tested and shared by screen preview and print.
+ * Fit the authored card face (CARD_WIDTH × CARD_HEIGHT design units) onto a
+ * physical A-size page, centred, keeping its aspect ratio (never distorted) and
+ * staying `marginMm` in from every edge. The design space is proportioned to A6
+ * (105×148 mm), so on the house size the fitted card very nearly fills the safe
+ * area with no vertical letterbox — the editor is WYSIWYG against print. We
+ * still clamp on both width and height so the maths stays correct for any size
+ * (e.g. A5, whose proportion differs by a hair). Pure, so it can be unit-tested
+ * and shared by screen preview and print.
  */
 export function fittedCardMm(
   size: CardSize,
@@ -80,7 +82,7 @@ export function fittedCardMm(
   const { widthMm: pageWidthMm, heightMm: pageHeightMm } = CARD_SIZE_DIMENSIONS_MM[size];
   const availWidthMm = Math.max(0, pageWidthMm - 2 * marginMm);
   const availHeightMm = Math.max(0, pageHeightMm - 2 * marginMm);
-  const aspect = CARD_HEIGHT / CARD_WIDTH; // height per unit width (1.333 for 450×600)
+  const aspect = CARD_HEIGHT / CARD_WIDTH; // height per unit width (≈1.409 for 450×634, i.e. A6)
   // Widest the card can be while its derived height still fits the available box.
   const cardWidthMm = Math.min(availWidthMm, availHeightMm / aspect);
   return {
