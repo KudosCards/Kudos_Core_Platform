@@ -152,12 +152,17 @@ describe("Catalog sync (e2e)", () => {
       isActive: true,
       thumbnailUrl: `https://storage.test/design-assets/catalog/${externalId}.png`,
     });
-    // Artwork embedded as a full-bleed background image on the front page.
-    const front = (design!.document as { pages: { name: string; elements: unknown[] }[] }).pages.find(
-      (p) => p.name === "front",
-    );
-    expect(front!.elements[0]).toMatchObject({
-      kind: "image",
+    // Artwork embedded as a full-bleed page background on the front page, so it
+    // cover-fills the canvas at any proportion (ADR 0161) rather than as a
+    // fixed-size image element that would leave a strip on the taller A6 canvas.
+    const front = (
+      design!.document as {
+        pages: { name: string; elements: unknown[]; background?: unknown }[];
+      }
+    ).pages.find((p) => p.name === "front");
+    expect(front!.elements).toHaveLength(0);
+    expect(front!.background).toMatchObject({
+      type: "image",
       assetUrl: `https://storage.test/design-assets/catalog/${externalId}.png`,
     });
     // A real inside message seeds an editable text block on the inside-right page.
