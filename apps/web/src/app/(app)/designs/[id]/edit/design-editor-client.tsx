@@ -35,7 +35,7 @@ import { createClient } from "@/lib/supabase/client";
 const DesignCanvas = dynamic(() => import("./design-canvas").then((mod) => mod.DesignCanvas), {
   ssr: false,
   loading: () => (
-    <div className="flex aspect-[3/4] w-full max-w-[640px] items-center justify-center rounded-md border border-black/10 text-sm text-foreground/50 dark:border-white/10">
+    <div className="flex aspect-[105/148] w-full max-w-[640px] items-center justify-center rounded-md border border-black/10 text-sm text-foreground/50 dark:border-white/10">
       Loading canvas…
     </div>
   ),

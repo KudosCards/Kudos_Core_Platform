@@ -1,14 +1,20 @@
 /**
  * Card geometry and layout guard rails, shared by the canvas editor and any
  * future server-side render so "where does content sit on the card" has one
- * definition. The card is authored in a fixed 450×600 design space (see
+ * definition. The card is authored in a fixed 450×634 design space (see
  * design-canvas.tsx); these are those units.
  */
 
 /** The card's authoring width in design units. */
 export const CARD_WIDTH = 450;
-/** The card's authoring height in design units. */
-export const CARD_HEIGHT = 600;
+/**
+ * The card's authoring height in design units. Chosen so the canvas matches the
+ * ISO A-series paper proportion we print at (A6 = 105×148 mm → 450 × 148/105 ≈
+ * 634), so what a customer lays out in the editor is what prints — no letterbox
+ * or vertical shift when the card is fitted onto the physical page. See
+ * card-format.ts (fittedCardMm) and docs/adr/0161.
+ */
+export const CARD_HEIGHT = 634;
 
 /**
  * Printer safe area — content should stay this far in from every edge so it

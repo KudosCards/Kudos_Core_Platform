@@ -53,7 +53,7 @@ interface DragBridge {
 }
 
 /** Clamp a Konva drag to keep the element on the card. `scale` converts between
- * the on-screen (scaled) coordinates dragBoundFunc works in and the 450×600
+ * the on-screen (scaled) coordinates dragBoundFunc works in and the 450×634
  * design space the guard rail is defined in. */
 function makeDragBound(
   scale: number,
@@ -394,10 +394,10 @@ export function DesignCanvas({
    * the editor panel can warn. */
   onSelectedOverflowChange?: (overflowing: boolean) => void;
 }) {
-  // The card is authored at a fixed 450×600, but on a phone that's wider than
+  // The card is authored at a fixed 450×634, but on a phone that's wider than
   // the viewport. Scale the whole Stage down to fit the container so the entire
   // card is visible and elements can be dragged in place — element coordinates
-  // stay in the 450×600 design space (drag reports layer coords, unaffected by
+  // stay in the 450×634 design space (drag reports layer coords, unaffected by
   // Stage scale), so nothing downstream changes.
   const containerRef = useRef<HTMLDivElement>(null);
   const [fitScale, setFitScale] = useState(1);

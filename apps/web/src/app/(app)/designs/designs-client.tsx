@@ -23,7 +23,7 @@ const CardFacePreview = dynamic(
  * A saved design has no flat thumbnail image (unlike a catalog template) — only
  * its editable document — so its gallery tile must render that document to show
  * the artwork. This measures the tile's width and hands it to CardFacePreview,
- * which scales the 450×600 card to fit crisply (mirrors the editor canvas's own
+ * which scales the 450×634 card to fit crisply (mirrors the editor canvas's own
  * responsive scaling).
  */
 function SavedDesignThumb({ document }: { document: DesignDocument }) {
@@ -302,7 +302,7 @@ export function DesignsClient({
                 <a
                   href={`/designs/${design.id}/edit`}
                   aria-label={`Edit ${design.name}`}
-                  className="group relative block aspect-[3/4] w-full overflow-hidden rounded-md bg-foreground/5"
+                  className="group relative block aspect-[105/148] w-full overflow-hidden rounded-md bg-foreground/5"
                 >
                   <SavedDesignThumb document={design.document} />
                   {/* Keep the "Edit" affordance the tile always had — now as a

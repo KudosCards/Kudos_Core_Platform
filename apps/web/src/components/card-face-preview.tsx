@@ -18,7 +18,7 @@ import { qrDataUrl } from "@/lib/qr";
 import { PageBackground } from "@/components/page-background";
 import { ShapePrimitive } from "@/components/card-shape";
 
-// The card canvas is authored at 450×600 (see the editor's design-canvas). This
+// The card canvas is authored at 450×634 (see the editor's design-canvas). This
 // renders the front page read-only at an arbitrary display width, scaling the
 // whole stage so element coordinates stay correct.
 const CANVAS_WIDTH = CARD_WIDTH;
