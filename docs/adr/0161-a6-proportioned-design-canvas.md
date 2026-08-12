@@ -60,6 +60,27 @@ different rounded proportion (148:210), leaving a sub-2 mm residual letterbox on
 A5 runs — invisible in practice, and `fittedCardMm` still clamps on both axes so
 the fit is never distorted at any size.
 
+## Follow-up: catalog full-bleed artwork (fixed)
+
+The visual pass over catalog templates surfaced a real regression the taller
+canvas exposed. `buildCardDocument` (Airtable catalog → editable document) placed
+the artwork as a full-bleed **image element with a hard-coded `height: 600`**, not
+as a page background. On the 634-tall canvas that left a ~34 px blank strip along
+the bottom of **every** Airtable card. Bumping the element to 634 wasn't an option
+— an image element stretches to its box, which would distort the art.
+
+Fix: the artwork is now a page **`background`** of type `image`. `PageBackground`
+draws backgrounds to the real `CARD_WIDTH × CARD_HEIGHT` and cover-crops them
+(`coverCrop`), so the artwork stays full-bleed and undistorted at any proportion,
+now and if the canvas ever changes again. As a background it's also locked, which
+suits the "pick, then edit" model (ADR 0011) — a customer adding text on top can't
+grab or move the artwork. The catalog e2e assertion was updated to check
+`front.background` instead of `front.elements[0]`.
+
+Existing catalog rows carry the old element-form document until re-synced; the
+sync rebuilds each document via `buildCardDocument`, so the next scheduled pull
+(or an ops "Refresh catalog") repairs them. No data migration is required.
+
 ## Scope / not included
 
 - **Catalog template thumbnails** (`thumbnailUrl`) are external raster product

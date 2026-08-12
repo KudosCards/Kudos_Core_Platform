@@ -1,10 +1,4 @@
-import type { DesignDocument } from "@kudos/shared-types";
-
-// Matches the web canvas (apps/web/.../design-canvas.tsx CANVAS_WIDTH/HEIGHT).
-// Kept in sync by hand — a mismatch only affects where the background sits,
-// not correctness, and the editor lets the user nudge it.
-const CANVAS_WIDTH = 450;
-const CANVAS_HEIGHT = 600;
+import type { DesignDocument, DesignPage } from "@kudos/shared-types";
 
 /**
  * Builds the editable document for an Airtable-sourced card: the artwork is a
@@ -12,27 +6,24 @@ const CANVAS_HEIGHT = 600;
  * or move text over it in the canvas editor (the "pick, then edit" model — see
  * docs/adr/0011-airtable-catalog-sync.md). The inside message, if the sheet
  * carries one, seeds an editable text block on the inside-right page.
+ *
+ * The artwork is a page `background` (not an image element): the renderer draws
+ * a background to the canvas's real CARD_WIDTH × CARD_HEIGHT and cover-crops it
+ * (see PageBackground / coverCrop), so it stays full-bleed and undistorted at
+ * whatever proportion the card is authored at — including the A6 canvas (ADR
+ * 0161). A fixed-size image element, by contrast, was pinned to the old 450×600
+ * and left a blank strip once the canvas grew taller. As a background it's also
+ * locked, so a customer adding text on top can't accidentally grab or move it.
  */
 export function buildCardDocument(
   imageUrl: string | null,
   insideMessage: string | null,
 ): DesignDocument {
-  const frontElements: DesignDocument["pages"][number]["elements"] = imageUrl
-    ? [
-        {
-          kind: "image",
-          id: "artwork",
-          assetUrl: imageUrl,
-          x: 0,
-          y: 0,
-          width: CANVAS_WIDTH,
-          height: CANVAS_HEIGHT,
-          rotation: 0,
-        },
-      ]
-    : [];
+  const frontBackground: DesignPage["background"] = imageUrl
+    ? { type: "image", assetUrl: imageUrl }
+    : undefined;
 
-  const insideRightElements: DesignDocument["pages"][number]["elements"] = insideMessage
+  const insideRightElements: DesignPage["elements"] = insideMessage
     ? [
         {
           kind: "text",
@@ -50,7 +41,7 @@ export function buildCardDocument(
   return {
     version: 1,
     pages: [
-      { name: "front", elements: frontElements },
+      { name: "front", elements: [], background: frontBackground },
       { name: "inside-left", elements: [] },
       { name: "inside-right", elements: insideRightElements },
       { name: "back", elements: [] },
