@@ -2,9 +2,9 @@
 
 ## Status
 
-Accepted — Phase 0 implemented; Phase 1 engine core implemented (pure-Node
-vector PDF, `apps/api/src/print-pdf`); Phase 1b (image pipeline), Phase 2
-(endpoint + super-admin UI, source-image guardrails) planned.
+Accepted — Phase 0 implemented; Phase 1 implemented (pure-Node vector PDF engine
++ image pipeline, `apps/api/src/print-pdf`); Phase 2 (ops download endpoint +
+super-admin UI, source-image guardrails) planned.
 
 ## Context
 
@@ -87,14 +87,24 @@ read from source (not guessed):
 **CMYK / PDF-X is explicitly out of scope** — a high-resolution RGB PDF with
 bleed and crop marks is sufficient for the print house.
 
+**Image pipeline (Phase 1b, implemented).** Image elements and cover-crop image
+backgrounds are resolved through an injected async `ImageResolver`
+(`image-loader.ts`): it fetches the asset (an uploaded `https://…` or a
+root-relative bundled sticker resolved against the web base URL), passes PNG/JPEG
+through untouched, transcodes WebP/GIF/other rasters to PNG, and **rasterises SVG
+stickers to a crisp 1024px PNG via sharp** (robust across arbitrary SVGs, one
+raster draw path). It is resilient — a missing, oversized, timed-out or
+undecodable asset is skipped rather than failing the run — and caches per URL so a
+background reused across a run's recipients is fetched once. Image elements
+stretch to their box and rotate about the top-left (as Konva); backgrounds
+centre-crop to cover the full bleed page.
+
 **Known limitations (tracked):** a glyph the embedded font lacks (emoji, unusual
 symbols in text) renders as a missing-glyph box rather than falling back to a
 system font as the browser would — acceptable for Latin names/messages, a
-candidate for a later symbol-fallback pass. **Image elements and cover-crop image
-backgrounds are deferred to Phase 1b** (the core here is network-free; images are
-resolved through an injected async `ImageResolver` seam), after which Phase 2
-wires the ops download endpoint + super-admin UI and the source-resolution
-pre-flight.
+candidate for a later symbol-fallback pass. **Phase 2** wires the ops download
+endpoint + super-admin "Download print-ready PDF" UI (passing the web base URL so
+stickers resolve) and adds the source-resolution pre-flight warning.
 
 ### Phase 2 — guardrails (planned)
 

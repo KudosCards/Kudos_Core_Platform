@@ -5,6 +5,8 @@
  */
 export { renderRunPdf } from "./render";
 export type { PrintFaceInput, RenderRunOptions, ImageResolver, ResolvedImage } from "./render";
+export { createImageResolver, decodeImage, absoluteUrl } from "./image-loader";
+export type { ImageResolverOptions, FetchLike } from "./image-loader";
 export { faceGeometry, cropMarks, BLEED_MM, PT_PER_MM } from "./geometry";
 export type { FaceGeometry } from "./geometry";
 export { resolveFace } from "./fonts";
