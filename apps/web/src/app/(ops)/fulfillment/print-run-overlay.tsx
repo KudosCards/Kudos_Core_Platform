@@ -5,9 +5,13 @@ import {
   applyMergeTokens,
   CARD_SIZES,
   cardSizeLabel,
+  collectPrintImageTargets,
   DEFAULT_CARD_SIZE,
   fittedCardMm,
+  imagePrintDpi,
+  isLowPrintDpi,
   mmToCssPx,
+  type PrintedSizeMm,
 } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
@@ -82,6 +86,35 @@ interface PrintFace {
  * print. Ops picks A5/A6 per run (defaulting to the super-admin default); the
  * choice drives an injected `@page` size. See docs/adr/0032, 0118 and 0138.
  */
+/** The unique raster images across a run, each mapped to the most demanding
+ * (largest) printed size it appears at — so each source is checked once against
+ * its worst case. */
+function mostDemandingImageTargets(cards: PrintRunCard[], size: CardSize): Map<string, PrintedSizeMm> {
+  const map = new Map<string, PrintedSizeMm>();
+  for (const card of cards) {
+    for (const target of collectPrintImageTargets(card.document, size)) {
+      const existing = map.get(target.assetUrl);
+      const area = target.printed.widthMm * target.printed.heightMm;
+      if (!existing || area > existing.widthMm * existing.heightMm) {
+        map.set(target.assetUrl, target.printed);
+      }
+    }
+  }
+  return map;
+}
+
+/** Load an image's natural pixel size, or null if it can't be loaded (a load
+ * failure shouldn't produce a false low-res warning). */
+function loadNaturalSize(url: string): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
 export function PrintRunOverlay({
   cards,
   onClose,
@@ -94,6 +127,26 @@ export function PrintRunOverlay({
   const [size, setSize] = useState<CardSize>(defaultSize);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  // Pre-flight: how many source images are too low-resolution for print at this
+  // size (null while checking). See docs/adr/0162.
+  const [lowResCount, setLowResCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const targets = mostDemandingImageTargets(cards, size);
+    void (async () => {
+      const flags = await Promise.all(
+        Array.from(targets.entries()).map(async ([url, printed]) => {
+          const natural = await loadNaturalSize(url);
+          return natural !== null && isLowPrintDpi(imagePrintDpi(natural, printed));
+        }),
+      );
+      if (!cancelled) setLowResCount(flags.filter(Boolean).length);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cards, size]);
 
   // Download a true print-ready PDF rendered server-side (vector text,
   // full-resolution images, 3 mm bleed + crop marks) — the print-house artefact,
@@ -179,6 +232,13 @@ export function PrintRunOverlay({
         {downloadError && (
           <p className="order-last basis-full text-sm text-red-600" role="alert">
             {downloadError}
+          </p>
+        )}
+        {lowResCount !== null && lowResCount > 0 && (
+          <p className="order-last basis-full text-sm text-amber-700" role="status">
+            ⚠ {lowResCount} image{lowResCount === 1 ? "" : "s"} in this run{" "}
+            {lowResCount === 1 ? "is" : "are"} low-resolution for {size} print (below ~200 dpi) and may
+            look soft — consider a higher-resolution source.
           </p>
         )}
         <div className="flex items-center gap-3">

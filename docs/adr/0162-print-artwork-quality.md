@@ -3,9 +3,8 @@
 ## Status
 
 Accepted — Phase 0 implemented; Phase 1 implemented (pure-Node vector PDF engine
-+ image pipeline, `apps/api/src/print-pdf`); Phase 2 download path implemented
-(ops endpoint + super-admin "Download print-ready PDF" button); Phase 2
-source-image resolution guardrail still planned.
++ image pipeline); Phase 2 implemented (ops download endpoint + super-admin
+"Download print-ready PDF" button + source-image resolution pre-flight warning).
 
 ## Context
 
@@ -117,9 +116,19 @@ bundled stickers resolve. The super-admin fulfilment print overlay now offers
 **"Download print-ready PDF"** as the primary action (with the existing A5/A6
 picker), keeping browser-print as a labelled secondary fallback.
 
-**Source guardrails (planned).** Enforce ≥300 dpi with a pre-flight warning when a
-source image is too low-res for its printed size, store catalog originals at full
-resolution, and gate user uploads on a minimum resolution.
+**Source resolution pre-flight (implemented).** A shared pure helper
+(`shared-types/print-quality.ts`) defines "effective print DPI" — source pixels
+along an axis ÷ that axis's printed length — with a 300 dpi target and a
+`< 200 dpi` warn threshold, plus `collectPrintImageTargets` (every raster image a
+design prints + the physical size it prints at, SVG excluded). The ops print
+overlay uses it as a **pre-flight**: it loads each unique run image's natural
+pixel size and warns "N image(s) are low-resolution for this size and may look
+soft" before the operator prints/downloads. Non-blocking (a warning, not a gate),
+and it re-checks when the A5/A6 choice changes.
+
+**Still optional (future):** a design-time editor warning (same helper) so the
+customer sees it while placing an image, storing catalog originals at full
+resolution, and a hard minimum on upload.
 
 ## Consequences
 

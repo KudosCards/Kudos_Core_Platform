@@ -18,6 +18,7 @@ export * from "./video";
 export * from "./message-page";
 export * from "./design-layout";
 export * from "./design-fonts";
+export * from "./print-quality";
 export * from "./order";
 export * from "./billing";
 export * from "./fulfillment";
