@@ -5,14 +5,19 @@ import {
   applyMergeTokens,
   CARD_SIZES,
   cardSizeLabel,
+  collectPrintImageTargets,
   DEFAULT_CARD_SIZE,
   fittedCardMm,
+  imagePrintDpi,
+  isLowPrintDpi,
   mmToCssPx,
+  type PrintedSizeMm,
 } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { facesOf } from "@/components/card-preview-lightbox";
+import { clientApiDownload } from "@/lib/api.client";
 
 const CardFacePreview = dynamic(
   () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
@@ -81,6 +86,35 @@ interface PrintFace {
  * print. Ops picks A5/A6 per run (defaulting to the super-admin default); the
  * choice drives an injected `@page` size. See docs/adr/0032, 0118 and 0138.
  */
+/** The unique raster images across a run, each mapped to the most demanding
+ * (largest) printed size it appears at — so each source is checked once against
+ * its worst case. */
+function mostDemandingImageTargets(cards: PrintRunCard[], size: CardSize): Map<string, PrintedSizeMm> {
+  const map = new Map<string, PrintedSizeMm>();
+  for (const card of cards) {
+    for (const target of collectPrintImageTargets(card.document, size)) {
+      const existing = map.get(target.assetUrl);
+      const area = target.printed.widthMm * target.printed.heightMm;
+      if (!existing || area > existing.widthMm * existing.heightMm) {
+        map.set(target.assetUrl, target.printed);
+      }
+    }
+  }
+  return map;
+}
+
+/** Load an image's natural pixel size, or null if it can't be loaded (a load
+ * failure shouldn't produce a false low-res warning). */
+function loadNaturalSize(url: string): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
 export function PrintRunOverlay({
   cards,
   onClose,
@@ -91,6 +125,47 @@ export function PrintRunOverlay({
   defaultSize?: CardSize;
 }) {
   const [size, setSize] = useState<CardSize>(defaultSize);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  // Pre-flight: how many source images are too low-resolution for print at this
+  // size (null while checking). See docs/adr/0162.
+  const [lowResCount, setLowResCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const targets = mostDemandingImageTargets(cards, size);
+    void (async () => {
+      const flags = await Promise.all(
+        Array.from(targets.entries()).map(async ([url, printed]) => {
+          const natural = await loadNaturalSize(url);
+          return natural !== null && isLowPrintDpi(imagePrintDpi(natural, printed));
+        }),
+      );
+      if (!cancelled) setLowResCount(flags.filter(Boolean).length);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cards, size]);
+
+  // Download a true print-ready PDF rendered server-side (vector text,
+  // full-resolution images, 3 mm bleed + crop marks) — the print-house artefact,
+  // as opposed to the browser-print raster path below. See docs/adr/0162.
+  async function downloadPdf() {
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await clientApiDownload(
+        "/fulfillment/print-run/pdf",
+        { method: "POST", body: JSON.stringify({ jobIds: cards.map((card) => card.jobId), size }) },
+        `kudos-print-run-${cards.length}-card${cards.length === 1 ? "" : "s"}-${size}.pdf`,
+      );
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Could not generate the PDF. Please try again.");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   // Flag the body so the print stylesheet hides everything except this overlay,
   // and lock scroll while it's open.
@@ -154,6 +229,18 @@ export function PrintRunOverlay({
         <span className="text-sm font-medium text-black">
           {cards.length} personalised card{cards.length === 1 ? "" : "s"} — every face, one per page
         </span>
+        {downloadError && (
+          <p className="order-last basis-full text-sm text-red-600" role="alert">
+            {downloadError}
+          </p>
+        )}
+        {lowResCount !== null && lowResCount > 0 && (
+          <p className="order-last basis-full text-sm text-amber-700" role="status">
+            ⚠ {lowResCount} image{lowResCount === 1 ? "" : "s"} in this run{" "}
+            {lowResCount === 1 ? "is" : "are"} low-resolution for {size} print (below ~200 dpi) and may
+            look soft — consider a higher-resolution source.
+          </p>
+        )}
         <div className="flex items-center gap-3">
           {/* A5 / A6 size picker — changes the page size live so the preview is
               exactly what prints. */}
@@ -180,10 +267,20 @@ export function PrintRunOverlay({
           <span className="hidden text-xs text-black/50 sm:inline">{cardSizeLabel(size)}</span>
           <button
             type="button"
-            onClick={() => window.print()}
-            className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white hover:opacity-90"
+            onClick={() => void downloadPdf()}
+            disabled={downloading}
+            title="Print-house PDF: vector text, full-resolution images, 3 mm bleed + crop marks"
+            className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
           >
-            Print / Save as PDF
+            {downloading ? "Generating…" : "Download print-ready PDF"}
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            title="Print from the browser (rasterised, no bleed or crop marks)"
+            className="rounded-full border border-black/20 px-4 py-1.5 text-sm text-black hover:bg-black/5"
+          >
+            Browser print
           </button>
           <button
             type="button"

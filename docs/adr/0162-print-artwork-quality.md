@@ -3,8 +3,8 @@
 ## Status
 
 Accepted — Phase 0 implemented; Phase 1 implemented (pure-Node vector PDF engine
-+ image pipeline, `apps/api/src/print-pdf`); Phase 2 (ops download endpoint +
-super-admin UI, source-image guardrails) planned.
++ image pipeline); Phase 2 implemented (ops download endpoint + super-admin
+"Download print-ready PDF" button + source-image resolution pre-flight warning).
 
 ## Context
 
@@ -102,15 +102,33 @@ centre-crop to cover the full bleed page.
 **Known limitations (tracked):** a glyph the embedded font lacks (emoji, unusual
 symbols in text) renders as a missing-glyph box rather than falling back to a
 system font as the browser would — acceptable for Latin names/messages, a
-candidate for a later symbol-fallback pass. **Phase 2** wires the ops download
-endpoint + super-admin "Download print-ready PDF" UI (passing the web base URL so
-stickers resolve) and adds the source-resolution pre-flight warning.
+candidate for a later symbol-fallback pass.
 
-### Phase 2 — guardrails (planned)
+### Phase 2 — download path (implemented) + source guardrails (planned)
 
-Enforce ≥300 dpi with a pre-flight warning when a source image is too low-res,
-store catalog originals at full resolution, and gate user uploads on a minimum
-resolution.
+**Download path (implemented).** An ops-only `POST /fulfillment/print-run/pdf`
+(`PrintRunPdfService`) renders a selected run to one multi-page PDF via the
+engine and streams it as a download. It reuses `FulfillmentService.printRun` for
+the *audited* read (one `fulfillment_print_run` record per card, exactly like the
+JSON path), merges each recipient's tokens into their design, builds the QR link
+from `WEB_APP_URL`, and constructs the `ImageResolver` with that base URL so
+bundled stickers resolve. The super-admin fulfilment print overlay now offers
+**"Download print-ready PDF"** as the primary action (with the existing A5/A6
+picker), keeping browser-print as a labelled secondary fallback.
+
+**Source resolution pre-flight (implemented).** A shared pure helper
+(`shared-types/print-quality.ts`) defines "effective print DPI" — source pixels
+along an axis ÷ that axis's printed length — with a 300 dpi target and a
+`< 200 dpi` warn threshold, plus `collectPrintImageTargets` (every raster image a
+design prints + the physical size it prints at, SVG excluded). The ops print
+overlay uses it as a **pre-flight**: it loads each unique run image's natural
+pixel size and warns "N image(s) are low-resolution for this size and may look
+soft" before the operator prints/downloads. Non-blocking (a warning, not a gate),
+and it re-checks when the A5/A6 choice changes.
+
+**Still optional (future):** a design-time editor warning (same helper) so the
+customer sees it while placing an image, storing catalog originals at full
+resolution, and a hard minimum on upload.
 
 ## Consequences
 
