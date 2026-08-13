@@ -81,14 +81,21 @@ Existing catalog rows carry the old element-form document until re-synced; the
 sync rebuilds each document via `buildCardDocument`, so the next scheduled pull
 (or an ops "Refresh catalog") repairs them. No data migration is required.
 
-## Scope / not included
+## Follow-up: card-tile shape consistency (done)
 
-- **Catalog template thumbnails** (`thumbnailUrl`) are external raster product
-  images from the Airtable catalog, not renders of our canvas. Their tiles
-  (`template-picker-modal`, `cards-gallery`, `cards/[id]`, basket) keep
-  `aspect-[3/4]` with `object-cover` and are unaffected by this change. Re-boxing
-  those to A6 (and regenerating any baked thumbnails) is a separate cosmetic
-  follow-up, not part of this correctness fix.
+With the live previews on the A6 canvas, the raster **catalog thumbnail tiles**
+(`thumbnailUrl` — external Airtable product images) were left at `aspect-[3/4]`,
+so browse surfaces mixed 3:4 tiles with A6-shaped live previews on the same page
+(e.g. `/designs`). Those wrappers were subsequently re-boxed to `aspect-[105/148]`
+so every card tile reads as the same true-A6 shape: `template-picker-modal`,
+`cards-gallery`, the `/cards/[id]` and `/cards/[id]/send` hero previews, the
+basket thumbnail, and the designs "Templates" grid.
+
+They keep `object-cover`, so nothing distorts — the box just changed proportion,
+which shifts the crop from top/bottom to a few percent off the sides for any
+still-3:4 source image. This is purely cosmetic (no print or correctness impact);
+a catalog thumbnail regen off the now-full-bleed artwork would make the tiles
+pixel-tight, but isn't required.
 
 ## Consequences
 

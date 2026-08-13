@@ -85,7 +85,7 @@ export function TemplatePickerModal({
                   onClick={() => onPick(template)}
                   className="group flex flex-col gap-1.5 rounded-lg border border-border p-2 text-left transition-colors hover:border-accent hover:bg-foreground/[0.03] disabled:opacity-60"
                 >
-                  <span className="relative block aspect-[3/4] w-full overflow-hidden rounded-md bg-foreground/5">
+                  <span className="relative block aspect-[105/148] w-full overflow-hidden rounded-md bg-foreground/5">
                     <Image
                       src={template.thumbnailUrl}
                       alt={template.name}

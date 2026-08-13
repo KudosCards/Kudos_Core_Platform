@@ -21,7 +21,7 @@ function CardTile({ template, className = "" }: { template: CardDesign; classNam
       href={`/cards/${template.id}`}
       className={`group flex flex-col gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-100 transition-shadow hover:shadow-lg ${className}`}
     >
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-slate-50">
+      <div className="relative aspect-[105/148] w-full overflow-hidden rounded-xl bg-slate-50">
         <Image
           src={template.thumbnailUrl}
           alt={template.name}

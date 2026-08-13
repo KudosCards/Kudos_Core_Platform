@@ -379,7 +379,7 @@ export function DesignsClient({
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {visibleTemplates.map((template) => (
               <div key={template.id} className="card flex flex-col gap-2 p-3">
-                <div className="relative aspect-[3/4] w-full overflow-hidden rounded-md bg-foreground/5">
+                <div className="relative aspect-[105/148] w-full overflow-hidden rounded-md bg-foreground/5">
                   <Image
                     src={template.thumbnailUrl}
                     alt={template.name}

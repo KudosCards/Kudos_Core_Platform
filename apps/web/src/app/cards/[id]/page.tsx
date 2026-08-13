@@ -60,7 +60,7 @@ export default async function CardPreviewPage({ params }: { params: Promise<{ id
           ← Back to the card library
         </Link>
         <div className="mt-6 grid items-start gap-10 md:grid-cols-2">
-          <div className="relative mx-auto aspect-[3/4] w-full max-w-sm overflow-hidden rounded-2xl bg-slate-50 shadow-2xl ring-1 ring-slate-100">
+          <div className="relative mx-auto aspect-[105/148] w-full max-w-sm overflow-hidden rounded-2xl bg-slate-50 shadow-2xl ring-1 ring-slate-100">
             <Image
               src={card.thumbnailUrl}
               alt={card.name}

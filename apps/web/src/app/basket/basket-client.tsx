@@ -112,7 +112,7 @@ export function BasketClient() {
             key={item.id}
             className="flex gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
           >
-            <div className="relative aspect-[3/4] h-24 shrink-0 overflow-hidden rounded-lg bg-slate-50 ring-1 ring-slate-100">
+            <div className="relative aspect-[105/148] h-24 shrink-0 overflow-hidden rounded-lg bg-slate-50 ring-1 ring-slate-100">
               <Image
                 src={item.thumbnailUrl}
                 alt={item.cardName}
