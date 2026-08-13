@@ -47,15 +47,16 @@ export function wrapText(text: string, maxWidth: number, measure: (s: string) =>
     for (let w = 0; w < words.length; w++) {
       const word = words[w]!;
       const candidate = current === "" ? word : `${current} ${word}`;
-      if (measure(candidate) <= maxWidth || current === "") {
-        // Fits, or the line is empty so we must place at least this word.
-        if (measure(candidate) <= maxWidth) {
-          current = candidate;
-          continue;
-        }
+      // Measure the candidate once — `measure` may be an expensive mixed-font
+      // width closure, so the fit test is not repeated.
+      if (measure(candidate) <= maxWidth) {
+        current = candidate;
+        continue;
+      }
+      if (current === "") {
         // Empty line but the lone word overflows → hard-break it by characters.
-        const pieces = breakLongWord(word, maxWidth, measure);
         // All but the last piece are complete lines; the last seeds `current`.
+        const pieces = breakLongWord(word, maxWidth, measure);
         for (let p = 0; p < pieces.length - 1; p++) lines.push(pieces[p]!);
         current = pieces[pieces.length - 1] ?? "";
       } else {
