@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   applyMergeTokens,
@@ -8,7 +8,7 @@ import {
   type DesignDocument,
   type DesignPage,
 } from "@kudos/shared-types";
-import { createImageResolver, renderRunPdf, type PrintFaceInput } from "../print-pdf";
+import { createImageResolver, hostOf, renderRunPdf, type PrintFaceInput } from "../print-pdf";
 import type { EnvConfig } from "../config/env.schema";
 import { FulfillmentService, type PrintRunCard } from "./fulfillment.service";
 import type { ExportAddressesDto } from "./dto/export-addresses.dto";
@@ -45,9 +45,23 @@ export class PrintRunPdfService {
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
 
     const faces = cards.flatMap((card) => this.facesForCard(card, webAppUrl));
+    if (faces.length === 0) {
+      // Every selected card failed validation (or none resolved) — tell the
+      // operator, don't stream an empty/invalid PDF.
+      throw new BadRequestException("No printable cards in this run.");
+    }
+
+    // Only fetch image assets from our own storage + web origins — design
+    // documents carry customer-supplied URLs, so an unrestricted server-side
+    // fetch would be an SSRF vector (docs/adr/0162).
+    const supabaseUrl = this.config.get("SUPABASE_URL", { infer: true });
+    const allowedHosts = [hostOf(webAppUrl), hostOf(supabaseUrl)].filter(
+      (host): host is string => host !== null,
+    );
 
     const resolver = createImageResolver({
       webBaseUrl: webAppUrl,
+      allowedHosts,
       onWarn: (message) => this.logger.warn(message),
     });
 

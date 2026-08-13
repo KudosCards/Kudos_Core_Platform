@@ -46,6 +46,10 @@ describe("renderRunPdf", () => {
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
 
+  it("throws on an empty run rather than emitting a page-less PDF", async () => {
+    await expect(renderRunPdf([])).rejects.toThrow(/no faces/i);
+  });
+
   it("skips image elements gracefully when no resolver is supplied", async () => {
     // The image element in `document` has no resolver; rendering must still succeed.
     await expect(renderRunPdf([{ document, face: "front" }])).resolves.toBeInstanceOf(Buffer);
