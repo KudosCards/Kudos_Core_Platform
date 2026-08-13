@@ -4,7 +4,9 @@
 
 Accepted — Phase 0 implemented; Phase 1 implemented (pure-Node vector PDF engine
 + image pipeline); Phase 2 implemented (ops download endpoint + super-admin
-"Download print-ready PDF" button + source-image resolution pre-flight warning).
+"Download print-ready PDF" button + source-image resolution pre-flight warning,
+plus a design-time editor low-resolution warning); Phase 3 implemented
+(emoji/symbol glyph fallback in the PDF text engine).
 
 ## Context
 
@@ -102,7 +104,7 @@ centre-crop to cover the full bleed page.
 **Known limitations (tracked):** a glyph the embedded font lacks (emoji, unusual
 symbols in text) renders as a missing-glyph box rather than falling back to a
 system font as the browser would — acceptable for Latin names/messages, a
-candidate for a later symbol-fallback pass.
+candidate for a later symbol-fallback pass. *(Resolved in Phase 3.)*
 
 ### Phase 2 — download path (implemented) + source guardrails (planned)
 
@@ -126,9 +128,44 @@ pixel size and warns "N image(s) are low-resolution for this size and may look
 soft" before the operator prints/downloads. Non-blocking (a warning, not a gate),
 and it re-checks when the A5/A6 choice changes.
 
-**Still optional (future):** a design-time editor warning (same helper) so the
-customer sees it while placing an image, storing catalog originals at full
-resolution, and a hard minimum on upload.
+**Design-time editor warning (implemented).** The card editor's image-properties
+panel reuses the same `shared-types/print-quality` helpers to show the selected
+image's effective print DPI live, warning the customer while they place/resize an
+image — the point where a soft image can actually be fixed. Green tick at ≥ 300
+dpi, amber note in 200–300, red warning below. Non-blocking, recomputes as the
+element is resized, SVGs skipped.
+
+**Source resolution, resolved and deferred.** Catalog originals are *already*
+stored at full resolution: the Airtable source copies each attachment's original
+`url` (not a thumbnail) byte-for-byte into our storage, so the "catalog stores
+the attachment as-is" note above is benign. A **hard minimum on customer uploads**
+was considered and deliberately *not* built — uploads already surface the low-DPI
+warning at both design time and ops pre-flight, and a hard gate would reject
+legitimate small logos/stickers for little gain.
+
+### Phase 3 — emoji/symbol glyph fallback (implemented)
+
+The text engine embeds one font per element, so a glyph that font lacks (an
+emoji, a dingbat) printed as a `.notdef` "tofu" box — the one place print did
+*not* match the editor, which falls back to a system font. Phase 3 reproduces
+that fallback deterministically:
+
+- **Vendored fallback faces** (`scripts/vendor_print_fonts.py`, Phase 3): Noto
+  Sans (broad Latin/Greek/Cyrillic + punctuation), Noto Sans Symbols (arrows,
+  maths, music), Noto Sans Symbols 2 (stars, card suits, dingbats, ticks), Noto
+  Emoji (emoji). Regular weight only.
+- **Coverage-aware runs** (`glyph-runs.ts` + `coverage.ts`): each line is split
+  into runs, every character routed to the first font — the element's own font,
+  then the fallbacks in order — that has a glyph for it (fontkit's
+  `hasGlyphForCodePoint`; WinAnsi for the built-in standard fonts). ZWJ and
+  variation selectors stay with their base so emoji sequences hold together; a
+  glyph no font has still prints in the primary (best-effort, as before). Runs
+  are drawn each in their own font, and wrap/alignment measure the *mixed* width
+  so lines break and centre exactly where the editor puts them. Pure-Latin text
+  is a single primary-font run — byte-identical to Phase 1.
+- **Monochrome emoji:** a pdfkit PDF can't carry colour-emoji (COLR/CBDT) tables,
+  so emoji print as monochrome glyphs. CJK/Arabic remain out of scope (each needs
+  its own large font); this covers what customer names and messages contain.
 
 ## Consequences
 

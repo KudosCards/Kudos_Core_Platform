@@ -17,6 +17,16 @@ System-stack keys (Helvetica, Times New Roman, Courier New) are NOT vendored —
 the engine maps them to PDF's built-in standard families (identical metrics).
 "Georgia" maps to Gelasio, a metric-compatible substitute, embedded here.
 
+Several *fallback* faces are also vendored (docs/adr/0162, Phase 3): Noto Sans
+(broad Latin/Greek/Cyrillic + punctuation), Noto Sans Symbols (arrows, maths,
+music), Noto Sans Symbols 2 (stars, card suits, dingbats, ticks) and Noto Emoji
+(monochrome emoji). A glyph the chosen editor font lacks is drawn from the first
+of these that covers it — instead of a missing-glyph box — matching what the
+browser does with its own system fallback. Regular weight only: a fallback glyph
+mid-word at the base weight is far better than a tofu box, and it keeps the
+embedded subset small. Emoji are monochrome (a pdfkit PDF can't carry
+colour-emoji tables).
+
 Run manually (fonts are committed artifacts; this is provenance + reproducibility):
     python3 -m pip install fonttools brotli
     python3 apps/api/scripts/vendor_print_fonts.py
@@ -103,6 +113,16 @@ STATIC_FAMILIES = {
     "Lobster": ("ofl/lobster", {"Regular": "Lobster-Regular.ttf"}),
 }
 
+# Fallback faces (Phase 3), in the order the engine tries them. Each pins its
+# variable axes to Regular (Noto Sans has a width axis too); Symbols 2 ships a
+# real static Regular upstream (axes = None → written as-is).
+FALLBACK_FONTS = {
+    "NotoSans": ("ofl/notosans", "NotoSans[wdth,wght].ttf", {"wght": 400, "wdth": 100}),
+    "NotoSansSymbols": ("ofl/notosanssymbols", "NotoSansSymbols[wght].ttf", {"wght": 400}),
+    "NotoSansSymbols2": ("ofl/notosanssymbols2", "NotoSansSymbols2-Regular.ttf", None),
+    "NotoEmoji": ("ofl/notoemoji", "NotoEmoji[wght].ttf", {"wght": 400}),
+}
+
 # family dir -> licence filename upstream (OFL.txt for all these).
 LICENSE_DIRS = {
     "Montserrat": "ofl/montserrat",
@@ -115,6 +135,10 @@ LICENSE_DIRS = {
     "Poppins": "ofl/poppins",
     "Pacifico": "ofl/pacifico",
     "Lobster": "ofl/lobster",
+    "NotoSans": "ofl/notosans",
+    "NotoSansSymbols": "ofl/notosanssymbols",
+    "NotoSansSymbols2": "ofl/notosanssymbols2",
+    "NotoEmoji": "ofl/notoemoji",
 }
 
 
@@ -141,6 +165,14 @@ def main() -> None:
         print(f"{family} (static)")
         for suffix, fname in files.items():
             save_raw(fetch(f"{RAW}/{d}/{fname}"), f"{family}-{suffix}.ttf")
+
+    for family, (d, upright, axes) in FALLBACK_FONTS.items():
+        print(f"{family} (fallback → Regular)")
+        raw = fetch(f"{RAW}/{d}/{upright}")
+        if axes is None:
+            save_raw(raw, f"{family}-Regular.ttf")
+        else:
+            save_static(raw, axes, f"{family}-Regular.ttf")
 
     print("licences")
     for family, d in LICENSE_DIRS.items():
