@@ -20,7 +20,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 /** Absolute directory holding the vendored `*.ttf` files. Resolves next to this
  * module both in `src` (ts-jest tests) and `dist` (nest-cli copies the TTFs). */
@@ -94,6 +94,28 @@ const BUILTIN: Record<string, { regular: string; bold: string; italic: string; b
 /** Neutral fallback for any unknown/legacy family value (mirrors the web treating
  * an unknown key as a system sans). */
 const FALLBACK_FAMILY = "Helvetica";
+
+/**
+ * Fallback faces, in the order the text engine tries them for a glyph the chosen
+ * font lacks (docs/adr/0162, Phase 3): broad Latin/punctuation, then symbols,
+ * then dingbats, then emoji. Regular weight only — a fallback glyph at the base
+ * weight beats a missing-glyph box, and it keeps the design deterministic.
+ * Vendored by `scripts/vendor_print_fonts.py`.
+ */
+const FALLBACK_PREFIXES = ["NotoSans", "NotoSansSymbols", "NotoSansSymbols2", "NotoEmoji"] as const;
+
+/** The ordered fallback faces that exist on disk (each maps to a vendored TTF).
+ * Defensive `existsSync`, like `resolveFace` — the full set is committed. */
+export function fallbackFaces(): FontFace[] {
+  return FALLBACK_PREFIXES.map((prefix) => join(FONTS_DIR, `${prefix}-Regular.ttf`))
+    .filter(existsSync)
+    .map((file) => ({
+      id: basename(file, ".ttf"),
+      file,
+      synthesizeBold: false,
+      synthesizeItalic: false,
+    }));
+}
 
 function embeddedFace(prefix: string, family: string, bold: boolean, italic: boolean): FontFace {
   const realItalic = italic && HAS_ITALIC.has(family);

@@ -25,7 +25,9 @@ import {
   type DesignPage,
 } from "@kudos/shared-types";
 import { cropMarks, CROP_MARK_WEIGHT_PT, faceGeometry, type FaceGeometry } from "./geometry";
-import { registerFace, resolveFace } from "./fonts";
+import { fallbackFaces, registerFace, resolveFace, type FontFace } from "./fonts";
+import { coverageForFace } from "./coverage";
+import { splitGlyphRuns } from "./glyph-runs";
 import { alignOffset, baselineMetrics, wrapText } from "./text-layout";
 import { parseColor } from "./color";
 import { drawShape } from "./shapes";
@@ -187,18 +189,41 @@ async function drawElement(
 }
 
 /** Draw a text element with full Konva fidelity (wrap, align, line-height 1.3,
- * alphabetic baseline, rotation about top-left, bold/italic/underline/colour). */
+ * alphabetic baseline, rotation about top-left, bold/italic/underline/colour).
+ *
+ * Each line is split into glyph runs (docs/adr/0162, Phase 3): characters the
+ * chosen font lacks — emoji, symbols — are drawn from a fallback font instead of
+ * a missing-glyph box, matching the browser. Pure-Latin text is one run in the
+ * primary font, byte-identical to before. Wrap/align measure the *mixed* width
+ * so lines still break and centre where the editor puts them. */
 function drawText(doc: PDFKit.PDFDocument, element: Extract<DesignElement, { kind: "text" }>): void {
-  const face = resolveFace(element.fontFamily, Boolean(element.bold), Boolean(element.italic));
-  const fontName = registerFace(doc, face);
-  doc.font(fontName).fontSize(element.fontSize);
+  const primary = resolveFace(element.fontFamily, Boolean(element.bold), Boolean(element.italic));
+  // Primary first, then the ordered fallbacks — index 0 is the element's font.
+  const faces: FontFace[] = [primary, ...fallbackFaces()];
+  const fontNames = faces.map((face) => registerFace(doc, face));
+  const coverages = faces.map(coverageForFace);
 
+  // Vertical metrics come from the primary font (Konva measures the element's
+  // own font); read after selecting it, before any run-measuring swaps the font.
+  doc.font(fontNames[0]!).fontSize(element.fontSize);
   const metrics = (doc as unknown as { _font: FontMetrics })._font;
   const ascentEm = metrics.ascender / 1000;
   const descentEm = -metrics.descender / 1000;
 
+  /** Width of a string as the sum of its per-font run widths (leaves the primary
+   * font selected). Used for wrap and per-line alignment. */
+  const measureMixed = (s: string): number => {
+    let total = 0;
+    for (const run of splitGlyphRuns(s, coverages)) {
+      doc.font(fontNames[run.fontIndex]!).fontSize(element.fontSize);
+      total += doc.widthOfString(run.text);
+    }
+    doc.font(fontNames[0]!).fontSize(element.fontSize);
+    return total;
+  };
+
   const boxWidth = textWrapWidth(element);
-  const lines = wrapText(element.text, boxWidth, (s) => doc.widthOfString(s));
+  const lines = wrapText(element.text, boxWidth, measureMixed);
   const { lineHeightPx, firstBaseline } = baselineMetrics(element.fontSize, ascentEm, descentEm);
   const color = parseColor(element.color);
   const align = element.align ?? "left";
@@ -211,20 +236,34 @@ function drawText(doc: PDFKit.PDFDocument, element: Extract<DesignElement, { kin
 
   lines.forEach((line, index) => {
     if (line === "") return;
-    const lineWidth = doc.widthOfString(line);
+    const runs = splitGlyphRuns(line, coverages);
+    // Measure each run once (in its own font); the line width drives alignment.
+    const runWidths = runs.map((run) => {
+      doc.font(fontNames[run.fontIndex]!).fontSize(element.fontSize);
+      return doc.widthOfString(run.text);
+    });
+    const lineWidth = runWidths.reduce((sum, w) => sum + w, 0);
     const x = alignOffset(align, boxWidth, lineWidth);
     const baseline = firstBaseline + index * lineHeightPx;
 
-    doc.save();
-    doc.translate(x, baseline);
-    if (face.synthesizeItalic) doc.transform(1, 0, ITALIC_SHEAR, 1, 0, 0);
-    doc.fillColor(color.color, color.opacity);
-    doc.text(line, 0, 0, { baseline: "alphabetic", lineBreak: false });
-    if (face.synthesizeBold) {
-      // Thicken by redrawing with a small horizontal offset (faux bold).
-      doc.text(line, element.fontSize * BOLD_OFFSET, 0, { baseline: "alphabetic", lineBreak: false });
-    }
-    doc.restore();
+    let penX = x;
+    runs.forEach((run, runIndex) => {
+      const face = faces[run.fontIndex]!;
+      doc.font(fontNames[run.fontIndex]!).fontSize(element.fontSize);
+      doc.save();
+      doc.translate(penX, baseline);
+      // Synthesised bold/italic only applies to the element's own font, never to
+      // a fallback glyph (a sheared/thickened emoji would look wrong).
+      const isPrimary = run.fontIndex === 0;
+      if (isPrimary && face.synthesizeItalic) doc.transform(1, 0, ITALIC_SHEAR, 1, 0, 0);
+      doc.fillColor(color.color, color.opacity);
+      doc.text(run.text, 0, 0, { baseline: "alphabetic", lineBreak: false });
+      if (isPrimary && face.synthesizeBold) {
+        doc.text(run.text, element.fontSize * BOLD_OFFSET, 0, { baseline: "alphabetic", lineBreak: false });
+      }
+      doc.restore();
+      penX += runWidths[runIndex]!;
+    });
 
     if (element.underline) {
       doc
