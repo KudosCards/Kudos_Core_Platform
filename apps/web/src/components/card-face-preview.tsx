@@ -113,6 +113,7 @@ export function CardFacePreview({
   face = "front",
   bordered = true,
   qrUrl,
+  pixelRatio,
 }: {
   document: DesignDocument;
   width?: number;
@@ -124,6 +125,11 @@ export function CardFacePreview({
    * QR elements render as a real scannable code; without it they stay a marked
    * placeholder square (designer preview, before a code is minted). */
   qrUrl?: string;
+  /** Backing-store density for the Konva canvas. Omitted = the device's own
+   * devicePixelRatio (fine for on-screen previews). The print run passes a high
+   * value so the rasterised face carries enough pixels to print sharply (the
+   * canvas CSS size is unchanged — only the pixel count behind it grows). */
+  pixelRatio?: number;
 }) {
   const scale = width / CANVAS_WIDTH;
   const front =
@@ -144,6 +150,21 @@ export function CardFacePreview({
   useEffect(() => {
     stageRef.current?.batchDraw();
   }, [fontsTick]);
+
+  // Push a high backing-store density onto each layer's canvas for print. Konva
+  // defaults every canvas to the device's devicePixelRatio; overriding it here
+  // (only when a caller asks) grows the pixel count behind the same CSS-sized
+  // face, which is what makes the printed/saved-PDF artwork sharp. Re-applied
+  // whenever the face, its size, or the fonts change, since a Konva redraw can
+  // otherwise recreate the canvas at the default ratio.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !pixelRatio) return;
+    stage.getLayers().forEach((layer) => {
+      layer.getCanvas().setPixelRatio(pixelRatio);
+    });
+    stage.batchDraw();
+  }, [pixelRatio, width, face, document, fontsTick]);
 
   return (
     <>

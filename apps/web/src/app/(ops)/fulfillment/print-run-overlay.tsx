@@ -19,6 +19,16 @@ const CardFacePreview = dynamic(
   { ssr: false },
 );
 
+/**
+ * Backing-store density for the Konva print faces. Each face is sized in CSS px
+ * at the 96dpi paged-media reference (see `mmToCssPx`), so a canvas rendered at
+ * the device's default ratio prints at only ~96–192dpi — visibly soft. Rendering
+ * the backing store at `300 / 96` the CSS pixels lifts the rasterised face to a
+ * print-grade ~300dpi. (True vector output — sharp text, full-resolution images —
+ * arrives with the server-side PDF renderer; this is the drop-in raster win.)
+ */
+const PRINT_PIXEL_RATIO = 300 / 96;
+
 /** Human label per face, for the (screen-only) collation caption. */
 const FACE_LABEL: Record<DesignPage["name"], string> = {
   front: "Front",
@@ -206,6 +216,7 @@ export function PrintRunOverlay({
                 face={entry.face}
                 bordered={false}
                 qrUrl={entry.qrUrl}
+                pixelRatio={PRINT_PIXEL_RATIO}
               />
             </div>
           </div>
