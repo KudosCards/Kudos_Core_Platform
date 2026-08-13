@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted — Phase 0 implemented; Phase 1 (server-side vector PDF) planned.
+Accepted — Phase 0 implemented; Phase 1 implemented (pure-Node vector PDF engine
++ image pipeline, `apps/api/src/print-pdf`); Phase 2 (ops download endpoint +
+super-admin UI, source-image guardrails) planned.
 
 ## Context
 
@@ -44,23 +46,65 @@ This is a drop-in win on the existing architecture — it reuses the exact WYSIW
 Konva rendering, so there is zero fidelity risk. It does not make text vector or
 raise source-image resolution; those come next.
 
-### Phase 1 — server-side vector PDF (planned, chosen target)
+### Phase 1 — server-side vector PDF, **pure Node** (chosen; core implemented)
 
 Move PDF generation off the operator's browser to a **deterministic server-side
-renderer in the API**, downloadable from super-admin, producing a **true vector
-PDF**: the design document is rendered to HTML/SVG and converted to PDF via the
-bundled headless Chromium (`page.pdf()`). This gives:
+engine in the API** (`apps/api/src/print-pdf`), producing a **true vector PDF**.
 
-- **Vector text** (embedded fonts) — razor sharp at any zoom.
-- **Images embedded at full native resolution**, placed at ≥300 dpi.
-- **3 mm bleed + crop marks + trim geometry** for a clean cut.
-- Deterministic output independent of the operator's browser/printer dialog.
+**Engine choice — pure Node (pdfkit), not headless Chromium.** The earlier plan
+named headless Chromium + `page.pdf()`. On inspection the API ships **no browser
+and no Dockerfile** (it is a plain Node service), so a Chromium route would add an
+unverified, heavy runtime dependency to production. Instead the engine draws the
+design **directly with pdfkit** — no browser, no HTML/SVG intermediate — so it
+deploys anywhere Node runs and its output is fully deterministic. It reproduces
+the canonical read-only renderer `card-face-preview.tsx` primitive-for-primitive
+(white base → page background → elements in array order), so **print equals the
+editor** without a golden-image round-trip against a browser.
 
-Fidelity against the editor (fonts, text wrapping, element positions) is the main
-risk of the HTML/SVG render, so it will be validated with golden-image checks
-against the existing Konva preview before becoming the production path. **CMYK /
-PDF-X is explicitly out of scope** — a high-resolution RGB PDF with bleed and
-crop marks is sufficient for the print house.
+Fidelity is achieved by matching the exact contracts the web renderer uses,
+read from source (not guessed):
+
+- **Vector text in the exact font.** The 9 self-hosted editor fonts are embedded
+  as vendored TTFs (`scripts/vendor_print_fonts.py`); real static Regular/Bold/
+  Italic/BoldItalic weights are instantiated from the upstream *variable* Google
+  fonts with fontTools' instancer — never faux weights. `Georgia` maps to Gelasio
+  (a metric-compatible embedded substitute); the three system stacks (Helvetica,
+  Times New Roman, Courier New) map to PDF's built-in standard families. Faces
+  with no real bold/italic upstream (Pacifico, Lobster, Dancing Script, Caveat)
+  synthesise it (faux-bold / oblique skew) — the same fallback the browser makes.
+- **Konva-faithful text layout.** Word-wrap, per-line alignment, `lineHeight` 1.3
+  and the modern alphabetic-baseline metric (`(ascent−descent)/2 + lineHeightPx/2`)
+  are reproduced using the embedded font's own metrics, so lines break and sit
+  where the editor puts them. Rotation is about the element's top-left, as in Konva.
+- **Vector shapes and QR.** All six shape primitives match `card-shape.tsx`; the
+  QR is drawn as vector modules from the same `qrcode` matrix/options as the web
+  (crisper than the web's 512px PNG, same scannable code).
+- **Trim geometry, 3 mm bleed, crop marks.** The 450×634 design space maps onto
+  the trim uniformly by width (centred vertically, matching `fittedCardMm`); the
+  page background bleeds to the page edge and registration marks sit in the bleed.
+- **A5 / A6**, one physical page per face, deterministic regardless of operator.
+
+**CMYK / PDF-X is explicitly out of scope** — a high-resolution RGB PDF with
+bleed and crop marks is sufficient for the print house.
+
+**Image pipeline (Phase 1b, implemented).** Image elements and cover-crop image
+backgrounds are resolved through an injected async `ImageResolver`
+(`image-loader.ts`): it fetches the asset (an uploaded `https://…` or a
+root-relative bundled sticker resolved against the web base URL), passes PNG/JPEG
+through untouched, transcodes WebP/GIF/other rasters to PNG, and **rasterises SVG
+stickers to a crisp 1024px PNG via sharp** (robust across arbitrary SVGs, one
+raster draw path). It is resilient — a missing, oversized, timed-out or
+undecodable asset is skipped rather than failing the run — and caches per URL so a
+background reused across a run's recipients is fetched once. Image elements
+stretch to their box and rotate about the top-left (as Konva); backgrounds
+centre-crop to cover the full bleed page.
+
+**Known limitations (tracked):** a glyph the embedded font lacks (emoji, unusual
+symbols in text) renders as a missing-glyph box rather than falling back to a
+system font as the browser would — acceptable for Latin names/messages, a
+candidate for a later symbol-fallback pass. **Phase 2** wires the ops download
+endpoint + super-admin "Download print-ready PDF" UI (passing the web base URL so
+stickers resolve) and adds the source-resolution pre-flight warning.
 
 ### Phase 2 — guardrails (planned)
 
