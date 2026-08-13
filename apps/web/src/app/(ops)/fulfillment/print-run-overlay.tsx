@@ -13,6 +13,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { facesOf } from "@/components/card-preview-lightbox";
+import { clientApiDownload } from "@/lib/api.client";
 
 const CardFacePreview = dynamic(
   () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
@@ -91,6 +92,27 @@ export function PrintRunOverlay({
   defaultSize?: CardSize;
 }) {
   const [size, setSize] = useState<CardSize>(defaultSize);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  // Download a true print-ready PDF rendered server-side (vector text,
+  // full-resolution images, 3 mm bleed + crop marks) — the print-house artefact,
+  // as opposed to the browser-print raster path below. See docs/adr/0162.
+  async function downloadPdf() {
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await clientApiDownload(
+        "/fulfillment/print-run/pdf",
+        { method: "POST", body: JSON.stringify({ jobIds: cards.map((card) => card.jobId), size }) },
+        `kudos-print-run-${cards.length}-card${cards.length === 1 ? "" : "s"}-${size}.pdf`,
+      );
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Could not generate the PDF. Please try again.");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   // Flag the body so the print stylesheet hides everything except this overlay,
   // and lock scroll while it's open.
@@ -154,6 +176,11 @@ export function PrintRunOverlay({
         <span className="text-sm font-medium text-black">
           {cards.length} personalised card{cards.length === 1 ? "" : "s"} — every face, one per page
         </span>
+        {downloadError && (
+          <p className="order-last basis-full text-sm text-red-600" role="alert">
+            {downloadError}
+          </p>
+        )}
         <div className="flex items-center gap-3">
           {/* A5 / A6 size picker — changes the page size live so the preview is
               exactly what prints. */}
@@ -180,10 +207,20 @@ export function PrintRunOverlay({
           <span className="hidden text-xs text-black/50 sm:inline">{cardSizeLabel(size)}</span>
           <button
             type="button"
-            onClick={() => window.print()}
-            className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white hover:opacity-90"
+            onClick={() => void downloadPdf()}
+            disabled={downloading}
+            title="Print-house PDF: vector text, full-resolution images, 3 mm bleed + crop marks"
+            className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
           >
-            Print / Save as PDF
+            {downloading ? "Generating…" : "Download print-ready PDF"}
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            title="Print from the browser (rasterised, no bleed or crop marks)"
+            className="rounded-full border border-black/20 px-4 py-1.5 text-sm text-black hover:bg-black/5"
+          >
+            Browser print
           </button>
           <button
             type="button"

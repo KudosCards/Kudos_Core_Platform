@@ -2,12 +2,15 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
+  StreamableFile,
   UseGuards,
 } from "@nestjs/common";
+import { DEFAULT_CARD_SIZE } from "@kudos/shared-types";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import { CurrentPlatformAdmin } from "../auth/current-platform-admin.decorator";
@@ -28,6 +31,8 @@ import {
 } from "./fulfillment.service";
 import { DeliveryPollService } from "./delivery-poll.service";
 import { ArrivalNotificationService } from "./arrival-notification.service";
+import { PrintRunPdfService } from "./print-run-pdf.service";
+import { RenderPrintRunDto } from "./dto/render-print-run.dto";
 import { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { CalendarQueryDto } from "./dto/calendar-query.dto";
 import { TransitionFulfillmentDto } from "./dto/transition-fulfillment.dto";
@@ -48,6 +53,7 @@ export class FulfillmentController {
     private readonly fulfillmentService: FulfillmentService,
     private readonly deliveryPoll: DeliveryPollService,
     private readonly arrivalNotifications: ArrivalNotificationService,
+    private readonly printRunPdfService: PrintRunPdfService,
   ) {}
 
   /** Lightweight check the web ops shell uses to gate its routes: a 200 means
@@ -109,6 +115,26 @@ export class FulfillmentController {
     @Body() dto: ExportAddressesDto,
   ): Promise<PrintRunCard[]> {
     return this.fulfillmentService.printRun(admin.userId, dto);
+  }
+
+  /** Render the whole print run to one print-ready PDF server-side — true vector
+   * text, full-resolution images, 3 mm bleed + crop marks — and stream it as a
+   * download. Audited per card exactly like the JSON print-run read. See ADR 0162. */
+  @Post("print-run/pdf")
+  @Header("Content-Type", "application/pdf")
+  async printRunPdf(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body() dto: RenderPrintRunDto,
+  ): Promise<StreamableFile> {
+    const { pdf, filename } = await this.printRunPdfService.render(
+      admin.userId,
+      dto,
+      dto.size ?? DEFAULT_CARD_SIZE,
+    );
+    return new StreamableFile(pdf, {
+      type: "application/pdf",
+      disposition: `attachment; filename="${filename}"`,
+    });
   }
 
   @Post("jobs/:id/claim")

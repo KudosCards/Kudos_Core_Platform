@@ -3,8 +3,9 @@
 ## Status
 
 Accepted — Phase 0 implemented; Phase 1 implemented (pure-Node vector PDF engine
-+ image pipeline, `apps/api/src/print-pdf`); Phase 2 (ops download endpoint +
-super-admin UI, source-image guardrails) planned.
++ image pipeline, `apps/api/src/print-pdf`); Phase 2 download path implemented
+(ops endpoint + super-admin "Download print-ready PDF" button); Phase 2
+source-image resolution guardrail still planned.
 
 ## Context
 
@@ -102,15 +103,23 @@ centre-crop to cover the full bleed page.
 **Known limitations (tracked):** a glyph the embedded font lacks (emoji, unusual
 symbols in text) renders as a missing-glyph box rather than falling back to a
 system font as the browser would — acceptable for Latin names/messages, a
-candidate for a later symbol-fallback pass. **Phase 2** wires the ops download
-endpoint + super-admin "Download print-ready PDF" UI (passing the web base URL so
-stickers resolve) and adds the source-resolution pre-flight warning.
+candidate for a later symbol-fallback pass.
 
-### Phase 2 — guardrails (planned)
+### Phase 2 — download path (implemented) + source guardrails (planned)
 
-Enforce ≥300 dpi with a pre-flight warning when a source image is too low-res,
-store catalog originals at full resolution, and gate user uploads on a minimum
-resolution.
+**Download path (implemented).** An ops-only `POST /fulfillment/print-run/pdf`
+(`PrintRunPdfService`) renders a selected run to one multi-page PDF via the
+engine and streams it as a download. It reuses `FulfillmentService.printRun` for
+the *audited* read (one `fulfillment_print_run` record per card, exactly like the
+JSON path), merges each recipient's tokens into their design, builds the QR link
+from `WEB_APP_URL`, and constructs the `ImageResolver` with that base URL so
+bundled stickers resolve. The super-admin fulfilment print overlay now offers
+**"Download print-ready PDF"** as the primary action (with the existing A5/A6
+picker), keeping browser-print as a labelled secondary fallback.
+
+**Source guardrails (planned).** Enforce ≥300 dpi with a pre-flight warning when a
+source image is too low-res for its printed size, store catalog originals at full
+resolution, and gate user uploads on a minimum resolution.
 
 ## Consequences
 
