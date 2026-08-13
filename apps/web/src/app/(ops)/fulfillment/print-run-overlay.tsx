@@ -108,7 +108,9 @@ function mostDemandingImageTargets(cards: PrintRunCard[], size: CardSize): Map<s
 function loadNaturalSize(url: string): Promise<{ width: number; height: number } | null> {
   return new Promise((resolve) => {
     const img = new window.Image();
-    img.crossOrigin = "anonymous";
+    // No crossOrigin: we only read naturalWidth/Height, which needs no CORS, and
+    // requesting it makes assets served without CORS headers fail to load —
+    // which would silently suppress the low-res warning. Matches the editor path.
     img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
     img.onerror = () => resolve(null);
     img.src = url;

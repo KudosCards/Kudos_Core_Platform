@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import type { DesignDocument } from "@kudos/shared-types";
-import { absoluteUrl, createImageResolver, decodeImage, type FetchLike } from "./image-loader";
+import { absoluteUrl, createImageResolver, decodeImage, hostOf, isHostAllowed, type FetchLike } from "./image-loader";
 import { renderRunPdf } from "./render";
 
 /** A tiny solid-colour raster in the requested format. */
@@ -104,6 +104,57 @@ describe("createImageResolver", () => {
     const png = await raster("png");
     const resolve = createImageResolver({ fetchImpl: stubFetch(png, "image/png").impl, maxBytes: 4 });
     await expect(resolve("https://x/a.png")).resolves.toBeNull();
+  });
+
+  it("rejects a host outside the allowlist without fetching (SSRF guard)", async () => {
+    const png = await raster("png");
+    const fetch = stubFetch(png, "image/png");
+    const resolve = createImageResolver({ fetchImpl: fetch.impl, allowedHosts: ["storage.kudos.co.uk"] });
+    await expect(resolve("http://169.254.169.254/latest/meta-data/")).resolves.toBeNull();
+    expect(fetch.calls).toBe(0); // never dialled out
+  });
+
+  it("allows a host on the allowlist", async () => {
+    const png = await raster("png");
+    const fetch = stubFetch(png, "image/png");
+    const resolve = createImageResolver({ fetchImpl: fetch.impl, allowedHosts: ["storage.kudos.co.uk"] });
+    await expect(resolve("https://storage.kudos.co.uk/a.png")).resolves.not.toBeNull();
+    expect(fetch.calls).toBe(1);
+  });
+
+  it("rejects on a declared Content-Length over the cap before buffering", async () => {
+    let bufferRead = false;
+    const fetchImpl: FetchLike = () =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: (name) => (name.toLowerCase() === "content-length" ? "999999999" : "image/png") },
+        arrayBuffer: () => {
+          bufferRead = true;
+          return Promise.resolve(new ArrayBuffer(8));
+        },
+      });
+    const resolve = createImageResolver({ fetchImpl, maxBytes: 1024 });
+    await expect(resolve("https://x/huge.png")).resolves.toBeNull();
+    expect(bufferRead).toBe(false); // rejected on the header, body never read
+  });
+});
+
+describe("isHostAllowed / hostOf", () => {
+  it("is unrestricted when no allowlist is given", () => {
+    expect(isHostAllowed("http://anything/x", undefined)).toBe(true);
+  });
+  it("matches host case-insensitively and exactly (no subdomain widening)", () => {
+    expect(isHostAllowed("https://Storage.Kudos.co.uk/a", ["storage.kudos.co.uk"])).toBe(true);
+    expect(isHostAllowed("https://evil.storage.kudos.co.uk/a", ["storage.kudos.co.uk"])).toBe(false);
+    expect(isHostAllowed("https://other/a", ["storage.kudos.co.uk"])).toBe(false);
+  });
+  it("blocks everything for an empty allowlist", () => {
+    expect(isHostAllowed("https://x/a", [])).toBe(false);
+  });
+  it("extracts a hostname from a config URL", () => {
+    expect(hostOf("https://proj.supabase.co/storage")).toBe("proj.supabase.co");
+    expect(hostOf("not a url")).toBeNull();
   });
 });
 

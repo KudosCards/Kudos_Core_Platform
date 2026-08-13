@@ -94,6 +94,12 @@ export async function renderRunPdf(faces: PrintFaceInput[], options: RenderRunOp
   const withCropMarks = options.cropMarks ?? true;
   const geometry = faceGeometry(size);
 
+  // A zero-face run would finalise a page-less (invalid) PDF; fail loud instead
+  // so the caller reports "nothing to print" rather than streaming a broken file.
+  if (faces.length === 0) {
+    throw new Error("renderRunPdf: no faces to render");
+  }
+
   const doc = new PDFDocument({
     autoFirstPage: false,
     info: { Title: options.title ?? "Kudos print run" },

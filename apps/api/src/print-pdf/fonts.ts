@@ -104,17 +104,24 @@ const FALLBACK_FAMILY = "Helvetica";
  */
 const FALLBACK_PREFIXES = ["NotoSans", "NotoSansSymbols", "NotoSansSymbols2", "NotoEmoji"] as const;
 
+let fallbackFacesCache: FontFace[] | undefined;
+
 /** The ordered fallback faces that exist on disk (each maps to a vendored TTF).
- * Defensive `existsSync`, like `resolveFace` — the full set is committed. */
+ * Computed once — the set is static for the process — so a run with many text
+ * elements doesn't repeat the `existsSync` stats in the render hot loop.
+ * Defensive `existsSync`, like `resolveFace`: the full set is committed. */
 export function fallbackFaces(): FontFace[] {
-  return FALLBACK_PREFIXES.map((prefix) => join(FONTS_DIR, `${prefix}-Regular.ttf`))
-    .filter(existsSync)
-    .map((file) => ({
-      id: basename(file, ".ttf"),
-      file,
-      synthesizeBold: false,
-      synthesizeItalic: false,
-    }));
+  if (!fallbackFacesCache) {
+    fallbackFacesCache = FALLBACK_PREFIXES.map((prefix) => join(FONTS_DIR, `${prefix}-Regular.ttf`))
+      .filter(existsSync)
+      .map((file) => ({
+        id: basename(file, ".ttf"),
+        file,
+        synthesizeBold: false,
+        synthesizeItalic: false,
+      }));
+  }
+  return fallbackFacesCache;
 }
 
 function embeddedFace(prefix: string, family: string, bold: boolean, italic: boolean): FontFace {

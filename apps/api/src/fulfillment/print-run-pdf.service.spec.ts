@@ -9,6 +9,13 @@ import { renderRunPdf } from "../print-pdf";
 jest.mock("../print-pdf", () => ({
   renderRunPdf: jest.fn().mockResolvedValue(Buffer.from("%PDF-mock")),
   createImageResolver: jest.fn().mockReturnValue(() => Promise.resolve(null)),
+  hostOf: (url: string) => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return null;
+    }
+  },
 }));
 
 const renderRunPdfMock = renderRunPdf as jest.MockedFunction<typeof renderRunPdf>;

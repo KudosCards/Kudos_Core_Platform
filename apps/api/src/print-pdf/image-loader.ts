@@ -30,6 +30,17 @@ export interface ImageResolverOptions {
   /** Base URL used to resolve root-relative asset paths (e.g. bundled stickers).
    * Without it, root-relative assets can't be fetched and resolve to null. */
   webBaseUrl?: string;
+  /**
+   * Hostnames the resolver is allowed to fetch from. Design documents carry
+   * customer-supplied `https://…` asset URLs, and this engine runs server-side
+   * on an operator's action — so without a host allowlist a crafted design is a
+   * confused-deputy SSRF vector (internal services, cloud metadata). When set
+   * (production passes the storage + web origins), any URL whose host isn't
+   * listed resolves to null. Leave undefined only where the fetch is already
+   * trusted (e.g. tests injecting `fetchImpl` fixtures). An empty array allows
+   * nothing.
+   */
+  allowedHosts?: string[];
   /** Injectable fetch (defaults to the global). Lets tests supply fixtures. */
   fetchImpl?: FetchLike;
   /** Reject assets larger than this many bytes (default 25 MB). */
@@ -78,6 +89,10 @@ async function loadImage(assetUrl: string, options: ImageResolverOptions): Promi
     options.onWarn?.(`print image skipped (${assetUrl}): no web base URL for a root-relative asset`);
     return null;
   }
+  if (!isHostAllowed(url, options.allowedHosts)) {
+    options.onWarn?.(`print image skipped (${url}): host not in the allowlist`);
+    return null;
+  }
   const fetched = await fetchBytes(url, options);
   if (!fetched) return null;
   return decodeImage(fetched.buffer, fetched.contentType, url, options);
@@ -96,6 +111,33 @@ export function absoluteUrl(assetUrl: string, webBaseUrl?: string): string | nul
   return null;
 }
 
+/**
+ * Whether `url`'s host is permitted. `undefined` allowlist = unrestricted (only
+ * for already-trusted callers); any provided list (including empty) is enforced
+ * by exact, case-insensitive hostname match — no subdomain widening. Exported
+ * for testing.
+ */
+export function isHostAllowed(url: string, allowedHosts?: string[]): boolean {
+  if (allowedHosts === undefined) return true;
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return allowedHosts.some((allowed) => allowed.toLowerCase() === host);
+}
+
+/** The hostname of a config URL, or null if it can't be parsed. Helper for
+ * building an {@link ImageResolverOptions.allowedHosts} list from env URLs. */
+export function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchBytes(
   url: string,
   options: ImageResolverOptions,
@@ -111,6 +153,14 @@ async function fetchBytes(
       options.onWarn?.(`print image skipped (${url}): HTTP ${res.status}`);
       return null;
     }
+    // Reject before buffering when the server declares an over-cap size, so a
+    // hostile/huge asset can't be fully read into memory just to be discarded.
+    const declared = Number(res.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      options.onWarn?.(`print image skipped (${url}): ${declared} bytes (declared) over cap`);
+      return null;
+    }
+    // Post-check too — Content-Length can be absent (chunked) or understated.
     const arrayBuffer = await res.arrayBuffer();
     if (arrayBuffer.byteLength > maxBytes) {
       options.onWarn?.(`print image skipped (${url}): ${arrayBuffer.byteLength} bytes over cap`);
