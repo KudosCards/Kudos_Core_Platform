@@ -15,11 +15,16 @@ import {
   CARD_HEIGHT,
   CARD_SAFE_MARGIN,
   CARD_WIDTH,
+  DEFAULT_CARD_SIZE,
   EDITOR_FONTS,
   FONT_CATEGORY_ORDER,
   MERGE_FIELDS,
+  PRINT_DPI_TARGET,
+  elementPrintedSizeMm,
   findDesignBracketTokenMistakes,
   fixDesignBracketTokens,
+  imagePrintDpi,
+  printDpiVerdict,
   reorderElement,
 } from "@kudos/shared-types";
 import { FontPreloader } from "@/lib/editor-fonts";
@@ -304,6 +309,10 @@ export function DesignEditorClient({
   // Whether the currently-selected text element spills outside the print safe
   // area — reported up from the canvas, which measures the rendered text.
   const [selectedOverflow, setSelectedOverflow] = useState(false);
+  // Natural pixel sizes of placed images, keyed by asset URL — measured on demand
+  // so we can warn when an image is too low-resolution to print sharply at the
+  // size it's placed (docs/adr/0162).
+  const [imageNaturalSizes, setImageNaturalSizes] = useState<Record<string, { width: number; height: number }>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bgFileInputRef = useRef<HTMLInputElement>(null);
   // The text-element editor's textarea, so "Insert merge field" can drop a token
@@ -370,6 +379,38 @@ export function DesignEditorClient({
 
   const page = document_.pages.find((p) => p.name === activePage) ?? document_.pages[0]!;
   const selectedElement = page.elements.find((el) => el.id === selectedElementId) ?? null;
+
+  // Measure the selected image's natural pixel size (once per URL) so the panel
+  // can flag a low print resolution. SVGs are vector — skip them.
+  const selectedImageUrl =
+    selectedElement?.kind === "image" && !/\.svg(\?|#|$)/i.test(selectedElement.assetUrl)
+      ? selectedElement.assetUrl
+      : null;
+  useEffect(() => {
+    if (!selectedImageUrl || imageNaturalSizes[selectedImageUrl]) return;
+    // No crossOrigin: we only read naturalWidth/Height, which needs no CORS, and
+    // requesting it would fail the load on assets served without CORS headers.
+    const img = new window.Image();
+    img.onload = () =>
+      setImageNaturalSizes((prev) => ({
+        ...prev,
+        [selectedImageUrl]: { width: img.naturalWidth, height: img.naturalHeight },
+      }));
+    img.src = selectedImageUrl;
+  }, [selectedImageUrl, imageNaturalSizes]);
+
+  // Effective print DPI of the selected image at the house card size, given its
+  // current on-card box — recomputes live as it's resized. Null until measured.
+  const selectedImageDpi = useMemo(() => {
+    if (selectedElement?.kind !== "image" || !selectedImageUrl) return null;
+    const natural = imageNaturalSizes[selectedImageUrl];
+    if (!natural) return null;
+    const printed = elementPrintedSizeMm(
+      { width: selectedElement.width, height: selectedElement.height },
+      DEFAULT_CARD_SIZE,
+    );
+    return imagePrintDpi(natural, printed);
+  }, [selectedElement, selectedImageUrl, imageNaturalSizes]);
 
   /** Change the selection, clearing any stale overflow warning — the canvas
    * re-reports for the newly selected text element (and never for non-text). */
@@ -1536,6 +1577,37 @@ export function DesignEditorClient({
 
           {selectedElement?.kind === "image" && (
             <>
+              {selectedImageDpi !== null &&
+                (() => {
+                  const verdict = printDpiVerdict(selectedImageDpi);
+                  if (verdict === "ok") {
+                    return (
+                      <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                        Print resolution: ~{Math.round(selectedImageDpi)} dpi ✓
+                      </p>
+                    );
+                  }
+                  const low = verdict === "low";
+                  return (
+                    <div
+                      className={`rounded-md border px-2 py-1.5 text-[11px] ${
+                        low
+                          ? "border-red-300 bg-red-50 text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200"
+                          : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+                      }`}
+                    >
+                      <p className="font-medium">
+                        {low ? "⚠ Low print resolution" : "Print resolution a little low"} — ~
+                        {Math.round(selectedImageDpi)} dpi
+                      </p>
+                      <p className="mt-0.5">
+                        {low
+                          ? `This image may look soft when printed. Use a higher-resolution image, or make it smaller on the card. We recommend ${PRINT_DPI_TARGET} dpi.`
+                          : `A touch below the ${PRINT_DPI_TARGET} dpi ideal — usually still fine, but a larger image or smaller placement would be crisper.`}
+                      </p>
+                    </div>
+                  );
+                })()}
               <label className="flex items-center gap-2 text-xs text-foreground/70">
                 <input
                   type="checkbox"
