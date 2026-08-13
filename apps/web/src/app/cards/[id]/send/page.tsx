@@ -57,7 +57,7 @@ export default async function GuestSendPage({ params }: { params: Promise<{ id: 
         </Link>
         <div className="mt-6 grid items-start gap-10 md:grid-cols-2">
           <div className="flex flex-col gap-4">
-            <div className="relative mx-auto aspect-[3/4] w-full max-w-xs overflow-hidden rounded-2xl bg-slate-50 shadow-2xl ring-1 ring-slate-100">
+            <div className="relative mx-auto aspect-[105/148] w-full max-w-xs overflow-hidden rounded-2xl bg-slate-50 shadow-2xl ring-1 ring-slate-100">
               <Image
                 src={card.thumbnailUrl}
                 alt={card.name}
