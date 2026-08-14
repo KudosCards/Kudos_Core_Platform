@@ -44,6 +44,13 @@ describe("faceGeometry", () => {
     expect(g.scalePtPerUnit).toBeCloseTo((105 / CARD_WIDTH) * PT_PER_MM, 6);
   });
 
+  it("clamps a negative bleed to zero (page never smaller than the trim)", () => {
+    const g = faceGeometry("A6", -3);
+    expect(g.bleedPt).toBe(0);
+    expect(g.pageWidthPt).toBeCloseTo(105 * PT_PER_MM, 5);
+    expect(g.trim.xPt).toBe(0);
+  });
+
   it("centres the design vertically on A5 (different proportion) without distortion", () => {
     const g = faceGeometry("A5");
     const designHeightPt = CARD_HEIGHT * g.scalePtPerUnit;
@@ -72,5 +79,18 @@ describe("cropMarks", () => {
         expect(y).toBeLessThanOrEqual(g.pageHeightPt + 1e-6);
       }
     }
+  });
+
+  it("scales the marks to a non-default bleed so they still finish at the page edge", () => {
+    const g = faceGeometry("A6", 5); // 5 mm bleed, not the 3 mm default
+    const marks = cropMarks(g);
+    // The outermost mark endpoints must touch each page edge exactly (0 and the
+    // page dimension), proving the length tracks the actual bleed, not BLEED_MM.
+    const xs = marks.flatMap((m) => [m.x1, m.x2]);
+    const ys = marks.flatMap((m) => [m.y1, m.y2]);
+    expect(Math.min(...xs)).toBeCloseTo(0, 6);
+    expect(Math.min(...ys)).toBeCloseTo(0, 6);
+    expect(Math.max(...xs)).toBeCloseTo(g.pageWidthPt, 6);
+    expect(Math.max(...ys)).toBeCloseTo(g.pageHeightPt, 6);
   });
 });
