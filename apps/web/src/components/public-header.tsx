@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
 import { useCartCount } from "@/lib/cart";
 
 const CORAL = "#ef5b52";
@@ -32,6 +31,7 @@ export function PublicHeader({ navLinks = [] }: { navLinks?: PublicNavLink[] }) 
             width={410}
             height={475}
             className="h-11 w-auto sm:h-14"
+            sizes="56px"
             priority
           />
         </Link>
@@ -183,9 +183,17 @@ function RemindersButton() {
 
   useEffect(() => {
     let active = true;
-    const supabase = createClient();
-    void supabase.auth.getSession().then(({ data }) => {
-      if (active) setSignedIn(Boolean(data.session));
+    // Lazily load the Supabase client so the ~236 KB auth SDK stays out of every
+    // public page's first-load bundle — it's fetched only after hydration, purely
+    // to swap the signed-out prompt for a direct calendar link. Anonymous
+    // visitors (the marketing site's traffic) never block on it. See ADR 0047.
+    void import("@/lib/supabase/client").then(({ createClient }) => {
+      if (!active) return;
+      void createClient()
+        .auth.getSession()
+        .then(({ data }) => {
+          if (active) setSignedIn(Boolean(data.session));
+        });
     });
     return () => {
       active = false;

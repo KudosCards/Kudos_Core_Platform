@@ -103,7 +103,7 @@ function Logo({ className }: { className?: string }) {
       width={410}
       height={475}
       className={className}
-      priority
+      sizes="80px"
     />
   );
 }
@@ -176,6 +176,7 @@ export default function HomePage() {
               width={300}
               height={450}
               className="mx-auto w-full rounded-xl shadow-2xl ring-1 ring-slate-100"
+              sizes="(max-width: 768px) 100vw, 384px"
               priority
             />
             <div className="absolute -bottom-4 -left-4 rounded-xl bg-white p-3 shadow-lg ring-1 ring-slate-100">
@@ -210,6 +211,7 @@ export default function HomePage() {
           width={1013}
           height={584}
           className="w-full rounded-xl shadow-xl ring-1 ring-slate-100"
+          sizes="(max-width: 768px) 100vw, 550px"
         />
         <div className="flex flex-col gap-5">
           <span className="w-fit rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
@@ -287,6 +289,7 @@ export default function HomePage() {
                   width={72}
                   height={72}
                   className="h-16 w-16 rounded-xl shadow-sm ring-1 ring-slate-100"
+                  sizes="64px"
                 />
                 <span className="text-xs text-slate-500">{cat.label}</span>
               </div>
@@ -306,6 +309,7 @@ export default function HomePage() {
           width={300}
           height={450}
           className="mx-auto w-full max-w-xs rounded-xl shadow-2xl ring-1 ring-slate-100"
+          sizes="(max-width: 768px) 100vw, 320px"
         />
       </section>
 
@@ -348,6 +352,7 @@ export default function HomePage() {
             width={1274}
             height={618}
             className="w-full rounded-xl shadow-xl ring-1 ring-slate-100"
+            sizes="(max-width: 768px) 100vw, 550px"
           />
         </div>
       </section>
