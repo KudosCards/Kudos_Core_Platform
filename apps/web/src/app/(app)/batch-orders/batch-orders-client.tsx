@@ -593,6 +593,18 @@ export function BatchOrdersClient({
           </div>
         </div>
       )}
+
+      <p className="text-xs text-muted">
+        By paying you agree to our{" "}
+        <Link href="/terms" className="hover:underline">
+          Terms &amp; Conditions
+        </Link>{" "}
+        and{" "}
+        <Link href="/privacy" className="hover:underline">
+          Privacy Policy
+        </Link>
+        .
+      </p>
     </div>
   );
 }

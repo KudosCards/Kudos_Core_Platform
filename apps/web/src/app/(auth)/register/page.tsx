@@ -210,6 +210,17 @@ export default function RegisterPage() {
       <button type="submit" disabled={submitting} className="btn-accent">
         {submitting ? "Creating your account…" : "Start free"}
       </button>
+      <p className="text-xs text-muted">
+        By creating an account you agree to our{" "}
+        <Link href="/terms" className="text-accent hover:underline">
+          Terms &amp; Conditions
+        </Link>{" "}
+        and{" "}
+        <Link href="/privacy" className="text-accent hover:underline">
+          Privacy Policy
+        </Link>
+        .
+      </p>
       <p className="text-sm text-muted">
         Already have an account?{" "}
         <Link href="/login" className="text-accent hover:underline">

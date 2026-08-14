@@ -72,10 +72,16 @@ export default function EnterprisePage() {
             © {new Date().getFullYear()} Kudos Cards Ltd. The company that allows you to give some
             Kudos.
           </p>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-center gap-4">
             <SocialLinks className="text-slate-500" />
             <Link href="/login" className="text-sm text-slate-600 hover:text-slate-900">
               Log in
+            </Link>
+            <Link href="/terms" className="text-sm text-slate-600 hover:text-slate-900">
+              Terms &amp; Conditions
+            </Link>
+            <Link href="/privacy" className="text-sm text-slate-600 hover:text-slate-900">
+              Privacy Policy
             </Link>
           </div>
         </div>

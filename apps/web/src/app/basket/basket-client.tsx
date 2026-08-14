@@ -266,6 +266,17 @@ export function BasketClient() {
         <p className="text-center text-xs text-slate-500">
           Secure payment by Stripe. No account needed.
         </p>
+        <p className="text-center text-xs text-slate-400">
+          By paying you agree to our{" "}
+          <Link href="/terms" className="underline hover:text-slate-600">
+            Terms &amp; Conditions
+          </Link>{" "}
+          and{" "}
+          <Link href="/privacy" className="underline hover:text-slate-600">
+            Privacy Policy
+          </Link>
+          .
+        </p>
       </form>
     </div>
   );
