@@ -28,6 +28,22 @@ describe("faceGeometry", () => {
     expect(designHeightPt + 2 * offset).toBeCloseTo(g.trim.heightPt, 4);
   });
 
+  it("sizes the page at the exact trim (no bleed) when bleedMm is 0", () => {
+    const g = faceGeometry("A6", 0);
+    // Page equals the A6 trim; no bleed margin around it.
+    expect(g.pageWidthPt).toBeCloseTo(105 * PT_PER_MM, 5);
+    expect(g.pageHeightPt).toBeCloseTo(148 * PT_PER_MM, 5);
+    expect(g.bleedPt).toBe(0);
+    // Trim box sits flush at the page origin.
+    expect(g.trim.xPt).toBe(0);
+    expect(g.trim.yPt).toBe(0);
+    expect(g.trim.widthPt).toBeCloseTo(105 * PT_PER_MM, 5);
+    expect(g.trim.heightPt).toBeCloseTo(148 * PT_PER_MM, 5);
+    // Design still fills the trim width; the horizontal origin is flush left.
+    expect(g.translateXPt).toBe(0);
+    expect(g.scalePtPerUnit).toBeCloseTo((105 / CARD_WIDTH) * PT_PER_MM, 6);
+  });
+
   it("centres the design vertically on A5 (different proportion) without distortion", () => {
     const g = faceGeometry("A5");
     const designHeightPt = CARD_HEIGHT * g.scalePtPerUnit;

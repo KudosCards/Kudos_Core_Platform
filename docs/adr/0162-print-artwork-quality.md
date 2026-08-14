@@ -118,6 +118,15 @@ bundled stickers resolve. The super-admin fulfilment print overlay now offers
 **"Download print-ready PDF"** as the primary action (with the existing A5/A6
 picker), keeping browser-print as a labelled secondary fallback.
 
+**Trim-exact output for print-and-fold (revised).** Kudos prints these cards and
+folds them in-house rather than trimming to a cutter line, so bleed and crop
+marks are noise — the corner registration marks landed on the finished cards and
+the 3 mm bleed made the page larger than the card. The ops download now renders
+at the **exact trim size with no bleed and no crop marks** (`renderRunPdf({
+cropMarks: false, bleedMm: 0 })`; `faceGeometry` takes an optional `bleedMm`).
+The engine keeps bleed + crop marks available (defaults unchanged) for a future
+print house that trims; only the ops call opts out.
+
 **Source resolution pre-flight (implemented).** A shared pure helper
 (`shared-types/print-quality.ts`) defines "effective print DPI" — source pixels
 along an axis ÷ that axis's printed length — with a 300 dpi target and a

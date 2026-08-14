@@ -53,12 +53,17 @@ export interface FaceGeometry {
  * Compute the page + transform for one card face at a given trim size. Pure.
  *
  * The design fills the trim width; its derived height is centred within the trim
- * height (offset ≈ 0 on A6, ~0.75 mm on A5). Bleed extends the page beyond the
- * trim on every edge; the design's *background* is drawn to the page edge (see
- * the renderer) so it bleeds, while elements stay within the trim to match the
- * editor's WYSIWYG stage exactly.
+ * height (offset ≈ 0 on A6, ~0.75 mm on A5). `bleedMm` extends the page beyond
+ * the trim on every edge; the design's *background* is drawn to the page edge
+ * (see the renderer) so it bleeds, while elements stay within the trim to match
+ * the editor's WYSIWYG stage exactly.
+ *
+ * `bleedMm` defaults to {@link BLEED_MM} (the print-house standard). Pass `0` to
+ * produce a page at the exact trim size — the right output when the card is
+ * printed and folded rather than trimmed, so there's no bleed margin to remove
+ * (and, paired with `cropMarks: false`, no cut marks). See docs/adr/0162.
  */
-export function faceGeometry(size: CardSize): FaceGeometry {
+export function faceGeometry(size: CardSize, bleedMm: number = BLEED_MM): FaceGeometry {
   const { widthMm: trimWidthMm, heightMm: trimHeightMm } = CARD_SIZE_DIMENSIONS_MM[size];
 
   // Uniform scale so 450 design units span the full trim width.
@@ -67,27 +72,27 @@ export function faceGeometry(size: CardSize): FaceGeometry {
   // Centre the (never-taller-than-trim) design within the trim height.
   const verticalOffsetMm = Math.max(0, (trimHeightMm - designHeightMm) / 2);
 
-  const pageWidthMm = trimWidthMm + 2 * BLEED_MM;
-  const pageHeightMm = trimHeightMm + 2 * BLEED_MM;
+  const pageWidthMm = trimWidthMm + 2 * bleedMm;
+  const pageHeightMm = trimHeightMm + 2 * bleedMm;
 
   // Design top-left on the page: flush to the trim's left/top, plus the bleed
   // margin and the vertical centring offset.
-  const designX0Mm = BLEED_MM;
-  const designY0Mm = BLEED_MM + verticalOffsetMm;
+  const designX0Mm = bleedMm;
+  const designY0Mm = bleedMm + verticalOffsetMm;
 
   return {
     pageWidthPt: pageWidthMm * PT_PER_MM,
     pageHeightPt: pageHeightMm * PT_PER_MM,
     trim: {
-      xPt: BLEED_MM * PT_PER_MM,
-      yPt: BLEED_MM * PT_PER_MM,
+      xPt: bleedMm * PT_PER_MM,
+      yPt: bleedMm * PT_PER_MM,
       widthPt: trimWidthMm * PT_PER_MM,
       heightPt: trimHeightMm * PT_PER_MM,
     },
     translateXPt: designX0Mm * PT_PER_MM,
     translateYPt: designY0Mm * PT_PER_MM,
     scalePtPerUnit: unitToMm * PT_PER_MM,
-    bleedPt: BLEED_MM * PT_PER_MM,
+    bleedPt: bleedMm * PT_PER_MM,
   };
 }
 

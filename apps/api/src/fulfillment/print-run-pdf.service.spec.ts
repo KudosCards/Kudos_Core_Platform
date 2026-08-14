@@ -85,6 +85,12 @@ describe("PrintRunPdfService", () => {
     expect(renderRunPdfMock.mock.calls[0]![1]).toMatchObject({ size: "A5" });
   });
 
+  it("renders a clean print-and-fold page: no crop marks, no bleed", async () => {
+    printRun.mockResolvedValue([card()]);
+    await service.render("actor-1", { jobIds: ["job-1"] }, "A6");
+    expect(renderRunPdfMock.mock.calls[0]![1]).toMatchObject({ cropMarks: false, bleedMm: 0 });
+  });
+
   it("skips a card whose design document is invalid without failing the run", async () => {
     printRun.mockResolvedValue([
       card({ jobId: "bad", document: { nope: true } as unknown as DesignDocument }),
