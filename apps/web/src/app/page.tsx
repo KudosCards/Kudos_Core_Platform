@@ -511,12 +511,18 @@ export default function HomePage() {
           </p>
           <div className="flex flex-col items-center gap-4 sm:items-end">
             <SocialLinks className="text-slate-500" />
-            <div className="flex gap-4 text-sm text-slate-600">
+            <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm text-slate-600 sm:justify-end">
               <Link href="/login" className="hover:text-slate-900">
                 Log in
               </Link>
               <Link href="/register" className="hover:text-slate-900">
                 Register
+              </Link>
+              <Link href="/terms" className="hover:text-slate-900">
+                Terms &amp; Conditions
+              </Link>
+              <Link href="/privacy" className="hover:text-slate-900">
+                Privacy Policy
               </Link>
             </div>
           </div>
