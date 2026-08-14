@@ -21,11 +21,11 @@ export const PT_PER_MM = 72 / 25.4;
  * print-house standard for greeting cards. */
 export const BLEED_MM = 3;
 
-/** Crop-mark geometry, in millimetres: a small gap out from the trim corner
- * before a mark starts, then the mark's drawn length. The two sum to the bleed so
- * marks sit entirely within the bleed and finish exactly at the page edge. */
+/** Nominal gap (mm) out from the trim corner before a crop mark starts. The
+ * mark's length is derived from the *actual* bleed (see {@link cropMarks}) so the
+ * mark always sits within the bleed and finishes exactly at the page edge — for
+ * whatever `bleedMm` the page was built with, not just the 3 mm default. */
 export const CROP_MARK_GAP_MM = 1;
-export const CROP_MARK_LENGTH_MM = BLEED_MM - CROP_MARK_GAP_MM;
 /** Hairline weight for crop marks, in points. */
 export const CROP_MARK_WEIGHT_PT = 0.25;
 
@@ -63,7 +63,10 @@ export interface FaceGeometry {
  * printed and folded rather than trimmed, so there's no bleed margin to remove
  * (and, paired with `cropMarks: false`, no cut marks). See docs/adr/0162.
  */
-export function faceGeometry(size: CardSize, bleedMm: number = BLEED_MM): FaceGeometry {
+export function faceGeometry(size: CardSize, bleedMmArg: number = BLEED_MM): FaceGeometry {
+  // Never let a negative bleed shrink the page below the trim (which would push
+  // the trim/design origin off the media box). Defensive — callers pass 0 or 3.
+  const bleedMm = Math.max(0, bleedMmArg);
   const { widthMm: trimWidthMm, heightMm: trimHeightMm } = CARD_SIZE_DIMENSIONS_MM[size];
 
   // Uniform scale so 450 design units span the full trim width.
@@ -106,13 +109,18 @@ export interface CropMarkLine {
 /**
  * The eight crop-mark line segments (two per trim corner) for a face, in page
  * points. Each corner gets one horizontal and one vertical mark sitting in the
- * bleed, starting `CROP_MARK_GAP_MM` out from the trim corner and running
- * `CROP_MARK_LENGTH_MM` to the page edge. Pure.
+ * bleed, starting a small gap out from the trim corner and running to the page
+ * edge. The gap + length are derived from the page's *actual* `bleedPt` (not the
+ * default constant), so marks finish exactly at the edge for any bleed. A page
+ * with no bleed yields zero-length marks — callers pass `cropMarks: false` there.
+ * Pure.
  */
 export function cropMarks(geometry: FaceGeometry): CropMarkLine[] {
-  const { trim } = geometry;
-  const gap = CROP_MARK_GAP_MM * PT_PER_MM;
-  const len = CROP_MARK_LENGTH_MM * PT_PER_MM;
+  const { trim, bleedPt } = geometry;
+  // Keep the nominal 1 mm gap, but never let it exceed the bleed (cap at a third
+  // so a mark always has room); the mark then runs from the gap out to the edge.
+  const gap = Math.min(CROP_MARK_GAP_MM * PT_PER_MM, bleedPt / 3);
+  const len = Math.max(0, bleedPt - gap);
   const left = trim.xPt;
   const right = trim.xPt + trim.widthPt;
   const top = trim.yPt;
