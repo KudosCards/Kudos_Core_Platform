@@ -151,8 +151,9 @@ export function PrintRunOverlay({
   }, [cards, size]);
 
   // Download a true print-ready PDF rendered server-side (vector text,
-  // full-resolution images, 3 mm bleed + crop marks) — the print-house artefact,
-  // as opposed to the browser-print raster path below. See docs/adr/0162.
+  // full-resolution images, exact trim size — no bleed or crop marks, since we
+  // print and fold rather than trim) — as opposed to the browser-print raster
+  // path below. See docs/adr/0162.
   async function downloadPdf() {
     setDownloading(true);
     setDownloadError(null);
@@ -271,7 +272,7 @@ export function PrintRunOverlay({
             type="button"
             onClick={() => void downloadPdf()}
             disabled={downloading}
-            title="Print-house PDF: vector text, full-resolution images, 3 mm bleed + crop marks"
+            title="Print-ready PDF: vector text, full-resolution images, exact trim size — ready to print and fold"
             className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
           >
             {downloading ? "Generating…" : "Download print-ready PDF"}

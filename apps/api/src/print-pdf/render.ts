@@ -62,8 +62,13 @@ export interface PrintFaceInput {
 export interface RenderRunOptions {
   /** Trim size for the whole run. Defaults to the house size (A6). */
   size?: CardSize;
-  /** Draw registration/crop marks in the bleed. Default true. */
+  /** Draw registration/crop marks in the bleed. Default true. Set false when the
+   * card is printed and folded rather than trimmed (nothing to cut to). */
   cropMarks?: boolean;
+  /** Bleed beyond the trim, in millimetres. Defaults to the print-house standard
+   * (3 mm). Pass 0 for a page at the exact trim size — the right output for a
+   * print-and-fold card, where there's no bleed to trim off. */
+  bleedMm?: number;
   /** Resolver for image elements + image backgrounds. Omitted = skip images. */
   imageResolver?: ImageResolver;
   /** PDF document metadata title. */
@@ -92,7 +97,7 @@ function pageForFace(document: DesignDocument, face: DesignPage["name"]): Design
 export async function renderRunPdf(faces: PrintFaceInput[], options: RenderRunOptions = {}): Promise<Buffer> {
   const size = options.size ?? DEFAULT_CARD_SIZE;
   const withCropMarks = options.cropMarks ?? true;
-  const geometry = faceGeometry(size);
+  const geometry = faceGeometry(size, options.bleedMm);
 
   // A zero-face run would finalise a page-less (invalid) PDF; fail loud instead
   // so the caller reports "nothing to print" rather than streaming a broken file.
