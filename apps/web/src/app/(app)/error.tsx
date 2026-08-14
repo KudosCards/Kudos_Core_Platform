@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect } from "react";
-import * as Sentry from "@sentry/nextjs";
 
 /**
  * Error boundary for the authenticated app. A transient failure (e.g. the API
  * momentarily unreachable) now shows a friendly in-shell retry instead of
  * Next's bare full-page "server error" screen, and reports the error to Sentry.
+ *
+ * Sentry is imported dynamically so its SDK stays out of the app-shell bundle
+ * that loads on every authenticated page — it's fetched only if this boundary
+ * actually renders (i.e. an error occurred), where the extra round-trip is
+ * irrelevant. Matches the lazy-load approach in instrumentation-client.ts.
  */
 export default function AppError({
   error,
@@ -16,7 +20,7 @@ export default function AppError({
   reset: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    void import("@sentry/nextjs").then((Sentry) => Sentry.captureException(error));
   }, [error]);
 
   return (

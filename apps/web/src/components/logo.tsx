@@ -14,6 +14,9 @@ export function Logo({ className, priority = false }: { className?: string; prio
       width={410}
       height={475}
       className={className}
+      // The mark never renders wider than a header/sidebar slot (~70px); cap the
+      // served variant so devices don't fetch the full 410px source.
+      sizes="70px"
       priority={priority}
     />
   );
