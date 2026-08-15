@@ -82,9 +82,8 @@ const benefits = [
 
 /**
  * Hero card cluster — a 2×2 stack of real card fronts, each labelled with the
- * recipient it's going to, plus a dark tile for the volume stat. The two
- * columns are offset vertically on desktop so the cluster reads as a pile of
- * cards rather than a grid.
+ * recipient it's going to. The two columns are offset vertically on desktop so
+ * the cluster reads as a pile of cards rather than a grid.
  */
 const heroCards = {
   birthday: {
@@ -102,13 +101,12 @@ const heroCards = {
     alt: "A personalised Congratulations card",
     name: "Ravi",
   },
+  achievement: {
+    src: "/marketing/card-achievement.png",
+    alt: "A personalised Achievement card",
+    name: "Priya",
+  },
 };
-
-/**
- * Hero stat tile. Keep this honest — it's a public claim, and it must stay in
- * step with the same figure in the stats strip further down the page.
- */
-const heroQueue = { count: "100+", label: "businesses, tutors & teams" };
 
 const reviews = [
   {
@@ -236,10 +234,7 @@ export default function HomePage() {
             </div>
             <div className="flex flex-col gap-4 sm:gap-5">
               <HeroCard {...heroCards.thankYou} />
-              <div className="flex aspect-[2/3] flex-col justify-end rounded-2xl bg-slate-900 p-4 shadow-lg sm:p-5">
-                <p className="text-2xl font-extrabold text-white sm:text-3xl">{heroQueue.count}</p>
-                <p className="text-xs text-slate-400 sm:text-sm">{heroQueue.label}</p>
-              </div>
+              <HeroCard {...heroCards.achievement} />
             </div>
           </div>
         </div>
