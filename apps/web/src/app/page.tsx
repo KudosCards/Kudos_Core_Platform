@@ -104,8 +104,11 @@ const heroCards = {
   },
 };
 
-/** Cards going out in the next post run. Keep this honest — it's a public claim. */
-const heroQueue = { count: "+2,997", label: "posting Friday" };
+/**
+ * Hero stat tile. Keep this honest — it's a public claim, and it must stay in
+ * step with the same figure in the stats strip further down the page.
+ */
+const heroQueue = { count: "100+", label: "businesses, tutors & teams" };
 
 const reviews = [
   {
