@@ -80,6 +80,7 @@ export const PLAN_CATALOG: readonly PlanMarketing[] = [
       "Up to 200 contacts",
       "Auto-send birthdays on autopilot",
       "Upload your own card artwork",
+      "Bulk-send up to 200 cards at once",
       "10% off every card",
     ],
   },
