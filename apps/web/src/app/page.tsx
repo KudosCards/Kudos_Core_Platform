@@ -81,30 +81,26 @@ const benefits = [
 ];
 
 /**
- * Hero card cluster — a 2×2 stack of real card fronts, each labelled with the
- * recipient it's going to. The two columns are offset vertically on desktop so
- * the cluster reads as a pile of cards rather than a grid.
+ * Hero card cluster — a 2×2 stack of real card fronts. The two columns are
+ * offset vertically on desktop so the cluster reads as a pile of cards rather
+ * than a grid.
  */
 const heroCards = {
   birthday: {
     src: "/marketing/card-birthday.png",
     alt: "A personalised Happy Birthday card",
-    name: "Amara",
   },
   thankYou: {
     src: "/marketing/card-thankyou.png",
     alt: "A personalised Thank You card",
-    name: "Joanne",
   },
   wellDone: {
     src: "/marketing/card-welldone.png",
     alt: "A personalised Congratulations card",
-    name: "Ravi",
   },
   achievement: {
     src: "/marketing/card-achievement.png",
     alt: "A personalised Achievement card",
-    name: "Priya",
   },
 };
 
@@ -140,19 +136,9 @@ function Stars() {
   return <span className="text-amber-400">★★★★★</span>;
 }
 
-function HeroCard({
-  src,
-  alt,
-  name,
-  priority,
-}: {
-  src: string;
-  alt: string;
-  name: string;
-  priority?: boolean;
-}) {
+function HeroCard({ src, alt, priority }: { src: string; alt: string; priority?: boolean }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl shadow-lg ring-1 ring-slate-900/10">
+    <div className="overflow-hidden rounded-2xl shadow-lg ring-1 ring-slate-900/10">
       <Image
         src={src}
         alt={alt}
@@ -162,9 +148,6 @@ function HeroCard({
         sizes="(max-width: 768px) 45vw, 220px"
         priority={priority}
       />
-      <span className="absolute bottom-3 left-3 rounded-full bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-sm">
-        {name}
-      </span>
     </div>
   );
 }
