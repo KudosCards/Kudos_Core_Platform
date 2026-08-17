@@ -3,9 +3,10 @@ import Link from "next/link";
 import type { GuestClaimInfo } from "@kudos/shared-types";
 import { publicApiFetch } from "@/lib/api.public";
 import { CardsHeader } from "../../cards/cards-header";
+import { NO_INDEX } from "@/lib/site";
 import { ClaimClient } from "./claim-client";
 
-export const metadata: Metadata = { title: "Save your order — Kudos Cards" };
+export const metadata: Metadata = { title: "Save your order — Kudos Cards", ...NO_INDEX };
 
 /**
  * Claim a guest account (public — the buyer has no session yet). The claim token
@@ -28,8 +29,8 @@ export default async function GiftClaimPage({
           <div className="flex flex-col gap-4 text-center">
             <h1 className="text-2xl font-extrabold tracking-tight">This link has expired</h1>
             <p className="text-slate-600">
-              Claim links are single-use and expire after a while. If you already created an account,
-              just{" "}
+              Claim links are single-use and expire after a while. If you already created an
+              account, just{" "}
               <Link href="/login" className="font-medium text-rose-600 hover:underline">
                 log in
               </Link>

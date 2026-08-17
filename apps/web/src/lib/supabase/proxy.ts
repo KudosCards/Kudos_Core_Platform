@@ -19,6 +19,12 @@ const PUBLIC_PATHS = [
   "/forgot-password",
   "/reset-password",
   "/admin-set-password",
+  // Marketing and legal pages. These are linked from the public homepage and its
+  // footer, so bouncing a logged-out visitor (or a crawler) to /login makes them
+  // unreachable and unindexable.
+  "/enterprise",
+  "/terms",
+  "/privacy",
 ];
 
 function isPublicPath(pathname: string): boolean {
@@ -38,7 +44,11 @@ function isPublicPath(pathname: string): boolean {
     pathname.startsWith("/gift/") ||
     // Team invite acceptance — an invited colleague may not have a login yet,
     // so the accept page authenticates them itself. See docs/adr/0028.
-    pathname.startsWith("/invite/")
+    pathname.startsWith("/invite/") ||
+    // Returned-to-sender address recovery. ADR 0039 specifies a "public, no-login
+    // recovery page" reached from the RTS email — auth *is* the token — so a
+    // bounce to /login breaks the flow it exists for.
+    pathname.startsWith("/rts/")
   );
 }
 

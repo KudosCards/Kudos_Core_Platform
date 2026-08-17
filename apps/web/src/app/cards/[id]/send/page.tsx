@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
+import { NO_INDEX } from "@/lib/site";
 import { CardsHeader } from "../../cards-header";
 import { GuestSendClient } from "./guest-send-client";
 
@@ -31,7 +32,12 @@ export async function generateMetadata({
   const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`, {
     revalidate: CATALOG_REVALIDATE_SECONDS,
   });
-  return { title: card ? `Send ${card.name} — Kudos Cards` : "Send a card — Kudos Cards" };
+  // A checkout step, not a landing page — the card's own /cards/[id] page is the
+  // indexable version of this content.
+  return {
+    title: card ? `Send ${card.name} — Kudos Cards` : "Send a card — Kudos Cards",
+    ...NO_INDEX,
+  };
 }
 
 /**
@@ -86,13 +92,20 @@ export default async function GuestSendPage({ params }: { params: Promise<{ id: 
               <p className="mt-1 text-slate-600">
                 Just the details, no sign-up — add this card for someone, then keep shopping or pay.
                 Want to save birthdays and never miss one?{" "}
-                <Link href={`/register?card=${card.id}`} className="font-medium text-rose-600 hover:underline">
+                <Link
+                  href={`/register?card=${card.id}`}
+                  className="font-medium text-rose-600 hover:underline"
+                >
                   Create a free account
                 </Link>{" "}
                 instead.
               </p>
             </div>
-            <GuestSendClient cardId={card.id} cardName={card.name} thumbnailUrl={card.thumbnailUrl} />
+            <GuestSendClient
+              cardId={card.id}
+              cardName={card.name}
+              thumbnailUrl={card.thumbnailUrl}
+            />
           </div>
         </div>
       </main>

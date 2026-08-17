@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import type { ReturnCase } from "@kudos/shared-types";
 import { publicApiFetch } from "@/lib/api.public";
+import { NO_INDEX } from "@/lib/site";
 import { RtsRecoveryClient } from "./rts-recovery-client";
+
+/** Per-token recovery page — public but never indexed. */
+export const metadata: Metadata = { ...NO_INDEX };
 
 /**
  * The self-serve Returned-to-Sender recovery page, opened from the link in the
@@ -21,8 +26,8 @@ export default async function RtsPage({ params }: { params: Promise<{ token: str
         <div className="card flex flex-col items-center gap-3 p-8 text-center">
           <h1 className="text-xl font-bold">This link isn&apos;t valid</h1>
           <p className="text-sm text-muted">
-            It may have expired or already been used. If you still need to update an address, sign in
-            and open the contact record.
+            It may have expired or already been used. If you still need to update an address, sign
+            in and open the contact record.
           </p>
         </div>
       ) : (

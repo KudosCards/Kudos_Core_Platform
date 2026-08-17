@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,6 +14,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // Every relative `alternates.canonical` and OG URL below resolves against this,
+  // so it must be set before canonicals are worth anything. See lib/site.ts and
+  // docs/seo-plan.md (Phase 1).
+  metadataBase: new URL(SITE_URL),
   title: "Kudos Cards",
   description: "Automated, personalised physical recognition that builds retention and loyalty.",
   // Favicons come from the file-based convention (app/favicon.ico, app/icon.png,
