@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { CARD_PRICE_MINOR, POSTAGE_MINOR } from "@kudos/shared-types";
 import { addToCart, CART_MAX_ITEMS } from "@/lib/cart";
 
 const CORAL = "#ef5b52";
@@ -45,7 +46,9 @@ export function GuestSendClient({
     });
 
     if (!added) {
-      setError(`Your basket is full (max ${CART_MAX_ITEMS} cards). Check out first, then add more.`);
+      setError(
+        `Your basket is full (max ${CART_MAX_ITEMS} cards). Check out first, then add more.`,
+      );
       return;
     }
     router.push("/basket");
@@ -103,10 +106,11 @@ export function GuestSendClient({
         className="mt-1 rounded-full px-6 py-3 text-center font-semibold text-white transition-opacity hover:opacity-90"
         style={{ backgroundColor: CORAL }}
       >
-        Add to basket — £2.50
+        Add to basket — £{(CARD_PRICE_MINOR / 100).toFixed(2)}
       </button>
       <p className="text-center text-xs text-slate-500">
-        No account needed. £2.50 a card includes VAT &amp; UK postage. Pay securely at the basket.
+        No account needed. £{(CARD_PRICE_MINOR / 100).toFixed(2)} a card includes VAT; second-class
+        postage is £{(POSTAGE_MINOR.second_class / 100).toFixed(2)} per card, added at the basket.
       </p>
     </form>
   );

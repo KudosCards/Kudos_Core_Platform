@@ -1,6 +1,6 @@
 # SEO Plan
 
-Status: **Phases 1–2 shipped 2026-08-17.** Phase 0 (the ops half) and Phases 3–6 remain.
+Status: **Phases 1–3 shipped 2026-08-17.** Phase 0 (the ops half) and Phases 4–6 remain.
 Audit written against `main` at the marketing-page rework (#297–#302).
 
 Kudos Cards sells a search-driven product ("birthday cards for schools", "thank you cards
@@ -104,16 +104,27 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   generating a composite: a real card front is the better share image, and it keeps the OG
   route off the network path at build.
 
-- **Phase 3 — Structured data.** JSON-LD, server-rendered, no library needed.
-  Organization (with the real registered details already in
-  `lib/legal/privacy.ts` — Kudos Cards Ltd, company 16349929, Darlington DL1 1GB),
-  BreadcrumbList on card and category pages, and Product + Offer on `/cards/[id]`.
-  **Guardrail:** Offer markup must match what we actually charge — `CARD_PRICE_MINOR` is
-  £2.50 incl. VAT, plan discounts are 10%/15%, and postage (£1.80 1st, £0.91 2nd) is
-  charged per card on top. Marking up a price that checkout then contradicts risks the
-  rich result being pulled, so derive it from `packages/shared-types/src/pricing.ts`
-  rather than hard-coding, and state that postage is additional. FAQPage lands with the
-  FAQ page in Phase 5.
+- **Phase 3 — Structured data. ✅ Done.** Server-rendered JSON-LD, no library:
+  `lib/structured-data.ts` builds the payloads and `components/json-ld.tsx` renders them
+  (escaping `<` so a value can never break out of the script tag). Organization + WebSite on
+  the homepage, using the registered details we already publish (Kudos Cards Ltd, company
+  16349929, Darlington DL1 1GB) with the company number as an `identifier`, not a `taxID`.
+  BreadcrumbList on `/cards` and `/cards/[id]`. Product + Offer on `/cards/[id]`.
+
+  The Offer prices the **card alone** (`CARD_PRICE_MINOR`, £2.50 incl. VAT) and declares the
+  stamp separately as `OfferShippingDetails` at the second-class rate (£0.91) — the class the
+  guest basket actually applies. Both come from `pricing.ts`, so neither can drift from
+  checkout. £2.50 + £0.91 is exactly what a guest pays for one card.
+
+  **The guardrail earned its place.** Checking what checkout charges before writing the
+  markup turned up two customer-facing claims that were simply wrong: `/cards/[id]/send`
+  said "£2.50, all in" and its form said "£2.50 a card includes VAT & UK postage", while
+  `basket-client.tsx` adds `POSTAGE_MINOR.second_class` per card and charges £3.41. Both
+  strings are now derived from the constants and state the stamp separately. Marking up
+  "includes postage" would have enshrined a price the basket contradicts.
+
+  FAQPage still lands with the FAQ page in Phase 5. No review/aggregateRating markup — see
+  "explicitly not doing".
 
 - **Phase 4 — Catalog URLs and category pages.** The structural work, and the biggest
   single opportunity. Needs an ADR.
