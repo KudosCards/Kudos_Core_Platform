@@ -1,6 +1,8 @@
 "use client";
 
 import type { CardDesign } from "@kudos/shared-types";
+import { cardCategoryLabel } from "@kudos/shared-types";
+import { cardPath } from "@/lib/card-urls";
 import Image from "next/image";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
 import Link from "next/link";
@@ -9,16 +11,12 @@ import { useMemo, useState } from "react";
 const ALL = "all";
 
 /** "well done" -> "Well done". */
-function formatCategory(category: string): string {
-  return category.charAt(0).toUpperCase() + category.slice(1);
-}
-
 /** A single catalog card with a clear "Personalise" call to action. `width`
  * lets the carousel give tiles a fixed size while the grid lets them flex. */
 function CardTile({ template, className = "" }: { template: CardDesign; className?: string }) {
   return (
     <Link
-      href={`/cards/${template.id}`}
+      href={cardPath(template)}
       className={`group flex flex-col gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-100 transition-shadow hover:shadow-lg ${className}`}
     >
       <div className="relative aspect-[105/148] w-full overflow-hidden rounded-xl bg-slate-50">
@@ -39,7 +37,7 @@ function CardTile({ template, className = "" }: { template: CardDesign; classNam
       </div>
       <div className="flex flex-col gap-0.5 px-1 pb-1">
         <span className="text-sm font-semibold text-slate-900">{template.name}</span>
-        <span className="text-xs text-slate-500">{formatCategory(template.category)}</span>
+        <span className="text-xs text-slate-500">{cardCategoryLabel(template.category)}</span>
       </div>
     </Link>
   );
@@ -124,7 +122,7 @@ export function CardsGalleryClient({ templates }: { templates: CardDesign[] }) {
                     : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
                 }`}
               >
-                {option === ALL ? "All cards" : formatCategory(option)}
+                {option === ALL ? "All cards" : cardCategoryLabel(option)}
               </button>
             ))}
           </div>
@@ -137,7 +135,7 @@ export function CardsGalleryClient({ templates }: { templates: CardDesign[] }) {
             <section key={group.category} className="flex flex-col gap-4">
               <div className="flex items-baseline justify-between gap-3">
                 <h2 className="text-lg font-bold text-slate-900">
-                  {formatCategory(group.category)}
+                  {cardCategoryLabel(group.category)}
                 </h2>
                 <button
                   type="button"
@@ -164,12 +162,7 @@ export function CardsGalleryClient({ templates }: { templates: CardDesign[] }) {
         <div className="flex flex-col gap-4">
           <p className="text-sm text-slate-500">
             {visible.length} card{visible.length === 1 ? "" : "s"}
-            {query && (
-              <>
-                {" "}
-                for “{search.trim()}”
-              </>
-            )}
+            {query && <> for “{search.trim()}”</>}
           </p>
           {visible.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-10 text-center text-slate-500">

@@ -1,5 +1,6 @@
 import { CARD_PRICE_MINOR, POSTAGE_MINOR } from "@kudos/shared-types";
 import type { CardDesign } from "@kudos/shared-types";
+import { cardPath } from "./card-urls";
 import { SITE_URL, absoluteUrl } from "./site";
 
 /**
@@ -92,7 +93,7 @@ export function breadcrumbSchema(trail: { name: string; path: string }[]) {
  * `packages/shared-types/src/pricing.ts`, so neither can drift from checkout.
  */
 export function cardProductSchema(card: CardDesign, description: string) {
-  const path = `/cards/${card.id}`;
+  const path = cardPath(card);
   return {
     "@context": "https://schema.org",
     "@type": "Product",

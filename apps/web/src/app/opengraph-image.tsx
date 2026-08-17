@@ -6,7 +6,7 @@ import { ImageResponse } from "next/og";
  * build rather than hand-exported so the wording stays in version control with
  * the rest of the copy.
  *
- * `/cards/[id]` overrides this with the card's own artwork (see its
+ * `/cards/[category]/[slug]` overrides this with the card's own artwork (see its
  * generateMetadata) — a real card front sells better than any layout we'd draw
  * here. See docs/seo-plan.md (Phase 2).
  *

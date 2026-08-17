@@ -4,6 +4,7 @@ import { CARD_SIZE_NOTICE } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { breadcrumbSchema } from "@/lib/structured-data";
 import { JsonLd } from "@/components/json-ld";
+import { isPublishableCard } from "@/lib/card-urls";
 import { CardsHeader } from "./cards-header";
 import { CardsGalleryClient } from "./cards-gallery-client";
 
@@ -20,10 +21,14 @@ export const metadata: Metadata = {
 export const revalidate = 3600;
 
 export default async function CardsPage() {
-  const templates =
+  // Cards the API hasn't given a slug yet can't be linked to — see
+  // isPublishableCard(). Filtering keeps the library rendering during a deploy
+  // where the web is ahead of the API, rather than linking to a broken URL.
+  const templates = (
     (await publicApiFetch<CardDesign[]>("/card-designs", {
       revalidate: CATALOG_REVALIDATE_SECONDS,
-    })) ?? [];
+    })) ?? []
+  ).filter(isPublishableCard);
 
   return (
     <div className="min-h-screen bg-white text-slate-900">

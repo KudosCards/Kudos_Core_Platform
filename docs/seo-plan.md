@@ -1,6 +1,6 @@
 # SEO Plan
 
-Status: **Phases 1–3 shipped 2026-08-17.** Phase 0 (the ops half) and Phases 4–6 remain.
+Status: **Phases 1–4 shipped 2026-08-17.** Phase 0 (the ops half) and Phases 5–6 remain.
 Audit written against `main` at the marketing-page rework (#297–#302).
 
 Kudos Cards sells a search-driven product ("birthday cards for schools", "thank you cards
@@ -93,7 +93,7 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   Two corrections, again found by fetching rather than by building:
 
   - **`/opengraph-image` 307'd to `/login`** — the same proxy trap as Phase 1, but the
-    matcher's file-extension rule doesn't catch it because the OG image is a *route*, not a
+    matcher's file-extension rule doesn't catch it because the OG image is a _route_, not a
     file. Every shared link would have had no preview image. `opengraph-image` and
     `twitter-image` are now named in the matcher.
   - **Next merges metadata shallowly**, so any page setting its own `openGraph` replaced the
@@ -126,20 +126,34 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   FAQPage still lands with the FAQ page in Phase 5. No review/aggregateRating markup — see
   "explicitly not doing".
 
-- **Phase 4 — Catalog URLs and category pages.** The structural work, and the biggest
-  single opportunity. Needs an ADR.
-  - Add a `slug` to card designs (unique, derived from `name`, backfilled; the catalog
-    already carries `sku` and `externalId` from Airtable, so decide whether slug is
-    authored upstream or generated on sync). Serve `/cards/<slug>`, 301 the UUID form so
-    existing links and any indexed URLs survive.
-  - Real category routes — `/cards/birthday`, `/cards/thank-you`, `/cards/achievement`,
-    `/cards/academic`, `/cards/funny` — statically generated from the catalog's distinct
-    categories, each with its own `h1`, copy, metadata and canonical. Keep the client-side
-    filter for in-page browsing, but make each category addressable.
-  - Internal linking: category → card, card → related cards in the same category,
-    breadcrumbs throughout. This is what turns hundreds of thin pages into a crawlable
-    structure instead of an orphan pile.
-  - Retired designs need `410` (or a 301 to their category) rather than a soft 404.
+- **Phase 4 — Catalog URLs and category pages. ✅ Done (ADR 0163).** Shipped in three
+  stages so a migration, an external sync change and a route restructure didn't land as one
+  diff: **A** the category vocabulary and slug derivation, **B** `CardDesign.slug` plus the
+  backfill, sync and API, **C** the `/cards/<category>/<slug>` routes, redirects and sitemap.
+
+  Two constraints found while planning changed the shape of the work. Categories are
+  uncontrolled upstream text — the Airtable sync lowercases the "Occasion" field and falls
+  back to `uncategorised` — so a page per distinct category would have published
+  `/cards/uncategorised` and a page per typo; hence a curated vocabulary. And
+  `/cards/<category>` collides with the old `/cards/<uuid>`, since Next can't have two
+  differently-named dynamic segments at one level, which made the card URL shape and the
+  category URL shape a single decision.
+
+  The migration was **run against a real Postgres 16**, not just written: its SQL slugify was
+  compared row-for-row against `slugifyCardName()` over adversarial rows (accents,
+  ampersands, apostrophes, duplicate names, a name of only symbols) before being committed —
+  0 divergences. Accent folding uses `translate()` over Latin-1 rather than the `unaccent`
+  extension, which isn't guaranteed on the managed database and would fail the migration at
+  deploy time.
+
+  Redirects are **308 rather than 301** — that's what Next's `permanentRedirect()` emits, and
+  Google treats it as equivalent; a literal 301 would need middleware, which can't do the
+  lookup that turns a UUID into a category and slug. The same path canonicalises a card
+  reached under the wrong category, so one card is never served at two URLs.
+
+  Cards whose category isn't in the vocabulary live at `/cards/other/<slug>` — indexable
+  pages under a noindex landing page, because every card needs exactly one canonical URL and
+  the alternative is orphans or breadcrumbs pointing at a 404.
 
 - **Phase 5 — Content layer.** The slow-burn phase that actually earns non-brand traffic.
   Audience pages behind the "Used by" pills (tuition centres, schools, sports clubs,

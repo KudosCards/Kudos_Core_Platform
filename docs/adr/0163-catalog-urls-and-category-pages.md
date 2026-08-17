@@ -2,8 +2,7 @@
 
 ## Status
 
-Proposed — foundation (category vocabulary + slug derivation) implemented; the
-migration, sync and route restructure follow in the staged PRs below.
+Accepted — implemented across stages A, B and C (see "Staged delivery").
 
 ## Context
 
@@ -31,7 +30,7 @@ writing code:
 2. **`/cards/<category>` collides with `/cards/<card>`.** `app/cards/[id]`
    already matches any single segment, and Next can't have two differently-named
    dynamic segments at the same level. So the card URL shape and the category URL
-   shape are one decision, not two — and each shape carries its own 301s, so
+   shape are one decision, not two — and each shape carries its own redirects, so
    settling it once is materially cheaper than shipping category pages now and
    moving them later.
 
@@ -43,8 +42,10 @@ Adopt a two-level hierarchy where the category is the parent segment:
 /cards                                        the library
 /cards/birthday                               category landing page
 /cards/birthday/simple-happy-birthday-fun     a card
-301  /cards/<uuid>            → the card's new URL
-301  /cards/<uuid>/send       → the card's new send URL
+308  /cards/<uuid>            → the card's new URL
+308  /cards/<uuid>/send       → the card's new send URL
+308  /cards/<card-slug>       → the card's new URL (hand-typed, no category)
+308  /cards/<wrong-cat>/<slug> → the card's real category
 ```
 
 ### A curated category vocabulary, not whatever Airtable holds
@@ -79,24 +80,49 @@ is `@unique` so the database is the backstop rather than the generator.
 
 ### Redirects, not rewrites
 
-The old UUID URLs 301 to the new ones. They are in Google's index and on cards
-already posted, so they must keep working; a 301 also passes the ranking signal
-to the new URL, which a rewrite would not.
+The old UUID URLs permanently redirect to the new ones. They are in Google's
+index and on cards already posted, so they must keep working; a permanent
+redirect also passes the ranking signal to the new URL, which a rewrite would
+not.
+
+The status code is **308, not 301** — that's what Next's `permanentRedirect()`
+emits, and Google documents 308 as equivalent to 301 for ranking purposes (the
+difference is that 308 preserves the request method, which is irrelevant for
+these GET-only pages). Forcing a literal 301 would mean moving the redirect into
+middleware or `next.config`, and neither can do the database lookup that turns a
+UUID into its category and slug.
+
+The same redirect also canonicalises a card reached under the _wrong_ category,
+so one card is never served at two URLs.
 
 ## Staged delivery
 
 Deliberately three PRs — a migration, an external sync change and a route
 restructure in one diff would be hard to review and risky to revert.
 
-- **A — Foundation (this PR).** `card-category.ts` (vocabulary, alias
+- **A — Foundation.** `card-category.ts` (vocabulary, alias
   resolution, display names) and `slugifyCardName()`, with unit tests. Pure
   functions, no schema and no route changes, so nothing user-facing moves yet.
 - **B — Data.** `CardDesign.slug` (nullable → backfill → unique, non-null),
   seed slugs, sync assigns slugs on create, and the API resolves a card by slug
   as well as by id.
-- **C — Web.** `/cards/[category]/[slug]` and `/cards/[category]`, 301s from the
-  UUID routes, sitemap entries for categories and new card URLs, breadcrumbs and
-  canonicals updated to match the hierarchy.
+- **C — Web.** `/cards/[category]/[slug]` and `/cards/[category]`, permanent
+  redirects from the UUID routes, sitemap entries for categories and new card
+  URLs, breadcrumbs and canonicals updated to match the hierarchy.
+
+  Because `/cards/<uuid>` and `/cards/<category>` are the same route shape, the
+  category page owns the legacy redirect: anything that isn't a published
+  category is looked up as a card identifier and redirected, or 404s. The
+  two-segment route does the same for the old `/cards/<uuid>/send`.
+
+  Cards whose upstream category isn't in the vocabulary live under
+  `/cards/other/<slug>`. They need exactly one canonical URL like any other card;
+  without the fallback they would be orphaned, or their breadcrumb would point at
+  a category page that 404s. The card pages there are indexable — only the
+  grab-bag landing page itself is noindex, and it's kept out of the sitemap.
+
+  A published category with no cards 404s rather than serving a thin empty page,
+  and the sitemap lists only categories that actually have stock.
 
 ## Consequences
 
@@ -106,7 +132,7 @@ restructure in one diff would be hard to review and risky to revert.
   can't self-serve a new landing page — worth revisiting only if the category set
   starts changing often.
 - Two extra dynamic segments to keep canonical: a card reachable under the wrong
-  category must 301 to its real one, or the same content becomes reachable at
+  category redirects to its real one, or the same content becomes reachable at
   several URLs.
 - The `uncategorised` bucket stays invisible to search by design. If a meaningful
   number of cards land there, that is an upstream data problem to fix in
