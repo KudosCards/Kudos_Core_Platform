@@ -166,3 +166,27 @@ export function uniqueCardSlug(base: string, taken: ReadonlySet<string>): string
     if (!taken.has(candidate)) return candidate;
   }
 }
+
+/**
+ * The base slug for a card design, before collision suffixing: its name, else
+ * its product code, else the upstream record id, else its own id.
+ *
+ * The fallback chain exists because a name of only symbols slugifies to nothing,
+ * and every design still needs a usable URL. **This mirrors the backfill in
+ * `20260817190000_card_design_slug`** — the migration derives legacy slugs the
+ * same way, so a design created before and after that migration gets the same
+ * answer. Change one and you must change the other.
+ */
+export function deriveCardSlugBase(design: {
+  name: string;
+  sku?: string | null;
+  externalId?: string | null;
+  id: string;
+}): string {
+  return (
+    slugifyCardName(design.name) ||
+    slugifyCardName(design.sku ?? "") ||
+    slugifyCardName(design.externalId ?? "") ||
+    `card-${design.id.replace(/-/g, "").slice(0, 8)}`
+  );
+}

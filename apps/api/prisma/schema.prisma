@@ -543,6 +543,11 @@ model CardDesign {
   id           String   @id @default(uuid())
   category     String
   name         String
+  /// URL slug for the public catalog — `/cards/<category>/<slug>`. Assigned once
+  /// (from the name) and never recomputed: a slug that tracked the name would
+  /// break indexed URLs and the QR codes on cards already posted the moment a
+  /// title was corrected. See docs/adr/0163-catalog-urls-and-category-pages.md.
+  slug         String   @unique
   thumbnailUrl String   @map("thumbnail_url")
   /// DesignDocument JSON — see packages/shared-types/src/card.ts for the shape.
   document     Json
@@ -565,11 +570,11 @@ model CardDesign {
 
 /// A personalised instance of a CardDesign, saved to an account's "My Designs".
 model SavedDesign {
-  id           String   @id @default(uuid())
-  accountId    String   @map("account_id")
+  id           String    @id @default(uuid())
+  accountId    String    @map("account_id")
   /// Null for a member's own uploaded artwork, which starts from a blank
   /// document rather than a catalog template. See docs/adr/0026.
-  cardDesignId String?  @map("card_design_id")
+  cardDesignId String?   @map("card_design_id")
   name         String
   document     Json
   /// Soft-delete marker. A design used by a past order (OrderRecipient) or an
@@ -577,8 +582,8 @@ model SavedDesign {
   /// history — deleting it archives it out of the library instead. The gallery
   /// lists only rows where this is null. See docs/adr/0158-design-archive.md.
   archivedAt   DateTime? @map("archived_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   // SetNull (Prisma's default for an optional relation, now explicit): a saved
@@ -710,9 +715,9 @@ model OrderRecipient {
   createdAt               DateTime             @default(now()) @map("created_at")
   updatedAt               DateTime             @updatedAt @map("updated_at")
 
-  batchOrder     BatchOrder      @relation(fields: [batchOrderId], references: [id], onDelete: Cascade)
-  recipient      Recipient       @relation(fields: [recipientId], references: [id])
-  occasion       Occasion?       @relation(fields: [occasionId], references: [id])
+  batchOrder        BatchOrder       @relation(fields: [batchOrderId], references: [id], onDelete: Cascade)
+  recipient         Recipient        @relation(fields: [recipientId], references: [id])
+  occasion          Occasion?        @relation(fields: [occasionId], references: [id])
   savedDesign       SavedDesign      @relation(fields: [savedDesignId], references: [id])
   chosenMessagePage MessagePage?     @relation("ChosenMessagePage", fields: [messagePageId], references: [id], onDelete: SetNull)
   messagePageLink   MessagePageLink?
@@ -767,11 +772,11 @@ model MessagePage {
   createdAt       DateTime                  @default(now()) @map("created_at")
   updatedAt       DateTime                  @updatedAt @map("updated_at")
 
-  account Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  links   MessagePageLink[]
+  account                 Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  links                   MessagePageLink[]
   /// Order recipients that chose this page in the send flow (before settlement
   /// turns each choice into a per-card link). See docs/adr/0132-message-pages-v2.md.
-  chosenByOrderRecipients OrderRecipient[] @relation("ChosenMessagePage")
+  chosenByOrderRecipients OrderRecipient[]  @relation("ChosenMessagePage")
 
   @@index([accountId])
   @@map("message_pages")
@@ -790,8 +795,8 @@ model MessagePageLink {
   ctaClickCount    Int       @default(0) @map("cta_click_count")
   createdAt        DateTime  @default(now()) @map("created_at")
 
-  messagePage    MessagePage     @relation(fields: [messagePageId], references: [id], onDelete: Cascade)
-  orderRecipient OrderRecipient? @relation(fields: [orderRecipientId], references: [id], onDelete: Cascade)
+  messagePage    MessagePage        @relation(fields: [messagePageId], references: [id], onDelete: Cascade)
+  orderRecipient OrderRecipient?    @relation(fields: [orderRecipientId], references: [id], onDelete: Cascade)
   replies        MessagePageReply[]
   events         MessagePageEvent[]
 

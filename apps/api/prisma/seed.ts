@@ -1,4 +1,5 @@
 import { PrismaClient, type Prisma } from "@prisma/client";
+import { deriveCardSlugBase, uniqueCardSlug } from "@kudos/shared-types";
 
 const prisma = new PrismaClient();
 
@@ -96,10 +97,50 @@ const CARD_DESIGN_TEMPLATES = [
  * deal; `includedSeats` is effectively unlimited.
  */
 const PLAN_ENTITLEMENTS = [
-  { planId: "free", recipientCap: 50, batchOrderMaxSize: 10, cardDiscountPercent: 0, autoSendEnabled: false, customArtworkEnabled: false, teamSeatsEnabled: false, includedSeats: 1, messagePagesEnabled: false },
-  { planId: "pro", recipientCap: 200, batchOrderMaxSize: 200, cardDiscountPercent: 10, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: false, includedSeats: 1, messagePagesEnabled: true },
-  { planId: "centre", recipientCap: 2000, batchOrderMaxSize: 500, cardDiscountPercent: 15, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: true, includedSeats: 3, messagePagesEnabled: true },
-  { planId: "enterprise", recipientCap: null, batchOrderMaxSize: 5000, cardDiscountPercent: 15, autoSendEnabled: true, customArtworkEnabled: true, teamSeatsEnabled: true, includedSeats: 999, messagePagesEnabled: true },
+  {
+    planId: "free",
+    recipientCap: 50,
+    batchOrderMaxSize: 10,
+    cardDiscountPercent: 0,
+    autoSendEnabled: false,
+    customArtworkEnabled: false,
+    teamSeatsEnabled: false,
+    includedSeats: 1,
+    messagePagesEnabled: false,
+  },
+  {
+    planId: "pro",
+    recipientCap: 200,
+    batchOrderMaxSize: 200,
+    cardDiscountPercent: 10,
+    autoSendEnabled: true,
+    customArtworkEnabled: true,
+    teamSeatsEnabled: false,
+    includedSeats: 1,
+    messagePagesEnabled: true,
+  },
+  {
+    planId: "centre",
+    recipientCap: 2000,
+    batchOrderMaxSize: 500,
+    cardDiscountPercent: 15,
+    autoSendEnabled: true,
+    customArtworkEnabled: true,
+    teamSeatsEnabled: true,
+    includedSeats: 3,
+    messagePagesEnabled: true,
+  },
+  {
+    planId: "enterprise",
+    recipientCap: null,
+    batchOrderMaxSize: 5000,
+    cardDiscountPercent: 15,
+    autoSendEnabled: true,
+    customArtworkEnabled: true,
+    teamSeatsEnabled: true,
+    includedSeats: 999,
+    messagePagesEnabled: true,
+  },
 ];
 
 /**
@@ -135,11 +176,24 @@ async function main(): Promise<void> {
       (configured.length ? ` (Stripe price ids set for: ${configured.join(", ")})` : ""),
   );
 
+  // Slugs are assigned on create and never recomputed (ADR 0163), so `update`
+  // deliberately leaves the existing slug alone — re-seeding must not change a
+  // published URL. `taken` seeds from the database so a template can't collide
+  // with a synced Airtable design.
+  const takenSlugs = new Set(
+    (await prisma.cardDesign.findMany({ select: { slug: true } })).map((design) => design.slug),
+  );
   for (const template of CARD_DESIGN_TEMPLATES) {
+    const existing = await prisma.cardDesign.findUnique({
+      where: { id: template.id },
+      select: { slug: true },
+    });
+    const slug = existing?.slug ?? uniqueCardSlug(deriveCardSlugBase(template), takenSlugs);
+    takenSlugs.add(slug);
     await prisma.cardDesign.upsert({
       where: { id: template.id },
       update: template,
-      create: template,
+      create: { ...template, slug },
     });
   }
   console.log(`Seeded ${CARD_DESIGN_TEMPLATES.length} card design templates`);

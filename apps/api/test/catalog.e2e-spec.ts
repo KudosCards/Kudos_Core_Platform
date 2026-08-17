@@ -4,7 +4,11 @@ import { accountSchema } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { PrismaService } from "../src/prisma/prisma.service";
-import { CATALOG_SOURCE, type CatalogCardRecord, type CatalogSource } from "../src/catalog/catalog-source";
+import {
+  CATALOG_SOURCE,
+  type CatalogCardRecord,
+  type CatalogSource,
+} from "../src/catalog/catalog-source";
 import { DESIGN_ASSET_STORAGE_CLIENT } from "../src/storage/design-asset-storage.provider";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
@@ -46,7 +50,11 @@ function card(overrides: Partial<CatalogCardRecord> & { externalId: string }): C
     // Default to having artwork: a card with no image is deliberately not
     // imported (see the "skips a card with no image" test), so most tests here
     // need a real attachment to exercise the create/update/deactivate paths.
-    frontImage: { url: "https://airtable.test/default.png", filename: "default.png", contentType: "image/png" },
+    frontImage: {
+      url: "https://airtable.test/default.png",
+      filename: "default.png",
+      contentType: "image/png",
+    },
     insideMessage: null,
     ...overrides,
   };
@@ -127,7 +135,11 @@ describe("Catalog sync (e2e)", () => {
         sku: "KC-BDAY-GEN-999",
         title: "Sync Test Balloons",
         category: "birthday", // the source normalises casing; the mock supplies it already normalised
-        frontImage: { url: "https://airtable.test/art.png", filename: "art.png", contentType: "image/png" },
+        frontImage: {
+          url: "https://airtable.test/art.png",
+          filename: "art.png",
+          contentType: "image/png",
+        },
         insideMessage: "Well done!",
       }),
     ];
@@ -166,9 +178,9 @@ describe("Catalog sync (e2e)", () => {
       assetUrl: `https://storage.test/design-assets/catalog/${externalId}.png`,
     });
     // A real inside message seeds an editable text block on the inside-right page.
-    const insideRight = (design!.document as { pages: { name: string; elements: unknown[] }[] }).pages.find(
-      (p) => p.name === "inside-right",
-    );
+    const insideRight = (
+      design!.document as { pages: { name: string; elements: unknown[] }[] }
+    ).pages.find((p) => p.name === "inside-right");
     expect(insideRight!.elements[0]).toMatchObject({ kind: "text", text: "Well done!" });
   });
 
@@ -192,6 +204,48 @@ describe("Catalog sync (e2e)", () => {
     const rows = await prisma.cardDesign.findMany({ where: { externalId } });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.name).toBe("Renamed Title");
+    // The slug is assigned once and must survive the rename: it's the published
+    // URL, and it's printed as a QR code on cards already in the post. A slug
+    // that tracked the title would silently break both. See ADR 0163.
+    expect(rows[0]!.slug).toBe("first-title");
+  });
+
+  it("gives a newly synced design a slug derived from its title", async () => {
+    const externalId = `rec${randomUUID().slice(0, 14)}`;
+    activeCards = [card({ externalId, title: "Mum & Dad's Anniversary" })];
+
+    await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${await opsToken()}`)
+      .expect(201);
+
+    const design = await prisma.cardDesign.findUnique({ where: { externalId } });
+    expect(design!.slug).toBe("mum-and-dads-anniversary");
+  });
+
+  it("suffixes the slug when two designs share a title, rather than failing the sync", async () => {
+    const firstId = `rec${randomUUID().slice(0, 14)}`;
+    const secondId = `rec${randomUUID().slice(0, 14)}`;
+    // Same title, two distinct upstream records — a real occurrence when ops
+    // add a seasonal variant of an existing card.
+    activeCards = [
+      card({ externalId: firstId, title: "Duplicate Title Card" }),
+      card({ externalId: secondId, title: "Duplicate Title Card" }),
+    ];
+
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${await opsToken()}`)
+      .expect(201);
+    expect(response.body).toMatchObject({ created: 2, errors: [] });
+
+    const slugs = (
+      await prisma.cardDesign.findMany({
+        where: { externalId: { in: [firstId, secondId] } },
+        orderBy: { slug: "asc" },
+      })
+    ).map((design) => design.slug);
+    expect(slugs).toEqual(["duplicate-title-card", "duplicate-title-card-2"]);
   });
 
   it("deactivates a card that is no longer active upstream, leaving seeded templates alone", async () => {
@@ -199,7 +253,10 @@ describe("Catalog sync (e2e)", () => {
     const retiredId = `rec${randomUUID().slice(0, 14)}`;
     const token = await opsToken();
 
-    activeCards = [card({ externalId: keptId, title: "Kept" }), card({ externalId: retiredId, title: "Retired" })];
+    activeCards = [
+      card({ externalId: keptId, title: "Kept" }),
+      card({ externalId: retiredId, title: "Retired" }),
+    ];
     await request(app.getHttpServer())
       .post("/catalog/sync")
       .set("Authorization", `Bearer ${token}`)
@@ -217,8 +274,12 @@ describe("Catalog sync (e2e)", () => {
       .expect(201);
 
     expect(response.body).toMatchObject({ deactivated: 1 });
-    expect((await prisma.cardDesign.findUnique({ where: { externalId: retiredId } }))!.isActive).toBe(false);
-    expect((await prisma.cardDesign.findUnique({ where: { externalId: keptId } }))!.isActive).toBe(true);
+    expect(
+      (await prisma.cardDesign.findUnique({ where: { externalId: retiredId } }))!.isActive,
+    ).toBe(false);
+    expect((await prisma.cardDesign.findUnique({ where: { externalId: keptId } }))!.isActive).toBe(
+      true,
+    );
     expect(await prisma.cardDesign.count({ where: { externalId: null, isActive: true } })).toBe(
       seededActiveBefore,
     );
@@ -235,9 +296,9 @@ describe("Catalog sync (e2e)", () => {
       .expect(201);
 
     expect(response.body).toMatchObject({ fetched: 1, created: 0, imagesCopied: 0 });
-    expect((response.body as { skippedNoImage: { externalId: string; title: string }[] }).skippedNoImage).toEqual([
-      expect.objectContaining({ externalId, title: "No Art" }),
-    ]);
+    expect(
+      (response.body as { skippedNoImage: { externalId: string; title: string }[] }).skippedNoImage,
+    ).toEqual([expect.objectContaining({ externalId, title: "No Art" })]);
     // The card never enters the catalog at all.
     expect(await prisma.cardDesign.findUnique({ where: { externalId } })).toBeNull();
   });

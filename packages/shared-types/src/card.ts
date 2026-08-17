@@ -174,6 +174,9 @@ export const cardDesignSchema = z.object({
   id: z.string().uuid(),
   category: z.string(),
   name: z.string(),
+  /** Public URL slug — `/cards/<category>/<slug>`. Stable for the life of the
+   * design; see docs/adr/0163-catalog-urls-and-category-pages.md. */
+  slug: z.string(),
   thumbnailUrl: z.string().url(),
   document: designDocumentSchema,
   isActive: z.boolean(),

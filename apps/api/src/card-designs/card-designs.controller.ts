@@ -1,10 +1,17 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Param, Query, UseGuards } from "@nestjs/common";
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { ApiTags } from "@nestjs/swagger";
 import type { CardDesign } from "@prisma/client";
 import { Public } from "../auth/public.decorator";
 import { CardDesignsService } from "./card-designs.service";
 import { ListCardDesignsQueryDto } from "./dto/list-card-designs-query.dto";
+
+/**
+ * A UUID or a slug: lowercase alphanumerics and single hyphens, 1-100 chars.
+ * Wide enough for every slug `slugifyCardName()` can produce (it caps at 80 and
+ * suffixes collisions), narrow enough that junk never reaches a query.
+ */
+const CARD_IDENTIFIER_PATTERN = /^[a-z0-9]([a-z0-9-]{0,98}[a-z0-9])?$/i;
 
 /**
  * The card catalog is public: it's the marketing card library an unauthenticated
@@ -30,9 +37,21 @@ export class CardDesignsController {
     return this.cardDesignsService.list(query);
   }
 
+  /**
+   * Accepts a design's UUID **or** its public slug. The catalog moved to
+   * `/cards/<category>/<slug>` (ADR 0163) so the web app resolves by slug, while
+   * the UUID form stays live for links already indexed or printed on a QR code.
+   *
+   * ParseUUIDPipe is deliberately gone, but the shape is still validated: this
+   * is an unauthenticated endpoint, so an unbounded path segment shouldn't reach
+   * the database.
+   */
   @Public()
-  @Get(":id")
-  findOne(@Param("id", ParseUUIDPipe) id: string): Promise<CardDesign> {
-    return this.cardDesignsService.findOne(id);
+  @Get(":idOrSlug")
+  findOne(@Param("idOrSlug") idOrSlug: string): Promise<CardDesign> {
+    if (!CARD_IDENTIFIER_PATTERN.test(idOrSlug)) {
+      throw new BadRequestException("Not a valid card id or slug");
+    }
+    return this.cardDesignsService.findOne(idOrSlug);
   }
 }
