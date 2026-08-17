@@ -445,7 +445,10 @@ export default function HomePage() {
             order (card price incl. VAT + a stamp per card: 1st class £1.80, 2nd class £0.91).
           </p>
         </div>
-        <div className="mt-10 grid items-start gap-6 md:grid-cols-3">
+        {/* No `items-start`: the three cards stretch to a common height so their
+            feature lists can differ in length without the boxes going ragged.
+            Each card's CTA is pinned to the bottom with `mt-auto`. */}
+        <div className="mt-10 grid gap-6 md:grid-cols-3">
           {PLAN_CATALOG.map((plan) => (
             <div
               key={plan.id}
