@@ -15,7 +15,17 @@ const CORAL = "#ef5b52";
  * visitor skips straight to the editor with a fresh saved design. See
  * docs/adr/0025-guest-one-off-purchases-and-account-tiers.md.
  */
-export function PersonaliseButton({ cardId, cardName }: { cardId: string; cardName: string }) {
+export function PersonaliseButton({
+  cardId,
+  cardName,
+  sendHref,
+}: {
+  cardId: string;
+  cardName: string;
+  /** The card's canonical send URL — built by cardSendPath() so this component
+   * never has to know the /cards/<category>/<slug> shape (ADR 0163). */
+  sendHref: string;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +42,7 @@ export function PersonaliseButton({ cardId, cardName }: { cardId: string; cardNa
       if (!session) {
         // Not signed in — no paywall. Go straight to the guest send flow to
         // personalise, address and buy this one card without an account.
-        router.push(`/cards/${cardId}/send`);
+        router.push(sendHref);
         return;
       }
 

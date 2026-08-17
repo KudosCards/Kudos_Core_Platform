@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
 import { CARD_PRICE_MINOR, POSTAGE_MINOR } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
+import { cardCategorySegment, cardPath, cardSendPath } from "@/lib/card-urls";
 import { NO_INDEX } from "@/lib/site";
-import { CardsHeader } from "../../cards-header";
+import { CardsHeader } from "../../../cards-header";
 import { GuestSendClient } from "./guest-send-client";
 
 // ISR: the server render is pure catalog data (the guest form is client-side),
@@ -17,24 +18,31 @@ export const revalidate = 3600;
 
 // Prerender the send-entry shell for every catalog card (build-safe: null → no
 // params if the API is unreachable at build; dynamicParams renders the rest).
-export async function generateStaticParams(): Promise<{ id: string }[]> {
+export async function generateStaticParams(): Promise<{ category: string; slug: string }[]> {
   const templates = await publicApiFetch<CardDesign[]>("/card-designs", {
     revalidate: CATALOG_REVALIDATE_SECONDS,
   });
-  return (templates ?? []).map((card) => ({ id: card.id }));
+  return (templates ?? []).map((card) => ({
+    category: cardCategorySegment(card),
+    slug: card.slug,
+  }));
+}
+
+async function fetchCard(slug: string): Promise<CardDesign | null> {
+  return publicApiFetch<CardDesign>(`/card-designs/${slug}`, {
+    revalidate: CATALOG_REVALIDATE_SECONDS,
+  });
 }
 
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
-  const { id } = await params;
-  const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`, {
-    revalidate: CATALOG_REVALIDATE_SECONDS,
-  });
-  // A checkout step, not a landing page — the card's own /cards/[id] page is the
-  // indexable version of this content.
+  const { slug } = await params;
+  const card = await fetchCard(slug);
+  // A checkout step, not a landing page — the card's own page is the indexable
+  // version of this content.
   return {
     title: card ? `Send ${card.name}` : "Send a card",
     ...NO_INDEX,
@@ -46,20 +54,27 @@ export async function generateMetadata({
  * alongside the recipient/address/email form; submitting redirects to Stripe.
  * See docs/adr/0025-guest-one-off-purchases-and-account-tiers.md.
  */
-export default async function GuestSendPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`, {
-    revalidate: CATALOG_REVALIDATE_SECONDS,
-  });
+export default async function GuestSendPage({
+  params,
+}: {
+  params: Promise<{ category: string; slug: string }>;
+}) {
+  const { category, slug } = await params;
+  const card = await fetchCard(slug);
   if (!card) {
     notFound();
+  }
+
+  // Reached under the wrong category — one card, one URL.
+  if (cardCategorySegment(card) !== category) {
+    permanentRedirect(cardSendPath(card));
   }
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
       <CardsHeader />
       <main className="mx-auto max-w-5xl px-6 py-12">
-        <Link href={`/cards/${card.id}`} className="text-sm text-slate-500 hover:text-slate-900">
+        <Link href={cardPath(card)} className="text-sm text-slate-500 hover:text-slate-900">
           ← Back to the card
         </Link>
         <div className="mt-6 grid items-start gap-10 md:grid-cols-2">
