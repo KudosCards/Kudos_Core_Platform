@@ -35,7 +35,7 @@ export async function generateMetadata({
   // A checkout step, not a landing page — the card's own /cards/[id] page is the
   // indexable version of this content.
   return {
-    title: card ? `Send ${card.name} — Kudos Cards` : "Send a card — Kudos Cards",
+    title: card ? `Send ${card.name}` : "Send a card",
     ...NO_INDEX,
   };
 }

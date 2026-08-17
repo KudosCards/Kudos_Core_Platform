@@ -4,7 +4,7 @@ import { NO_INDEX } from "@/lib/site";
 import { CardsHeader } from "../../cards/cards-header";
 
 export const metadata: Metadata = {
-  title: "Your card is on its way — Kudos Cards",
+  title: "Your card is on its way",
   ...NO_INDEX,
 };
 

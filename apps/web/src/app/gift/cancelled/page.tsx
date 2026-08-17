@@ -3,7 +3,7 @@ import Link from "next/link";
 import { NO_INDEX } from "@/lib/site";
 import { CardsHeader } from "../../cards/cards-header";
 
-export const metadata: Metadata = { title: "Checkout cancelled — Kudos Cards", ...NO_INDEX };
+export const metadata: Metadata = { title: "Checkout cancelled", ...NO_INDEX };
 
 /** Stripe cancel_url for guest one-off purchases (public). Nothing was charged. */
 export default function GiftCancelledPage() {

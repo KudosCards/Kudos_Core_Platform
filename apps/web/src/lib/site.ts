@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { env } from "./env";
 
 /**
@@ -34,3 +35,20 @@ export function absoluteUrl(path: string): string {
 export const NO_INDEX = {
   robots: { index: false, follow: false },
 } as const;
+
+/**
+ * Build a page's `openGraph` with the site-wide fields already filled in.
+ *
+ * Next merges metadata *shallowly*: a page that sets `openGraph` replaces the
+ * root layout's object outright rather than merging into it, so a page-level
+ * override silently drops `siteName` and `locale`. Going through this helper
+ * keeps them on every page. See docs/seo-plan.md (Phase 2).
+ */
+export function openGraphFor(overrides: NonNullable<Metadata["openGraph"]>) {
+  return {
+    type: "website",
+    siteName: "Kudos Cards",
+    locale: "en_GB",
+    ...overrides,
+  } satisfies NonNullable<Metadata["openGraph"]>;
+}

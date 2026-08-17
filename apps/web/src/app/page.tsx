@@ -7,6 +7,7 @@ import {
   formatPlanPrice,
   planCardPriceLabel,
 } from "@kudos/shared-types";
+import { openGraphFor } from "@/lib/site";
 import { PublicHeader } from "@/components/public-header";
 import { SocialLinks } from "@/components/social-links";
 
@@ -17,10 +18,22 @@ import { SocialLinks } from "@/components/social-links";
  * light/dark theme. Assets live in /public/marketing (from the repo /images).
  */
 
-// Canonical only. The homepage's title and description still come from the root
-// layout — rewriting them for search is Phase 2 of docs/seo-plan.md.
+/**
+ * `title.absolute` so the root template doesn't append the brand twice — the
+ * homepage title already ends in it. Written to be read in a search result:
+ * what we sell first, who it's for second. See docs/seo-plan.md (Phase 2).
+ */
 export const metadata: Metadata = {
+  title: { absolute: "Personalised cards, printed and posted — Kudos Cards" },
+  description:
+    "Send one card or automate thousands. We print and post real, personalised cards for birthdays, thank-yous and milestones — so you never miss another date.",
   alternates: { canonical: "/" },
+  openGraph: openGraphFor({
+    url: "/",
+    title: "Personalised cards, printed and posted — Kudos Cards",
+    description:
+      "Send one card or automate thousands. We print and post real, personalised cards for birthdays, thank-yous and milestones.",
+  }),
 };
 
 const CORAL = "#ef5b52";

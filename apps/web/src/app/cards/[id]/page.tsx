@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
-import { CARD_SIZE_LABEL } from "@kudos/shared-types";
+import { CARD_PRICE_MINOR, CARD_SIZE_LABEL } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
+import { openGraphFor } from "@/lib/site";
 import { CardsHeader } from "../cards-header";
 import { PersonaliseButton } from "./personalise-button";
 
@@ -38,9 +39,25 @@ export async function generateMetadata({
   const card = await publicApiFetch<CardDesign>(`/card-designs/${id}`, {
     revalidate: CATALOG_REVALIDATE_SECONDS,
   });
+  if (!card) {
+    return { title: "Card", alternates: { canonical: `/cards/${id}` } };
+  }
+
+  const description = `${card.name} — personalised with every recipient's name, then printed and posted for you from £${(CARD_PRICE_MINOR / 100).toFixed(2)} a card.`;
+
   return {
-    title: card ? `${card.name} — Kudos Cards` : "Card — Kudos Cards",
+    title: card.name,
+    description,
     alternates: { canonical: `/cards/${id}` },
+    // The card's own artwork is the share image — a real card front sells the
+    // link better than the site-wide OG image this overrides.
+    openGraph: openGraphFor({
+      type: "article",
+      url: `/cards/${id}`,
+      title: card.name,
+      description,
+      images: [{ url: card.thumbnailUrl, alt: card.name }],
+    }),
   };
 }
 

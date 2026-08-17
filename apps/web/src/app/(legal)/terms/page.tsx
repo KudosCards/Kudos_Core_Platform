@@ -3,7 +3,7 @@ import { LegalDocument } from "@/components/legal-document";
 import { TERMS } from "@/lib/legal";
 
 export const metadata: Metadata = {
-  title: "Terms & Conditions — Kudos Cards",
+  title: "Terms & Conditions",
   description: "The terms and conditions governing use of the Kudos Cards platform and services.",
   alternates: { canonical: "/terms" },
 };
