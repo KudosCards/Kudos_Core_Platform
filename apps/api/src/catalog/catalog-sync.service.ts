@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Prisma } from "@prisma/client";
+import { deriveCardSlugBase, uniqueCardSlug } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { DESIGN_ASSET_STORAGE_CLIENT } from "../storage/design-asset-storage.provider";
 import {
@@ -34,6 +35,25 @@ export interface CatalogSyncSummary {
 // finish in seconds (so the request doesn't time out), low enough not to hammer
 // Supabase storage or exhaust the DB connection pool.
 const IMAGE_COPY_CONCURRENCY = 8;
+
+/** Retries when a slug is claimed by a concurrent writer between pick and insert. */
+const SLUG_ASSIGNMENT_ATTEMPTS = 5;
+
+/** Prisma's unique-constraint error, narrowed to the slug index. */
+function isSlugUniqueViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { code, meta } = error as { code?: unknown; meta?: { target?: unknown } };
+  if (code !== "P2002") return false;
+  // Prisma reports `meta.target` as string[] on Postgres, but it's typed loosely
+  // and can be absent — narrow rather than stringify an unknown.
+  const target = meta?.target;
+  const fields = Array.isArray(target)
+    ? target.filter((field): field is string => typeof field === "string")
+    : typeof target === "string"
+      ? [target]
+      : [];
+  return fields.some((field) => field.includes("slug"));
+}
 
 // Cap on a single artwork download so one hung Airtable attachment can't stall
 // the whole run.
@@ -107,8 +127,20 @@ export class CatalogSyncService {
       errors: [],
     };
 
-    const existing = await this.prisma.cardDesign.findMany({ where: { externalId: { not: null } } });
+    const existing = await this.prisma.cardDesign.findMany({
+      where: { externalId: { not: null } },
+    });
     const byExternalId = new Map(existing.map((design) => [design.externalId as string, design]));
+
+    // Every slug already in use, including seeded templates that have no
+    // externalId. Workers claim from this set synchronously (JS is
+    // single-threaded, so claim-then-await is atomic within this process); the
+    // unique index catches anything a *concurrent* sync elsewhere took first.
+    const takenSlugs = new Set(
+      (await this.prisma.cardDesign.findMany({ select: { slug: true } })).map(
+        (design) => design.slug,
+      ),
+    );
 
     // Copy artwork with bounded concurrency, not one-at-a-time: a few hundred
     // sequential image download+upload round-trips take long enough that the
@@ -149,11 +181,10 @@ export class CatalogSyncService {
           isActive: true,
         };
 
-        await this.prisma.cardDesign.upsert({
-          where: { externalId: record.externalId },
-          create: { externalId: record.externalId, ...data },
-          update: data,
-        });
+        // The slug is assigned once, on create, and deliberately absent from
+        // `update`: renaming a card in Airtable must not change a published URL
+        // or break the QR codes on cards already in the post (ADR 0163).
+        await this.upsertWithSlug(record, data, takenSlugs);
 
         summary.imagesCopied += 1;
         if (prior) {
@@ -188,6 +219,54 @@ export class CatalogSyncService {
    * with the boot-time ensure in StorageService so the bucket's config can't
    * drift between the two paths.
    */
+  /**
+   * Upsert a synced design, assigning a slug only when the row is created.
+   *
+   * Two syncs can run at once (a scheduled run and an ops-triggered "Refresh
+   * catalog"), and this sync itself creates cards on 8 concurrent workers, so a
+   * slug claimed in memory can still lose a race to the database. A unique
+   * violation on `slug` is therefore expected rather than exceptional: mark the
+   * loser as taken and try the next suffix. Bounded, so a genuine unique
+   * violation on some *other* column can't spin forever.
+   */
+  private async upsertWithSlug(
+    record: CatalogCardRecord,
+    // Everything except the identity columns this method owns: `slug` is
+    // assigned here on create, and `externalId` is the upsert key.
+    data: Omit<Prisma.CardDesignUncheckedCreateInput, "id" | "slug" | "externalId">,
+    takenSlugs: Set<string>,
+  ): Promise<void> {
+    const base = deriveCardSlugBase({
+      name: record.title,
+      sku: record.sku,
+      externalId: record.externalId,
+      // Only reached when name, sku and externalId all slugify to nothing.
+      // externalId is always present here, so this is a belt-and-braces value.
+      id: record.externalId,
+    });
+
+    for (let attempt = 0; attempt < SLUG_ASSIGNMENT_ATTEMPTS; attempt += 1) {
+      const slug = uniqueCardSlug(base, takenSlugs);
+      takenSlugs.add(slug);
+      try {
+        await this.prisma.cardDesign.upsert({
+          where: { externalId: record.externalId },
+          create: { ...data, externalId: record.externalId, slug },
+          update: data,
+        });
+        return;
+      } catch (error) {
+        if (!isSlugUniqueViolation(error)) throw error;
+        this.logger.warn(`Slug "${slug}" was taken concurrently; retrying ${record.externalId}`);
+      }
+    }
+
+    throw new Error(
+      `Could not assign a unique slug for ${record.sku ?? record.externalId} after ` +
+        `${SLUG_ASSIGNMENT_ATTEMPTS} attempts`,
+    );
+  }
+
   private async ensureBucket(): Promise<void> {
     const config = BUCKET_CONFIGS.find((c) => c.name === DESIGN_ASSETS_BUCKET);
     if (config) {
@@ -208,8 +287,7 @@ export class CatalogSyncService {
       throw new Error(`Could not download artwork (${response.status})`);
     }
     const buffer = Buffer.from(await response.arrayBuffer());
-    const contentType =
-      image.contentType ?? response.headers.get("content-type") ?? "image/png";
+    const contentType = image.contentType ?? response.headers.get("content-type") ?? "image/png";
     const ext = extensionFor(image.filename, contentType);
     const path = `catalog/${externalId}.${ext}`;
 

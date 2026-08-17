@@ -14,6 +14,7 @@ const cardDesignSchema = z.object({
   id: z.string().uuid(),
   category: z.string(),
   name: z.string(),
+  slug: z.string(),
   thumbnailUrl: z.string(),
   isActive: z.boolean(),
 });
@@ -45,6 +46,35 @@ describe("Card designs — public catalog (e2e)", () => {
       .get(`/card-designs/${first.id}`)
       .expect(200);
     expect(cardDesignSchema.parse(response.body).id).toBe(first.id);
+  });
+
+  /**
+   * The catalog moved to /cards/<category>/<slug> (ADR 0163). The web app now
+   * resolves designs by slug, while the UUID form has to keep working: it's in
+   * Google's index, in saved links, and printed as a QR code on cards already in
+   * the post.
+   */
+  it("resolves the same design by slug as by id", async () => {
+    const list = await request(app.getHttpServer()).get("/card-designs").expect(200);
+    const first = z.array(cardDesignSchema).parse(list.body)[0]!;
+    expect(first.slug).not.toBe("");
+
+    const bySlug = await request(app.getHttpServer())
+      .get(`/card-designs/${first.slug}`)
+      .expect(200);
+    expect(cardDesignSchema.parse(bySlug.body).id).toBe(first.id);
+  });
+
+  it("404s an unknown slug rather than leaking a different design", async () => {
+    await request(app.getHttpServer()).get("/card-designs/no-such-card-slug").expect(404);
+  });
+
+  it("400s a malformed identifier instead of querying with it", async () => {
+    // Unauthenticated endpoint: an unbounded path segment shouldn't reach the DB.
+    await request(app.getHttpServer()).get("/card-designs/not_a_valid_slug!").expect(400);
+    await request(app.getHttpServer())
+      .get(`/card-designs/${"a".repeat(150)}`)
+      .expect(400);
   });
 
   it("still 401s a protected resource route with no token (guard is on by default)", async () => {
