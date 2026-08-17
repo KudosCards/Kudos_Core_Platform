@@ -4,7 +4,7 @@ import { NO_INDEX } from "@/lib/site";
 import { BasketClient } from "./basket-client";
 
 export const metadata: Metadata = {
-  title: "Your basket — Kudos Cards",
+  title: "Your basket",
   ...NO_INDEX,
 };
 

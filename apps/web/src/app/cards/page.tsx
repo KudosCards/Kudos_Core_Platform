@@ -6,7 +6,7 @@ import { CardsHeader } from "./cards-header";
 import { CardsGalleryClient } from "./cards-gallery-client";
 
 export const metadata: Metadata = {
-  title: "Card library — Kudos Cards",
+  title: "Card library",
   description:
     "Browse our range of card designs. Pick one, personalise it, and we print and post it for you.",
   alternates: { canonical: "/cards" },

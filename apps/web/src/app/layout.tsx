@@ -18,11 +18,29 @@ export const metadata: Metadata = {
   // so it must be set before canonicals are worth anything. See lib/site.ts and
   // docs/seo-plan.md (Phase 1).
   metadataBase: new URL(SITE_URL),
-  title: "Kudos Cards",
-  description: "Automated, personalised physical recognition that builds retention and loyalty.",
+  title: {
+    // Used by any page that doesn't set its own title (mostly the signed-in app).
+    default: "Kudos Cards — real cards, printed and posted for you",
+    // Pages set the bare page name ("Card library") and get the brand appended
+    // once, here, instead of every page repeating the suffix by hand.
+    template: "%s — Kudos Cards",
+  },
+  description:
+    "Real, personalised cards, printed and posted for you — so you never miss a birthday, thank-you or milestone.",
   // Favicons come from the file-based convention (app/favicon.ico, app/icon.png,
   // app/apple-icon.png) — the Kudos Cards megaphone mark. A manual `icons` field
   // here would override those, so it's intentionally omitted.
+  openGraph: {
+    type: "website",
+    siteName: "Kudos Cards",
+    locale: "en_GB",
+    title: "Kudos Cards — real cards, printed and posted for you",
+    description:
+      "Real, personalised cards, printed and posted for you — so you never miss a birthday, thank-you or milestone.",
+  },
+  twitter: { card: "summary_large_image" },
+  // The share image itself is app/opengraph-image.tsx, picked up by file
+  // convention and inherited by every route that doesn't override it.
 };
 
 // Explicit mobile viewport. `initialScale: 1` fits to device width, and we

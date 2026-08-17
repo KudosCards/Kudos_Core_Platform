@@ -6,7 +6,7 @@ import { CardsHeader } from "../../cards/cards-header";
 import { NO_INDEX } from "@/lib/site";
 import { ClaimClient } from "./claim-client";
 
-export const metadata: Metadata = { title: "Save your order — Kudos Cards", ...NO_INDEX };
+export const metadata: Metadata = { title: "Save your order", ...NO_INDEX };
 
 /**
  * Claim a guest account (public — the buyer has no session yet). The claim token

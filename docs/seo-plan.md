@@ -1,7 +1,7 @@
 # SEO Plan
 
-Status: **Phase 1 shipped 2026-08-17.** Phases 0 (the ops half) and 2–6 remain. Audit
-written against `main` at the marketing-page rework (#297–#302).
+Status: **Phases 1–2 shipped 2026-08-17.** Phase 0 (the ops half) and Phases 3–6 remain.
+Audit written against `main` at the marketing-page rework (#297–#302).
 
 Kudos Cards sells a search-driven product ("birthday cards for schools", "thank you cards
 UK", "automated birthday cards for business") but the platform currently ships **no
@@ -81,12 +81,28 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   `/onboarding`, `/auth/confirm`, `/admin-login` and `/admin-set-password` are client
   components and can't export `metadata`, so those rely on the robots.txt rules alone.
 
-- **Phase 2 — Metadata and social cards.** Real `title`/`description` on the homepage
-  written for search rather than for the boardroom, and titles for the auth and legal
-  pages. A `title.template` on the root layout (`"%s — Kudos Cards"`) so per-page titles
-  stop repeating the suffix by hand. `openGraph` + `twitter` blocks, a static
-  `opengraph-image` for the marketing pages, and a dynamic one for `/cards/[id]` rendering
-  the card's own artwork — that last one is what makes a shared card link look like a card.
+- **Phase 2 — Metadata and social cards. ✅ Done.** `title.template` (`"%s — Kudos Cards"`)
+  on the root layout, so the nine pages that hard-coded the suffix now set just their page
+  name. Homepage `title`/`description` rewritten for a search result. Root `openGraph` +
+  `twitter` blocks and a branded `app/opengraph-image.tsx` (generated with `next/og`, no
+  custom font so the build has no font-fetch dependency). Auth pages got titles via a
+  one-child `layout.tsx` per route — they're client components and can't export `metadata`,
+  and a metadata-only layout is far cheaper than splitting each auth form into a server
+  wrapper. `/forgot-password` and `/reset-password` are noindex while at it.
+
+  Two corrections, again found by fetching rather than by building:
+
+  - **`/opengraph-image` 307'd to `/login`** — the same proxy trap as Phase 1, but the
+    matcher's file-extension rule doesn't catch it because the OG image is a *route*, not a
+    file. Every shared link would have had no preview image. `opengraph-image` and
+    `twitter-image` are now named in the matcher.
+  - **Next merges metadata shallowly**, so any page setting its own `openGraph` replaced the
+    root's object outright and silently dropped `og:site_name` and `og:locale`. Page-level
+    OG now goes through `openGraphFor()` in `lib/site.ts`, which fills the shared fields in.
+
+  `/cards/[id]` sets its `openGraph.images` to the card's own `thumbnailUrl` rather than
+  generating a composite: a real card front is the better share image, and it keeps the OG
+  route off the network path at build.
 
 - **Phase 3 — Structured data.** JSON-LD, server-rendered, no library needed.
   Organization (with the real registered details already in
