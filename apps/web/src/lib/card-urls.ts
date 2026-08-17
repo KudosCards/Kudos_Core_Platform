@@ -34,6 +34,24 @@ export function cardSendPath(card: Pick<CardDesign, "category" | "slug">): strin
   return `${cardPath(card)}/send`;
 }
 
+/**
+ * Whether a design can be published yet — i.e. the catalog API gave it a slug.
+ *
+ * `CardDesign` types `slug` as a required string, but `publicApiFetch` casts the
+ * response rather than parsing it, so that type is a promise an *older* API
+ * doesn't keep. During a deploy where the web ships ahead of the API (or the API
+ * is rolled back), the catalog comes back without slugs and every URL we'd build
+ * would be `/cards/<category>/undefined` — which took the whole build down with
+ * "a required parameter (slug) was not provided".
+ *
+ * Filtering here degrades that to "those cards aren't listed yet" and lets the
+ * build succeed, the same tolerance `publicApiFetch` already has for the API
+ * being unreachable. ISR picks them up once the API catches up.
+ */
+export function isPublishableCard(card: Pick<CardDesign, "slug">): boolean {
+  return typeof card.slug === "string" && card.slug.length > 0;
+}
+
 /** Canonical path for a category landing page. */
 export function categoryPath(categorySlug: string): string {
   return `/cards/${categorySlug}`;

@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import type { CardDesign } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CARD_CATEGORIES } from "@kudos/shared-types";
-import { cardCategorySegment, cardPath, categoryPath } from "@/lib/card-urls";
+import { cardCategorySegment, cardPath, categoryPath, isPublishableCard } from "@/lib/card-urls";
 import { absoluteUrl } from "@/lib/site";
 
 /**
@@ -33,7 +33,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     revalidate: CATALOG_REVALIDATE_SECONDS,
   });
 
-  const catalog = cards ?? [];
+  // Only cards the API has given a slug — see isPublishableCard().
+  const catalog = (cards ?? []).filter(isPublishableCard);
 
   // Only categories that actually have cards — a sitemap entry for a category
   // page that 404s (the page itself notFound()s when empty) is a crawl error we

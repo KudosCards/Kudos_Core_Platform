@@ -6,7 +6,7 @@ import type { CardDesign } from "@kudos/shared-types";
 import { CARD_PRICE_MINOR, POSTAGE_MINOR } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
-import { cardCategorySegment, cardPath, cardSendPath } from "@/lib/card-urls";
+import { cardCategorySegment, cardPath, cardSendPath, isPublishableCard } from "@/lib/card-urls";
 import { NO_INDEX } from "@/lib/site";
 import { CardsHeader } from "../../../cards-header";
 import { GuestSendClient } from "./guest-send-client";
@@ -22,7 +22,7 @@ export async function generateStaticParams(): Promise<{ category: string; slug: 
   const templates = await publicApiFetch<CardDesign[]>("/card-designs", {
     revalidate: CATALOG_REVALIDATE_SECONDS,
   });
-  return (templates ?? []).map((card) => ({
+  return (templates ?? []).filter(isPublishableCard).map((card) => ({
     category: cardCategorySegment(card),
     slug: card.slug,
   }));

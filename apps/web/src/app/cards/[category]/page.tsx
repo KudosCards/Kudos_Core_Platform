@@ -4,7 +4,12 @@ import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
 import { CARD_CATEGORIES, CARD_SIZE_NOTICE, getCardCategory } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
-import { cardCategorySegment, cardPath, OTHER_CATEGORY_SLUG } from "@/lib/card-urls";
+import {
+  cardCategorySegment,
+  cardPath,
+  isPublishableCard,
+  OTHER_CATEGORY_SLUG,
+} from "@/lib/card-urls";
 import { NO_INDEX, openGraphFor } from "@/lib/site";
 import { breadcrumbSchema } from "@/lib/structured-data";
 import { JsonLd } from "@/components/json-ld";
@@ -90,7 +95,9 @@ export default async function CardCategoryPage({
   }
 
   const catalog = await fetchCatalog();
-  const cards = catalog.filter((card) => cardCategorySegment(card) === category);
+  const cards = catalog
+    .filter(isPublishableCard)
+    .filter((card) => cardCategorySegment(card) === category);
 
   // A published category with nothing in it is a dead end for a visitor and a
   // thin page for a crawler.
