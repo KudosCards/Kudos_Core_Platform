@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import type { CardDesign } from "@kudos/shared-types";
 import { CARD_SIZE_NOTICE } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
+import { breadcrumbSchema } from "@/lib/structured-data";
+import { JsonLd } from "@/components/json-ld";
 import { CardsHeader } from "./cards-header";
 import { CardsGalleryClient } from "./cards-gallery-client";
 
@@ -25,6 +27,12 @@ export default async function CardsPage() {
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
+      <JsonLd
+        data={breadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: "Card library", path: "/cards" },
+        ])}
+      />
       <CardsHeader />
       <main className="mx-auto max-w-6xl px-6 py-12">
         <div className="flex max-w-2xl flex-col gap-3">

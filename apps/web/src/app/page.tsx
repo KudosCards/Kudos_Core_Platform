@@ -8,6 +8,8 @@ import {
   planCardPriceLabel,
 } from "@kudos/shared-types";
 import { openGraphFor } from "@/lib/site";
+import { organisationSchema, webSiteSchema } from "@/lib/structured-data";
+import { JsonLd } from "@/components/json-ld";
 import { PublicHeader } from "@/components/public-header";
 import { SocialLinks } from "@/components/social-links";
 
@@ -207,6 +209,9 @@ function HeroCard({ src, alt, priority }: { src: string; alt: string; priority?:
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-white text-slate-900">
+      {/* Who we are, for search engines: the registered company behind the site. */}
+      <JsonLd data={organisationSchema()} />
+      <JsonLd data={webSiteSchema()} />
       {/* Header — Moonpig-style: browse nav + Reminders prompt + Basket + Sign in */}
       <PublicHeader
         navLinks={[

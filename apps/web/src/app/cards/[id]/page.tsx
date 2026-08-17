@@ -7,6 +7,8 @@ import { CARD_PRICE_MINOR, CARD_SIZE_LABEL } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
 import { openGraphFor } from "@/lib/site";
+import { breadcrumbSchema, cardProductSchema } from "@/lib/structured-data";
+import { JsonLd } from "@/components/json-ld";
 import { CardsHeader } from "../cards-header";
 import { PersonaliseButton } from "./personalise-button";
 
@@ -30,6 +32,11 @@ function formatCategory(category: string): string {
   return category.charAt(0).toUpperCase() + category.slice(1);
 }
 
+/** Shared by the meta description and the Product JSON-LD, so they can't diverge. */
+function cardDescription(card: CardDesign): string {
+  return `${card.name} — personalised with every recipient's name, then printed and posted for you from £${(CARD_PRICE_MINOR / 100).toFixed(2)} a card plus postage.`;
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -43,7 +50,7 @@ export async function generateMetadata({
     return { title: "Card", alternates: { canonical: `/cards/${id}` } };
   }
 
-  const description = `${card.name} — personalised with every recipient's name, then printed and posted for you from £${(CARD_PRICE_MINOR / 100).toFixed(2)} a card.`;
+  const description = cardDescription(card);
 
   return {
     title: card.name,
@@ -72,6 +79,14 @@ export default async function CardPreviewPage({ params }: { params: Promise<{ id
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
+      <JsonLd data={cardProductSchema(card, cardDescription(card))} />
+      <JsonLd
+        data={breadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: "Card library", path: "/cards" },
+          { name: card.name, path: `/cards/${card.id}` },
+        ])}
+      />
       <CardsHeader />
       <main className="mx-auto max-w-5xl px-6 py-12">
         <Link href="/cards" className="text-sm text-slate-500 hover:text-slate-900">

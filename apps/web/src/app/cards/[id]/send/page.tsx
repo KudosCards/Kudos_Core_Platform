@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
+import { CARD_PRICE_MINOR, POSTAGE_MINOR } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
 import { NO_INDEX } from "@/lib/site";
@@ -79,8 +80,12 @@ export default async function GuestSendPage({ params }: { params: Promise<{ id: 
             </div>
             <div className="text-center">
               <p className="font-semibold">{card.name}</p>
+              {/* Card price and stamp are separate charges at the basket, so
+                  quote them separately here. Derived from the pricing constants
+                  so the copy can't drift from what's charged. */}
               <p className="text-sm text-slate-500">
-                We print it and post a real card — £2.50, all in.
+                We print it and post a real card — £{(CARD_PRICE_MINOR / 100).toFixed(2)} a card,
+                plus a £{(POSTAGE_MINOR.second_class / 100).toFixed(2)} second-class stamp.
               </p>
             </div>
           </div>
