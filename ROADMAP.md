@@ -143,6 +143,13 @@ checkout directly, a public card shop, and the "free sample card / 90-second dem
 - "Signal List" (monitor contacts for key moments) and "Come Back Cards" (re-engage lapsed) —
   these were _"coming soon"_ even on the WordPress site.
 - Public card **shop** browse (buy an individual card outside the workspace flow).
+- Marketing hero/timeline artwork: `card-thankyou.png` and `card-achievement.png` are the
+  thank-you and achievement _category_ badges re-canvassed to a 300×450 card shape. Swap in
+  genuine card designs at the same paths when we have them — no code change needed (#298).
+- Remove `apps/web/public/marketing/card-shop.png` — unreferenced since the benefits section
+  became the customer-year timeline (#302), so it ships to Netlify for nothing.
+- **SEO overhaul** — see `docs/seo-plan.md`. Phase 1 (robots, sitemap, canonicals, `noindex`
+  on `/r/[slug]`) is the crawl-basics quick win and includes a privacy fix.
 
 ---
 
