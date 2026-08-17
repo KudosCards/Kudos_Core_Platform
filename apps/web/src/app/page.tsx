@@ -104,6 +104,38 @@ const heroCards = {
   },
 };
 
+/**
+ * The benefits section's visual: one customer's year, so "people who feel
+ * remembered stick around" is shown rather than asserted. Illustrative — a
+ * typical year for a tuition centre, not a real account — and deliberately
+ * free of numbers so there's no stat here to fall out of date.
+ */
+const customerYear = [
+  {
+    month: "Jan",
+    title: "Joins your centre",
+    body: "You add them once, with their birthday.",
+  },
+  {
+    month: "Mar",
+    title: "Birthday card lands",
+    body: "Posted for you, no reminder needed.",
+    card: { src: "/marketing/card-birthday.png", alt: "A Happy Birthday card", tilt: "rotate-3" },
+  },
+  {
+    month: "Jul",
+    title: "Exam results are in",
+    body: "A well done card goes out the same week.",
+    card: { src: "/marketing/card-welldone.png", alt: "A Congratulations card", tilt: "-rotate-2" },
+  },
+  {
+    month: "Nov",
+    title: "End of a good year",
+    body: "A thank-you card, from you to them.",
+    card: { src: "/marketing/card-thankyou.png", alt: "A Thank You card", tilt: "rotate-2" },
+  },
+];
+
 const reviews = [
   {
     name: "Ann Bennett",
@@ -382,14 +414,63 @@ export default function HomePage() {
               Start for free, no card needed
             </Link>
           </div>
-          <Image
-            src="/marketing/card-shop.png"
-            alt="The Kudos Cards card shop"
-            width={1274}
-            height={618}
-            className="w-full rounded-xl shadow-xl ring-1 ring-slate-100"
-            sizes="(max-width: 768px) 100vw, 550px"
-          />
+          {/* One customer's year — a timeline, not a product screenshot, so the
+              section shows the pay-off rather than the tool. */}
+          <div className="rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-100 sm:p-8">
+            <p className="text-xs font-bold tracking-widest text-slate-400 uppercase">
+              A year with one customer
+            </p>
+            <ol className="mt-6">
+              {customerYear.map((moment) => (
+                <li
+                  key={moment.month}
+                  className="grid grid-cols-[2.25rem_0.75rem_1fr] gap-x-3 sm:grid-cols-[2.75rem_0.75rem_1fr] sm:gap-x-4"
+                >
+                  <span className="pt-1 text-xs font-semibold tracking-wide text-slate-400 uppercase">
+                    {moment.month}
+                  </span>
+                  <span className="relative flex justify-center">
+                    <span
+                      className="mt-1.5 h-3 w-3 shrink-0 rounded-full"
+                      style={{ backgroundColor: CORAL }}
+                    />
+                    <span className="absolute top-5 bottom-0 left-1/2 w-px -translate-x-1/2 bg-slate-200" />
+                  </span>
+                  <div className="flex items-start justify-between gap-4 pb-8">
+                    <div className="pt-0.5">
+                      <p className="font-semibold">{moment.title}</p>
+                      <p className="mt-0.5 text-sm text-slate-600">{moment.body}</p>
+                    </div>
+                    {moment.card && (
+                      <Image
+                        src={moment.card.src}
+                        alt={moment.card.alt}
+                        width={300}
+                        height={450}
+                        className={`h-20 w-auto shrink-0 rounded-lg shadow-md ring-1 ring-slate-900/10 sm:h-24 ${moment.card.tilt}`}
+                        sizes="64px"
+                      />
+                    )}
+                  </div>
+                </li>
+              ))}
+              {/* The pay-off, and the reason the timeline exists. */}
+              <li className="grid grid-cols-[2.25rem_0.75rem_1fr] gap-x-3 sm:grid-cols-[2.75rem_0.75rem_1fr] sm:gap-x-4">
+                <span className="pt-1 text-xs font-semibold tracking-wide text-slate-400 uppercase">
+                  Jan
+                </span>
+                <span className="flex justify-center">
+                  <span className="mt-1.5 h-3 w-3 shrink-0 rounded-full bg-emerald-500" />
+                </span>
+                <div>
+                  <p className="font-semibold text-emerald-700">Still with you ✓</p>
+                  <p className="mt-0.5 text-sm text-slate-600">
+                    And telling other parents where to find you.
+                  </p>
+                </div>
+              </li>
+            </ol>
+          </div>
         </div>
       </section>
 
