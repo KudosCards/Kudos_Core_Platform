@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -15,6 +16,12 @@ import { SocialLinks } from "@/components/social-links";
  * Deliberately light-committed (its own brand look), independent of the app's
  * light/dark theme. Assets live in /public/marketing (from the repo /images).
  */
+
+// Canonical only. The homepage's title and description still come from the root
+// layout — rewriting them for search is Phase 2 of docs/seo-plan.md.
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 const CORAL = "#ef5b52";
 

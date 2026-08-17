@@ -1,6 +1,16 @@
+import type { Metadata } from "next";
 import { env } from "@/lib/env";
+import { NO_INDEX } from "@/lib/site";
 import { MessagePageView } from "@/components/message-page-view";
 import { ReplyForm } from "./reply-form";
+
+/**
+ * Never indexed. These pages carry a personal message addressed to a named
+ * recipient — a search result for one would be a privacy failure, not just an
+ * SEO wrinkle. The slug is unguessable, but that alone doesn't keep a page out
+ * of an index once a link leaks. See docs/seo-plan.md (finding 7).
+ */
+export const metadata: Metadata = { ...NO_INDEX };
 
 /**
  * Public QR-linked digital message page — no login, no app required. The
@@ -108,9 +118,7 @@ export default async function MessagePage({ params }: { params: Promise<{ slug: 
         ctaLabel={page.ctaLabel}
         ctaUrl={page.ctaUrl}
         ctaHref={
-          page.ctaUrl
-            ? `${env.NEXT_PUBLIC_API_URL}/messages/${encodeURIComponent(slug)}/cta`
-            : null
+          page.ctaUrl ? `${env.NEXT_PUBLIC_API_URL}/messages/${encodeURIComponent(slug)}/cta` : null
         }
       />
       {page.allowReplies && <ReplyForm slug={slug} />}

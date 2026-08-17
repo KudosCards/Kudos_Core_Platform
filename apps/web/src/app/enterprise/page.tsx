@@ -14,6 +14,7 @@ export const metadata: Metadata = {
   title: "Kudos Cards for Enterprise — talk to our team",
   description:
     "Volume card pricing, multiple sites, unlimited seats and a dedicated account manager. Tell us what your organisation needs.",
+  alternates: { canonical: "/enterprise" },
 };
 
 export default function EnterprisePage() {
@@ -53,7 +54,10 @@ export default function EnterprisePage() {
 
             <p className="text-sm text-slate-500">
               Not sure you need Enterprise yet?{" "}
-              <Link href="/#plans" className="font-medium text-slate-700 underline hover:text-slate-900">
+              <Link
+                href="/#plans"
+                className="font-medium text-slate-700 underline hover:text-slate-900"
+              >
                 Compare all plans
               </Link>
               .

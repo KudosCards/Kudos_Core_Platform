@@ -5,6 +5,7 @@ import { PRIVACY } from "@/lib/legal";
 export const metadata: Metadata = {
   title: "Privacy Policy — Kudos Cards",
   description: "How Kudos Cards collects, uses, stores and shares personal information.",
+  alternates: { canonical: "/privacy" },
 };
 
 export default function PrivacyPage() {

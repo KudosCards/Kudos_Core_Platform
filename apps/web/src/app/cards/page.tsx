@@ -7,7 +7,9 @@ import { CardsGalleryClient } from "./cards-gallery-client";
 
 export const metadata: Metadata = {
   title: "Card library — Kudos Cards",
-  description: "Browse our range of card designs. Pick one, personalise it, and we print and post it for you.",
+  description:
+    "Browse our range of card designs. Pick one, personalise it, and we print and post it for you.",
+  alternates: { canonical: "/cards" },
 };
 
 // ISR: the catalog is the same for everyone, so serve this from the CDN and

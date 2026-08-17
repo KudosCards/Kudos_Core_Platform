@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { PublicHeader } from "@/components/public-header";
+import { NO_INDEX } from "@/lib/site";
 import { BasketClient } from "./basket-client";
 
 export const metadata: Metadata = {
   title: "Your basket — Kudos Cards",
+  ...NO_INDEX,
 };
 
 /**

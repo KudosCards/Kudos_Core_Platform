@@ -1,7 +1,12 @@
+import type { Metadata } from "next";
 import type { InvitePreview } from "@kudos/shared-types";
 import Link from "next/link";
 import { publicApiFetch } from "@/lib/api.public";
+import { NO_INDEX } from "@/lib/site";
 import { InviteAcceptClient } from "./invite-accept-client";
+
+/** Per-token team invite — public but never indexed. */
+export const metadata: Metadata = { ...NO_INDEX };
 
 /**
  * Public invite-acceptance page. A colleague opens the link from their invite

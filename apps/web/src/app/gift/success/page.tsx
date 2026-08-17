@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { NO_INDEX } from "@/lib/site";
 import { CardsHeader } from "../../cards/cards-header";
 
-export const metadata: Metadata = { title: "Your card is on its way — Kudos Cards" };
+export const metadata: Metadata = {
+  title: "Your card is on its way — Kudos Cards",
+  ...NO_INDEX,
+};
 
 /**
  * Stripe success_url for guest one-off purchases (public — a guest has no

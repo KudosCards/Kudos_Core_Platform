@@ -1,7 +1,7 @@
 # SEO Plan
 
-Status: **not started** — this is the audit + phased plan, written 2026-08-17 against
-`main` at the marketing-page rework (#297–#302).
+Status: **Phase 1 shipped 2026-08-17.** Phases 0 (the ops half) and 2–6 remain. Audit
+written against `main` at the marketing-page rework (#297–#302).
 
 Kudos Cards sells a search-driven product ("birthday cards for schools", "thank you cards
 UK", "automated birthday cards for business") but the platform currently ships **no
@@ -55,20 +55,31 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   (indexed pages, impressions, queries) so later phases can be judged against it.
   _Nothing ships to users in this phase; it's the prerequisite for 1 and 2._
 
-- **Phase 1 — Crawl basics.** The quick win: small, self-contained, no product decisions.
-  - `app/robots.ts` — allow the public surface, disallow `/r/`, `/gift/`, `/rts/`,
-    `/invite`, `/basket`, `/auth/`, `/admin-login`, `/admin-set-password` and the authed
-    app routes; point at the sitemap.
-  - `app/sitemap.ts` — homepage, `/cards`, every card detail page, `/enterprise`,
-    `/terms`, `/privacy`. Read the catalog through `publicApiFetch` with the same
-    `CATALOG_REVALIDATE_SECONDS` the pages use. **Must degrade to the static routes if the
-    API is unreachable**, mirroring how `generateStaticParams` already tolerates that —
-    a sitemap must never fail a build.
-  - `metadataBase` from `NEXT_PUBLIC_SITE_URL` (fall back to the production origin so a
-    missing env var can't emit relative canonicals).
-  - `alternates.canonical` on every public page.
-  - `robots: { index: false, follow: false }` on the finding 7 + 8 routes. **Do finding 7
-    first and separately if anything slips** — it's the privacy item.
+- **Phase 1 — Crawl basics. ✅ Done.** `app/robots.ts` and `app/sitemap.ts` (the sitemap
+  falls back to the marketing routes when the catalog API is unreachable, so it can never
+  fail a build); `metadataBase` + `SITE_URL`/`absoluteUrl`/`NO_INDEX` in `lib/site.ts`;
+  `alternates.canonical` on the six indexable public pages; `noindex, nofollow` on
+  `/r/[slug]`, `/basket`, `/gift/*`, `/rts/[token]`, `/invite/[token]` and
+  `/cards/[id]/send`.
+
+  Two corrections to the plan as written, both found by actually fetching the routes:
+
+  - **The proxy swallowed both new files.** `src/proxy.ts`'s matcher didn't exclude
+    `robots.txt` or `sitemap.xml`, so the Supabase session middleware treated them as app
+    routes and 307'd them to `/login`. Shipping the files without this fix would have
+    achieved nothing. Now excluded in the matcher (no session to refresh on either).
+  - **`/enterprise`, `/terms`, `/privacy` and `/rts/*` were never in the proxy's public
+    path list**, so logged-out visitors and crawlers were bounced to `/login`. That's a
+    functional bug beyond SEO: the footer's legal links were unreachable when signed out,
+    and ADR 0039 specifies `/rts/:token` as a "public, no-login recovery page" reached
+    from the RTS email. Added to `PUBLIC_PATHS` / `isPublicPath`.
+
+  Not done here, deliberately: the plan listed `/r/`, `/gift/`, `/rts/`, `/invite` and
+  `/basket` as robots.txt `Disallow` entries. They're handled with per-page `noindex`
+  instead — a `Disallow` stops the crawl, which means the crawler never sees the noindex
+  and the URL can still be indexed from an inbound link. `robots.ts` carries the reasoning.
+  `/onboarding`, `/auth/confirm`, `/admin-login` and `/admin-set-password` are client
+  components and can't export `metadata`, so those rely on the robots.txt rules alone.
 
 - **Phase 2 — Metadata and social cards.** Real `title`/`description` on the homepage
   written for search rather than for the boardroom, and titles for the auth and legal

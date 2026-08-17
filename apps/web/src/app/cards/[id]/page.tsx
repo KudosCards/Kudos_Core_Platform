@@ -40,6 +40,7 @@ export async function generateMetadata({
   });
   return {
     title: card ? `${card.name} — Kudos Cards` : "Card — Kudos Cards",
+    alternates: { canonical: `/cards/${id}` },
   };
 }
 
@@ -86,13 +87,16 @@ export default async function CardPreviewPage({ params }: { params: Promise<{ id
             </p>
             <ul className="flex flex-col gap-2 text-sm text-slate-600">
               <li className="flex items-center gap-2">
-                <span className="text-emerald-500">✓</span> Personalised with each recipient&apos;s name
+                <span className="text-emerald-500">✓</span> Personalised with each recipient&apos;s
+                name
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-500">✓</span> Printed &amp; posted for you — from £2.50 a card
+                <span className="text-emerald-500">✓</span> Printed &amp; posted for you — from
+                £2.50 a card
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-500">✓</span> Add a scan-to-watch message page — video, note &amp; link
+                <span className="text-emerald-500">✓</span> Add a scan-to-watch message page —
+                video, note &amp; link
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-emerald-500">✓</span> Printed {CARD_SIZE_LABEL} — more sizes
