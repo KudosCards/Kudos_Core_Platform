@@ -23,6 +23,7 @@ const PUBLIC_PATHS = [
   // footer, so bouncing a logged-out visitor (or a crawler) to /login makes them
   // unreachable and unindexable.
   "/enterprise",
+  "/faq",
   "/terms",
   "/privacy",
 ];
