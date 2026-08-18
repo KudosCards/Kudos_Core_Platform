@@ -4,6 +4,7 @@ import type { Occasion, Recipient } from "@prisma/client";
 import { type DesignDocument, linkedMessagePageId } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { OpsActivityService } from "../ops-activity/ops-activity.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { WalletService } from "../wallet/wallet.service";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
@@ -47,6 +48,7 @@ export class AutoSendService {
     private readonly entitlements: EntitlementsService,
     private readonly wallet: WalletService,
     private readonly inbox: NotificationInboxService,
+    private readonly opsActivity: OpsActivityService,
   ) {}
 
   /** Runs after the 6am birthday scheduler so newly-scheduled occasions aren't
@@ -72,9 +74,12 @@ export class AutoSendService {
     // a burst of Serializable retries all contending on the same account.
     for (const occasion of due) {
       try {
-        await this.autoSendOne(occasion);
+        const batchOrderId = await this.autoSendOne(occasion);
         result.sent += 1;
         await this.notifyAutoSent(occasion);
+        // An auto-send is a real paid order, and it never goes near Stripe's
+        // webhook — so Kudos HQ would otherwise never hear about it.
+        await this.opsActivity.orderPaid(batchOrderId);
       } catch (error) {
         const reason = error instanceof Error ? error.message : "Unknown error";
         result.skipped.push({ occasionId: occasion.id, reason });
@@ -127,7 +132,7 @@ export class AutoSendService {
    * retry next run or manual handling. Throws on any skip condition; runDue turns
    * the throw into an audited skip.
    */
-  private async autoSendOne(occasion: OccasionWithRecipient): Promise<void> {
+  private async autoSendOne(occasion: OccasionWithRecipient): Promise<string> {
     if (!occasion.recipient) {
       throw new Error("Occasion has no recipient");
     }
@@ -158,7 +163,9 @@ export class AutoSendService {
     const recipient = occasion.recipient;
     const savedDesignId = occasion.savedDesignId;
 
-    await runSerializable(this.prisma, async (tx) => {
+    // Returns the order it created so the caller can report it to Kudos HQ
+    // *after* this transaction commits — see OpsActivityService.
+    return runSerializable(this.prisma, async (tx) => {
       // Status-guarded consume: if a concurrent run or a manual checkout already
       // took this occasion, count is 0 and we bail before creating an order.
       const { count } = await tx.occasion.updateMany({
@@ -238,6 +245,8 @@ export class AutoSendService {
         },
         tx,
       );
+
+      return order.id;
     });
   }
 }

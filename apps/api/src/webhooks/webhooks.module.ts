@@ -6,9 +6,17 @@ import { BillingModule } from "../billing/billing.module";
 import { BatchOrdersModule } from "../batch-orders/batch-orders.module";
 import { WalletModule } from "../wallet/wallet.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { OpsActivityModule } from "../ops-activity/ops-activity.module";
 
 @Module({
-  imports: [AuditModule, BillingModule, BatchOrdersModule, WalletModule, NotificationsModule],
+  imports: [
+    AuditModule,
+    BillingModule,
+    BatchOrdersModule,
+    WalletModule,
+    NotificationsModule,
+    OpsActivityModule,
+  ],
   controllers: [WebhooksController],
   providers: [WebhooksService],
 })

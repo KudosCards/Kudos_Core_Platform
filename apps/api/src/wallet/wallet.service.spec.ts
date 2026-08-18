@@ -24,6 +24,7 @@ function makeService(retrieve: jest.Mock): FetchReceipt {
     undefined as unknown as Args[2],
     stripe,
     undefined as unknown as Args[4],
+    undefined as unknown as Args[5],
   );
   return service as unknown as FetchReceipt;
 }

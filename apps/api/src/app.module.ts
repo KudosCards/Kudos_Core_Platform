@@ -29,6 +29,7 @@ import { PricingModule } from "./pricing/pricing.module";
 import { CatalogModule } from "./catalog/catalog.module";
 import { WalletModule } from "./wallet/wallet.module";
 import { AutoSendModule } from "./auto-send/auto-send.module";
+import { OpsActivityModule } from "./ops-activity/ops-activity.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
 import { GuestModule } from "./guest/guest.module";
 import { EmailModule } from "./email/email.module";
@@ -95,6 +96,7 @@ import { PlatformNotificationsModule } from "./platform-notifications/platform-n
     CatalogModule,
     WalletModule,
     AutoSendModule,
+    OpsActivityModule,
     IntegrationsModule,
     GuestModule,
     EmailModule,
