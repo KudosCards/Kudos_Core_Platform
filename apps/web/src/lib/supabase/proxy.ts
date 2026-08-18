@@ -25,6 +25,7 @@ const PUBLIC_PATHS = [
   "/enterprise",
   "/faq",
   "/for",
+  "/guides",
   "/terms",
   "/privacy",
 ];
@@ -50,6 +51,8 @@ function isPublicPath(pathname: string): boolean {
     // The audience pages (/for/schools, ...) — public marketing content behind
     // the homepage's "Used by" pills. See ADR 0164.
     pathname.startsWith("/for/") ||
+    // The occasion guides (/guides/what-to-write-in-a-birthday-card, ...).
+    pathname.startsWith("/guides/") ||
     // Returned-to-sender address recovery. ADR 0039 specifies a "public, no-login
     // recovery page" reached from the RTS email — auth *is* the token — so a
     // bounce to /login breaks the flow it exists for.

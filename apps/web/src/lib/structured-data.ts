@@ -1,6 +1,7 @@
 import { CARD_PRICE_MINOR, POSTAGE_MINOR } from "@kudos/shared-types";
 import type { CardDesign } from "@kudos/shared-types";
 import { FAQ_ENTRIES } from "./faq";
+import type { Guide } from "./guides";
 import { cardPath } from "./card-urls";
 import { SITE_URL, absoluteUrl } from "./site";
 
@@ -152,5 +153,33 @@ export function faqPageSchema() {
         text: entry.answer.join(" "),
       },
     })),
+  };
+}
+
+/**
+ * An occasion guide as an Article.
+ *
+ * `datePublished` and `dateModified` both come from the guide's own `updated`
+ * field, which is the date the wording was last actually changed. Backdating it
+ * to look established would be a lie in a machine-readable field — the worst
+ * place to put one — and inventing a "published" date earlier than the text
+ * existed is the same lie with extra steps.
+ */
+export function guideArticleSchema(guide: Guide) {
+  const url = absoluteUrl(`/guides/${guide.slug}`);
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "@id": `${url}#article`,
+    headline: guide.heading,
+    description: guide.description,
+    url,
+    mainEntityOfPage: url,
+    datePublished: guide.updated,
+    dateModified: guide.updated,
+    inLanguage: "en-GB",
+    author: { "@id": ORGANISATION_ID },
+    publisher: { "@id": ORGANISATION_ID },
+    isPartOf: { "@id": `${SITE_URL}/#website` },
   };
 }

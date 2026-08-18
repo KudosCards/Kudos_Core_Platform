@@ -10,6 +10,7 @@ import {
   isPublishableCard,
   OTHER_CATEGORY_SLUG,
 } from "@/lib/card-urls";
+import { guideForCategory } from "@/lib/guides";
 import { NO_INDEX, openGraphFor } from "@/lib/site";
 import { breadcrumbSchema } from "@/lib/structured-data";
 import { JsonLd } from "@/components/json-ld";
@@ -106,6 +107,9 @@ export default async function CardCategoryPage({
   }
 
   const heading = known ? known.name : "More cards";
+  // Not every category has a guide; the ones that do get a link, because
+  // "what do I write in it" is the question between browsing and buying.
+  const guide = guideForCategory(category);
   const intro = known
     ? known.description
     : "Designs that don't sit under one of our main occasions — still printed and posted for you.";
@@ -133,6 +137,18 @@ export default async function CardCategoryPage({
             {CARD_SIZE_NOTICE}
           </p>
         </div>
+        {guide && (
+          <p className="mt-6 text-sm text-slate-600">
+            Not sure what to write?{" "}
+            <Link
+              href={`/guides/${guide.slug}`}
+              className="font-medium text-rose-600 hover:underline"
+            >
+              {guide.heading}
+            </Link>
+          </p>
+        )}
+
         <div className="mt-8">
           <CardsGalleryClient templates={cards} />
         </div>
