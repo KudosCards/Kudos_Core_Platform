@@ -42,9 +42,14 @@ export async function generateMetadata({
   const { slug } = await params;
   const card = await fetchCard(slug);
   // A checkout step, not a landing page — the card's own page is the indexable
-  // version of this content.
+  // version of this content. It still gets a description: noindex keeps it out
+  // of search, but people share this URL directly ("here's the card"), and a
+  // link preview with no description under it looks broken.
   return {
     title: card ? `Send ${card.name}` : "Send a card",
+    description: card
+      ? `Send ${card.name} as a real printed card — add the recipient's details and we print and post it for you.`
+      : "Send a real printed card — add the recipient's details and we print and post it for you.",
     ...NO_INDEX,
   };
 }

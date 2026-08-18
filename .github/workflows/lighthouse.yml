@@ -7,6 +7,17 @@ name: Lighthouse
 # deliberately NOT a blocking gate, because Lighthouse over the network is noisy
 # and a flaky score should never block a merge.
 #
+# It also watches the SEO side (docs/seo-plan.md, Phase 6). The assertions live
+# in .github/lighthouse/lighthouserc.json and are all `warn`, never `error`, for
+# the same reason the perf numbers aren't a gate — and because this workflow
+# runs on a schedule against the live site, where a red run means "go and look",
+# not "someone's PR is broken".
+#
+# The named audits there are deliberate. A category score of 0.95 can be reached
+# with a canonical tag missing, and canonicals are exactly what Phases 1-4 spent
+# their time getting right, so the individual audits are asserted too rather
+# than trusting the aggregate to notice.
+#
 # Setup (one-time): add a repository *variable* named LIGHTHOUSE_BASE_URL set to
 # the public site's base URL, e.g. https://kudos-cards.co.uk (or a deploy-preview
 # URL to profile a change before it ships).
@@ -29,8 +40,14 @@ concurrency:
 jobs:
   lighthouse:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20, not 10: five URLs x two runs each. Lighthouse is slow on purpose.
+    timeout-minutes: 20
     steps:
+      # Needed only for the assertion config below — the pages themselves are
+      # profiled over the network, not from this checkout.
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Resolve target URLs
         id: target
         env:
@@ -42,12 +59,21 @@ jobs:
             exit 0
           fi
           base="${BASE_URL%/}"
-          # The two highest-traffic public entry points: the marketing home and
-          # the card catalog (image-heavy, so the most to gain from image work).
+          # One URL per page *template*, not per page — the shapes differ, the
+          # instances of a shape don't. The home and catalog pages are the
+          # highest-traffic entry points (and the catalog is image-heavy, so it
+          # has the most to gain from image work); the FAQ, an audience page and
+          # a guide cover the content layer added in Phase 5.
+          #
+          # Every one of these is statically generated and independent of what's
+          # in the catalog, so a run can't go red because the card sync is empty.
           {
             echo "urls<<EOF"
             echo "$base/"
             echo "$base/cards"
+            echo "$base/faq"
+            echo "$base/for/schools"
+            echo "$base/guides/what-to-write-in-a-birthday-card"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -57,6 +83,8 @@ jobs:
         uses: treosh/lighthouse-ci-action@v12
         with:
           urls: ${{ steps.target.outputs.urls }}
+          # SEO assertions (warn-only). See the header for why they don't gate.
+          configPath: .github/lighthouse/lighthouserc.json
           # Two runs per URL, median reported — smooths out per-run network noise.
           runs: 2
           uploadArtifacts: true # attach the full HTML reports to the run

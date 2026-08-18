@@ -1,0 +1,51 @@
+{
+  "ci": {
+    "assert": {
+      "assertions": {
+        "categories:seo": [
+          "warn",
+          {
+            "minScore": 0.95
+          }
+        ],
+        "canonical": [
+          "warn",
+          {
+            "minScore": 1
+          }
+        ],
+        "document-title": [
+          "warn",
+          {
+            "minScore": 1
+          }
+        ],
+        "meta-description": [
+          "warn",
+          {
+            "minScore": 1
+          }
+        ],
+        "http-status-code": [
+          "warn",
+          {
+            "minScore": 1
+          }
+        ],
+        "is-crawlable": [
+          "warn",
+          {
+            "minScore": 1
+          }
+        ],
+        "crawlable-anchors": [
+          "warn",
+          {
+            "minScore": 1
+          }
+        ],
+        "hreflang": "off"
+      }
+    }
+  }
+}

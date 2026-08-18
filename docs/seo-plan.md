@@ -1,8 +1,8 @@
 # SEO Plan
 
-Status: **Phases 1–5 shipped** (1–4 on 2026-08-17, Phase 5 on 2026-08-18). Phase 6 remains,
-and Phase 0's ops half is still outstanding — that half is DNS, Search Console and a repo
-variable, none of which live in this repo.
+Status: **Phases 1–6 shipped in code** (1–4 on 2026-08-17, 5–6 on 2026-08-18). What's left is
+ops, not code: Phase 0's DNS and Search Console setup, the `LIGHTHOUSE_BASE_URL` repo variable,
+and watching Search Console coverage once the sitemap is submitted.
 Audit written against `main` at the marketing-page rework (#297–#302).
 
 Kudos Cards sells a search-driven product ("birthday cards for schools", "thank you cards
@@ -217,11 +217,54 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   **Phase 5 is complete.** **Guardrail applied throughout:** no invented statistics or
   testimonials, and no claims about which wording "performs" — nobody here has measured that.
 
-- **Phase 6 — Hygiene and monitoring.** Add Lighthouse's SEO category to the existing
-  workflow and assert it stays ≥ 95 on the public pages (non-blocking, like the perf
-  numbers). Watch Search Console coverage for the noindex/canonical rules actually
-  landing. Re-check the sitemap after any catalog sync change. Keep the one-`h1`,
-  alt-text and canonical rules in the review checklist as new pages get added.
+- **Phase 6 — Hygiene and monitoring. ✅ Code half done; the rest is ops.**
+
+  The Lighthouse workflow now asserts SEO, via `.github/lighthouse/lighthouserc.json`. The
+  assertions are **`warn`, never `error`** — the workflow runs weekly against the live site, so
+  a red run means "go and look", not "someone's PR is broken", and that's the same reason the
+  perf numbers aren't a gate either.
+
+  Two decisions worth keeping: the config asserts the **individual audits** (`canonical`,
+  `document-title`, `meta-description`, `is-crawlable`, `crawlable-anchors`, `http-status-code`)
+  and not just `categories:seo ≥ 0.95`, because a 0.95 category score is reachable with the
+  canonical tag missing — the exact thing Phases 1–4 spent their time getting right. And the
+  profiled set is **one URL per page template**, not per page: home, catalog, FAQ, an audience
+  page, a guide. All five are statically generated and independent of catalog contents, so a
+  run can't go red because the card sync returned nothing.
+
+  This was verified by running Lighthouse locally rather than by reading the docs, which was
+  worth doing three times over. The workflow had **no `actions/checkout` step**, so the config
+  file would not have existed on the runner. An unknown audit id turns out to be reported
+  rather than ignored (confirmed by asserting a deliberately bogus one), so the seven ids are
+  known-good. And asserting a `noindex` page proved the warnings actually fire and still exit 0
+  — while turning up a real gap: the guest send page had no meta description, now fixed.
+
+  **Still ops, not code:** watch Search Console coverage for the noindex/canonical rules
+  actually landing, and re-check the sitemap after any catalog sync change.
+
+## Rules for a new public page
+
+The checklist Phase 6 asks to keep. Anything reachable without logging in needs all of these,
+and every one of them has already been got wrong at least once in this repo:
+
+1. **Add it to `isPublicPath`** (`lib/supabase/proxy.ts`). Miss this and it 307s a logged-out
+   visitor — and every crawler — to `/login`. Found three times: `/enterprise`, `/terms`,
+   `/privacy` and the whole `/rts/` flow were all unreachable this way.
+2. **Add it to `sitemap.ts`.** A page nothing links to and the sitemap doesn't list is invisible.
+3. **One `<h1>`**, and a `<title>` that isn't a duplicate of another page's.
+4. **`alternates.canonical`**, or the page competes with its own query-string variants.
+5. **`openGraph: openGraphFor({...})`**, not a bare `openGraph` object — Next merges metadata
+   *shallowly*, so a page-level `openGraph` silently replaces the parent's `siteName`,
+   `locale` and `type` rather than extending them.
+6. **A meta description.** Even on a `noindex` page: people share URLs, and a link preview
+   with nothing under the title reads as broken.
+7. **Alt text on every image**, and `priority` on the one that's the LCP.
+8. **Numbers in the copy come from constants**, never typed by hand (ADR 0164). Two customer-
+   facing price claims contradicted checkout before that rule existed.
+9. **If it's `noindex`, don't also `Disallow` it in robots.txt** — a blocked crawl never reads
+   the noindex, so the page can still be indexed from external links.
+10. **Then load it logged out and read the HTML.** Every bug in this list was found that way,
+    not by a green build.
 
 ## Sequencing and effort
 
