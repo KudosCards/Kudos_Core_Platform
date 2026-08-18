@@ -668,6 +668,9 @@ export default function HomePage() {
               <Link href="/register" className="hover:text-slate-900">
                 Register
               </Link>
+              <Link href="/faq" className="hover:text-slate-900">
+                FAQ
+              </Link>
               <Link href="/terms" className="hover:text-slate-900">
                 Terms &amp; Conditions
               </Link>

@@ -1,6 +1,7 @@
 # SEO Plan
 
-Status: **Phases 1–4 shipped 2026-08-17.** Phase 0 (the ops half) and Phases 5–6 remain.
+Status: **Phases 1–4 shipped 2026-08-17; Phase 5 started 2026-08-18** (authoring mechanism
+decided, FAQ live). Phase 0 (the ops half), the rest of Phase 5 and Phase 6 remain.
 Audit written against `main` at the marketing-page rework (#297–#302).
 
 Kudos Cards sells a search-driven product ("birthday cards for schools", "thank you cards
@@ -155,15 +156,35 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   pages under a noindex landing page, because every card needs exactly one canonical URL and
   the alternative is orphans or breadcrumbs pointing at a 404.
 
-- **Phase 5 — Content layer.** The slow-burn phase that actually earns non-brand traffic.
-  Audience pages behind the "Used by" pills (tuition centres, schools, sports clubs,
-  charities, care teams) — each a real page with its own proof and CTA, not a doorway
-  variant of the homepage. Occasion guides. A genuine FAQ page (+ FAQPage markup). Decide
-  the authoring mechanism first: MDX in-repo is the cheapest thing that works and keeps
-  content in review; a CMS is only worth it if non-engineers will write. **Guardrail:** no
-  invented statistics or testimonials — the same rule the homepage now follows, where the
-  hero stat had to become the published "100+" figure and the timeline was left
-  deliberately number-free.
+- **Phase 5 — Content layer. 🚧 In progress.** The slow-burn phase that actually earns
+  non-brand traffic.
+
+  **Authoring mechanism — decided (ADR 0164): typed TypeScript content modules, not MDX and
+  not a CMS.** The content turned out to be structures with a repeated shape (question/answer
+  pairs; headline + pains + proof + CTA), which is what `lib/legal/*.ts` already does for a
+  far more sensitive document. The decisive argument was Phase 3's: marketing copy that
+  quotes a number is a *copy* of that number, and Phase 3 caught two price claims that
+  contradicted checkout. In a TS module the number interpolates from `CARD_PRICE_MINOR`,
+  `POSTAGE_MINOR` or `PLAN_CATALOG`; in MDX or a CMS it's hand-typed and nothing checks it.
+  The cost — a developer for every copy change — is accepted and revisitable.
+
+  **`/faq` — done.** Fourteen answers, every number derived from a constant, every claim
+  traceable to a plan entitlement, a pricing constant or an ADR. FAQPage JSON-LD is generated
+  from the same strings the page renders, so marked-up and visible text cannot diverge. Note
+  what this markup does *not* buy: since 2023 Google shows FAQ rich results only for
+  government and health sites, so the value is machine-readable content, not SERP real estate.
+
+  Two claims were cut in review rather than published. "We don't sell your data" is a policy
+  commitment the privacy policy doesn't make — the FAQ is the wrong place to invent one. And
+  the approval lead time was left unquantified because `BIRTHDAY_LOOKAHEAD_DAYS` lives in the
+  API and the web can't import it, so a figure here would have been a hand-typed copy of
+  exactly the kind this ADR exists to prevent.
+
+  **Still to do:** audience pages behind the "Used by" pills (tuition centres, schools, sports
+  clubs, charities, care teams) — each a real page with its own proof and CTA, not a doorway
+  variant of the homepage. Then occasion guides. **Guardrail:** no invented statistics or
+  testimonials — the same rule the homepage now follows, where the hero stat had to become the
+  published "100+" figure and the timeline was left deliberately number-free.
 
 - **Phase 6 — Hygiene and monitoring.** Add Lighthouse's SEO category to the existing
   workflow and assert it stays ≥ 95 on the public pages (non-blocking, like the perf

@@ -1,5 +1,6 @@
 import { CARD_PRICE_MINOR, POSTAGE_MINOR } from "@kudos/shared-types";
 import type { CardDesign } from "@kudos/shared-types";
+import { FAQ_ENTRIES } from "./faq";
 import { cardPath } from "./card-urls";
 import { SITE_URL, absoluteUrl } from "./site";
 
@@ -123,5 +124,33 @@ export function cardProductSchema(card: CardDesign, description: string) {
         },
       },
     },
+  };
+}
+
+/**
+ * The FAQ page as an FAQPage, built from the same `FAQ_ENTRIES` the page
+ * renders — so the marked-up answer is, by construction, the answer a visitor
+ * reads. Search engines treat a mismatch as cloaking, and hand-maintaining a
+ * second copy is how that happens.
+ *
+ * Worth being clear about what this buys: since 2023 Google shows FAQ rich
+ * results only for authoritative government and health sites, so expect no
+ * expandable answers in the SERP. It stays valid structured data that describes
+ * the page's content, which is the reason to publish it — not the stars.
+ */
+export function faqPageSchema() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "@id": `${absoluteUrl("/faq")}#faq`,
+    isPartOf: { "@id": `${SITE_URL}/#website` },
+    mainEntity: FAQ_ENTRIES.map((entry) => ({
+      "@type": "Question",
+      name: entry.question,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: entry.answer.join(" "),
+      },
+    })),
   };
 }

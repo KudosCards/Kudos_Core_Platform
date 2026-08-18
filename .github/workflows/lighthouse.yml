@@ -8,7 +8,7 @@ name: Lighthouse
 # and a flaky score should never block a merge.
 #
 # Setup (one-time): add a repository *variable* named LIGHTHOUSE_BASE_URL set to
-# the public site's base URL, e.g. https://kudoscards.co.uk (or a deploy-preview
+# the public site's base URL, e.g. https://kudos-cards.co.uk (or a deploy-preview
 # URL to profile a change before it ships).
 #   Repo → Settings → Secrets and variables → Actions → Variables → New variable
 # Until it's set, the job no-ops instead of failing. Only public (no-login)
