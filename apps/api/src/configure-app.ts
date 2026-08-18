@@ -1,12 +1,15 @@
 import type { INestApplication } from "@nestjs/common";
 import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { HttpAdapterHost } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import compression from "compression";
 import helmet from "helmet";
 import type { EnvConfig } from "./config/env.schema";
 import { corsOriginChecker, parseCommaList } from "./config/cors";
 import { ServerTimingInterceptor } from "./observability/server-timing.interceptor";
+import { SentryExceptionFilter } from "./observability/sentry-exception.filter";
+import { SerializationConflictFilter } from "./common/serialization-conflict.filter";
 
 /**
  * Applied to every app instance — production (main.ts) and every e2e test
@@ -50,12 +53,25 @@ export function configureApp(app: INestApplication): void {
   app.enableCors({
     origin: corsOriginChecker(allowedOrigins, allowedOriginSuffixes),
     credentials: true,
-    // Let browser-side callers (clientApiFetch) read the API timing header.
-    exposedHeaders: ["Server-Timing"],
+    // Let browser-side callers (clientApiFetch) read the API timing header, and
+    // the Retry-After that comes with a serialization conflict.
+    exposedHeaders: ["Server-Timing", "Retry-After"],
   });
   // Stamps each response with `Server-Timing: app;dur=<ms>` — the measurement
   // baseline for the performance work (Phase 0). See the interceptor for detail.
   app.useGlobalInterceptors(new ServerTimingInterceptor());
+  // Exception filters, in one place and one call because their **order matters
+  // and is counter-intuitive**: Nest reverses the global filter list, so the
+  // last one registered is the first one offered an exception. SentryExceptionFilter
+  // is a `@Catch()` catch-all, so anything more specific must come after it here
+  // or it never runs. Registered in configureApp rather than main.ts so the e2e
+  // suite exercises the same chain production does — a filter that only takes
+  // effect in one of the two renders a different response in the other, which is
+  // precisely how the Retry-After header below went missing the first time.
+  app.useGlobalFilters(
+    new SentryExceptionFilter(app.get(HttpAdapterHost).httpAdapter),
+    new SerializationConflictFilter(),
+  );
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
