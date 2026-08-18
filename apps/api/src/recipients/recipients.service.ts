@@ -8,6 +8,7 @@ import {
 import { Prisma, type KeyDateType, type PlanEntitlement, type Recipient, type RecipientKeyDate } from "@prisma/client";
 import { parse } from "csv-parse/sync";
 import { PrismaService } from "../prisma/prisma.service";
+import { runSerializable } from "../common/run-serializable";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { AuditService } from "../audit/audit.service";
 import type { Paginated } from "../common/paginated";
@@ -82,7 +83,6 @@ export interface IngestResult {
 }
 
 const UNIQUE_CONSTRAINT_VIOLATION = "P2002";
-const SERIALIZATION_FAILURE = "P2034";
 
 /**
  * Same key shape as the recipient_dedupe_key unique index. Only meaningful when
@@ -118,7 +118,7 @@ export class RecipientsService {
       // can both read "under cap" before either commits. Serializable isolation
       // makes Postgres detect that conflict and abort one of the transactions
       // (P2034) instead of silently letting the account exceed its plan cap.
-      recipient = await this.runSerializable(async (tx) => {
+      recipient = await runSerializable(this.prisma, async (tx) => {
         await this.assertUnderCap(tx, accountId, 1);
         return tx.recipient.create({ data: { accountId, ...dto } });
       });
@@ -545,7 +545,7 @@ export class RecipientsService {
     // Built inside the transaction callback below, which Prisma may retry on
     // a serialization conflict (P2034) — so it must return its result rather
     // than mutate `summary` directly, or a retry would double-push rejections.
-    const { toCreate, capRejected } = await this.runSerializable(async (tx) => {
+    const { toCreate, capRejected } = await runSerializable(this.prisma, async (tx) => {
       let activeCount =
         entitlement.recipientCap === null
           ? 0
@@ -649,7 +649,7 @@ export class RecipientsService {
     // must be atomic relative to any other concurrent write for this account.
     // Returns its results (never mutates outer state) so a P2034 retry can't
     // double-count. capSkipped is returned per-attempt for the same reason.
-    const { createdCount, capSkippedIds } = await this.runSerializable(async (tx) => {
+    const { createdCount, capSkippedIds } = await runSerializable(this.prisma, async (tx) => {
       let activeCount =
         entitlement.recipientCap === null
           ? 0
@@ -808,32 +808,6 @@ export class RecipientsService {
     if (!this.isUnderCap(entitlement, activeCount, additional)) {
       throw new ForbiddenException(`This plan allows up to ${entitlement.recipientCap} recipients`);
     }
-  }
-
-  /** Retries once or twice on a Serializable-isolation write conflict (P2034),
-   * which Postgres raises when two concurrent transactions' reads/writes
-   * would otherwise produce a result neither could have seen serially. */
-  private async runSerializable<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
-    // 5, not 3: under concurrent contention three attempts can all lose the
-    // serialization race and surface a P2034 as a 500 instead of the intended
-    // cap rejection. See common/run-serializable.ts.
-    const maxAttempts = 5;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        return await this.prisma.$transaction(fn, {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        });
-      } catch (error) {
-        const isSerializationFailure =
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === SERIALIZATION_FAILURE;
-        if (!isSerializationFailure || attempt === maxAttempts) {
-          throw error;
-        }
-      }
-    }
-    /* istanbul ignore next -- unreachable: loop always returns or throws */
-    throw new Error("Unreachable");
   }
 
   private mapWriteError(error: unknown): Error {
