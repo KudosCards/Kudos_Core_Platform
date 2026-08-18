@@ -15,6 +15,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { MarketingContactsService } from "../marketing/marketing-contacts.service";
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { SUPABASE_ADMIN_CLIENT } from "../supabase/supabase-admin.provider";
+import { OpsActivityService } from "../ops-activity/ops-activity.service";
 import type { CreateAccountDto } from "./dto/create-account.dto";
 
 /** An account safe to return over the API — without the claim-token secret. */
@@ -42,6 +43,7 @@ export class AccountsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly marketing: MarketingContactsService,
+    private readonly opsActivity: OpsActivityService,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
     @Inject(SUPABASE_ADMIN_CLIENT) private readonly supabaseAdmin: SupabaseClient,
   ) {}
@@ -72,6 +74,10 @@ export class AccountsService {
       firstName: dto.firstName,
       lastName: dto.lastName,
     });
+
+    // Tell Kudos HQ. After the transaction and best-effort, so a notification
+    // problem can never cost us a signup.
+    await this.opsActivity.accountSignedUp(account.id);
 
     return account;
   }

@@ -9,6 +9,7 @@ import { SeasonalDispatchSetup } from "./seasonal-dispatch-setup";
 import { DispatchReminderSetup } from "./dispatch-reminder-setup";
 import { PrintSizeSetup } from "./print-size-setup";
 import { ArrivalSweepButton } from "./arrival-sweep-button";
+import { DailySummaryButton } from "./daily-summary-button";
 
 interface AdminOverview {
   accounts: { total: number; organisations: number; individuals: number };
@@ -280,6 +281,9 @@ export default async function AdminOverviewPage() {
 
       {/* Force the estimated-arrival sweep for untracked stamped post (ADR 0124). */}
       <ArrivalSweepButton />
+
+      {/* Send yesterday's business digest on demand (ADR 0165). */}
+      <DailySummaryButton />
 
       {/* Revenue chart + plans */}
       <div className="grid gap-4 lg:grid-cols-3">

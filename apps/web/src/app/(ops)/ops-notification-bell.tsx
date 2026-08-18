@@ -6,9 +6,17 @@ import { useEffect, useRef, useState } from "react";
 import { Icons } from "@/components/icons";
 import { clientApiFetch } from "@/lib/api.client";
 
-/** Dot colour per operator-alert kind; falls back to accent. */
+/** Dot colour per operator-alert kind; falls back to accent.
+ *  Red is reserved for "act now" (cards due, an escalation); green is money in;
+ *  blue is someone new; slate is the morning digest, which is a report rather
+ *  than a prompt. `kind` is an open string on the wire, so an unknown kind still
+ *  renders — it just gets the accent dot. */
 const KIND_DOT: Record<string, string> = {
   dispatch_reminder: "bg-red-500",
+  dispatch_escalation: "bg-red-600",
+  new_order: "bg-emerald-500",
+  new_signup: "bg-sky-500",
+  daily_summary: "bg-slate-400",
 };
 
 /** A short "2h ago" / "3d ago" relative time for inbox rows. */

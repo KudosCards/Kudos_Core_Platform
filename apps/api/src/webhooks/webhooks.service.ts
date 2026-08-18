@@ -12,6 +12,7 @@ import { SeatBillingService } from "../billing/seat-billing.service";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { BRAND, renderBrandedEmail } from "../email/email-layout";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
+import { OpsActivityService } from "../ops-activity/ops-activity.service";
 import type { EnvConfig } from "../config/env.schema";
 import { mapStripeSubscriptionStatus } from "./subscription-status.util";
 
@@ -33,6 +34,7 @@ export class WebhooksService {
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
     private readonly inbox: NotificationInboxService,
+    private readonly opsActivity: OpsActivityService,
     private readonly seatBilling: SeatBillingService,
   ) {}
 
@@ -168,6 +170,9 @@ export class WebhooksService {
     if (fulfilled) {
       await this.maybeSendOrderEmail(batchOrderId);
       await this.notifyOrderPaid(batchOrderId);
+      // Kudos HQ's copy of the same event. After the transaction, like the two
+      // above — see OpsActivityService for why it can't go inside one.
+      await this.opsActivity.orderPaid(batchOrderId);
     }
   }
 

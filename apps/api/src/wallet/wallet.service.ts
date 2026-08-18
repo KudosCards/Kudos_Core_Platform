@@ -16,6 +16,7 @@ import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import type { EnvConfig } from "../config/env.schema";
 import type { CheckoutResult } from "../common/checkout-result";
 import { runSerializable } from "../common/run-serializable";
+import { OpsActivityService } from "../ops-activity/ops-activity.service";
 import type { TopUpDto } from "./dto/top-up.dto";
 
 /** No human is behind a Stripe webhook — see webhooks.service.ts. */
@@ -44,6 +45,7 @@ export class WalletService {
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
     private readonly batchOrders: BatchOrdersService,
+    private readonly opsActivity: OpsActivityService,
   ) {}
 
   async getSummary(accountId: string): Promise<WalletSummary> {
@@ -206,6 +208,9 @@ export class WalletService {
       targetId: batchOrderId,
       metadata: { totalMinor: order.totalMinor },
     });
+    // Kudos HQ's copy — post-commit, like the audit entry above. A wallet
+    // payment never touches Stripe, so the webhook path would never see it.
+    await this.opsActivity.orderPaid(batchOrderId);
     return order;
   }
 

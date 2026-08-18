@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { BillingModule } from "../billing/billing.module";
 import { DispatchModule } from "../dispatch/dispatch.module";
+import { OpsActivityModule } from "../ops-activity/ops-activity.module";
 import { AdminController } from "./admin.controller";
 import { AdminService } from "./admin.service";
 import { AdminCustomerService } from "./admin-customer.service";
@@ -13,7 +14,7 @@ import { CardSizeConfigService } from "./card-size-config.service";
  * management). PlatformAdminGuard is available app-wide via the global
  * AuthModule. See docs/adr/0040-admin-auth.md. */
 @Module({
-  imports: [BillingModule, DispatchModule],
+  imports: [BillingModule, DispatchModule, OpsActivityModule],
   controllers: [AdminController, AdminTeamController],
   providers: [AdminService, AdminCustomerService, AdminTeamService, CardSizeConfigService],
 })

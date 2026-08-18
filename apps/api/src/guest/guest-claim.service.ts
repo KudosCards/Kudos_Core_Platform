@@ -7,6 +7,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { SAFE_ACCOUNT_SELECT, type SafeAccount } from "../accounts/accounts.service";
 import { MarketingContactsService } from "../marketing/marketing-contacts.service";
+import { OpsActivityService } from "../ops-activity/ops-activity.service";
 import type { AuthenticatedUser } from "../auth/types";
 
 /** Turn a guest buyer's email into a friendly default account name. */
@@ -25,6 +26,7 @@ export class GuestClaimService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly marketing: MarketingContactsService,
+    private readonly opsActivity: OpsActivityService,
   ) {}
 
   /** Public prefill — the buyer's email for the claim form, or 404 if the token
@@ -86,6 +88,10 @@ export class GuestClaimService {
     // never the organisation list). Best-effort: the service swallows and logs
     // any error, so it can never fail the claim. See ADR 0152.
     await this.marketing.syncGuestBuyerToIndividualList(email);
+
+    // A claim is the second way an account gains an owner, so it's a sign-up in
+    // Kudos HQ's terms just as much as a fresh registration is.
+    await this.opsActivity.accountSignedUp(claimed.id);
 
     return claimed;
   }

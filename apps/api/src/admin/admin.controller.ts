@@ -34,6 +34,8 @@ import {
 import { AdminCustomerService } from "./admin-customer.service";
 import { ListAdminOrdersQueryDto } from "./dto/list-orders-query.dto";
 import { ListSubscribersQueryDto } from "./dto/list-subscribers-query.dto";
+import { SuperAdminGuard } from "../auth/super-admin.guard";
+import { OpsDigestService, type OpsDigestSummary } from "../ops-activity/ops-digest.service";
 
 /**
  * The Kudos super-admin view: platform-wide orders, subscribers, and KPIs.
@@ -51,7 +53,25 @@ export class AdminController {
     private readonly seatBilling: SeatBillingService,
     private readonly dispatchConfig: DispatchConfigService,
     private readonly cardSizeConfig: CardSizeConfigService,
+    private readonly opsDigest: OpsDigestService,
   ) {}
+
+  /**
+   * Send yesterday's digest now, rather than waiting for the 07:30 cron — so an
+   * operator can see what the email actually looks like, and confirm the wiring,
+   * on the day they set it up. Super-admin only, because it sends real email to
+   * every super admin.
+   *
+   * Safe to press twice: the in-app entry is keyed on the day being reported, so
+   * the second press records nothing and emails nobody. Which also means it
+   * won't re-send after the morning's run — that's the same "first run wins"
+   * guard the dispatch reminder uses, not a bug.
+   */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
+  @Post("daily-summary/run")
+  runDailySummary(): Promise<OpsDigestSummary> {
+    return this.opsDigest.runDailyDigest();
+  }
 
   @Get("overview")
   overview(): Promise<AdminOverview> {
@@ -158,9 +178,7 @@ export class AdminController {
   /** Set the default print card size. Persisted, so the print run's default
    * changes with no redeploy. See docs/adr/0138. */
   @Put("print/card-size")
-  async updatePrintCardSize(
-    @Body() dto: UpdatePrintCardSizeDto,
-  ): Promise<{ size: CardSize }> {
+  async updatePrintCardSize(@Body() dto: UpdatePrintCardSizeDto): Promise<{ size: CardSize }> {
     return { size: await this.cardSizeConfig.setDefaultSize(dto.size) };
   }
 }
