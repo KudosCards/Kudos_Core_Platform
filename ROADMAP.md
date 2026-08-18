@@ -148,8 +148,30 @@ checkout directly, a public card shop, and the "free sample card / 90-second dem
   genuine card designs at the same paths when we have them — no code change needed (#298).
 - Remove `apps/web/public/marketing/card-shop.png` — unreferenced since the benefits section
   became the customer-year timeline (#302), so it ships to Netlify for nothing.
-- **SEO overhaul** — see `docs/seo-plan.md`. Phase 1 (robots, sitemap, canonicals, `noindex`
-  on `/r/[slug]`) is the crawl-basics quick win and includes a privacy fix.
+- **SEO overhaul** — see `docs/seo-plan.md`. Phases 1–6 are shipped in code (#303–#309,
+  #311–#314): robots/sitemap/canonicals, social cards, structured data, `/cards/<category>/<slug>`
+  URLs, the content layer (FAQ, seven audience pages, four guides) and Lighthouse SEO
+  assertions. What remains is **ops, not code** — see the items below.
+- **Set the `LIGHTHOUSE_BASE_URL` repo variable.** Until it is set, the Lighthouse workflow
+  no-ops, so none of the Phase 6 SEO assertions actually run. Repo → Settings → Secrets and
+  variables → Actions → Variables.
+- **Phase 0 DNS + Search Console.** Redirect `www` → apex with a 301, verify the property, and
+  submit `https://kudos-cards.co.uk/sitemap.xml`. The whole plan assumed one canonical host;
+  until this lands, both hosts can be indexed and split their own ranking signals.
+- **Confirm the API redeployed with the card-slug migration** (#308). Load
+  `https://kudos-cards.co.uk/cards`: if it lists cards, the migration is live. If it's empty the
+  API is still serving slug-less designs, which `isPublishableCard()` filters out — safe, and it
+  self-heals within the 1h ISR window once the API catches up.
+- **`keep-api-warm.yml` names `api.kudoscards.co.uk`** as its setup example, but the web domain
+  is hyphenated (`kudos-cards.co.uk`). One of the two is wrong; the API's real hostname needs
+  confirming before it's corrected. (The *email* domain genuinely is the unhyphenated one, so
+  this isn't simply a typo.)
+- **Decide whether "we don't sell your data" is a commitment we make.** It was deliberately cut
+  from the FAQ: it's a policy statement the privacy policy doesn't currently make, and the FAQ
+  is the wrong place to originate one. If we want to say it, it belongs in `lib/legal/privacy.ts`
+  first and the FAQ can then mirror it.
+- **`ROADMAP.md` line ~72 still quotes £1.50 a card**; `CARD_PRICE_MINOR` is 250 (£2.50). Same
+  class of stale price claim that Phase 3 found twice in customer-facing copy, just in a doc.
 
 ---
 
