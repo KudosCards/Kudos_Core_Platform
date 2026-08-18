@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import type { CardDesign } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CARD_CATEGORIES } from "@kudos/shared-types";
+import { AUDIENCES } from "@/lib/audiences";
 import { cardCategorySegment, cardPath, categoryPath, isPublishableCard } from "@/lib/card-urls";
 import { absoluteUrl } from "@/lib/site";
 
@@ -23,6 +24,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: absoluteUrl("/cards"), changeFrequency: "daily", priority: 0.9 },
     { url: absoluteUrl("/enterprise"), changeFrequency: "monthly", priority: 0.7 },
     { url: absoluteUrl("/faq"), changeFrequency: "monthly", priority: 0.6 },
+    { url: absoluteUrl("/for"), changeFrequency: "monthly", priority: 0.7 },
+    // One entry per audience page — a static set, so no API call and nothing to
+    // degrade if the catalog is unreachable.
+    ...AUDIENCES.map((audience) => ({
+      url: absoluteUrl(`/for/${audience.slug}`),
+      changeFrequency: "monthly" as const,
+      priority: 0.7,
+    })),
     { url: absoluteUrl("/terms"), changeFrequency: "yearly", priority: 0.2 },
     { url: absoluteUrl("/privacy"), changeFrequency: "yearly", priority: 0.2 },
   ];

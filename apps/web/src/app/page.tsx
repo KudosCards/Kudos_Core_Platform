@@ -11,6 +11,7 @@ import { openGraphFor } from "@/lib/site";
 import { organisationSchema, webSiteSchema } from "@/lib/structured-data";
 import { JsonLd } from "@/components/json-ld";
 import { PublicHeader } from "@/components/public-header";
+import { AUDIENCES } from "@/lib/audiences";
 import { SocialLinks } from "@/components/social-links";
 
 /**
@@ -39,16 +40,6 @@ export const metadata: Metadata = {
 };
 
 const CORAL = "#ef5b52";
-
-const usedBy = [
-  "Businesses",
-  "Tuition Centres",
-  "Schools",
-  "Sports Clubs",
-  "Charities",
-  "Care Teams",
-  "Individuals",
-];
 
 const pains = [
   "Birthdays and milestones that quietly slip past",
@@ -283,14 +274,18 @@ export default function HomePage() {
           <p className="text-center text-xs font-semibold tracking-widest text-slate-400 uppercase">
             Used by
           </p>
+          {/* Each pill is now the entry point to that audience's page — the
+              list itself comes from AUDIENCES, so the pills and the pages can't
+              drift apart. See ADR 0164. */}
           <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-            {usedBy.map((who) => (
-              <span
-                key={who}
-                className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-600"
+            {AUDIENCES.map((audience) => (
+              <Link
+                key={audience.slug}
+                href={`/for/${audience.slug}`}
+                className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
               >
-                {who}
-              </span>
+                {audience.pill}
+              </Link>
             ))}
           </div>
         </div>
@@ -667,6 +662,9 @@ export default function HomePage() {
               </Link>
               <Link href="/register" className="hover:text-slate-900">
                 Register
+              </Link>
+              <Link href="/for" className="hover:text-slate-900">
+                Who it&apos;s for
               </Link>
               <Link href="/faq" className="hover:text-slate-900">
                 FAQ
