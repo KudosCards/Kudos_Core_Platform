@@ -46,8 +46,8 @@ export function DailySummaryButton() {
       <h2 className="text-xs font-medium tracking-wide text-muted uppercase">Daily summary</h2>
       <p className="text-sm text-muted">
         Yesterday&rsquo;s orders, cards posted and new sign-ups, emailed to every super admin at
-        07:30 and recorded in the notification bell. Use this to send it now — handy the first time,
-        to check it reaches you.
+        7:30am UK time and recorded in the notification bell. Use this to send it now — handy the
+        first time, to check it reaches you.
       </p>
 
       {error && <p className="text-sm font-medium text-accent">{error}</p>}

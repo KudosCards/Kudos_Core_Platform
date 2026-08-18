@@ -89,7 +89,10 @@ describe("OpsDigestService", () => {
 
   const NOON = new Date("2026-08-18T12:00:00.000Z");
 
-  it("reports the previous full UTC day, not the day it runs", async () => {
+  it("reports the previous full London day, not the day it runs", async () => {
+    // August, so BST: a London day runs 23:00–23:00 UTC. Reporting the UTC day
+    // instead would file an order placed at 00:30 BST under the wrong date.
+    // The DST maths itself is covered in london-day.spec.ts.
     const { service, membershipFindMany } = build();
 
     const summary = await service.runDailyDigest(NOON);
@@ -98,8 +101,8 @@ describe("OpsDigestService", () => {
     const { where } = firstArg<{ where: { createdAt: { gte: Date; lt: Date } } }>(
       membershipFindMany,
     );
-    expect(where.createdAt.gte.toISOString()).toBe("2026-08-17T00:00:00.000Z");
-    expect(where.createdAt.lt.toISOString()).toBe("2026-08-18T00:00:00.000Z");
+    expect(where.createdAt.gte.toISOString()).toBe("2026-08-16T23:00:00.000Z");
+    expect(where.createdAt.lt.toISOString()).toBe("2026-08-17T23:00:00.000Z");
   });
 
   it("counts owner memberships as sign-ups, not accounts", async () => {

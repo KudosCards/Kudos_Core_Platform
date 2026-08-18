@@ -77,9 +77,18 @@ is how `dispatch_reminder` already behaves. Only genuine escalation is role-rest
 
 ### 2. The digest — `OpsDigestService`
 
-07:30 UTC daily, reporting the **previous full UTC day**, so the window is closed and a re-run
-gives the same numbers. Emails super admins (a business summary, not an ops queue), and writes
-a `daily_summary` entry keyed on the reported day so a re-fired cron is a no-op.
+**07:30 Europe/London**, reporting the **previous full London day**. Both halves are
+deliberate. Every other cron in the API is UTC-relative, which is right for scheduling — a
+posting deadline shouldn't move because the clocks did — but this one is a person's morning,
+and a digest that arrives at 08:30 for half the year is a digest nobody set. The *window* is
+London too, because "yesterday" in a report means the reader's yesterday: an order placed at
+00:30 BST belongs to that day, not the one before. `london-day.ts` derives both from `Intl`,
+which already knows the DST history, and steps back a millisecond rather than 24 hours so the
+clocks-back day comes out as the 25 hours it really was.
+
+The window is closed when the digest runs, so a re-run gives the same numbers. Emails super
+admins (a business summary, not an ops queue), and writes a `daily_summary` entry keyed on the
+reported day so a re-fired cron is a no-op.
 
 "Outgoing orders" was read as covering both sides, because each has an exact source and a
 summary with only one of them is half a picture: **orders paid** (money in, per the above) and

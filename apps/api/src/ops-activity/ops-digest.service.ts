@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
-import { startOfUtcDay } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
@@ -9,6 +8,7 @@ import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
 import { PlatformNotificationService } from "../platform-notifications/platform-notification.service";
 import { PAID_STATUSES } from "../admin/admin.service";
 import { formatMinor } from "./ops-activity.service";
+import { previousLondonDay } from "./london-day";
 
 /** One new account with a login, for the digest's sign-up list. */
 export interface DigestSignup {
@@ -30,7 +30,7 @@ export interface DigestOrder {
 
 /** What one digest run found — returned for tests, logging and the ops trigger. */
 export interface OpsDigestSummary {
-  /** The UTC day being reported, as `YYYY-MM-DD`. */
+  /** The London day being reported, as `YYYY-MM-DD`. */
   day: string;
   signups: DigestSignup[];
   orders: DigestOrder[];
@@ -76,6 +76,10 @@ interface PostedRow {
  * - **Cards posted** come from `FulfillmentJob.postedAt`, stamped exactly when
  *   an operator transitions a job to `posted`.
  *
+ * Days are **London** days, not UTC days — see london-day.ts. Everything else
+ * in the platform works in UTC days, and should; this is the one place where a
+ * person reads "yesterday" and means their own calendar.
+ *
  * Unlike the dispatch reminder, this is **not** suppressed on a quiet day. That
  * reminder is an action list — nothing to post, nothing to say. This is a
  * report, and a zero is a fact worth seeing; more to the point, a silent morning
@@ -93,25 +97,25 @@ export class OpsDigestService {
   ) {}
 
   /**
-   * 07:30 UTC daily. After the 07:00 auto-send run, so a card auto-sent this
-   * morning is already counted if it lands in tomorrow's window, and clear of
-   * the other daily crons (03:00–09:00 are otherwise taken).
+   * 07:30 **London**, not UTC — an hour that means something to the person
+   * reading it, and it must not drift to 08:30 for half the year. Every other
+   * cron here is UTC-relative, which is right for scheduling work; this one is
+   * a human's morning. After the 07:00 auto-send run, and clear of the other
+   * daily crons (03:00–09:00 are otherwise taken).
    */
-  @Cron("30 7 * * *")
+  @Cron("30 7 * * *", { timeZone: "Europe/London" })
   async scheduledDigest(): Promise<void> {
     await this.runDailyDigest();
   }
 
   /**
    * The digest itself — runnable directly by tests and the on-demand ops
-   * trigger. Reports the **previous full UTC day**, so the window is closed and
-   * a re-run produces the same numbers.
+   * trigger. Reports the **previous full London day**, so the window is closed
+   * (a re-run gives the same numbers) and "yesterday" means the day a UK reader
+   * would call yesterday. See london-day.ts for why that isn't the UTC day.
    */
   async runDailyDigest(now: Date = new Date()): Promise<OpsDigestSummary> {
-    const to = startOfUtcDay(now);
-    const from = new Date(to);
-    from.setUTCDate(from.getUTCDate() - 1);
-    const day = from.toISOString().slice(0, 10);
+    const { day, from, to } = previousLondonDay(now);
 
     const [signups, orders, posted] = await Promise.all([
       this.newSignups(from, to),
