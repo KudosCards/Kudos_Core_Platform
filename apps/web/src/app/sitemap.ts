@@ -3,6 +3,7 @@ import type { CardDesign } from "@kudos/shared-types";
 import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
 import { CARD_CATEGORIES } from "@kudos/shared-types";
 import { AUDIENCES } from "@/lib/audiences";
+import { GUIDES } from "@/lib/guides";
 import { cardCategorySegment, cardPath, categoryPath, isPublishableCard } from "@/lib/card-urls";
 import { absoluteUrl } from "@/lib/site";
 
@@ -31,6 +32,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: absoluteUrl(`/for/${audience.slug}`),
       changeFrequency: "monthly" as const,
       priority: 0.7,
+    })),
+    { url: absoluteUrl("/guides"), changeFrequency: "monthly", priority: 0.6 },
+    ...GUIDES.map((guide) => ({
+      url: absoluteUrl(`/guides/${guide.slug}`),
+      lastModified: guide.updated,
+      changeFrequency: "yearly" as const,
+      priority: 0.6,
     })),
     { url: absoluteUrl("/terms"), changeFrequency: "yearly", priority: 0.2 },
     { url: absoluteUrl("/privacy"), changeFrequency: "yearly", priority: 0.2 },

@@ -21,6 +21,9 @@ export function MarketingFooter() {
           <Link href="/for" className="hover:text-slate-900">
             Who it&apos;s for
           </Link>
+          <Link href="/guides" className="hover:text-slate-900">
+            Guides
+          </Link>
           <Link href="/faq" className="hover:text-slate-900">
             FAQ
           </Link>

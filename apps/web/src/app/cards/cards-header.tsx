@@ -13,6 +13,7 @@ export function CardsHeader() {
     <PublicHeader
       navLinks={[
         { href: "/cards", label: "Card library" },
+        { href: "/guides", label: "Guides" },
         { href: "/faq", label: "FAQ" },
       ]}
     />

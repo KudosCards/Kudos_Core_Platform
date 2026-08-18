@@ -1,8 +1,8 @@
 # SEO Plan
 
-Status: **Phases 1–4 shipped 2026-08-17; Phase 5 mostly shipped 2026-08-18** (authoring
-mechanism decided, FAQ and the seven audience pages live; occasion guides outstanding).
-Phase 0 (the ops half) and Phase 6 remain.
+Status: **Phases 1–5 shipped** (1–4 on 2026-08-17, Phase 5 on 2026-08-18). Phase 6 remains,
+and Phase 0's ops half is still outstanding — that half is DNS, Search Console and a repo
+variable, none of which live in this repo.
 Audit written against `main` at the marketing-page rework (#297–#302).
 
 Kudos Cards sells a search-driven product ("birthday cards for schools", "thank you cards
@@ -157,8 +157,8 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   pages under a noindex landing page, because every card needs exactly one canonical URL and
   the alternative is orphans or breadcrumbs pointing at a 404.
 
-- **Phase 5 — Content layer. 🚧 In progress.** The slow-burn phase that actually earns
-  non-brand traffic.
+- **Phase 5 — Content layer. ✅ Done.** The slow-burn phase that actually earns non-brand
+  traffic.
 
   **Authoring mechanism — decided (ADR 0164): typed TypeScript content modules, not MDX and
   not a CMS.** The content turned out to be structures with a repeated shape (question/answer
@@ -194,9 +194,28 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   renewals, a school sends at year-group scale and needs shared logins, a charity's moment is
   the thank-you after a donation.
 
-  **Still to do:** occasion guides. **Guardrail:** no invented statistics or testimonials — the
-  same rule the homepage now follows, where the hero stat had to become the published "100+"
-  figure and the timeline was left deliberately number-free.
+  **Occasion guides — done.** Four "what to write in a ... card" guides at `/guides/<slug>`,
+  with a `/guides` hub, mapped one-to-one onto the card categories they send readers to
+  (birthday, thank-you, congratulations, achievement). Each category page links back at its
+  guide, so the informational page and the commercial page point at each other.
+
+  The obvious version of this page — a generic "what to write in a birthday card" — is written
+  by every card retailer online and would pull consumer traffic with no use for a platform that
+  posts cards for a tuition centre. So the guides answer the question *this* product's visitors
+  have: what do you write to a customer, a student, a donor, a club member, where the tone
+  going wrong is a business problem. Every example is written for that setting, and uses the
+  real `{firstName}` merge token, which is also the thing that makes the wording sendable
+  rather than just readable.
+
+  One group exists that a retailer's guide wouldn't have: **what to write when the exam results
+  weren't what they hoped for.** It's the card a tuition centre most needs help writing.
+
+  Article markup carries `datePublished`/`dateModified` from the guide's own `updated` field.
+  Deliberately not backdated to look established — a false date in a machine-readable field is
+  the worst place to put one.
+
+  **Phase 5 is complete.** **Guardrail applied throughout:** no invented statistics or
+  testimonials, and no claims about which wording "performs" — nobody here has measured that.
 
 - **Phase 6 — Hygiene and monitoring.** Add Lighthouse's SEO category to the existing
   workflow and assert it stays ≥ 95 on the public pages (non-blocking, like the perf
