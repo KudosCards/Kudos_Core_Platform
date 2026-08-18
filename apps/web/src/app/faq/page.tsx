@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PublicHeader } from "@/components/public-header";
 import { JsonLd } from "@/components/json-ld";
+import { MarketingFooter } from "@/components/marketing-footer";
 import { FAQ_SECTIONS } from "@/lib/faq";
-import { LEGAL_LINKS } from "@/lib/legal";
 import { openGraphFor } from "@/lib/site";
 import { breadcrumbSchema, faqPageSchema } from "@/lib/structured-data";
 
@@ -129,22 +129,7 @@ export default function FaqPage() {
         </section>
       </main>
 
-      <footer className="border-t border-slate-100">
-        <div className="mx-auto flex max-w-3xl flex-col items-center justify-between gap-3 px-6 py-6 text-sm text-slate-500 sm:flex-row">
-          <p>© {new Date().getFullYear()} Kudos Cards Ltd</p>
-          <nav className="flex flex-wrap justify-center gap-4">
-            <Link href="/cards" className="hover:text-slate-900">
-              Card library
-            </Link>
-            <Link href={LEGAL_LINKS.terms.href} className="hover:text-slate-900">
-              {LEGAL_LINKS.terms.label}
-            </Link>
-            <Link href={LEGAL_LINKS.privacy.href} className="hover:text-slate-900">
-              {LEGAL_LINKS.privacy.label}
-            </Link>
-          </nav>
-        </div>
-      </footer>
+      <MarketingFooter />
     </div>
   );
 }

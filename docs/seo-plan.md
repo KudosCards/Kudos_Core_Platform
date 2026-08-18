@@ -1,7 +1,8 @@
 # SEO Plan
 
-Status: **Phases 1–4 shipped 2026-08-17; Phase 5 started 2026-08-18** (authoring mechanism
-decided, FAQ live). Phase 0 (the ops half), the rest of Phase 5 and Phase 6 remain.
+Status: **Phases 1–4 shipped 2026-08-17; Phase 5 mostly shipped 2026-08-18** (authoring
+mechanism decided, FAQ and the seven audience pages live; occasion guides outstanding).
+Phase 0 (the ops half) and Phase 6 remain.
 Audit written against `main` at the marketing-page rework (#297–#302).
 
 Kudos Cards sells a search-driven product ("birthday cards for schools", "thank you cards
@@ -180,11 +181,22 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   API and the web can't import it, so a figure here would have been a hand-typed copy of
   exactly the kind this ADR exists to prevent.
 
-  **Still to do:** audience pages behind the "Used by" pills (tuition centres, schools, sports
-  clubs, charities, care teams) — each a real page with its own proof and CTA, not a doorway
-  variant of the homepage. Then occasion guides. **Guardrail:** no invented statistics or
-  testimonials — the same rule the homepage now follows, where the hero stat had to become the
-  published "100+" figure and the timeline was left deliberately number-free.
+  **Audience pages — done.** Seven pages at `/for/<audience>`, one behind each "Used by" pill,
+  plus a `/for` hub so they're one click from each other rather than each having a single entry
+  point. The pills themselves now render from `AUDIENCES`, so the homepage can't list an
+  audience that has no page.
+
+  The risk here was doorway pages — the homepage with one noun swapped is exactly what search
+  engines look for — so the pages were checked for it rather than assumed clean: shared 6-word
+  phrases across the seven bodies were **measured**, four templated sentences found and
+  rewritten, and the count fell from ~100 to 4. What survives is unavoidable product vocabulary
+  ("names, addresses and dates of birth"). What differs is substantive: a club sends on
+  renewals, a school sends at year-group scale and needs shared logins, a charity's moment is
+  the thank-you after a donation.
+
+  **Still to do:** occasion guides. **Guardrail:** no invented statistics or testimonials — the
+  same rule the homepage now follows, where the hero stat had to become the published "100+"
+  figure and the timeline was left deliberately number-free.
 
 - **Phase 6 — Hygiene and monitoring.** Add Lighthouse's SEO category to the existing
   workflow and assert it stays ≥ 95 on the public pages (non-blocking, like the perf
