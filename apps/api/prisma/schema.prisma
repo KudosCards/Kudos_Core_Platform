@@ -55,24 +55,25 @@ model Account {
   createdAt             DateTime    @default(now()) @map("created_at")
   updatedAt             DateTime    @updatedAt @map("updated_at")
 
-  memberships    Membership[]
-  invites        Invite[]
-  recipients     Recipient[]
-  savedDesigns   SavedDesign[]
-  batchOrders    BatchOrder[]
-  walletEntries  WalletLedgerEntry[]
-  subscriptions  Subscription[]
-  auditLogs      AuditLogEntry[]
-  apiKeys        AccountApiKey[]
-  crmConnections CrmConnection[]
-  recipientLists RecipientList[]
-  segments       Segment[]
-  notifications  Notification[]
-  returnCases    ReturnCase[]
-  events         Event[]
-  supportTickets SupportTicket[]
-  designAssets   DesignAsset[]
-  messagePages   MessagePage[]
+  memberships          Membership[]
+  invites              Invite[]
+  recipients           Recipient[]
+  savedDesigns         SavedDesign[]
+  batchOrders          BatchOrder[]
+  walletEntries        WalletLedgerEntry[]
+  subscriptions        Subscription[]
+  subscriptionInvoices SubscriptionInvoice[]
+  auditLogs            AuditLogEntry[]
+  apiKeys              AccountApiKey[]
+  crmConnections       CrmConnection[]
+  recipientLists       RecipientList[]
+  segments             Segment[]
+  notifications        Notification[]
+  returnCases          ReturnCase[]
+  events               Event[]
+  supportTickets       SupportTicket[]
+  designAssets         DesignAsset[]
+  messagePages         MessagePage[]
 
   // Super-admin subscribers list is ordered newest-first.
   @@index([createdAt])
@@ -888,6 +889,53 @@ model Subscription {
   // Super-admin overview counts active subscriptions across all accounts.
   @@index([status])
   @@map("subscriptions")
+}
+
+/// One paid Stripe **subscription** invoice, captured so we can answer "what has
+/// this account paid us in subscriptions" — which `Subscription` cannot, since it
+/// only holds current state (plan, status, period end) and no amounts at all.
+///
+/// Append-only and keyed on Stripe's invoice id, which is what makes capture
+/// idempotent: Stripe redelivers `invoice.paid` at-least-once, and the same id
+/// is also what a historical backfill reads, so a backfill running alongside
+/// live webhooks converges instead of double-counting.
+///
+/// Card-order invoices are deliberately NOT stored here — those already attach
+/// their receipt to the BatchOrder (ADR 0102). This table is subscription income
+/// only, so summing it can't silently double-count card revenue.
+model SubscriptionInvoice {
+  id                   String    @id @default(uuid())
+  accountId            String    @map("account_id")
+  /// Stripe's invoice id. Unique — the idempotency key for webhook + backfill.
+  stripeInvoiceId      String    @unique @map("stripe_invoice_id")
+  /// The subscription this invoice billed, when Stripe tells us.
+  stripeSubscriptionId String?   @map("stripe_subscription_id")
+  /// Gross amount the customer actually paid, in minor units. Stripe's
+  /// `amount_paid`, not `total` — a partially-paid or credited invoice must not
+  /// count as if it were paid in full.
+  amountPaidMinor      Int       @map("amount_paid_minor")
+  currency             String
+  /// Stripe's invoice status at capture (`paid`).
+  status               String
+  /// Why Stripe raised it (`subscription_create`, `subscription_cycle`, …) —
+  /// distinguishes a first payment from a renewal without another API call.
+  billingReason        String?   @map("billing_reason")
+  periodStart          DateTime? @map("period_start")
+  periodEnd            DateTime? @map("period_end")
+  /// When it was actually paid, from Stripe — not when we recorded it, so a
+  /// backfill lands each invoice on its real date.
+  paidAt               DateTime  @map("paid_at")
+  hostedInvoiceUrl     String?   @map("hosted_invoice_url")
+  invoicePdfUrl        String?   @map("invoice_pdf_url")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  /// The customer page's "total spend + recent invoices, newest first".
+  @@index([accountId, paidAt])
+  /// Platform revenue by month.
+  @@index([paidAt])
+  @@map("subscription_invoices")
 }
 
 enum WalletEntryType {
