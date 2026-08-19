@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
-import type { DispatchReminderConfig } from "@kudos/shared-types";
+import { londonHour, type DispatchReminderConfig } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
@@ -52,7 +52,11 @@ export class DispatchReminderService {
   async scheduledReminder(): Promise<void> {
     const config = await this.dispatchConfig.getReminderConfig();
     if (!config.enabled) return;
-    if (new Date().getUTCHours() !== config.sendHourUtc) return;
+    // London, not UTC. The hour an operator sets is the hour they mean; judging
+    // it against the server's UTC clock made a "07:00" reminder arrive at 08:00
+    // for the seven months of BST — while the same-day cut-off on the same
+    // settings panel was already UK-local (ADR 0160). One panel, one clock.
+    if (londonHour(new Date()) !== config.sendHourLondon) return;
     await this.runDispatchReminder(config);
   }
 
@@ -103,24 +107,38 @@ export class DispatchReminderService {
       return base;
     }
 
-    const adminsEmailed = await this.emailDigest(
-      await this.adminEmails(),
-      this.buildSubject(summary),
-      this.render(summary, cfg),
-    );
-
-    // Escalation (ADR 0117): cards overdue by ≥ the threshold get a distinct,
-    // louder alert to super admins. 0 disables it.
+    // Escalation (ADR 0117): cards overdue by ≥ the threshold get a louder alert
+    // to super admins. 0 disables it. Worked out *before* the digest goes out,
+    // because whoever is getting the escalation must not also get the digest —
+    // they used to get both, with byte-identical bodies and only the subject
+    // differing, which reads as the system sending everything twice.
     const critical =
       cfg.escalateAfterWorkingDays > 0
         ? summary.cards.filter((c) => c.workingDaysUntilDue <= -cfg.escalateAfterWorkingDays).length
         : 0;
-    const escalated = critical > 0 ? await this.escalate(summary, critical, cfg, isoToday) : false;
+    const escalationEmails = critical > 0 ? await this.adminEmails("super_admin") : [];
+    const escalationsSent =
+      critical > 0 ? await this.escalate(summary, critical, cfg, isoToday, escalationEmails) : 0;
 
-    this.logger.log(
-      `Dispatch reminder: ${summary.total} to post (${summary.overdue} overdue, ${critical} critical) → ${adminsEmailed} admin(s)${escalated ? " + escalated" : ""}`,
+    const allEmails = await this.adminEmails();
+    if (allEmails.length === 0) {
+      this.logger.warn("Dispatch reminder: cards to post but no platform admin has an email set");
+    }
+    const escalated = new Set(escalationEmails);
+    const digestEmails = allEmails.filter((email) => !escalated.has(email));
+    const digestsSent = await this.emailDigest(
+      digestEmails,
+      this.buildSubject(summary),
+      this.render(summary, cfg),
     );
-    return { ...base, adminsEmailed, critical, escalated };
+
+    // One address, one email — so this is the count of people told, not of
+    // messages sent.
+    const adminsEmailed = digestsSent + escalationsSent;
+    this.logger.log(
+      `Dispatch reminder: ${summary.total} to post (${summary.overdue} overdue, ${critical} critical) → ${digestsSent} digest(s) + ${escalationsSent} escalation(s)`,
+    );
+    return { ...base, adminsEmailed, critical, escalated: escalationsSent > 0 };
   }
 
   /** Distinct operator emails (lower-cased), optionally restricted to a role. */
@@ -138,13 +156,11 @@ export class DispatchReminderService {
     ];
   }
 
-  /** Send one digest to each address, isolating per-recipient failures. Returns
-   * how many were emailed. */
+  /** Send one email to each address, isolating per-recipient failures. Returns
+   * how many were emailed. An empty list is not an error — the caller may have
+   * deliberately excluded everyone (they're getting the escalation instead) and
+   * warns for itself when nobody has an email at all. */
   private async emailDigest(emails: string[], subject: string, html: string): Promise<number> {
-    if (emails.length === 0) {
-      this.logger.warn("Dispatch reminder: cards to post but no platform admin has an email set");
-      return 0;
-    }
     let sent = 0;
     for (const to of emails) {
       try {
@@ -158,14 +174,21 @@ export class DispatchReminderService {
     return sent;
   }
 
-  /** Escalate critically-overdue cards to super admins — an in-app entry + a
-   * louder email, both restricted to the super_admin role. Best-effort. */
+  /**
+   * Escalate critically-overdue cards to super admins — an in-app entry plus a
+   * genuinely louder email, both restricted to the super_admin role.
+   * Best-effort. Returns how many super admins were emailed.
+   *
+   * `emails` is passed in rather than looked up here so the caller can exclude
+   * these same people from the ordinary digest: one person, one email.
+   */
   private async escalate(
     summary: MustShipSummary,
     critical: number,
     cfg: DispatchReminderConfig,
     isoToday: string,
-  ): Promise<boolean> {
+    emails: string[],
+  ): Promise<number> {
     try {
       await this.platformNotifications.notifyAllAdmins(
         {
@@ -183,12 +206,9 @@ export class DispatchReminderService {
       this.logger.error(`Dispatch escalation notification failed: ${reason}`);
     }
     const subject = `🚨 ${critical} card${critical === 1 ? "" : "s"} critically overdue to post`;
-    const sent = await this.emailDigest(
-      await this.adminEmails("super_admin"),
-      subject,
-      this.render(summary, cfg),
-    );
-    return sent > 0;
+    // Same card list — a super admin still wants the whole board — but led by
+    // the critical banner, so the two emails are told apart at a glance.
+    return this.emailDigest(emails, subject, this.render(summary, cfg, critical));
   }
 
   /** Concise in-app notification title — overdue-led. */
@@ -211,14 +231,30 @@ export class DispatchReminderService {
     return `🖨️ ${s.total} card${s.total === 1 ? "" : "s"} to post today`;
   }
 
-  private render(s: MustShipSummary, cfg: DispatchReminderConfig): string {
+  /**
+   * The email body. `critical > 0` renders the **escalation** version: same card
+   * list — a super admin still wants the whole board — but led by a banner and
+   * a different heading, so it is obviously not a second copy of the digest.
+   *
+   * Before this took a `critical` argument, the escalation reused the digest's
+   * body verbatim: two emails, same content, only the subject differing.
+   */
+  private render(s: MustShipSummary, cfg: DispatchReminderConfig, critical = 0): string {
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
     const overdue = s.cards.filter((c) => c.workingDaysUntilDue < 0);
     const today = s.cards.filter((c) => c.workingDaysUntilDue === 0);
     const soon = s.cards.filter((c) => c.workingDaysUntilDue > 0);
     const window = `${cfg.leadWorkingDays} working days`;
 
+    const banner =
+      critical > 0
+        ? `<p style="margin:0 0 16px;padding:12px 14px;border-radius:8px;background:#fee2e2;border:1px solid #fca5a5;color:#b91c1c;font-weight:700;font-size:15px">
+             ${critical} card${critical === 1 ? " is" : "s are"} overdue by ${cfg.escalateAfterWorkingDays}+ working days. Post ${critical === 1 ? "it" : "them"} today.
+           </p>`
+        : "";
+
     const bodyHtml = `
+      ${banner}
       <p style="margin:0 0 8px">
         <strong>${s.total}</strong> card${s.total === 1 ? "" : "s"} need posting to stay inside the ${window} delivery window.
       </p>
@@ -231,11 +267,20 @@ export class DispatchReminderService {
 
     return renderBrandedEmail({
       webAppUrl,
-      preheader: `${s.total} card${s.total === 1 ? "" : "s"} to post — ${s.overdue} overdue`,
-      heading: "Cards to post",
+      preheader:
+        critical > 0
+          ? `${critical} card${critical === 1 ? "" : "s"} critically overdue — post today`
+          : `${s.total} card${s.total === 1 ? "" : "s"} to post — ${s.overdue} overdue`,
+      heading:
+        critical > 0
+          ? `${critical} card${critical === 1 ? "" : "s"} critically overdue`
+          : "Cards to post",
       bodyHtml,
       cta: { url: `${webAppUrl}/fulfillment`, label: "Open the fulfilment queue" },
-      footerNote: "You're receiving this as a Kudos HQ platform admin.",
+      footerNote:
+        critical > 0
+          ? "You're receiving this as a Kudos HQ super admin — operators got the standard digest."
+          : "You're receiving this as a Kudos HQ platform admin.",
     });
   }
 

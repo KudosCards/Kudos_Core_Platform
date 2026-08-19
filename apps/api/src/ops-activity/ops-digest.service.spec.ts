@@ -193,6 +193,19 @@ describe("OpsDigestService", () => {
     expect(summary.adminsEmailed).toBe(0);
   });
 
+  it("sends anyway when forced, even though the day is already recorded", async () => {
+    // The ops button forces. Without this, every press after the morning run
+    // would report "already sent" and deliver nothing — useless for the one job
+    // the button has, which is proving the email arrives.
+    const { service, sendTransactional, notifyAllAdmins } = build();
+    notifyAllAdmins.mockResolvedValueOnce(false);
+
+    const summary = await service.runDailyDigest(NOON, { force: true });
+
+    expect(sendTransactional).toHaveBeenCalledTimes(1);
+    expect(summary.adminsEmailed).toBe(1);
+  });
+
   it("keys the in-app entry on the reported day, so a re-run is a no-op", async () => {
     const { service, notifyAllAdmins } = build();
 

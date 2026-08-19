@@ -11,11 +11,11 @@ export class UpdateReminderConfigDto {
   @IsBoolean()
   enabled!: boolean;
 
-  @ApiProperty({ description: "UTC hour (0–23) the weekday digest is sent" })
+  @ApiProperty({ description: "UK local hour (0–23) the weekday digest is sent" })
   @IsInt()
   @Min(0)
   @Max(23)
-  sendHourUtc!: number;
+  sendHourLondon!: number;
 
   @ApiProperty({ description: "The send-by window in working days (the must-ship horizon)" })
   @IsInt()
@@ -32,7 +32,8 @@ export class UpdateReminderConfigDto {
   escalateAfterWorkingDays!: number;
 
   @ApiProperty({
-    description: "Same-day posting cut-off (UK local hour, 0–23): a 'Send now' order at or after it posts the next working day",
+    description:
+      "Same-day posting cut-off (UK local hour, 0–23): a 'Send now' order at or after it posts the next working day",
   })
   @IsInt()
   @Min(0)

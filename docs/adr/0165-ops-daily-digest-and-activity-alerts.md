@@ -102,8 +102,29 @@ morning is indistinguishable from a dead cron.
 ### 3. An on-demand trigger
 
 `POST /admin/daily-summary/run` (super-admin only) with a button on the ops dashboard, so the
-email can be seen and the wiring confirmed on the day it's set up rather than the next morning.
-Pressing it twice is safe and does nothing the second time — the same day-key guard.
+email can be seen and the wiring confirmed without waiting for the next morning.
+
+It **forces**, bypassing the once-a-day guard. That guard exists to stop a re-fired cron or a
+second instance double-sending; a super admin pressing a button is neither, and a button that
+answers "already sent" every afternoon can't be used to check anything — which is exactly the
+situation you're in when the morning's digest didn't arrive and you need to find out why.
+Pressing twice therefore sends twice.
+
+## The dispatch reminder's send hour moved with it
+
+Found while investigating why the first digest never arrived: the reminder settings panel had
+**two clocks on it**. The same-day posting cut-off was already judged in `Europe/London` (ADR
+0160) and labelled "15:00 UK", while the send hour was `sendHourUtc`, judged with
+`getUTCHours()` and labelled "07:00 UTC" — so an operator who set "7" got their email at 08:00
+for the seven months of BST.
+
+`sendHourUtc` is now `sendHourLondon`, judged with `londonHour()`. A config stored under the
+old name is migrated on read, carrying the number across unchanged: somebody who set "7" meant
+7am, and letting it fail validation would have silently reverted their setting to the default.
+
+The London helpers now live in one place — `shared-types/src/london-time.ts` — rather than
+`dispatch.ts` having a private copy and the digest a second one. Same reasoning as everywhere
+else here: two implementations of the same idea drift.
 
 ## Consequences
 

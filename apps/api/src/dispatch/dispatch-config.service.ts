@@ -25,6 +25,26 @@ import {
  * immediately on an admin edit. Falls back to the bundled Christmas default when
  * nothing is stored. See docs/adr/0059-configurable-seasonal-dispatch.md.
  */
+/**
+ * Carry a pre-rename stored config across: the send hour used to be
+ * `sendHourUtc` and is now `sendHourLondon`.
+ *
+ * The value moves over unchanged, which is the honest reading of what the
+ * operator meant — somebody who set "7" wanted the reminder at 7am, not at
+ * whatever 07:00 UTC happens to be that month. In practice it shifts the send
+ * an hour earlier in UTC terms during BST, which is the fix.
+ *
+ * Without this the stored config would simply fail validation and silently
+ * revert to the default, quietly discarding a setting somebody chose.
+ */
+function migrateSendHour(stored: unknown): unknown {
+  if (typeof stored !== "object" || stored === null) return stored;
+  const config = stored as Record<string, unknown>;
+  if (!("sendHourUtc" in config) || "sendHourLondon" in config) return stored;
+  const { sendHourUtc, ...rest } = config;
+  return { ...rest, sendHourLondon: sendHourUtc };
+}
+
 @Injectable()
 export class DispatchConfigService implements OnModuleInit {
   private readonly logger = new Logger(DispatchConfigService.name);
@@ -85,7 +105,9 @@ export class DispatchConfigService implements OnModuleInit {
   async getReminderConfig(): Promise<DispatchReminderConfig> {
     const raw = await this.settings.get(PLATFORM_SETTING_KEYS.dispatchReminderConfig);
     if (!raw) return DEFAULT_DISPATCH_REMINDER_CONFIG;
-    const parsed = dispatchReminderConfigSchema.safeParse(JSON.parse(raw));
+    const parsed = dispatchReminderConfigSchema.safeParse(
+      migrateSendHour(JSON.parse(raw) as unknown),
+    );
     if (!parsed.success) {
       this.logger.warn("Stored dispatch reminder config failed validation — using the default");
       return DEFAULT_DISPATCH_REMINDER_CONFIG;
@@ -112,7 +134,7 @@ export class DispatchConfigService implements OnModuleInit {
     // on this instance without waiting for the next reload tick.
     setSameDayCutoffHour(parsed.data.sameDayCutoffHour);
     this.logger.log(
-      `Dispatch reminder config updated (enabled=${parsed.data.enabled}, hour=${parsed.data.sendHourUtc}, cutoff=${parsed.data.sameDayCutoffHour})`,
+      `Dispatch reminder config updated (enabled=${parsed.data.enabled}, hour=${parsed.data.sendHourLondon}, cutoff=${parsed.data.sameDayCutoffHour})`,
     );
     return parsed.data;
   }

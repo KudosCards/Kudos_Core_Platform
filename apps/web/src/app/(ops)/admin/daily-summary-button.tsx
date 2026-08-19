@@ -15,10 +15,12 @@ interface DailySummaryResult {
 /**
  * Ops action to send the daily digest on demand. The 07:30 cron does this every
  * morning; this exists so the wiring can be confirmed — and the email actually
- * looked at — on the day it's set up, rather than tomorrow.
+ * looked at — without waiting until tomorrow.
  *
- * Pressing it twice in a day is safe and deliberately does nothing the second
- * time: the digest is keyed on the day it reports, so it can't double-send.
+ * It forces, so it sends even after the morning's run. The once-a-day guard is
+ * there to stop a re-fired cron double-sending; a person pressing a button is
+ * not that, and a button that says "already sent" every afternoon proves
+ * nothing. So pressing twice sends twice.
  */
 export function DailySummaryButton() {
   const [busy, setBusy] = useState(false);
@@ -64,8 +66,8 @@ export function DailySummaryButton() {
             </>
           ) : (
             <span className="text-muted">
-              Nothing sent. Either {result.day}&rsquo;s summary already went out — it only sends
-              once a day — or no super admin has an email address on their operator record.
+              Nothing sent — no super admin has an email address on their operator record, so there
+              was nobody to send it to. Add one on the Team page and try again.
             </span>
           )}
         </p>

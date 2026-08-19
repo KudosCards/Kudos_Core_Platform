@@ -62,15 +62,16 @@ export class AdminController {
    * on the day they set it up. Super-admin only, because it sends real email to
    * every super admin.
    *
-   * Safe to press twice: the in-app entry is keyed on the day being reported, so
-   * the second press records nothing and emails nobody. Which also means it
-   * won't re-send after the morning's run — that's the same "first run wins"
-   * guard the dispatch reminder uses, not a bug.
+   * Deliberately bypasses the once-a-day guard, so it still sends after the
+   * morning's run. That guard exists to stop a re-fired cron double-sending; a
+   * super admin pressing a button is not that, and a button that answers
+   * "already sent" every afternoon can't be used to check anything. Pressing it
+   * twice therefore sends twice — which is the point.
    */
   @UseGuards(PlatformAdminGuard, SuperAdminGuard)
   @Post("daily-summary/run")
   runDailySummary(): Promise<OpsDigestSummary> {
-    return this.opsDigest.runDailyDigest();
+    return this.opsDigest.runDailyDigest(new Date(), { force: true });
   }
 
   @Get("overview")

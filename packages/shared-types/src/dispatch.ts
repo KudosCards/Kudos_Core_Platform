@@ -1,3 +1,4 @@
+import { londonParts } from "./london-time";
 import { z } from "zod";
 import type { PostageClass } from "./enums";
 
@@ -290,25 +291,6 @@ export function getSameDayCutoffHour(): number {
   return activeSameDayCutoffHour;
 }
 
-/** The London-local calendar parts of an instant, so the same-day cut-off is
- * judged in UK time (BST/GMT) rather than the server's UTC clock. Uses the
- * built-in `Intl` time-zone database — no dependency, works in Node and the
- * browser alike. */
-function londonParts(date: Date): { year: number; month: number; day: number; hour: number } {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/London",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
-  const get = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? "0");
-  let hour = get("hour");
-  if (hour === 24) hour = 0; // some runtimes emit "24" for midnight
-  return { year: get("year"), month: get("month"), day: get("day"), hour };
-}
-
 /**
  * The dispatch date for a "Send now" card, honouring the same-day cut-off: a
  * card ordered on a working day before `cutoffHour` (UK local time) posts today;
@@ -406,8 +388,11 @@ export type SeasonalDispatchRuleInput = z.infer<typeof seasonalDispatchRuleSchem
 export const dispatchReminderConfigSchema = z.object({
   /** Whether the daily reminder runs at all. */
   enabled: z.boolean(),
-  /** UTC hour (0–23) the weekday digest is sent. */
-  sendHourUtc: z.number().int().min(0).max(23),
+  /** **UK local** hour (0–23) the weekday digest is sent. London, not UTC, so
+   *  "07:00" is 7am to the person reading it all year rather than drifting to
+   *  8am through BST. Was `sendHourUtc`; see readReminderConfig() for how a
+   *  stored value from before that change is carried over. */
+  sendHourLondon: z.number().int().min(0).max(23),
   /** The send-by window in working days — the must-ship horizon. */
   leadWorkingDays: z.number().int().min(1).max(15),
   /** Overdue-by threshold (working days) that escalates a card to super admins;
@@ -419,11 +404,11 @@ export const dispatchReminderConfigSchema = z.object({
 });
 export type DispatchReminderConfig = z.infer<typeof dispatchReminderConfigSchema>;
 
-/** The out-of-the-box reminder config: on, 07:00 UTC, send-by-5, escalate at 3 wd
+/** The out-of-the-box reminder config: on, 07:00 UK, send-by-5, escalate at 3 wd
  * late, 3pm same-day cut-off. */
 export const DEFAULT_DISPATCH_REMINDER_CONFIG: DispatchReminderConfig = {
   enabled: true,
-  sendHourUtc: 7,
+  sendHourLondon: 7,
   leadWorkingDays: 5,
   escalateAfterWorkingDays: 3,
   sameDayCutoffHour: DEFAULT_SAME_DAY_CUTOFF_HOUR,
