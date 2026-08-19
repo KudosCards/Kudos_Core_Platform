@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { PLATFORM_SETTING_KEYS } from "../src/billing/platform-settings.service";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
@@ -40,6 +41,48 @@ describe("Dispatch reminder config (e2e)", () => {
     return token;
   }
 
+  it("carries a pre-rename stored send hour across, rather than resetting it", async () => {
+    // The send hour used to be `sendHourUtc` and is now `sendHourLondon`. A
+    // config saved before that rename must keep the hour the operator chose —
+    // without the migration it fails validation and silently reverts to the
+    // default, quietly undoing a setting somebody made.
+    const token = await opsToken();
+    await prisma.platformSetting.upsert({
+      where: { key: PLATFORM_SETTING_KEYS.dispatchReminderConfig },
+      create: {
+        key: PLATFORM_SETTING_KEYS.dispatchReminderConfig,
+        value: JSON.stringify({
+          enabled: true,
+          sendHourUtc: 11,
+          leadWorkingDays: 5,
+          escalateAfterWorkingDays: 3,
+          sameDayCutoffHour: 15,
+        }),
+      },
+      update: {
+        value: JSON.stringify({
+          enabled: true,
+          sendHourUtc: 11,
+          leadWorkingDays: 5,
+          escalateAfterWorkingDays: 3,
+          sameDayCutoffHour: 15,
+        }),
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get("/admin/dispatch/reminder-config")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    const { config } = response.body as { config: { sendHourLondon: number } };
+    expect(config.sendHourLondon).toBe(11);
+
+    await prisma.platformSetting.deleteMany({
+      where: { key: PLATFORM_SETTING_KEYS.dispatchReminderConfig },
+    });
+  });
+
   it("returns the config + default, and persists an update", async () => {
     const token = await opsToken();
 
@@ -58,13 +101,13 @@ describe("Dispatch reminder config (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({
         enabled: false,
-        sendHourUtc: 9,
+        sendHourLondon: 9,
         leadWorkingDays: 7,
         escalateAfterWorkingDays: 2,
         sameDayCutoffHour: 16,
       })
       .expect(200);
-    expect((updated.body as { config: { sendHourUtc: number } }).config.sendHourUtc).toBe(9);
+    expect((updated.body as { config: { sendHourLondon: number } }).config.sendHourLondon).toBe(9);
 
     // The change is persisted and read back.
     const reread = await request(app.getHttpServer())
@@ -86,7 +129,7 @@ describe("Dispatch reminder config (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({
         enabled: true,
-        sendHourUtc: 25,
+        sendHourLondon: 25,
         leadWorkingDays: 5,
         escalateAfterWorkingDays: 3,
         sameDayCutoffHour: 15,

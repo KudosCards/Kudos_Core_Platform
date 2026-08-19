@@ -110,6 +110,22 @@ answers "already sent" every afternoon can't be used to check anything — which
 situation you're in when the morning's digest didn't arrive and you need to find out why.
 Pressing twice therefore sends twice.
 
+## The dispatch reminder's send hour moved with it
+
+Found while investigating why the first digest never arrived: the reminder settings panel had
+**two clocks on it**. The same-day posting cut-off was already judged in `Europe/London` (ADR
+0160) and labelled "15:00 UK", while the send hour was `sendHourUtc`, judged with
+`getUTCHours()` and labelled "07:00 UTC" — so an operator who set "7" got their email at 08:00
+for the seven months of BST.
+
+`sendHourUtc` is now `sendHourLondon`, judged with `londonHour()`. A config stored under the
+old name is migrated on read, carrying the number across unchanged: somebody who set "7" meant
+7am, and letting it fail validation would have silently reverted their setting to the default.
+
+The London helpers now live in one place — `shared-types/src/london-time.ts` — rather than
+`dispatch.ts` having a private copy and the digest a second one. Same reasoning as everywhere
+else here: two implementations of the same idea drift.
+
 ## Consequences
 
 - Kudos HQ hears about orders and sign-ups as they happen, and gets one morning summary.

@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
-import type { DispatchReminderConfig } from "@kudos/shared-types";
+import { londonHour, type DispatchReminderConfig } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
@@ -52,7 +52,11 @@ export class DispatchReminderService {
   async scheduledReminder(): Promise<void> {
     const config = await this.dispatchConfig.getReminderConfig();
     if (!config.enabled) return;
-    if (new Date().getUTCHours() !== config.sendHourUtc) return;
+    // London, not UTC. The hour an operator sets is the hour they mean; judging
+    // it against the server's UTC clock made a "07:00" reminder arrive at 08:00
+    // for the seven months of BST — while the same-day cut-off on the same
+    // settings panel was already UK-local (ADR 0160). One panel, one clock.
+    if (londonHour(new Date()) !== config.sendHourLondon) return;
     await this.runDispatchReminder(config);
   }
 

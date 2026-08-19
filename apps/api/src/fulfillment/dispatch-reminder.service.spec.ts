@@ -1,5 +1,5 @@
 import type { ConfigService } from "@nestjs/config";
-import type { DispatchReminderConfig } from "@kudos/shared-types";
+import { londonHour, type DispatchReminderConfig } from "@kudos/shared-types";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { EmailClient } from "../email/email.client";
 import type { EnvConfig } from "../config/env.schema";
@@ -21,7 +21,7 @@ describe("DispatchReminderService", () => {
 
   const DEFAULT_CFG: DispatchReminderConfig = {
     enabled: true,
-    sendHourUtc: 7,
+    sendHourLondon: 7,
     leadWorkingDays: 5,
     // High by default so escalation is off unless a test opts in.
     escalateAfterWorkingDays: 99,
@@ -219,11 +219,21 @@ describe("DispatchReminderService", () => {
   });
 
   it("the cron gate skips the run outside the configured send hour", async () => {
-    const otherHour = (new Date().getUTCHours() + 1) % 24;
+    // London, not UTC — the two differ for seven months of the year, and using
+    // the UTC hour here would make this pass while production ran an hour late.
+    const otherHour = (londonHour(new Date()) + 1) % 24;
     const { service, mustShip } = build(busySummary, ["ops@kudos.test"], {
-      sendHourUtc: otherHour,
+      sendHourLondon: otherHour,
     });
     await service.scheduledReminder();
     expect(mustShip).not.toHaveBeenCalled();
+  });
+
+  it("the cron gate runs at the configured London hour", async () => {
+    const { service, mustShip } = build(busySummary, ["ops@kudos.test"], {
+      sendHourLondon: londonHour(new Date()),
+    });
+    await service.scheduledReminder();
+    expect(mustShip).toHaveBeenCalled();
   });
 });

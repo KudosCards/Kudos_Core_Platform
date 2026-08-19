@@ -10,14 +10,14 @@ interface ConfigResponse {
   default: DispatchReminderConfig;
 }
 
-/** A UTC hour (0–23) shown as "07:00 UTC". */
+/** A UK-local hour (0–23) shown as "07:00 UK". */
 function hourLabel(hour: number): string {
-  return `${String(hour).padStart(2, "0")}:00 UTC`;
+  return `${String(hour).padStart(2, "0")}:00 UK`;
 }
 
 /**
  * Ops editor for the send-by-5 dispatch reminder (ADR 0117): whether it runs, the
- * UTC hour it sends, the send-by window, and how overdue a card must be before it
+ * UK hour it sends, the send-by window, and how overdue a card must be before it
  * escalates to super admins. Saved via the platform API, applied on the next run —
  * no redeploy.
  */
@@ -99,8 +99,8 @@ export function DispatchReminderSetup() {
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-xs tracking-wide text-muted uppercase">Send time</span>
               <select
-                value={config.sendHourUtc}
-                onChange={(e) => patch({ sendHourUtc: Number(e.target.value) })}
+                value={config.sendHourLondon}
+                onChange={(e) => patch({ sendHourLondon: Number(e.target.value) })}
                 className={cell}
               >
                 {Array.from({ length: 24 }, (_, h) => (

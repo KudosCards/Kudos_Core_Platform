@@ -1,9 +1,13 @@
-import { londonDay, londonDayStart, previousLondonDay } from "./london-day";
+import { londonDay, londonDayStart, londonHour, previousLondonDay } from "@kudos/shared-types";
 
 /**
- * The digest reports "yesterday" to a UK reader, so these pin the two days a
- * year the answer isn't simply "the previous UTC day" — and the ordinary days
- * either side of them, so a regression can't hide in the special cases.
+ * The digest reports "yesterday" to a UK reader, and the dispatch reminder fires
+ * on a UK hour, so these pin the two days a year the answer isn't simply "the
+ * previous UTC day" — and the ordinary days either side, so a regression can't
+ * hide in the special cases.
+ *
+ * The helpers live in shared-types (london-time.ts) because the same-day posting
+ * cut-off needs them too; the tests live here because that's where jest runs.
  *
  * 2026 transitions: BST starts Sun 29 March (01:00 UTC), ends Sun 25 October
  * (01:00 UTC).
@@ -39,6 +43,22 @@ describe("London calendar days", () => {
 
     it("agrees with UTC in winter", () => {
       expect(londonDay(new Date("2026-01-15T23:30:00Z"))).toBe("2026-01-15");
+    });
+  });
+
+  describe("londonHour", () => {
+    it("is an hour ahead of UTC during BST", () => {
+      // The bug this guards: a "07:00" reminder judged against getUTCHours()
+      // fires at 08:00 UK for the seven months of British Summer Time.
+      expect(londonHour(new Date("2026-08-17T06:00:00Z"))).toBe(7);
+    });
+
+    it("matches UTC in winter", () => {
+      expect(londonHour(new Date("2026-01-15T07:00:00Z"))).toBe(7);
+    });
+
+    it("reads midnight as 0, not 24", () => {
+      expect(londonHour(new Date("2026-01-15T00:00:00Z"))).toBe(0);
     });
   });
 

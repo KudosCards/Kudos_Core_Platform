@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
+import { previousLondonDay } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
@@ -8,7 +9,6 @@ import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
 import { PlatformNotificationService } from "../platform-notifications/platform-notification.service";
 import { PAID_STATUSES } from "../admin/admin.service";
 import { formatMinor } from "./ops-activity.service";
-import { previousLondonDay } from "./london-day";
 
 /** One new account with a login, for the digest's sign-up list. */
 export interface DigestSignup {
@@ -76,7 +76,7 @@ interface PostedRow {
  * - **Cards posted** come from `FulfillmentJob.postedAt`, stamped exactly when
  *   an operator transitions a job to `posted`.
  *
- * Days are **London** days, not UTC days — see london-day.ts. Everything else
+ * Days are **London** days, not UTC days — see london-time.ts. Everything else
  * in the platform works in UTC days, and should; this is the one place where a
  * person reads "yesterday" and means their own calendar.
  *
@@ -112,7 +112,7 @@ export class OpsDigestService {
    * The digest itself — runnable directly by tests and the on-demand ops
    * trigger. Reports the **previous full London day**, so the window is closed
    * (a re-run gives the same numbers) and "yesterday" means the day a UK reader
-   * would call yesterday. See london-day.ts for why that isn't the UTC day.
+   * would call yesterday. See london-time.ts in shared-types for why that isn't the UTC day.
    *
    * `force` bypasses the once-a-day guard. The cron never sets it — that guard
    * is what stops a re-fired cron or a second instance double-sending. The ops
