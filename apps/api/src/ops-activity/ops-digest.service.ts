@@ -113,8 +113,19 @@ export class OpsDigestService {
    * trigger. Reports the **previous full London day**, so the window is closed
    * (a re-run gives the same numbers) and "yesterday" means the day a UK reader
    * would call yesterday. See london-day.ts for why that isn't the UTC day.
+   *
+   * `force` bypasses the once-a-day guard. The cron never sets it — that guard
+   * is what stops a re-fired cron or a second instance double-sending. The ops
+   * "send it now" button always sets it, because otherwise the button is useless
+   * for the one job it has: after the morning run, every press would report
+   * "already sent" and nothing would arrive, which is indistinguishable from the
+   * feature being broken. A deliberate press by a super admin is allowed to send
+   * a second copy.
    */
-  async runDailyDigest(now: Date = new Date()): Promise<OpsDigestSummary> {
+  async runDailyDigest(
+    now: Date = new Date(),
+    options: { force?: boolean } = {},
+  ): Promise<OpsDigestSummary> {
     const { day, from, to } = previousLondonDay(now);
 
     const [signups, orders, posted] = await Promise.all([
@@ -163,7 +174,7 @@ export class OpsDigestService {
       const reason = error instanceof Error ? error.message : "Unknown error";
       this.logger.error(`Daily digest in-app notification failed: ${reason}`);
     }
-    if (!created) {
+    if (!created && !options.force) {
       this.logger.log(`Daily digest for ${day} already recorded — not re-sending`);
       return summary;
     }

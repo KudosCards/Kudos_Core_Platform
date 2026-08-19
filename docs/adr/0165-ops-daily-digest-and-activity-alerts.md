@@ -102,8 +102,13 @@ morning is indistinguishable from a dead cron.
 ### 3. An on-demand trigger
 
 `POST /admin/daily-summary/run` (super-admin only) with a button on the ops dashboard, so the
-email can be seen and the wiring confirmed on the day it's set up rather than the next morning.
-Pressing it twice is safe and does nothing the second time — the same day-key guard.
+email can be seen and the wiring confirmed without waiting for the next morning.
+
+It **forces**, bypassing the once-a-day guard. That guard exists to stop a re-fired cron or a
+second instance double-sending; a super admin pressing a button is neither, and a button that
+answers "already sent" every afternoon can't be used to check anything — which is exactly the
+situation you're in when the morning's digest didn't arrive and you need to find out why.
+Pressing twice therefore sends twice.
 
 ## Consequences
 
