@@ -13,6 +13,7 @@ import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { BRAND, renderBrandedEmail } from "../email/email-layout";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import { OpsActivityService } from "../ops-activity/ops-activity.service";
+import { SubscriptionInvoicesService } from "../billing/subscription-invoices.service";
 import type { EnvConfig } from "../config/env.schema";
 import { mapStripeSubscriptionStatus } from "./subscription-status.util";
 
@@ -35,6 +36,7 @@ export class WebhooksService {
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
     private readonly inbox: NotificationInboxService,
     private readonly opsActivity: OpsActivityService,
+    private readonly subscriptionInvoices: SubscriptionInvoicesService,
     private readonly seatBilling: SeatBillingService,
   ) {}
 
@@ -205,95 +207,22 @@ export class WebhooksService {
   }
 
   /**
-   * Persist a paid subscription invoice — the money data that used to arrive
-   * here every month and be dropped on the floor for want of a batchOrderId.
+   * Hand a subscription invoice to the one place that records them.
    *
-   * Only invoices Stripe attributes to a subscription are kept, so this table
-   * stays "subscription income" and summing it can't quietly pick up a one-off
-   * Stripe invoice raised by hand.
+   * Deliberately the same code path the historical backfill uses — two
+   * implementations of "what has this customer paid us" would drift, and the
+   * difference would surface as money that doesn't reconcile.
    *
-   * Idempotent on the Stripe invoice id: a redelivered webhook updates the row
-   * it already wrote rather than adding a second, and the historical backfill
-   * reads the same key, so the two converge instead of double-counting.
-   * Best-effort — a bookkeeping failure must never make the webhook 500 and
+   * Best-effort: a bookkeeping failure must never make this webhook 500 and
    * have Stripe retry a payment we've already handled.
    */
   private async recordSubscriptionInvoice(invoice: Stripe.Invoice): Promise<void> {
     try {
-      // `invoice.subscription` no longer exists in this SDK — the link moved to
-      // `parent.subscription_details`. Anything without one isn't subscription
-      // income and doesn't belong in this table.
-      const details = invoice.parent?.subscription_details;
-      const subscription = details?.subscription;
-      const stripeSubscriptionId =
-        typeof subscription === "string" ? subscription : (subscription?.id ?? null);
-      if (!stripeSubscriptionId) {
-        return;
-      }
-
-      const stripeCustomerId = stripeCustomerIdOf(invoice);
-      const accountId = await this.resolveInvoiceAccountId(stripeCustomerId, stripeSubscriptionId);
-      if (!accountId) {
-        // Loud, not silent: an invoice we can't attribute is revenue missing
-        // from a customer's record, and nothing else would ever surface it.
-        this.logger.warn(
-          `Paid subscription invoice ${invoice.id} could not be matched to an account ` +
-            `(customer ${stripeCustomerId ?? "none"}, subscription ${stripeSubscriptionId})`,
-        );
-        return;
-      }
-
-      const paidAt = invoice.status_transitions.paid_at;
-      const data = {
-        accountId,
-        stripeSubscriptionId,
-        // amount_paid, not total: a partly-paid or credited invoice must not
-        // count as if it were paid in full.
-        amountPaidMinor: invoice.amount_paid,
-        currency: invoice.currency,
-        status: invoice.status ?? "paid",
-        billingReason: invoice.billing_reason ?? null,
-        periodStart: invoice.period_start ? new Date(invoice.period_start * 1000) : null,
-        periodEnd: invoice.period_end ? new Date(invoice.period_end * 1000) : null,
-        // Stripe's own paid timestamp, so a backfilled invoice lands on the date
-        // it was actually paid rather than the day we imported it.
-        paidAt: paidAt ? new Date(paidAt * 1000) : new Date(invoice.created * 1000),
-        hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
-        invoicePdfUrl: invoice.invoice_pdf ?? null,
-      };
-
-      await this.prisma.subscriptionInvoice.upsert({
-        where: { stripeInvoiceId: invoice.id },
-        create: { ...data, stripeInvoiceId: invoice.id },
-        update: data,
-      });
+      await this.subscriptionInvoices.record(invoice);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown error";
       this.logger.error(`Recording subscription invoice ${invoice.id} failed: ${reason}`);
     }
-  }
-
-  /**
-   * The account an invoice belongs to: by Stripe customer first (the durable
-   * link), falling back to the subscription we already track. The fallback
-   * matters for an account whose `stripeCustomerId` was never stored.
-   */
-  private async resolveInvoiceAccountId(
-    stripeCustomerId: string | null,
-    stripeSubscriptionId: string,
-  ): Promise<string | null> {
-    if (stripeCustomerId) {
-      const account = await this.prisma.account.findUnique({
-        where: { stripeCustomerId },
-        select: { id: true },
-      });
-      if (account) return account.id;
-    }
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { stripeSubscriptionId },
-      select: { accountId: true },
-    });
-    return subscription?.accountId ?? null;
   }
 
   /** Drop a persisted inbox note to the whole team that a paid order is now in
@@ -641,13 +570,4 @@ export class WebhooksService {
       metadata: { status, planId },
     });
   }
-}
-
-/** An invoice's Stripe customer id, whether Stripe expanded the object or not.
- *  A deleted customer has no usable id. */
-function stripeCustomerIdOf(invoice: Stripe.Invoice): string | null {
-  const customer = invoice.customer;
-  if (typeof customer === "string") return customer;
-  if (!customer || customer.deleted) return null;
-  return customer.id;
 }

@@ -5,6 +5,7 @@ import { PlatformSettingsService } from "./platform-settings.service";
 import { SeatBillingService } from "./seat-billing.service";
 import { StripeCustomerService } from "./stripe-customer.service";
 import { BillingPortalService } from "./billing-portal.service";
+import { SubscriptionInvoicesService } from "./subscription-invoices.service";
 
 @Module({
   imports: [AuditModule],
@@ -14,6 +15,7 @@ import { BillingPortalService } from "./billing-portal.service";
     SeatBillingService,
     StripeCustomerService,
     BillingPortalService,
+    SubscriptionInvoicesService,
   ],
   // SeatBillingService (and the raw client) are consumed by subscriptions,
   // webhooks, and the admin provisioning endpoint; StripeCustomerService and
@@ -24,6 +26,9 @@ import { BillingPortalService } from "./billing-portal.service";
     SeatBillingService,
     StripeCustomerService,
     BillingPortalService,
+    // Recording subscription income: the webhook writes through it, the admin
+    // backfill replays Stripe's history through the same path.
+    SubscriptionInvoicesService,
   ],
 })
 export class BillingModule {}
