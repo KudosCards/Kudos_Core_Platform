@@ -4,6 +4,14 @@ import { useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 
+interface CatalogFieldResolution {
+  /** The Airtable column the sync read, or null if none matched. */
+  using: string | null;
+  /** Other aliased columns that also hold a value — an edit in one of these
+   *  is being ignored. */
+  alsoPresent: string[];
+}
+
 interface CatalogSyncSummary {
   fetched: number;
   created: number;
@@ -12,7 +20,21 @@ interface CatalogSyncSummary {
   imagesCopied: number;
   skippedNoImage: { externalId: string; sku: string | null; title: string }[];
   errors: { externalId: string; sku: string | null; reason: string }[];
+  fieldMapping?: {
+    fields: Record<string, CatalogFieldResolution>;
+    columns: string[];
+  };
 }
+
+/** Which logical fields are worth showing, and what to call them. */
+const FIELD_LABELS: Record<string, string> = {
+  title: "Card name",
+  category: "Occasion",
+  sku: "SKU",
+  frontImage: "Artwork",
+  insideMessage: "Inside message",
+  status: "Status",
+};
 
 export function CatalogClient({ configured }: { configured: boolean }) {
   const [syncing, setSyncing] = useState(false);
@@ -39,9 +61,9 @@ export function CatalogClient({ configured }: { configured: boolean }) {
         <h1 className="text-2xl font-semibold">Card catalog</h1>
         <p className="text-foreground/60">
           Pull the latest card designs from Airtable into the platform. Only cards marked{" "}
-          <span className="font-medium">Active</span> <span className="font-medium">with artwork
-          attached</span> are imported; retired cards — and any without an image — are hidden
-          automatically.
+          <span className="font-medium">Active</span>{" "}
+          <span className="font-medium">with artwork attached</span> are imported; retired cards —
+          and any without an image — are hidden automatically.
         </p>
       </div>
 
@@ -86,6 +108,33 @@ export function CatalogClient({ configured }: { configured: boolean }) {
                 <p key={c.externalId} className="text-xs text-foreground/60">
                   {c.title}
                   {c.sku ? ` (${c.sku})` : ""}
+                </p>
+              ))}
+            </div>
+          )}
+          {summary.fieldMapping && (
+            <div className="flex flex-col gap-1 border-t border-black/10 pt-2 dark:border-white/10">
+              <p className="font-medium">Columns read from Airtable</p>
+              <p className="text-xs text-foreground/60">
+                Column names aren&rsquo;t fixed in code — the sync takes the first one it
+                recognises. If a card&rsquo;s name looks wrong and editing it changes nothing,
+                it&rsquo;s almost always because the sync is reading a different column from the one
+                being edited.
+              </p>
+              {Object.entries(summary.fieldMapping.fields).map(([field, resolution]) => (
+                <p key={field} className="text-xs text-foreground/70">
+                  <span className="text-foreground/50">{FIELD_LABELS[field] ?? field}:</span>{" "}
+                  {resolution.using ? (
+                    <span className="font-medium">{resolution.using}</span>
+                  ) : (
+                    <span className="text-foreground/40">no matching column</span>
+                  )}
+                  {resolution.alsoPresent.length > 0 && (
+                    <span className="text-amber-600">
+                      {" "}
+                      — ignoring {resolution.alsoPresent.join(", ")}
+                    </span>
+                  )}
                 </p>
               ))}
             </div>

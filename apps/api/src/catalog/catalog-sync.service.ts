@@ -15,7 +15,12 @@ import {
   DESIGN_ASSETS_BUCKET,
   ensureBucketConfigured,
 } from "../storage/storage.service";
-import { CATALOG_SOURCE, type CatalogCardRecord, type CatalogSource } from "./catalog-source";
+import {
+  CATALOG_SOURCE,
+  type CatalogCardRecord,
+  type CatalogFieldMapping,
+  type CatalogSource,
+} from "./catalog-source";
 import { buildCardDocument } from "./card-document.util";
 
 export interface CatalogSyncSummary {
@@ -29,6 +34,16 @@ export interface CatalogSyncSummary {
   skippedNoImage: { externalId: string; sku: string | null; title: string }[];
   /** Per-card failures that didn't abort the whole run (e.g. one bad image). */
   errors: { externalId: string; sku: string | null; reason: string }[];
+  /**
+   * Which upstream columns the sync actually read. Present when the source can
+   * report it (Airtable can; a fixed-schema source has nothing to explain).
+   *
+   * Here because "I edited the name in Airtable and nothing changed" has no
+   * error to look at: field matching is tolerant, so a table with two
+   * title-ish columns reads one and ignores the other, and the sync reports a
+   * clean success either way. This makes the choice visible.
+   */
+  fieldMapping?: CatalogFieldMapping;
 }
 
 // How many artwork copies run at once. High enough that a few hundred cards
@@ -200,6 +215,19 @@ export class CatalogSyncService {
     });
 
     summary.deactivated = await this.deactivateRetired(records);
+    summary.fieldMapping = this.source.lastFieldMapping?.() ?? undefined;
+
+    // A field with more than one populated alias is the shape of "my edit did
+    // nothing": the sync read one column and silently ignored the other.
+    for (const [field, resolution] of Object.entries(summary.fieldMapping?.fields ?? {})) {
+      if (resolution.alsoPresent.length > 0) {
+        this.logger.warn(
+          `Catalog sync: "${field}" read from "${resolution.using}" — ` +
+            `also populated upstream: ${resolution.alsoPresent.join(", ")}. ` +
+            `An edit in one of those is being ignored.`,
+        );
+      }
+    }
 
     this.logger.log(
       `Catalog sync: fetched ${summary.fetched}, created ${summary.created}, ` +
