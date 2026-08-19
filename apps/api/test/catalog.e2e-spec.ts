@@ -22,6 +22,9 @@ const sourceMock: CatalogSource = {
 
 /** A fake Supabase storage client that records uploads without any network. */
 const uploadedPaths: string[] = [];
+/** Set by a test to make the next upload(s) fail, as the bucket's mime/size
+ *  limits do in production. */
+let uploadError: string | null = null;
 const createdBuckets: string[] = [];
 const storageMock = {
   storage: {
@@ -33,6 +36,11 @@ const storageMock = {
     from: () => ({
       upload: (path: string) => {
         uploadedPaths.push(path);
+        if (uploadError) {
+          // What Supabase returns for a mime the bucket doesn't allow, or a
+          // file over the size limit.
+          return Promise.resolve({ data: null, error: { message: uploadError } });
+        }
         return Promise.resolve({ data: { path }, error: null });
       },
       getPublicUrl: (path: string) => ({
@@ -91,6 +99,7 @@ describe("Catalog sync (e2e)", () => {
     activeCards = [];
     uploadedPaths.length = 0;
     createdBuckets.length = 0;
+    uploadError = null;
   });
 
   async function opsToken(): Promise<string> {
@@ -283,6 +292,75 @@ describe("Catalog sync (e2e)", () => {
     expect(await prisma.cardDesign.count({ where: { externalId: null, isActive: true } })).toBe(
       seededActiveBefore,
     );
+  });
+
+  it("still updates a card's name when its new artwork can't be copied", async () => {
+    // The reported bug: rename a card in Airtable, sync, nothing changes.
+    // The card's artwork copy was failing — the bucket only takes
+    // png/jpeg/webp/gif under 10MB — and the throw skipped the whole upsert, so
+    // the name, occasion, SKU and message all silently kept their old values
+    // while the sync reported a clean finish.
+    const token = await opsToken();
+    const externalId = `rec-artwork-${randomUUID()}`;
+
+    activeCards = [card({ externalId, title: "GSCEE Golden", category: "Congratulations" })];
+    await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const created = await prisma.cardDesign.findUniqueOrThrow({ where: { externalId } });
+    expect(created.name).toBe("GSCEE Golden");
+
+    // Now the name is corrected upstream and the artwork replaced with
+    // something the bucket rejects.
+    uploadError = "mime type image/heic is not supported";
+    activeCards = [card({ externalId, title: "GCSE Golden", category: "Congratulations" })];
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const updated = await prisma.cardDesign.findUniqueOrThrow({ where: { externalId } });
+    expect(updated.name).toBe("GCSE Golden");
+    // Still showing the artwork we already held, rather than nothing.
+    expect(updated.thumbnailUrl).toBe(created.thumbnailUrl);
+    expect(updated.isActive).toBe(true);
+
+    // And the artwork failure is reported — with the reason — rather than
+    // passing as a clean sync.
+    const summary = response.body as {
+      updated: number;
+      artworkFailed: { externalId: string; title: string; reason: string }[];
+      errors: unknown[];
+    };
+    expect(summary.updated).toBe(1);
+    expect(summary.errors).toHaveLength(0);
+    expect(summary.artworkFailed).toHaveLength(1);
+    expect(summary.artworkFailed[0]?.externalId).toBe(externalId);
+    expect(summary.artworkFailed[0]?.reason).toContain("image/heic");
+  });
+
+  it("reports a brand-new card whose first artwork copy fails as a real import failure", async () => {
+    // Nothing to fall back on, so this one genuinely can't go in the library.
+    const token = await opsToken();
+    const externalId = `rec-newfail-${randomUUID()}`;
+    uploadError = "The object exceeded the maximum allowed size";
+    activeCards = [card({ externalId, title: "Too Big" })];
+
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect(await prisma.cardDesign.findUnique({ where: { externalId } })).toBeNull();
+    const summary = response.body as {
+      errors: { externalId: string; reason: string }[];
+      artworkFailed: unknown[];
+    };
+    expect(summary.artworkFailed).toHaveLength(0);
+    expect(summary.errors).toHaveLength(1);
+    expect(summary.errors[0]?.reason).toContain("maximum allowed size");
   });
 
   it("skips a card with no image instead of importing a placeholder", async () => {

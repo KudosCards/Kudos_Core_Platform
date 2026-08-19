@@ -1,5 +1,10 @@
 import { Logger } from "@nestjs/common";
-import type { CatalogCardRecord, CatalogImage, CatalogSource } from "./catalog-source";
+import type {
+  CatalogCardRecord,
+  CatalogFieldMapping,
+  CatalogImage,
+  CatalogSource,
+} from "./catalog-source";
 
 export interface AirtableConfig {
   apiKey: string | undefined;
@@ -44,9 +49,21 @@ const FIELD_ALIASES = {
   status: ["Status", "State"],
 } as const;
 
-/** Case-insensitive lookup of the first alias present (and non-empty) in `fields`. */
-function pickField(fields: Record<string, unknown>, candidates: readonly string[]): unknown {
+/**
+ * Case-insensitive lookup of the first alias present (and non-empty), reporting
+ * *which* column it came from and which other aliases also held a value.
+ *
+ * The "also present" half is the whole point: matching is tolerant by design, so
+ * a table carrying both "Card Title" and "Name" reads the first and ignores the
+ * second — silently. Somebody editing the other column sees nothing change and
+ * no error to explain why.
+ */
+function matchField(
+  fields: Record<string, unknown>,
+  candidates: readonly string[],
+): { key: string | null; value: unknown; alsoPresent: string[] } {
   const lowerKeyed = new Map(Object.keys(fields).map((key) => [key.toLowerCase(), key]));
+  const populated: { key: string; value: unknown }[] = [];
   for (const candidate of candidates) {
     const actualKey = lowerKeyed.get(candidate.toLowerCase());
     if (actualKey === undefined) {
@@ -54,10 +71,20 @@ function pickField(fields: Record<string, unknown>, candidates: readonly string[
     }
     const value = fields[actualKey];
     if (value !== undefined && value !== null && value !== "") {
-      return value;
+      populated.push({ key: actualKey, value });
     }
   }
-  return undefined;
+  const [first, ...rest] = populated;
+  return {
+    key: first?.key ?? null,
+    value: first?.value,
+    alsoPresent: rest.map((entry) => entry.key),
+  };
+}
+
+/** Case-insensitive lookup of the first alias present (and non-empty) in `fields`. */
+function pickField(fields: Record<string, unknown>, candidates: readonly string[]): unknown {
+  return matchField(fields, candidates).value;
 }
 
 /** Single-line/single-select/number fields → a trimmed string, else null. */
@@ -102,8 +129,14 @@ function firstImage(value: unknown): CatalogImage | null {
  */
 export class AirtableCatalogSource implements CatalogSource {
   private readonly logger = new Logger(AirtableCatalogSource.name);
+  /** What the last fetch read, so the sync can show its working. */
+  private fieldMapping: CatalogFieldMapping | null = null;
 
   constructor(private readonly config: AirtableConfig) {}
+
+  lastFieldMapping(): CatalogFieldMapping | null {
+    return this.fieldMapping;
+  }
 
   isConfigured(): boolean {
     return Boolean(this.config.apiKey && this.config.baseId);
@@ -116,8 +149,30 @@ export class AirtableCatalogSource implements CatalogSource {
 
     const rawRecords = await this.fetchAllRecords(this.config.apiKey, this.config.baseId);
     const cards: CatalogCardRecord[] = [];
+    // Aggregated across records, not read off the first one: an alias that's
+    // empty on one row falls through to the next, so the column a field comes
+    // from genuinely can differ row to row.
+    const usedColumns = new Map<string, Set<string>>();
+    const alsoPresentColumns = new Map<string, Set<string>>();
+    const allColumns = new Set<string>();
+    const note = (field: string, match: { key: string | null; alsoPresent: string[] }): void => {
+      if (match.key) {
+        (usedColumns.get(field) ?? usedColumns.set(field, new Set()).get(field)!).add(match.key);
+      }
+      for (const other of match.alsoPresent) {
+        (alsoPresentColumns.get(field) ?? alsoPresentColumns.set(field, new Set()).get(field)!).add(
+          other,
+        );
+      }
+    };
 
     for (const record of rawRecords) {
+      for (const column of Object.keys(record.fields)) {
+        allColumns.add(column);
+      }
+      for (const [field, aliases] of Object.entries(FIELD_ALIASES)) {
+        note(field, matchField(record.fields, aliases));
+      }
       const status = asString(pickField(record.fields, FIELD_ALIASES.status));
       // No status column configured → treat every record as live; otherwise
       // only sync the ones explicitly marked Active.
@@ -143,6 +198,19 @@ export class AirtableCatalogSource implements CatalogSource {
         ),
       });
     }
+
+    this.fieldMapping = {
+      fields: Object.fromEntries(
+        Object.keys(FIELD_ALIASES).map((field) => [
+          field,
+          {
+            using: [...(usedColumns.get(field) ?? [])].sort().join(", ") || null,
+            alsoPresent: [...(alsoPresentColumns.get(field) ?? [])].sort(),
+          },
+        ]),
+      ),
+      columns: [...allColumns].sort(),
+    };
 
     return cards;
   }

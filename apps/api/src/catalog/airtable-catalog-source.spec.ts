@@ -18,9 +18,7 @@ describe("AirtableCatalogSource", () => {
 
   it("isConfigured reflects whether credentials are present", () => {
     expect(new AirtableCatalogSource(config).isConfigured()).toBe(true);
-    expect(
-      new AirtableCatalogSource({ ...config, apiKey: undefined }).isConfigured(),
-    ).toBe(false);
+    expect(new AirtableCatalogSource({ ...config, apiKey: undefined }).isConfigured()).toBe(false);
   });
 
   it("normalises records: lowercased category, first attachment, Blank inside message dropped", async () => {
@@ -51,7 +49,11 @@ describe("AirtableCatalogSource", () => {
         sku: "KC-BDAY-GEN-002",
         title: "Happy Birthday - Balloons",
         category: "birthday",
-        frontImage: { url: "https://airtable.test/a.png", filename: "a.png", contentType: "image/png" },
+        frontImage: {
+          url: "https://airtable.test/a.png",
+          filename: "a.png",
+          contentType: "image/png",
+        },
         insideMessage: null,
       },
     ]);
@@ -76,7 +78,10 @@ describe("AirtableCatalogSource", () => {
     fetchSpy = jest
       .spyOn(global, "fetch")
       .mockResolvedValueOnce(
-        jsonResponse({ records: [{ id: "rec1", fields: { "Card Title": "One" } }], offset: "next" }),
+        jsonResponse({
+          records: [{ id: "rec1", fields: { "Card Title": "One" } }],
+          offset: "next",
+        }),
       )
       .mockResolvedValueOnce(
         jsonResponse({ records: [{ id: "rec2", fields: { "Card Title": "Two" } }] }),
@@ -121,5 +126,87 @@ describe("AirtableCatalogSource", () => {
     await expect(new AirtableCatalogSource(config).fetchActiveCards()).rejects.toThrow(
       /tables are: "Cards" \(tblAAA\), "Recipients" \(tblBBB\)/,
     );
+  });
+
+  describe("field mapping", () => {
+    /** One Airtable record with whatever columns a test wants. */
+    function recordWith(fields: Record<string, unknown>) {
+      return {
+        records: [
+          {
+            id: "rec1",
+            fields: {
+              Status: "Active",
+              "Front Image": [{ url: "https://airtable.test/a.png", type: "image/png" }],
+              ...fields,
+            },
+          },
+        ],
+      };
+    }
+
+    it("reports which column each field was read from", async () => {
+      fetchSpy = jest
+        .spyOn(global, "fetch")
+        .mockResolvedValue(
+          jsonResponse(recordWith({ "Card Title": "GCSE Golden", Occasion: "Congratulations" })),
+        );
+
+      const source = new AirtableCatalogSource(config);
+      await source.fetchActiveCards();
+
+      const mapping = source.lastFieldMapping();
+      expect(mapping?.fields.title?.using).toBe("Card Title");
+      expect(mapping?.fields.category?.using).toBe("Occasion");
+      expect(mapping?.columns).toContain("Card Title");
+    });
+
+    it("flags a second populated alias — the silent cause of a sync that seems to do nothing", async () => {
+      // A table carrying both columns reads "Card Title" and ignores "Name".
+      // Somebody editing "Name" sees no change and no error; this is what makes
+      // that visible.
+      fetchSpy = jest
+        .spyOn(global, "fetch")
+        .mockResolvedValue(
+          jsonResponse(recordWith({ "Card Title": "GSCEE Golden", Name: "GCSE Golden" })),
+        );
+
+      const source = new AirtableCatalogSource(config);
+      const cards = await source.fetchActiveCards();
+
+      expect(cards[0]?.title).toBe("GSCEE Golden");
+      const title = source.lastFieldMapping()?.fields.title;
+      expect(title?.using).toBe("Card Title");
+      expect(title?.alsoPresent).toEqual(["Name"]);
+    });
+
+    it("falls through to the next alias when the preferred column is empty", async () => {
+      fetchSpy = jest
+        .spyOn(global, "fetch")
+        .mockResolvedValue(jsonResponse(recordWith({ "Card Title": "", Name: "GCSE Golden" })));
+
+      const source = new AirtableCatalogSource(config);
+      const cards = await source.fetchActiveCards();
+
+      expect(cards[0]?.title).toBe("GCSE Golden");
+      const title = source.lastFieldMapping()?.fields.title;
+      expect(title?.using).toBe("Name");
+      expect(title?.alsoPresent).toEqual([]);
+    });
+
+    it("reports no column for a field the table doesn't have", async () => {
+      fetchSpy = jest
+        .spyOn(global, "fetch")
+        .mockResolvedValue(jsonResponse(recordWith({ "Card Title": "GCSE Golden" })));
+
+      const source = new AirtableCatalogSource(config);
+      await source.fetchActiveCards();
+
+      expect(source.lastFieldMapping()?.fields.sku?.using).toBeNull();
+    });
+
+    it("is null before anything has been fetched", () => {
+      expect(new AirtableCatalogSource(config).lastFieldMapping()).toBeNull();
+    });
   });
 });
