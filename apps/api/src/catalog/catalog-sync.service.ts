@@ -32,7 +32,13 @@ export interface CatalogSyncSummary {
   /** Records skipped because they have no artwork attached in Airtable — these
    * are deliberately not imported into the library (see resolveArtwork removal). */
   skippedNoImage: { externalId: string; sku: string | null; title: string }[];
-  /** Per-card failures that didn't abort the whole run (e.g. one bad image). */
+  /**
+   * Cards whose text updated but whose **new artwork couldn't be copied**, so
+   * they're still showing the previously stored image. Distinct from `errors`:
+   * the card is in the library and current apart from its picture.
+   */
+  artworkFailed: { externalId: string; sku: string | null; title: string; reason: string }[];
+  /** Per-card failures that kept the card out of the library entirely. */
   errors: { externalId: string; sku: string | null; reason: string }[];
   /**
    * Which upstream columns the sync actually read. Present when the source can
@@ -139,6 +145,7 @@ export class CatalogSyncService {
       deactivated: 0,
       imagesCopied: 0,
       skippedNoImage: [],
+      artworkFailed: [],
       errors: [],
     };
 
@@ -186,13 +193,44 @@ export class CatalogSyncService {
           return;
         }
 
-        const imageUrl = await this.copyImage(record.externalId, record.frontImage);
+        // Artwork and metadata are copied **independently**, and this is the
+        // whole point of the block.
+        //
+        // The design-assets bucket only accepts png/jpeg/webp/gif under 10MB, so
+        // a HEIC straight off a phone, an SVG, a PDF or an oversized export
+        // makes the copy fail. That is a perfectly ordinary thing to happen to
+        // one card in a catalog. What used to happen next was not: the throw
+        // skipped the upsert entirely, so the card's **name, occasion, SKU and
+        // inside message all silently kept their old values** while the sync
+        // reported a clean finish. Renaming a card in Airtable and re-syncing
+        // did nothing, for a reason nothing on screen connected to the name.
+        let imageUrl: string | null = null;
+        let artworkFailure: string | null = null;
+        try {
+          imageUrl = await this.copyImage(record.externalId, record.frontImage);
+        } catch (error) {
+          artworkFailure = error instanceof Error ? error.message : "Unknown error";
+        }
+
+        // Fall back to the artwork already stored for this card, so the rest of
+        // the record still updates. Only a card with nothing to show at all —
+        // new, and its first copy failed — is a genuine import failure.
+        const thumbnailUrl = imageUrl ?? prior?.thumbnailUrl ?? null;
+        if (!thumbnailUrl) {
+          summary.errors.push({
+            externalId: record.externalId,
+            sku: record.sku,
+            reason: artworkFailure ?? "No artwork could be stored",
+          });
+          return;
+        }
+
         const data = {
           category: record.category,
           name: record.title,
           sku: record.sku,
-          thumbnailUrl: imageUrl,
-          document: buildCardDocument(imageUrl, record.insideMessage) as Prisma.InputJsonValue,
+          thumbnailUrl,
+          document: buildCardDocument(thumbnailUrl, record.insideMessage) as Prisma.InputJsonValue,
           isActive: true,
         };
 
@@ -201,7 +239,18 @@ export class CatalogSyncService {
         // or break the QR codes on cards already in the post (ADR 0163).
         await this.upsertWithSlug(record, data, takenSlugs);
 
-        summary.imagesCopied += 1;
+        if (imageUrl) {
+          summary.imagesCopied += 1;
+        } else {
+          // Updated, but still showing the old picture — a different problem
+          // from "didn't import", and it needs saying out loud.
+          summary.artworkFailed.push({
+            externalId: record.externalId,
+            sku: record.sku,
+            title: record.title,
+            reason: artworkFailure ?? "Unknown error",
+          });
+        }
         if (prior) {
           summary.updated += 1;
         } else {
@@ -233,7 +282,8 @@ export class CatalogSyncService {
       `Catalog sync: fetched ${summary.fetched}, created ${summary.created}, ` +
         `updated ${summary.updated}, deactivated ${summary.deactivated}, ` +
         `skipped-no-image ${summary.skippedNoImage.length}, ` +
-        `images copied ${summary.imagesCopied}, errors ${summary.errors.length}`,
+        `images copied ${summary.imagesCopied}, artwork-failed ${summary.artworkFailed.length}, ` +
+        `errors ${summary.errors.length}`,
     );
     return summary;
   }
@@ -312,7 +362,7 @@ export class CatalogSyncService {
       signal: AbortSignal.timeout(IMAGE_DOWNLOAD_TIMEOUT_MS),
     });
     if (!response.ok) {
-      throw new Error(`Could not download artwork (${response.status})`);
+      throw new Error(`Could not download artwork from Airtable (HTTP ${response.status})`);
     }
     const buffer = Buffer.from(await response.arrayBuffer());
     const contentType = image.contentType ?? response.headers.get("content-type") ?? "image/png";
@@ -323,7 +373,12 @@ export class CatalogSyncService {
       .from(DESIGN_ASSETS_BUCKET)
       .upload(path, buffer, { contentType, upsert: true });
     if (error) {
-      throw new Error(`Could not store artwork: ${error.message}`);
+      // Name the type and size. The bucket only accepts png/jpeg/webp/gif under
+      // 10MB, and the two ways this realistically fails are a phone/Mac export
+      // (HEIC) and an oversized print-resolution file — neither of which is
+      // guessable from "Could not store artwork" alone.
+      const megabytes = (buffer.length / 1_048_576).toFixed(1);
+      throw new Error(`Could not store artwork (${contentType}, ${megabytes}MB): ${error.message}`);
     }
 
     const {

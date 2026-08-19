@@ -19,6 +19,7 @@ interface CatalogSyncSummary {
   deactivated: number;
   imagesCopied: number;
   skippedNoImage: { externalId: string; sku: string | null; title: string }[];
+  artworkFailed: { externalId: string; sku: string | null; title: string; reason: string }[];
   errors: { externalId: string; sku: string | null; reason: string }[];
   fieldMapping?: {
     fields: Record<string, CatalogFieldResolution>;
@@ -97,6 +98,7 @@ export function CatalogClient({ configured }: { configured: boolean }) {
             <li>Deactivated: {summary.deactivated}</li>
             <li>Images copied: {summary.imagesCopied}</li>
             <li>No image (skipped): {summary.skippedNoImage.length}</li>
+            <li>Artwork not copied: {summary.artworkFailed?.length ?? 0}</li>
             <li>Errors: {summary.errors.length}</li>
           </ul>
           {summary.skippedNoImage.length > 0 && (
@@ -108,6 +110,25 @@ export function CatalogClient({ configured }: { configured: boolean }) {
                 <p key={c.externalId} className="text-xs text-foreground/60">
                   {c.title}
                   {c.sku ? ` (${c.sku})` : ""}
+                </p>
+              ))}
+            </div>
+          )}
+          {summary.artworkFailed?.length > 0 && (
+            <div className="flex flex-col gap-1 border-t border-black/10 pt-2 dark:border-white/10">
+              <p className="font-medium text-amber-600">
+                Updated, but still showing their previous artwork:
+              </p>
+              <p className="text-xs text-foreground/60">
+                The text on these cards is current — only the new image couldn&rsquo;t be stored.
+                The library accepts PNG, JPEG, WebP and GIF up to 10MB, so a HEIC straight off a
+                phone or an oversized print file will fail here. Re-export and re-attach in
+                Airtable, then sync again.
+              </p>
+              {summary.artworkFailed.map((c) => (
+                <p key={c.externalId} className="text-xs text-foreground/60">
+                  {c.title}
+                  {c.sku ? ` (${c.sku})` : ""} — {c.reason}
                 </p>
               ))}
             </div>
