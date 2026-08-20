@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
 import { CARD_PRICE_MINOR, CARD_SIZE_LABEL, getCardCategory } from "@kudos/shared-types";
-import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
+import { fetchCatalogCards, fetchCatalogCard } from "@/lib/catalog";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
 import {
   cardCategorySegment,
@@ -31,10 +31,8 @@ export const revalidate = 3600;
  */
 
 export async function generateStaticParams(): Promise<{ category: string; slug: string }[]> {
-  const templates = await publicApiFetch<CardDesign[]>("/card-designs", {
-    revalidate: CATALOG_REVALIDATE_SECONDS,
-  });
-  return (templates ?? []).filter(isPublishableCard).map((card) => ({
+  const templates = await fetchCatalogCards();
+  return templates.filter(isPublishableCard).map((card) => ({
     category: cardCategorySegment(card),
     slug: card.slug,
   }));
@@ -46,9 +44,7 @@ function cardDescription(card: CardDesign): string {
 }
 
 async function fetchCard(slug: string): Promise<CardDesign | null> {
-  return publicApiFetch<CardDesign>(`/card-designs/${slug}`, {
-    revalidate: CATALOG_REVALIDATE_SECONDS,
-  });
+  return fetchCatalogCard(slug);
 }
 
 export async function generateMetadata({

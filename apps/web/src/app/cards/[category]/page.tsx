@@ -3,7 +3,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
 import { CARD_CATEGORIES, CARD_SIZE_NOTICE, getCardCategory } from "@kudos/shared-types";
-import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
+import { fetchCatalogCards, fetchCatalogCard } from "@/lib/catalog";
 import {
   cardCategorySegment,
   cardPath,
@@ -36,11 +36,7 @@ export async function generateStaticParams(): Promise<{ category: string }[]> {
 }
 
 async function fetchCatalog(): Promise<CardDesign[]> {
-  return (
-    (await publicApiFetch<CardDesign[]>("/card-designs", {
-      revalidate: CATALOG_REVALIDATE_SECONDS,
-    })) ?? []
-  );
+  return fetchCatalogCards();
 }
 
 export async function generateMetadata({
@@ -86,9 +82,7 @@ export default async function CardCategoryPage({
     // Not a category — try it as a card id or slug. `/card-designs/:idOrSlug`
     // accepts both (ADR 0163), so this covers the pre-0163 `/cards/<uuid>` URLs
     // and a hand-typed `/cards/<slug>` alike.
-    const card = await publicApiFetch<CardDesign>(`/card-designs/${category}`, {
-      revalidate: CATALOG_REVALIDATE_SECONDS,
-    });
+    const card = await fetchCatalogCard(category);
     if (card) {
       permanentRedirect(cardPath(card));
     }

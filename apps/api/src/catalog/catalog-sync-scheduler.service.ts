@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { Cron, CronExpression } from "@nestjs/schedule";
+import { Cron } from "@nestjs/schedule";
 import { CatalogSyncService } from "./catalog-sync.service";
 
 /**
@@ -13,7 +13,9 @@ export class CatalogSyncSchedulerService {
 
   constructor(private readonly catalogSync: CatalogSyncService) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  // 4am UK, not 4am UTC. @nestjs/schedule uses the process timezone unless it's
+  // told otherwise, so without this the run drifts an hour with the clocks.
+  @Cron("0 4 * * *", { timeZone: "Europe/London" })
   async run(): Promise<void> {
     if (!this.catalogSync.isConfigured()) {
       this.logger.log("Skipping scheduled catalog sync — Airtable not configured");
@@ -23,7 +25,8 @@ export class CatalogSyncSchedulerService {
       const summary = await this.catalogSync.sync();
       this.logger.log(
         `Scheduled catalog sync done: ${summary.created} created, ${summary.updated} updated, ` +
-          `${summary.deactivated} deactivated, ${summary.errors.length} errors`,
+          `${summary.deactivated} deactivated, ${summary.errors.length} errors, ` +
+          `published ${summary.published.outcome}`,
       );
     } catch (error) {
       // A scheduled failure must not crash the process — log and wait for the

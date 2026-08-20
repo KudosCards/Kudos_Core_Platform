@@ -25,6 +25,8 @@ interface CatalogSyncSummary {
     fields: Record<string, CatalogFieldResolution>;
     columns: string[];
   };
+  /** Whether the public marketing library was refreshed too — see below. */
+  published?: { outcome: "published" | "not-configured" | "failed"; reason?: string };
 }
 
 /** Which logical fields are worth showing, and what to call them. */
@@ -101,6 +103,31 @@ export function CatalogClient({ configured }: { configured: boolean }) {
             <li>Artwork not copied: {summary.artworkFailed?.length ?? 0}</li>
             <li>Errors: {summary.errors.length}</li>
           </ul>
+
+          {/* "Synced" and "live on the website" are two different things.
+              Signed-in pages read the catalog uncached so they update at once;
+              /cards is served from an hourly cache and only changes when it's
+              told to. Saying so is the difference between "it's on its way" and
+              an hour of wondering whether the sync worked. */}
+          {summary.published && (
+            <div className="border-t border-black/10 pt-2 dark:border-white/10">
+              {summary.published.outcome === "published" ? (
+                <p className="text-emerald-700 dark:text-emerald-400">
+                  Public card library refreshed — the changes are live on the website now.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <p className="font-medium text-amber-600">
+                    Synced, but the public card library wasn&rsquo;t refreshed.
+                  </p>
+                  <p className="text-xs text-foreground/60">
+                    {summary.published.reason ??
+                      "The website will pick the changes up within the hour on its own."}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
           {summary.skippedNoImage.length > 0 && (
             <div className="flex flex-col gap-1 border-t border-black/10 pt-2 dark:border-white/10">
               <p className="font-medium text-amber-600">
