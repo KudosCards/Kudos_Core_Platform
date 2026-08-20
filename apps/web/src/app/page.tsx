@@ -327,7 +327,7 @@ export default function HomePage() {
       </section>
 
       {/* How it works */}
-      <section id="how" className="bg-slate-50">
+      <section id="how" className="scroll-mt-24 bg-slate-50">
         <div className="mx-auto max-w-6xl px-6 py-16">
           <div className="mx-auto max-w-2xl text-center">
             <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
