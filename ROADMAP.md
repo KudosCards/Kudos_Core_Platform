@@ -137,6 +137,19 @@ pricing), CTAs into **sign up / log in**. Still open: wiring plan CTAs into Stri
 checkout directly, a public card shop, and the "free sample card / 90-second demo" features.
 
 ### Later / backlog
+- **Cookie consent for Google Analytics — next up.** GA4 (`G-9P27FHKPXY`) ships on the marketing
+  site (#323), production context only. There is no cookie banner, and analytics cookies are
+  non-essential under PECR, so consent is required before they are set. The privacy policy
+  already promises this: *"Where consent is required for non-essential cookies, we will request
+  it through appropriate cookie controls."* Right now the site does the thing the policy says it
+  won't do without asking. Three ways forward, to be decided:
+  1. **Cookie banner with Consent Mode v2 — the proper fix.** GA loads with consent denied by
+     default and upgrades on accept. A day's work, maybe less.
+  2. **Accept the risk for now.** Plenty of small UK sites run GA without a banner. ICO
+     enforcement against small B2B firms is rare, but it is technically non-compliant and our own
+     policy contradicts it.
+  3. **Amend the privacy policy** to describe analytics accurately — cheap, but doesn't resolve
+     the consent requirement itself.
 - CRM integrations (import beyond CSV).
 - Coupons / discount codes, order notes at checkout.
 - Mobile-number login (WP allows email _or_ mobile).
