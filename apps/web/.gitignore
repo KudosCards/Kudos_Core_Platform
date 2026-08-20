@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the example, which documents what a deployment needs and holds no
+# secrets. apps/api/.env.example is committed for the same reason.
+!.env.example
 
 # vercel
 .vercel

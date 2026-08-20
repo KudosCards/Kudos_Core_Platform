@@ -22,15 +22,26 @@ export const CATALOG_REVALIDATE_SECONDS = 3600;
  * reads (invites, guest claims, RTS) that also use this helper. Pass a
  * `revalidate` window to opt a read into Next's Data Cache instead; only the
  * public catalog does this (see CATALOG_REVALIDATE_SECONDS).
+ *
+ * Cached reads may also carry `tags`, which is what lets a catalog sync publish
+ * immediately instead of waiting out the window — see `lib/catalog.ts`. Prefer
+ * the helpers there over calling this with a hand-written tag.
  */
 export async function publicApiFetch<T>(
   path: string,
-  options?: { revalidate?: number },
+  options?: { revalidate?: number; tags?: string[] },
 ): Promise<T | null> {
   try {
     const response = await fetch(`${env.NEXT_PUBLIC_API_URL}${path}`, {
       ...(options?.revalidate !== undefined
-        ? { next: { revalidate: options.revalidate } }
+        ? {
+            next: {
+              revalidate: options.revalidate,
+              // Tags only mean anything on a cached fetch, so they ride with
+              // `revalidate` rather than being a third independent option.
+              ...(options.tags ? { tags: options.tags } : {}),
+            },
+          }
         : { cache: "no-store" }),
     });
     if (!response.ok) {

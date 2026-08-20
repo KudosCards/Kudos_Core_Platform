@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { CardDesign } from "@kudos/shared-types";
 import { CARD_PRICE_MINOR, POSTAGE_MINOR } from "@kudos/shared-types";
-import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
+import { fetchCatalogCards, fetchCatalogCard } from "@/lib/catalog";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
 import { cardCategorySegment, cardPath, cardSendPath, isPublishableCard } from "@/lib/card-urls";
 import { NO_INDEX } from "@/lib/site";
@@ -19,19 +19,15 @@ export const revalidate = 3600;
 // Prerender the send-entry shell for every catalog card (build-safe: null → no
 // params if the API is unreachable at build; dynamicParams renders the rest).
 export async function generateStaticParams(): Promise<{ category: string; slug: string }[]> {
-  const templates = await publicApiFetch<CardDesign[]>("/card-designs", {
-    revalidate: CATALOG_REVALIDATE_SECONDS,
-  });
-  return (templates ?? []).filter(isPublishableCard).map((card) => ({
+  const templates = await fetchCatalogCards();
+  return templates.filter(isPublishableCard).map((card) => ({
     category: cardCategorySegment(card),
     slug: card.slug,
   }));
 }
 
 async function fetchCard(slug: string): Promise<CardDesign | null> {
-  return publicApiFetch<CardDesign>(`/card-designs/${slug}`, {
-    revalidate: CATALOG_REVALIDATE_SECONDS,
-  });
+  return fetchCatalogCard(slug);
 }
 
 export async function generateMetadata({

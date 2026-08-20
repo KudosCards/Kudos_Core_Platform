@@ -22,6 +22,7 @@ import {
   type CatalogSource,
 } from "./catalog-source";
 import { buildCardDocument } from "./card-document.util";
+import { CatalogPublisherService, type CatalogPublishResult } from "./catalog-publisher.service";
 
 export interface CatalogSyncSummary {
   fetched: number;
@@ -50,6 +51,16 @@ export interface CatalogSyncSummary {
    * clean success either way. This makes the choice visible.
    */
   fieldMapping?: CatalogFieldMapping;
+  /**
+   * Whether the public marketing library was refreshed as well as the database.
+   *
+   * These are two different things and used to be conflated. The signed-in app
+   * reads the catalog uncached, so a sync shows there at once; /cards is served
+   * from an hourly ISR cache, so it doesn't. Reporting only "synced" made a
+   * half-published catalog look finished — which is exactly how a card ends up
+   * live in the app and missing from the marketing site.
+   */
+  published: CatalogPublishResult;
 }
 
 // How many artwork copies run at once. High enough that a few hundred cards
@@ -107,6 +118,7 @@ export class CatalogSyncService {
     private readonly prisma: PrismaService,
     @Inject(CATALOG_SOURCE) private readonly source: CatalogSource,
     @Inject(DESIGN_ASSET_STORAGE_CLIENT) private readonly storage: SupabaseClient,
+    private readonly publisher: CatalogPublisherService,
   ) {}
 
   isConfigured(): boolean {
@@ -147,6 +159,9 @@ export class CatalogSyncService {
       skippedNoImage: [],
       artworkFailed: [],
       errors: [],
+      // Overwritten once the rows are written; a run that throws before then
+      // never claims to have published.
+      published: { outcome: "failed", reason: "Sync did not complete" },
     };
 
     const existing = await this.prisma.cardDesign.findMany({
@@ -278,12 +293,16 @@ export class CatalogSyncService {
       }
     }
 
+    // Only now — publishing before the rows are written would refresh the
+    // public library to the *old* catalog and then leave it stale again.
+    summary.published = await this.publisher.publish();
+
     this.logger.log(
       `Catalog sync: fetched ${summary.fetched}, created ${summary.created}, ` +
         `updated ${summary.updated}, deactivated ${summary.deactivated}, ` +
         `skipped-no-image ${summary.skippedNoImage.length}, ` +
         `images copied ${summary.imagesCopied}, artwork-failed ${summary.artworkFailed.length}, ` +
-        `errors ${summary.errors.length}`,
+        `errors ${summary.errors.length}, published ${summary.published.outcome}`,
     );
     return summary;
   }

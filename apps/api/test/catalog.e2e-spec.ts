@@ -219,6 +219,28 @@ describe("Catalog sync (e2e)", () => {
     expect(rows[0]!.slug).toBe("first-title");
   });
 
+  it("reports whether the public library was published, not just that rows were written", async () => {
+    activeCards = [card({ externalId: `rec${randomUUID().slice(0, 14)}`, title: "Published" })];
+
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${await opsToken()}`)
+      .expect(201);
+
+    // "Synced" and "live on the marketing site" are different things: the app
+    // reads the catalog uncached, /cards is served from an hourly ISR cache. A
+    // summary that reported only the row counts let a half-published catalog
+    // look finished — which is how a card ends up visible in the app and missing
+    // from the public library.
+    // No CATALOG_REVALIDATE_SECRET in the test environment, so the sync must say
+    // it couldn't publish — and must not have failed over it.
+    expect(response.body).toMatchObject({
+      created: 1,
+      published: { outcome: "not-configured" },
+    });
+    expect(JSON.stringify(response.body)).toContain("CATALOG_REVALIDATE_SECRET");
+  });
+
   it("gives a newly synced design a slug derived from its title", async () => {
     const externalId = `rec${randomUUID().slice(0, 14)}`;
     activeCards = [card({ externalId, title: "Mum & Dad's Anniversary" })];

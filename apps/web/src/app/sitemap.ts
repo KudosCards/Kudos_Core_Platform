@@ -1,6 +1,5 @@
 import type { MetadataRoute } from "next";
-import type { CardDesign } from "@kudos/shared-types";
-import { publicApiFetch, CATALOG_REVALIDATE_SECONDS } from "@/lib/api.public";
+import { fetchCatalogCards } from "@/lib/catalog";
 import { CARD_CATEGORIES } from "@kudos/shared-types";
 import { AUDIENCES } from "@/lib/audiences";
 import { GUIDES } from "@/lib/guides";
@@ -44,15 +43,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: absoluteUrl("/privacy"), changeFrequency: "yearly", priority: 0.2 },
   ];
 
-  // `publicApiFetch` returns null when the catalog API is unreachable. Fall back
+  // `fetchCatalogCards` returns [] when the catalog API is unreachable. Fall back
   // to the marketing pages rather than throwing: a sitemap must never be the
   // reason a build fails. Same tolerance as generateStaticParams on the card routes.
-  const cards = await publicApiFetch<CardDesign[]>("/card-designs", {
-    revalidate: CATALOG_REVALIDATE_SECONDS,
-  });
+  const cards = await fetchCatalogCards();
 
   // Only cards the API has given a slug — see isPublishableCard().
-  const catalog = (cards ?? []).filter(isPublishableCard);
+  const catalog = cards.filter(isPublishableCard);
 
   // Only categories that actually have cards — a sitemap entry for a category
   // page that 404s (the page itself notFound()s when empty) is a crawl error we

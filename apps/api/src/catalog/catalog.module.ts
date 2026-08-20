@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { designAssetStorageProvider } from "../storage/design-asset-storage.provider";
 import { CatalogController } from "./catalog.controller";
 import { CatalogSyncService } from "./catalog-sync.service";
+import { CatalogPublisherService } from "./catalog-publisher.service";
 import { CatalogSyncSchedulerService } from "./catalog-sync-scheduler.service";
 import { catalogSourceProvider } from "./catalog-source.provider";
 
@@ -17,6 +18,7 @@ import { catalogSourceProvider } from "./catalog-source.provider";
     catalogSourceProvider,
     designAssetStorageProvider,
     CatalogSyncService,
+    CatalogPublisherService,
     CatalogSyncSchedulerService,
   ],
   exports: [CatalogSyncService],

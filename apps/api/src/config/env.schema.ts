@@ -107,6 +107,17 @@ export const envSchema = z.object({
   // Stripe redirects, and every auth-email link. Must be http(s) — see `httpUrl`.
   WEB_APP_URL: httpUrl,
 
+  // Shared secret for telling the web app to publish a fresh catalog, sent as
+  // `x-catalog-revalidate-secret` when a sync finishes. Must match
+  // CATALOG_REVALIDATE_SECRET on the web app. Optional; unset ⇒ the sync still
+  // runs and simply reports that it couldn't publish, so the catalog falls back
+  // to the hourly ISR window. See docs/adr/0044-public-catalog-isr.md.
+  CATALOG_REVALIDATE_SECRET: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+
   // Extra browser origins allowed to call the API beyond WEB_APP_URL, as a
   // comma-separated list (e.g. "https://www.kudos-cards.co.uk"). The CORS
   // allow-list is [WEB_APP_URL, ...these], so a single wrong value can no longer
