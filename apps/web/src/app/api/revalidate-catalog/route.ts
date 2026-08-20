@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
 import { CATALOG_CACHE_TAG } from "@/lib/catalog";
@@ -19,15 +19,19 @@ import { CATALOG_CACHE_TAG } from "@/lib/catalog";
 /** Never prerendered or cached — it exists to have side effects. */
 export const dynamic = "force-dynamic";
 
-/** Constant-time compare that doesn't leak length via an early return. */
+/**
+ * Constant-time secret comparison.
+ *
+ * Compares SHA-256 digests rather than the raw strings. `timingSafeEqual`
+ * throws when its arguments differ in length, so comparing raw bytes needs a
+ * length guard first — and that guard returns early, which both leaks the
+ * secret's length and makes the "constant time" claim untrue for the case it
+ * matters in. Digests are always 32 bytes, so every comparison does identical
+ * work whatever was sent.
+ */
 function secretMatches(provided: string, expected: string): boolean {
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
-  // timingSafeEqual throws on a length mismatch, so compare hashes of equal
-  // length — here, simply guard and still run the comparison to keep the timing
-  // profile flat for same-length inputs.
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  const digest = (value: string): Buffer => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(provided), digest(expected));
 }
 
 export async function POST(request: Request): Promise<NextResponse> {

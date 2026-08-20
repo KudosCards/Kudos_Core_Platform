@@ -66,6 +66,11 @@ export class CatalogPublisherService {
         return { outcome: "failed", reason };
       }
 
+      // Drain before moving on: `fetch` hands back the headers while the body
+      // is still a live stream, and an undrained one holds its socket open
+      // until the GC gets to it.
+      await response.text().catch(() => "");
+
       // Second request, deliberately. The purge only takes effect once the
       // revalidate request has finished, and regeneration is
       // stale-while-revalidate — so without this the next visitor still gets the
@@ -102,7 +107,12 @@ export class CatalogPublisherService {
   private async warmCatalogPage(webAppUrl: string): Promise<void> {
     const url = `${webAppUrl.replace(/\/$/, "")}/cards`;
     const get = async (): Promise<void> => {
-      await fetch(url, { signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS) });
+      const response = await fetch(url, { signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS) });
+      // Reading the body to the end is the whole point, not tidiness: `fetch`
+      // resolves as soon as the headers land, and a Next page streams its HTML
+      // — so returning here would mean moving on while the render we're paying
+      // for is still in flight, which is exactly what this is meant to absorb.
+      await response.text();
     };
     try {
       await get();
