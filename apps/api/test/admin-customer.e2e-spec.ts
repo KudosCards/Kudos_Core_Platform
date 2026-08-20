@@ -236,4 +236,105 @@ describe("Admin — Customer 360 (e2e)", () => {
       hasTeam: true,
     });
   });
+  it("reports no subscription spend for an account that has never paid", async () => {
+    const token = await operatorToken();
+    const account = await prisma.account.create({
+      data: { type: "individual", name: `Never Paid ${randomUUID()}`, planId: "free" },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/admin/customers/${account.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    const customer = customer360Schema.parse(response.body);
+    expect(customer.subscriptionSpend).toMatchObject({
+      totalPaidMinor: 0,
+      invoiceCount: 0,
+      firstPaidAt: null,
+      lastPaidAt: null,
+      recent: [],
+    });
+    // With nothing to report we still name a currency, so the page has
+    // something to format zero with.
+    expect(customer.subscriptionSpend.currency).toBe("gbp");
+  });
+
+  it("totals lifetime subscription spend and lists the most recent invoices", async () => {
+    const token = await operatorToken();
+    const account = await prisma.account.create({
+      data: {
+        type: "organisation",
+        name: `Long Standing ${randomUUID()}`,
+        planId: "centre",
+        stripeCustomerId: `cus_${randomUUID()}`,
+      },
+    });
+    const accountId = account.id;
+
+    // 14 monthly invoices — two more than the page shows, so the cap and the
+    // "latest N of M" count are both exercised.
+    const MONTHS = 14;
+    for (let i = 0; i < MONTHS; i += 1) {
+      const paidAt = new Date(Date.UTC(2025, i, 3, 9, 0, 0));
+      await prisma.subscriptionInvoice.create({
+        data: {
+          accountId,
+          stripeInvoiceId: `in_${randomUUID()}`,
+          stripeSubscriptionId: "sub_long_standing",
+          // A rising amount makes the ordering assertion meaningful: the
+          // newest invoice is also the dearest.
+          amountPaidMinor: 1000 + i,
+          currency: "gbp",
+          status: "paid",
+          billingReason: i === 0 ? "subscription_create" : "subscription_cycle",
+          periodStart: paidAt,
+          periodEnd: new Date(Date.UTC(2025, i + 1, 3, 9, 0, 0)),
+          paidAt,
+          hostedInvoiceUrl: `https://invoice.stripe.test/${i}`,
+          invoicePdfUrl: `https://invoice.stripe.test/${i}.pdf`,
+        },
+      });
+    }
+
+    // Another account's invoice must not leak into this one's total.
+    const other = await prisma.account.create({
+      data: { type: "individual", name: `Other ${randomUUID()}`, planId: "starter" },
+    });
+    await prisma.subscriptionInvoice.create({
+      data: {
+        accountId: other.id,
+        stripeInvoiceId: `in_${randomUUID()}`,
+        amountPaidMinor: 999_999,
+        currency: "gbp",
+        status: "paid",
+        paidAt: new Date(Date.UTC(2025, 5, 1)),
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/admin/customers/${accountId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    const { subscriptionSpend } = customer360Schema.parse(response.body);
+
+    // 1000 + 1001 + … + 1013
+    const expectedTotal = MONTHS * 1000 + (MONTHS * (MONTHS - 1)) / 2;
+    expect(subscriptionSpend.totalPaidMinor).toBe(expectedTotal);
+    expect(subscriptionSpend.invoiceCount).toBe(MONTHS);
+    expect(subscriptionSpend.currency).toBe("gbp");
+    expect(subscriptionSpend.firstPaidAt).toEqual(new Date(Date.UTC(2025, 0, 3, 9, 0, 0)));
+    expect(subscriptionSpend.lastPaidAt).toEqual(new Date(Date.UTC(2025, MONTHS - 1, 3, 9, 0, 0)));
+
+    // Newest first, capped at the page's 12.
+    expect(subscriptionSpend.recent).toHaveLength(12);
+    expect(subscriptionSpend.recent[0]?.amountPaidMinor).toBe(1000 + MONTHS - 1);
+    expect(subscriptionSpend.recent[0]?.billingReason).toBe("subscription_cycle");
+    expect(subscriptionSpend.recent[0]?.hostedInvoiceUrl).toBe(
+      `https://invoice.stripe.test/${MONTHS - 1}`,
+    );
+    const paidTimes = subscriptionSpend.recent.map((i) => i.paidAt.getTime());
+    expect(paidTimes).toEqual([...paidTimes].sort((a, b) => b - a));
+  });
 });

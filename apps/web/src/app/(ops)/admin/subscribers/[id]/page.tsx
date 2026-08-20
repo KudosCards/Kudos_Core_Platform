@@ -19,6 +19,17 @@ const ENGAGEMENT: Record<Customer360["engagement"]["level"], { label: string; cl
     dormant: { label: "Dormant", className: "bg-foreground/[0.07] text-muted" },
   };
 
+/** Stripe's billing_reason values, in words an operator reads rather than an
+ *  API enum. Anything unmapped falls back to the raw value with underscores
+ *  stripped, so a new Stripe reason still renders. */
+const BILLING_REASONS: Record<string, string> = {
+  subscription_create: "First payment",
+  subscription_cycle: "Renewal",
+  subscription_update: "Plan change",
+  subscription_threshold: "Usage threshold",
+  subscription: "Subscription",
+};
+
 const SOURCE_LABELS: Record<string, string> = {
   manual: "Added by hand",
   csv: "CSV import",
@@ -79,13 +90,25 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
       </div>
 
       {/* Headline KPIs */}
+      {/* "Total spent" used to mean card orders only, with subscription income
+          nowhere on the page — so a subscriber who had paid for months could read
+          as barely worth anything. The two are now named for what they are, and
+          shown side by side with their sum. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Tile label="Total spent" value={formatGbp(customer.orders.totalSpentMinor)} />
+        <Tile label="Cards spend" value={formatGbp(customer.orders.totalSpentMinor)} />
+        <Tile
+          label="Subscription spend"
+          value={formatGbp(customer.subscriptionSpend.totalPaidMinor)}
+        />
+        <Tile
+          label="Lifetime total"
+          value={formatGbp(
+            customer.orders.totalSpentMinor + customer.subscriptionSpend.totalPaidMinor,
+          )}
+        />
         <Tile label="Orders" value={String(customer.orders.count)} />
         <Tile label="Cards sent" value={String(customer.orders.cardsSent)} />
         <Tile label="Contacts" value={String(customer.contacts.total)} />
-        <Tile label="Wallet" value={formatGbp(customer.wallet.balanceMinor)} />
-        <Tile label="Message views" value={String(customer.messages.totalViews)} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -214,9 +237,27 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
             {customer.subscription && (
               <Row label="Renews">{formatOrderDate(customer.subscription.currentPeriodEnd)}</Row>
             )}
+            <Row label="Subscription paid">
+              {customer.subscriptionSpend.invoiceCount === 0 ? (
+                <span className="text-muted">Nothing yet</span>
+              ) : (
+                <span>
+                  {formatGbp(customer.subscriptionSpend.totalPaidMinor)} over{" "}
+                  {customer.subscriptionSpend.invoiceCount} invoice
+                  {customer.subscriptionSpend.invoiceCount === 1 ? "" : "s"}
+                </span>
+              )}
+            </Row>
+            {customer.subscriptionSpend.firstPaidAt && (
+              <Row label="Paying since">
+                {formatOrderDate(customer.subscriptionSpend.firstPaidAt)}
+              </Row>
+            )}
             <Row label="Stripe customer">{customer.hasStripeCustomer ? "Yes" : "No"}</Row>
             <Row label="Wallet balance">{formatGbp(customer.wallet.balanceMinor)}</Row>
             <Row label="Saved designs">{String(customer.designs.savedCount)}</Row>
+            <Row label="Message pages">{String(customer.messages.pageCount)}</Row>
+            <Row label="Message views">{String(customer.messages.totalViews)}</Row>
             <Row label="Reminder emails">{customer.reminderEmailsEnabled ? "On" : "Off"}</Row>
             <Row label="Returns">
               {customer.returns.total === 0
@@ -226,6 +267,70 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
           </div>
         </Panel>
       </div>
+
+      {/* Subscription invoices */}
+      <Panel title="Subscription invoices">
+        {customer.subscriptionSpend.recent.length === 0 ? (
+          <p className="text-sm text-muted">
+            No subscription payments recorded. If this account has been billed, the history may not
+            have been imported yet — run the backfill from the dashboard.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs tracking-wide text-muted uppercase">
+                  <th className="py-2 pr-4 font-medium">Paid</th>
+                  <th className="py-2 pr-4 font-medium">Period</th>
+                  <th className="py-2 pr-4 font-medium">Reason</th>
+                  <th className="py-2 pr-4 text-right font-medium">Amount</th>
+                  <th className="py-2 font-medium">Receipt</th>
+                </tr>
+              </thead>
+              <tbody>
+                {customer.subscriptionSpend.recent.map((invoice) => (
+                  <tr key={invoice.id} className="border-b border-border/60 last:border-0">
+                    <td className="py-2 pr-4">{formatOrderDate(invoice.paidAt)}</td>
+                    <td className="py-2 pr-4 text-muted">
+                      {invoice.periodStart && invoice.periodEnd
+                        ? `${formatOrderDate(invoice.periodStart)} – ${formatOrderDate(invoice.periodEnd)}`
+                        : "—"}
+                    </td>
+                    <td className="py-2 pr-4 text-muted">
+                      {BILLING_REASONS[invoice.billingReason ?? ""] ??
+                        invoice.billingReason?.replace(/_/g, " ") ??
+                        "—"}
+                    </td>
+                    <td className="py-2 pr-4 text-right font-medium">
+                      {formatGbp(invoice.amountPaidMinor)}
+                    </td>
+                    <td className="py-2">
+                      {invoice.hostedInvoiceUrl ? (
+                        <a
+                          href={invoice.hostedInvoiceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-accent hover:underline"
+                        >
+                          View
+                        </a>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {customer.subscriptionSpend.invoiceCount > customer.subscriptionSpend.recent.length && (
+              <p className="pt-2 text-xs text-muted">
+                Showing the latest {customer.subscriptionSpend.recent.length} of{" "}
+                {customer.subscriptionSpend.invoiceCount}. The totals above cover all of them.
+              </p>
+            )}
+          </div>
+        )}
+      </Panel>
 
       {/* Recent orders */}
       <Panel title="Recent orders">
