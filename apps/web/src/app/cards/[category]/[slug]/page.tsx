@@ -175,13 +175,27 @@ export default async function CardPreviewPage({
               </li>
             </ul>
             <div className="pt-2">
-              <PersonaliseButton
-                cardId={card.id}
-                cardName={card.name}
-                sendHref={cardSendPath(card)}
-              />
-              <p className="mt-2 text-xs text-slate-500">
-                Free to start — you only pay when you send a card.
+              {/* Two ways to send, side by side. The primary is the one-card
+                  path a visitor arrived for; the secondary names what we're
+                  actually for. Someone browsing a single design is often a
+                  centre with a class list, and nothing on this page used to
+                  say bulk was possible — they had to guess. */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                <PersonaliseButton
+                  cardId={card.id}
+                  cardName={card.name}
+                  sendHref={cardSendPath(card)}
+                />
+                <Link
+                  href="/#plans"
+                  className="rounded-full bg-white px-6 py-3 text-center font-semibold text-slate-700 ring-1 ring-slate-300 transition-colors ring-inset hover:text-slate-900 hover:ring-slate-400"
+                >
+                  Send in bulk
+                </Link>
+              </div>
+              <p className="mt-3 text-xs text-slate-500">
+                Free to start — you only pay when you send a card. Sending to a whole class or year
+                group? Bulk sending personalises every card from one list.
               </p>
             </div>
           </div>

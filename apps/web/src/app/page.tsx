@@ -538,12 +538,21 @@ export default function HomePage() {
       </section>
 
       {/* Plans */}
-      <section id="plans" className="mx-auto max-w-6xl px-6 py-16">
+      <section id="plans" className="mx-auto max-w-6xl scroll-mt-24 px-6 py-16">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight">Choose your membership</h2>
+          {/* Bulk sending leads, because it's what a membership is actually for
+              and it's what the "Send in bulk" buttons in the card library
+              promise. Anyone arriving from one should land on the same message
+              they clicked, not a bare price list. */}
+          <p className="mt-3 text-lg font-medium text-slate-700">
+            Send one card, or one to every student — from a single list.
+          </p>
           <p className="mt-3 text-slate-600">
-            Every plan includes the dashboard, card shop and birthday calendar. Cards are billed per
-            order (card price incl. VAT + a stamp per card: 1st class £1.80, 2nd class £0.91).
+            Upload your recipients once and every card is personalised with their own name, then
+            printed and posted for you. Every plan includes the dashboard, card shop and birthday
+            calendar. Cards are billed per order (card price incl. VAT + a stamp per card: 1st class
+            £1.80, 2nd class £0.91).
           </p>
         </div>
         {/* No `items-start`: the three cards stretch to a common height so their
