@@ -581,13 +581,174 @@ describe("Webhooks (e2e)", () => {
     expect(order.receiptUrl).toBe("https://invoice.stripe.com/i/test_hosted");
   });
 
-  it("ignores an invoice.paid that carries no batchOrderId (e.g. a subscription invoice)", async () => {
+  it("ignores an invoice.paid that is neither a card order nor a subscription", async () => {
+    // No batchOrderId and no subscription behind it — a one-off Stripe invoice
+    // raised by hand. It must not land in subscription income.
+    const invoiceId = `in_test_${randomUUID()}`;
     const payload = buildStripeEventPayload("invoice.paid", {
-      id: `in_test_${randomUUID()}`,
+      id: invoiceId,
       hosted_invoice_url: "https://invoice.stripe.com/i/sub",
       invoice_pdf: "https://invoice.stripe.com/i/sub/pdf",
       metadata: {},
     });
     await postWebhook(payload).expect(201);
+
+    expect(
+      await prisma.subscriptionInvoice.findUnique({ where: { stripeInvoiceId: invoiceId } }),
+    ).toBeNull();
+  });
+
+  describe("subscription invoices", () => {
+    /** An account with a Stripe customer id, the durable link an invoice carries. */
+    async function accountWithStripeCustomer(): Promise<{
+      accountId: string;
+      stripeCustomerId: string;
+    }> {
+      const { accountId } = await signUp();
+      const stripeCustomerId = `cus_test_${randomUUID()}`;
+      await prisma.account.update({ where: { id: accountId }, data: { stripeCustomerId } });
+      return { accountId, stripeCustomerId };
+    }
+
+    /** A paid subscription invoice as Stripe sends it in this API version:
+     *  the subscription hangs off `parent`, not a top-level `subscription`. */
+    function subscriptionInvoice(overrides: {
+      id: string;
+      customer: string;
+      subscription: string;
+      amountPaid?: number;
+      paidAt?: number;
+    }) {
+      const paidAt = overrides.paidAt ?? Math.floor(Date.parse("2026-07-01T09:00:00Z") / 1000);
+      return buildStripeEventPayload("invoice.paid", {
+        id: overrides.id,
+        customer: overrides.customer,
+        amount_paid: overrides.amountPaid ?? 997,
+        currency: "gbp",
+        status: "paid",
+        billing_reason: "subscription_cycle",
+        created: paidAt,
+        period_start: paidAt,
+        period_end: paidAt + 30 * 24 * 60 * 60,
+        status_transitions: { paid_at: paidAt },
+        hosted_invoice_url: "https://invoice.stripe.com/i/sub_hosted",
+        invoice_pdf: "https://invoice.stripe.com/i/sub_hosted/pdf",
+        parent: {
+          type: "subscription_details",
+          subscription_details: { subscription: overrides.subscription },
+        },
+        metadata: {},
+      });
+    }
+
+    it("records a paid subscription invoice against the account", async () => {
+      const { accountId, stripeCustomerId } = await accountWithStripeCustomer();
+      const invoiceId = `in_test_${randomUUID()}`;
+      const subscriptionId = `sub_test_${randomUUID()}`;
+
+      await postWebhook(
+        subscriptionInvoice({
+          id: invoiceId,
+          customer: stripeCustomerId,
+          subscription: subscriptionId,
+          amountPaid: 1997,
+        }),
+      ).expect(201);
+
+      const row = await prisma.subscriptionInvoice.findUniqueOrThrow({
+        where: { stripeInvoiceId: invoiceId },
+      });
+      expect(row.accountId).toBe(accountId);
+      expect(row.amountPaidMinor).toBe(1997);
+      expect(row.currency).toBe("gbp");
+      expect(row.stripeSubscriptionId).toBe(subscriptionId);
+      expect(row.billingReason).toBe("subscription_cycle");
+      // Stripe's own paid date, not the day we recorded it.
+      expect(row.paidAt.toISOString()).toBe("2026-07-01T09:00:00.000Z");
+      expect(row.invoicePdfUrl).toBe("https://invoice.stripe.com/i/sub_hosted/pdf");
+    });
+
+    it("is idempotent — a redelivered invoice doesn't double-count", async () => {
+      // Stripe delivers at-least-once, and the backfill reads the same key, so
+      // this is what stops the two paths inflating revenue.
+      const { accountId, stripeCustomerId } = await accountWithStripeCustomer();
+      const invoiceId = `in_test_${randomUUID()}`;
+      const payload = subscriptionInvoice({
+        id: invoiceId,
+        customer: stripeCustomerId,
+        subscription: `sub_test_${randomUUID()}`,
+      });
+
+      await postWebhook(payload).expect(201);
+      await postWebhook(payload).expect(201);
+
+      const rows = await prisma.subscriptionInvoice.findMany({ where: { accountId } });
+      expect(rows).toHaveLength(1);
+    });
+
+    it("falls back to the tracked subscription when the customer id isn't on the account", async () => {
+      const { accountId } = await signUp();
+      const subscriptionId = `sub_test_${randomUUID()}`;
+      await prisma.subscription.create({
+        data: {
+          accountId,
+          planId: "pro",
+          stripeSubscriptionId: subscriptionId,
+          status: "active",
+          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+      const invoiceId = `in_test_${randomUUID()}`;
+
+      await postWebhook(
+        subscriptionInvoice({
+          id: invoiceId,
+          customer: `cus_unknown_${randomUUID()}`,
+          subscription: subscriptionId,
+        }),
+      ).expect(201);
+
+      const row = await prisma.subscriptionInvoice.findUniqueOrThrow({
+        where: { stripeInvoiceId: invoiceId },
+      });
+      expect(row.accountId).toBe(accountId);
+    });
+
+    it("does not fail the webhook when the invoice can't be matched to an account", async () => {
+      // Stripe must not retry a payment we've already handled just because our
+      // bookkeeping couldn't place it.
+      const invoiceId = `in_test_${randomUUID()}`;
+
+      await postWebhook(
+        subscriptionInvoice({
+          id: invoiceId,
+          customer: `cus_unknown_${randomUUID()}`,
+          subscription: `sub_unknown_${randomUUID()}`,
+        }),
+      ).expect(201);
+
+      expect(
+        await prisma.subscriptionInvoice.findUnique({ where: { stripeInvoiceId: invoiceId } }),
+      ).toBeNull();
+    });
+
+    it("keeps a card-order invoice out of subscription income", async () => {
+      const { token } = await signUp();
+      const { batchOrderId } = await createPendingPaymentBatchOrder(token);
+      const invoiceId = `in_test_${randomUUID()}`;
+
+      await postWebhook(
+        buildStripeEventPayload("invoice.paid", {
+          id: invoiceId,
+          hosted_invoice_url: "https://invoice.stripe.com/i/card",
+          invoice_pdf: "https://invoice.stripe.com/i/card/pdf",
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+
+      expect(
+        await prisma.subscriptionInvoice.findUnique({ where: { stripeInvoiceId: invoiceId } }),
+      ).toBeNull();
+    });
   });
 });

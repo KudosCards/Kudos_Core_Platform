@@ -12,6 +12,14 @@ import {
 /** Return-case statuses that are still open (need someone to act). */
 const OPEN_RETURN_STATUSES = ["awaiting_address", "awaiting_resend"] as const;
 
+/** How many subscription invoices the customer page lists. Enough to answer
+ *  "when did they last pay, and has it been steady" without paginating. */
+const RECENT_SUBSCRIPTION_INVOICES = 12;
+
+/** Shown only when an account has never paid — there are no invoices to read a
+ *  real currency from, and every price in the product is GBP. */
+const DEFAULT_CURRENCY = "gbp";
+
 /**
  * The super-admin "Customer 360": one account's full profile and engagement,
  * aggregated across every surface (contacts, occasions, integrations, wallet,
@@ -56,6 +64,8 @@ export class AdminCustomerService {
       subsForHealth,
       returnsTotal,
       returnsOpen,
+      subscriptionSpendAgg,
+      recentSubscriptionInvoices,
     ] = await Promise.all([
       this.prisma.membership.findMany({
         where: { accountId },
@@ -143,6 +153,21 @@ export class AdminCustomerService {
       this.prisma.returnCase.count({
         where: { accountId, status: { in: [...OPEN_RETURN_STATUSES] } },
       }),
+      // Lifetime subscription income. Aggregated in Postgres rather than by
+      // loading every invoice — an account billed monthly for years is a lot of
+      // rows to pull back just to add up.
+      this.prisma.subscriptionInvoice.aggregate({
+        where: { accountId },
+        _sum: { amountPaidMinor: true },
+        _count: true,
+        _min: { paidAt: true },
+        _max: { paidAt: true },
+      }),
+      this.prisma.subscriptionInvoice.findMany({
+        where: { accountId },
+        orderBy: { paidAt: "desc" },
+        take: RECENT_SUBSCRIPTION_INVOICES,
+      }),
     ]);
 
     // Contacts breakdown.
@@ -203,6 +228,29 @@ export class AdminCustomerService {
             currentPeriodEnd: subscription.currentPeriodEnd,
           }
         : null,
+      // Current plan state says nothing about money, and nothing at all once
+      // somebody cancels — so spend is reported separately and survives churn.
+      subscriptionSpend: {
+        totalPaidMinor: subscriptionSpendAgg._sum.amountPaidMinor ?? 0,
+        // The invoices' own currency, not a hardcoded GBP: whatever Stripe
+        // actually charged is what we report. Falls back to the platform
+        // default only when there's nothing to report.
+        currency: recentSubscriptionInvoices[0]?.currency ?? DEFAULT_CURRENCY,
+        invoiceCount: subscriptionSpendAgg._count,
+        firstPaidAt: subscriptionSpendAgg._min.paidAt ?? null,
+        lastPaidAt: subscriptionSpendAgg._max.paidAt ?? null,
+        recent: recentSubscriptionInvoices.map((invoice) => ({
+          id: invoice.id,
+          amountPaidMinor: invoice.amountPaidMinor,
+          currency: invoice.currency,
+          billingReason: invoice.billingReason,
+          periodStart: invoice.periodStart,
+          periodEnd: invoice.periodEnd,
+          paidAt: invoice.paidAt,
+          hostedInvoiceUrl: invoice.hostedInvoiceUrl,
+          invoicePdfUrl: invoice.invoicePdfUrl,
+        })),
+      },
       team: {
         memberCount: memberships.length,
         seatLimit: (entitlement?.includedSeats ?? 1) + account.extraSeats,

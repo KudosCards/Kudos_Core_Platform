@@ -36,6 +36,10 @@ import { ListAdminOrdersQueryDto } from "./dto/list-orders-query.dto";
 import { ListSubscribersQueryDto } from "./dto/list-subscribers-query.dto";
 import { SuperAdminGuard } from "../auth/super-admin.guard";
 import { OpsDigestService, type OpsDigestSummary } from "../ops-activity/ops-digest.service";
+import {
+  SubscriptionInvoicesService,
+  type SubscriptionInvoiceBackfillSummary,
+} from "../billing/subscription-invoices.service";
 
 /**
  * The Kudos super-admin view: platform-wide orders, subscribers, and KPIs.
@@ -54,6 +58,7 @@ export class AdminController {
     private readonly dispatchConfig: DispatchConfigService,
     private readonly cardSizeConfig: CardSizeConfigService,
     private readonly opsDigest: OpsDigestService,
+    private readonly subscriptionInvoices: SubscriptionInvoicesService,
   ) {}
 
   /**
@@ -68,6 +73,24 @@ export class AdminController {
    * "already sent" every afternoon can't be used to check anything. Pressing it
    * twice therefore sends twice — which is the point.
    */
+  /**
+   * Replay Stripe's paid-invoice history into our subscription income table.
+   *
+   * Needed once because capture only started when the webhook learned to keep
+   * these (everything billed before that was discarded), and useful afterwards
+   * to repair a gap from a missed webhook or an outage — Stripe, not our event
+   * history, is the source of truth.
+   *
+   * Safe to run at any time, including while webhooks are arriving: every write
+   * is an upsert on Stripe's invoice id, so a second run converges rather than
+   * double-counting. Super-admin only — it reads the whole billing history.
+   */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
+  @Post("subscription-invoices/backfill")
+  backfillSubscriptionInvoices(): Promise<SubscriptionInvoiceBackfillSummary> {
+    return this.subscriptionInvoices.backfill();
+  }
+
   @UseGuards(PlatformAdminGuard, SuperAdminGuard)
   @Post("daily-summary/run")
   runDailySummary(): Promise<OpsDigestSummary> {

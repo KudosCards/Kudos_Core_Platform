@@ -47,6 +47,44 @@ export const customer360Schema = z.object({
     })
     .nullable(),
 
+  /**
+   * What this account has actually paid us in subscriptions, over all history.
+   *
+   * Separate from `subscription` above, which is current state only — plan and
+   * status say nothing about money, and say nothing at all once somebody
+   * cancels. This survives cancellation, which is the point: a churned customer
+   * who paid for two years is not worth the same as one who never paid.
+   *
+   * Card orders are counted under `orders` and never here, so the two can be
+   * added together without double-counting.
+   */
+  subscriptionSpend: z.object({
+    /** Gross paid, in minor units. Sums Stripe's `amount_paid`, so a partly-paid
+     *  or credited invoice counts for what was actually collected. */
+    totalPaidMinor: z.number(),
+    currency: z.string(),
+    invoiceCount: z.number(),
+    /** Null when nothing has ever been paid. */
+    firstPaidAt: z.coerce.date().nullable(),
+    lastPaidAt: z.coerce.date().nullable(),
+    recent: z.array(
+      z.object({
+        id: z.string(),
+        amountPaidMinor: z.number(),
+        currency: z.string(),
+        /** `subscription_create`, `subscription_cycle`, … — a first payment
+         *  told apart from a renewal. */
+        billingReason: z.string().nullable(),
+        periodStart: z.coerce.date().nullable(),
+        periodEnd: z.coerce.date().nullable(),
+        paidAt: z.coerce.date(),
+        /** Stripe's hosted receipt, for answering a billing query directly. */
+        hostedInvoiceUrl: z.string().nullable(),
+        invoicePdfUrl: z.string().nullable(),
+      }),
+    ),
+  }),
+
   team: z.object({
     memberCount: z.number(),
     seatLimit: z.number(),

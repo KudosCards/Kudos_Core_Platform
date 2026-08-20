@@ -13,6 +13,7 @@ import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { BRAND, renderBrandedEmail } from "../email/email-layout";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import { OpsActivityService } from "../ops-activity/ops-activity.service";
+import { SubscriptionInvoicesService } from "../billing/subscription-invoices.service";
 import type { EnvConfig } from "../config/env.schema";
 import { mapStripeSubscriptionStatus } from "./subscription-status.util";
 
@@ -35,6 +36,7 @@ export class WebhooksService {
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
     private readonly inbox: NotificationInboxService,
     private readonly opsActivity: OpsActivityService,
+    private readonly subscriptionInvoices: SubscriptionInvoicesService,
     private readonly seatBilling: SeatBillingService,
   ) {}
 
@@ -182,14 +184,16 @@ export class WebhooksService {
    * card-order Checkout Session) produces an invoice — the event carries the
    * whole invoice, including the finalized PDF + hosted URL, so there's no extra
    * Stripe call. The `batchOrderId` we set on the invoice metadata links it back.
-   * Subscription invoices also emit invoice.paid but carry no batchOrderId, so
-   * they're ignored here (plan state is driven by customer.subscription.*).
+   * A **subscription** invoice carries no batchOrderId, and is recorded instead
+   * as SubscriptionInvoice — that's the only place subscription income is ever
+   * written down, since `Subscription` holds current state and no amounts.
    * updateMany makes an unknown/absent order a safe no-op and the write
    * idempotent under Stripe's at-least-once redelivery. See ADR 0102.
    */
   private async handleInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
     const batchOrderId = invoice.metadata?.batchOrderId;
     if (!batchOrderId) {
+      await this.recordSubscriptionInvoice(invoice);
       return;
     }
     await this.prisma.batchOrder.updateMany({
@@ -200,6 +204,25 @@ export class WebhooksService {
         receiptPdfUrl: invoice.invoice_pdf ?? null,
       },
     });
+  }
+
+  /**
+   * Hand a subscription invoice to the one place that records them.
+   *
+   * Deliberately the same code path the historical backfill uses — two
+   * implementations of "what has this customer paid us" would drift, and the
+   * difference would surface as money that doesn't reconcile.
+   *
+   * Best-effort: a bookkeeping failure must never make this webhook 500 and
+   * have Stripe retry a payment we've already handled.
+   */
+  private async recordSubscriptionInvoice(invoice: Stripe.Invoice): Promise<void> {
+    try {
+      await this.subscriptionInvoices.record(invoice);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Recording subscription invoice ${invoice.id} failed: ${reason}`);
+    }
   }
 
   /** Drop a persisted inbox note to the whole team that a paid order is now in
@@ -274,11 +297,7 @@ export class WebhooksService {
   }
 
   /** Guest one-off order: receipt carrying the account-claim link. */
-  private async sendGuestReceipt(
-    webAppUrl: string,
-    to: string,
-    claimToken: string,
-  ): Promise<void> {
+  private async sendGuestReceipt(webAppUrl: string, to: string, claimToken: string): Promise<void> {
     const claimUrl = `${webAppUrl}/gift/claim?token=${encodeURIComponent(claimToken)}`;
     await this.email.sendTransactional({
       to,
