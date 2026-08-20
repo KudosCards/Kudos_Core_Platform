@@ -6,6 +6,13 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
+# Analytics runs on the live site only. Deploy previews and branch builds don't
+# get the measurement id, so a preview someone clicks through — or a local
+# `next dev` — can't report developer traffic as real visits. Not a secret: a
+# GA4 measurement id is served in the page source of every site that uses one.
+[context.production.environment]
+  NEXT_PUBLIC_GA_MEASUREMENT_ID = "G-9P27FHKPXY"
+
 # Force the free *.netlify.app subdomain to the canonical custom domain. Netlify
 # makes the site reachable at both, but the API's CORS allow-list only trusts the
 # custom domain (WEB_APP_URL), so any app loaded from the netlify.app mirror gets
