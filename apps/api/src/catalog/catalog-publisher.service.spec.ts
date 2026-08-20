@@ -20,6 +20,20 @@ const CONFIGURED = {
   CATALOG_REVALIDATE_SECRET: "s3cret",
 } as Partial<EnvConfig>;
 
+/**
+ * A stand-in for a real Response, and the body method is the point: `fetch`
+ * resolves on headers while the body is still streaming, so the service drains
+ * it. A mock without `text()` would let that drain break in production while
+ * the tests stayed green.
+ */
+function okResponse(body = "<html>cards</html>"): {
+  ok: true;
+  status: 200;
+  text: () => Promise<string>;
+} {
+  return { ok: true, status: 200, text: () => Promise.resolve(body) };
+}
+
 describe("CatalogPublisherService", () => {
   // Typed at creation so `mock.calls` carries real types and the assertions
   // below don't each need a cast.
@@ -39,7 +53,7 @@ describe("CatalogPublisherService", () => {
   });
 
   it("posts the secret to the web app and reports success", async () => {
-    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    fetchMock.mockResolvedValue(okResponse());
 
     const result = await makeService(CONFIGURED).publish();
 
@@ -51,7 +65,7 @@ describe("CatalogPublisherService", () => {
   });
 
   it("warms /cards in a second request, after the purge has landed", async () => {
-    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    fetchMock.mockResolvedValue(okResponse());
 
     await makeService(CONFIGURED).publish();
 
@@ -65,11 +79,31 @@ describe("CatalogPublisherService", () => {
     expect(callUrl(2)).toBe("https://kudos-cards.co.uk/cards");
   });
 
+  it("reads each response to the end rather than stopping at the headers", async () => {
+    // Not tidiness. `fetch` resolves once the headers arrive while a Next page
+    // is still streaming its HTML, so a warm that returned there would move on
+    // mid-render — and the second request would measure a rebuild that hadn't
+    // finished. Draining is what makes the warm a warm.
+    const bodies = [
+      jest.fn(() => Promise.resolve("ok")),
+      jest.fn(() => Promise.resolve("a")),
+      jest.fn(() => Promise.resolve("b")),
+    ];
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, status: 200, text: bodies[0] })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: bodies[1] })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: bodies[2] });
+
+    await makeService(CONFIGURED).publish();
+
+    for (const body of bodies) {
+      expect(body).toHaveBeenCalled();
+    }
+  });
+
   it("still reports success when the warm fails — the purge is what matters", async () => {
     jest.spyOn(console, "warn").mockImplementation(() => undefined);
-    fetchMock
-      .mockResolvedValueOnce({ ok: true, status: 200 })
-      .mockRejectedValueOnce(new Error("timeout"));
+    fetchMock.mockResolvedValueOnce(okResponse()).mockRejectedValueOnce(new Error("timeout"));
 
     const result = await makeService(CONFIGURED).publish();
 
@@ -77,7 +111,7 @@ describe("CatalogPublisherService", () => {
   });
 
   it("doesn't double the slash when WEB_APP_URL has a trailing one", async () => {
-    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    fetchMock.mockResolvedValue(okResponse());
 
     await makeService({ ...CONFIGURED, WEB_APP_URL: "https://kudos-cards.co.uk/" }).publish();
 
