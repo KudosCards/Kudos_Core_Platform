@@ -9,15 +9,45 @@ import {
 import type { App } from "supertest/types";
 import request from "supertest";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { DESIGN_ASSET_STORAGE_CLIENT } from "../src/storage/design-asset-storage.provider";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
+
+/**
+ * Stands in for Supabase Storage. Support attachments live in a private bucket
+ * now, so reads mint a signed URL — without this the e2e would depend on a live
+ * project and the network. The URL shape is what the assertions key off: it has
+ * to be visibly a *signed* URL, not the public one that used to be stored.
+ */
+const storageStub = {
+  storage: {
+    from: () => ({
+      createSignedUrls: (paths: string[], expiresIn: number) =>
+        Promise.resolve({
+          data: paths.map((path) => ({
+            path,
+            signedUrl: `https://proj.supabase.co/storage/v1/object/sign/support-attachments/${path}?token=stub&exp=${expiresIn}`,
+            error: null,
+          })),
+          error: null,
+        }),
+      createSignedUploadUrl: (path: string) =>
+        Promise.resolve({ data: { path, token: "stub-token" }, error: null }),
+      getPublicUrl: (path: string) => ({
+        data: {
+          publicUrl: `https://proj.supabase.co/storage/v1/object/public/support-attachments/${path}`,
+        },
+      }),
+    }),
+  },
+};
 
 describe("Support ticketing (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
 
   beforeAll(async () => {
-    app = await createTestApp();
+    app = await createTestApp([{ provide: DESIGN_ASSET_STORAGE_CLIENT, useValue: storageStub }]);
     prisma = app.get(PrismaService);
   });
 
@@ -27,7 +57,9 @@ describe("Support ticketing (e2e)", () => {
 
   async function opsToken(): Promise<{ token: string; userId: string }> {
     const userId = randomUUID();
-    await prisma.platformAdmin.create({ data: { userId, email: `ops-${userId}@kudoscards.co.uk` } });
+    await prisma.platformAdmin.create({
+      data: { userId, email: `ops-${userId}@kudoscards.co.uk` },
+    });
     return { token: await mintToken(userId), userId };
   }
 
@@ -77,11 +109,101 @@ describe("Support ticketing (e2e)", () => {
     });
   });
 
+  describe("attachment ownership", () => {
+    /** A file reference as the browser submits it, for `accountId`. */
+    function attachmentFor(accountId: string) {
+      return {
+        path: `${accountId}/1-shot.png`,
+        fileName: "shot.png",
+        contentType: "image/png",
+        sizeBytes: 512,
+        kind: "image" as const,
+      };
+    }
+
+    /** Not async: returns supertest's chainable so callers can `.expect(...)`. */
+    function attach(token: string, attachment: unknown) {
+      return request(app.getHttpServer())
+        .post("/support")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          subject: "Attachment check",
+          category: "other",
+          message: "See attached.",
+          attachments: [attachment],
+        });
+    }
+
+    it("refuses a path belonging to another account", async () => {
+      const victim = await signUp();
+      const attacker = await signUp();
+
+      // The client uploads directly to storage and then tells us what it
+      // uploaded, so this claim is the only thing standing between one customer
+      // and another's screenshots.
+      await attach(attacker.token, attachmentFor(victim.accountId)).expect(403);
+    });
+
+    it("refuses an account id that merely starts with the caller's", async () => {
+      const { token, accountId } = await signUp();
+
+      // A startsWith() check would let this through: same prefix, different
+      // account. Ownership is the whole leading path segment.
+      await attach(token, {
+        ...attachmentFor(accountId),
+        path: `${accountId}extra/1-shot.png`,
+      }).expect(403);
+    });
+
+    it("refuses a URL pointing somewhere that isn't our bucket", async () => {
+      const { token } = await signUp();
+
+      // Left unchecked this is stored verbatim and later opened by support from
+      // the ops portal — an attacker-chosen URL loaded by an operator.
+      await attach(token, {
+        url: "https://evil.test/tracker.png",
+        fileName: "shot.png",
+        contentType: "image/png",
+        sizeBytes: 512,
+        kind: "image",
+      }).expect(400);
+    });
+
+    it("refuses a traversal attempt in the path", async () => {
+      const { token, accountId } = await signUp();
+
+      await attach(token, {
+        ...attachmentFor(accountId),
+        path: `${accountId}/../other/1-shot.png`,
+      }).expect(400);
+    });
+
+    it("still accepts the legacy public-URL form for the caller's own account", async () => {
+      const { token, accountId } = await signUp();
+
+      // A browser running the previous build mid-deploy sends `url`, not
+      // `path`. The path is derived from it and checked the same way, so
+      // attaching keeps working rather than 400ing for a few minutes.
+      const response = await attach(token, {
+        url: `https://proj.supabase.co/storage/v1/object/public/support-attachments/${accountId}/1-shot.png`,
+        fileName: "shot.png",
+        contentType: "image/png",
+        sizeBytes: 512,
+        kind: "image",
+      }).expect(201);
+
+      const detail = supportTicketDetailSchema.parse(response.body);
+      expect(detail.messages[0]?.attachments[0]?.url).toContain("/object/sign/");
+    });
+  });
+
   it("attaches screenshots to messages and captures diagnostics for ops", async () => {
-    const { token } = await signUp();
+    const { token, accountId } = await signUp();
     const ops = await opsToken();
+    // Uploads land at `{accountId}/{uuid}-{file}`, and the API checks that
+    // leading segment against the caller before storing anything.
     const attachment = {
-      url: "https://proj.supabase.co/storage/v1/object/public/support-attachments/a/1-error.png",
+      path: `${accountId}/1-error.png`,
       fileName: "error.png",
       contentType: "image/png",
       sizeBytes: 2048,
@@ -114,6 +236,11 @@ describe("Support ticketing (e2e)", () => {
       kind: "image",
       sizeBytes: 2048,
     });
+    // The whole point of the change: what comes back is a short-lived signed
+    // URL, never the public one that anyone holding the link could read forever.
+    const url = created.messages[0]?.attachments[0]?.url ?? "";
+    expect(url).toContain("/object/sign/");
+    expect(url).not.toContain("/object/public/");
 
     // Ops detail exposes both the attachment and the silently-captured diagnostics.
     const opsDetail = supportTicketOpsDetailSchema.parse(
@@ -133,7 +260,10 @@ describe("Support ticketing (e2e)", () => {
         await request(app.getHttpServer())
           .post(`/support/${created.id}/reply`)
           .set("Authorization", `Bearer ${token}`)
-          .send({ body: "Here's another screenshot.", attachments: [{ ...attachment, fileName: "second.png" }] })
+          .send({
+            body: "Here's another screenshot.",
+            attachments: [{ ...attachment, fileName: "second.png" }],
+          })
           .expect(201)
       ).body,
     );
@@ -151,7 +281,13 @@ describe("Support ticketing (e2e)", () => {
         category: "other",
         message: "test",
         attachments: [
-          { url: "not-a-url", fileName: "x.png", contentType: "image/png", sizeBytes: 1, kind: "image" },
+          {
+            url: "not-a-url",
+            fileName: "x.png",
+            contentType: "image/png",
+            sizeBytes: 1,
+            kind: "image",
+          },
         ],
       })
       .expect(400);
@@ -173,7 +309,9 @@ describe("Support ticketing (e2e)", () => {
       .get("/support")
       .set("Authorization", `Bearer ${b.token}`)
       .expect(200);
-    expect((others.body as unknown[]).some((t) => (t as { id: string }).id === ticket.id)).toBe(false);
+    expect((others.body as unknown[]).some((t) => (t as { id: string }).id === ticket.id)).toBe(
+      false,
+    );
     await request(app.getHttpServer())
       .get(`/support/${ticket.id}`)
       .set("Authorization", `Bearer ${b.token}`)
@@ -190,7 +328,10 @@ describe("Support ticketing (e2e)", () => {
       .get("/admin/support?status=open")
       .set("Authorization", `Bearer ${ops.token}`)
       .expect(200);
-    const queueBody = queue.body as { total: number; items: { id: string; businessName: string }[] };
+    const queueBody = queue.body as {
+      total: number;
+      items: { id: string; businessName: string }[];
+    };
     expect(queueBody.items.some((i) => i.id === ticket.id)).toBe(true);
 
     // Ops replies → awaiting_customer, whose-turn flips to support-sent.
@@ -313,7 +454,10 @@ describe("Support ticketing (e2e)", () => {
 
   it("rejects an unauthenticated ticket creation and validates input", async () => {
     const { token } = await signUp();
-    await request(app.getHttpServer()).post("/support").send({ subject: "x", message: "y" }).expect(401);
+    await request(app.getHttpServer())
+      .post("/support")
+      .send({ subject: "x", message: "y" })
+      .expect(401);
     // Subject too short (min 3).
     await request(app.getHttpServer())
       .post("/support")

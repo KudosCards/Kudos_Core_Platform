@@ -1,4 +1,12 @@
-import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   Prisma,
@@ -8,6 +16,7 @@ import {
   type SupportTicketStatus,
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { StorageService, SUPPORT_ATTACHMENTS_BUCKET } from "../storage/storage.service";
 import { AuditService } from "../audit/audit.service";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
@@ -79,6 +88,33 @@ const OPEN_QUEUE_STATUSES: SupportTicketStatus[] = ["open", "awaiting_customer",
  * change carries a "whose turn" signal (status + lastMessageFrom) so both sides
  * can see who owes the next reply. See docs/adr/0066-support-ticketing.md.
  */
+/** One thread message as loaded for a ticket view, with its attachment rows. */
+interface ThreadMessageRow {
+  id: string;
+  authorType: SupportMessageAuthor;
+  body: string;
+  internalNote: boolean;
+  createdAt: Date;
+  attachments?: {
+    id: string;
+    url: string | null;
+    path: string | null;
+    fileName: string;
+    contentType: string;
+    sizeBytes: number;
+    kind: SupportAttachment["kind"];
+  }[];
+}
+
+/**
+ * How long a support attachment's read URL stays valid. Long enough to read a
+ * thread, reply, and come back to it without a refresh; short enough that a URL
+ * copied out of the page — into a chat, a bug report, a browser history synced
+ * across devices — stops working rather than lasting forever, which is the
+ * whole reason these moved off public URLs.
+ */
+const ATTACHMENT_URL_TTL_SECONDS = 60 * 60;
+
 @Injectable()
 export class SupportService {
   private readonly logger = new Logger(SupportService.name);
@@ -89,6 +125,7 @@ export class SupportService {
     private readonly inbox: NotificationInboxService,
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
+    private readonly storage: StorageService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -119,7 +156,7 @@ export class SupportService {
               authorType: "customer",
               authorUserId: userId,
               body: dto.message,
-              attachments: { create: this.attachmentCreates(dto.attachments) },
+              attachments: { create: this.attachmentCreates(accountId, dto.attachments) },
             },
           },
         },
@@ -165,7 +202,7 @@ export class SupportService {
     }
     return {
       ...this.toSummary(ticket),
-      messages: ticket.messages.filter((m) => !m.internalNote).map((m) => this.toMessage(m)),
+      messages: await this.toMessages(ticket.messages.filter((m) => !m.internalNote)),
     };
   }
 
@@ -193,7 +230,7 @@ export class SupportService {
           authorType: "customer",
           authorUserId: userId,
           body: dto.body,
-          attachments: { create: this.attachmentCreates(dto.attachments) },
+          attachments: { create: this.attachmentCreates(accountId, dto.attachments) },
         },
       });
       await tx.supportTicket.update({
@@ -308,7 +345,7 @@ export class SupportService {
       accountId: ticket.accountId,
       businessName: ticket.account.name,
       assignee: ticket.assignedToUserId ? (assignees.get(ticket.assignedToUserId) ?? null) : null,
-      messages: ticket.messages.map((m) => this.toMessage(m)),
+      messages: await this.toMessages(ticket.messages),
       diagnostics: (ticket.diagnostics as SupportDiagnostics | null) ?? null,
     };
   }
@@ -362,7 +399,13 @@ export class SupportService {
     });
 
     if (!internalNote) {
-      await this.notifyCustomerReply(ticket.accountId, id, ticket.ticketNumber, ticket.subject, dto.body);
+      await this.notifyCustomerReply(
+        ticket.accountId,
+        id,
+        ticket.ticketNumber,
+        ticket.subject,
+        dto.body,
+      );
     }
     return this.getForOps(id);
   }
@@ -418,9 +461,7 @@ export class SupportService {
   // Internals
   // -------------------------------------------------------------------------
 
-  private async requireTicket(
-    where: Prisma.SupportTicketWhereInput & { id: string },
-  ): Promise<{
+  private async requireTicket(where: Prisma.SupportTicketWhereInput & { id: string }): Promise<{
     id: string;
     accountId: string;
     ticketNumber: number;
@@ -461,43 +502,65 @@ export class SupportService {
     };
   }
 
-  private toMessage(m: {
-    id: string;
-    authorType: SupportMessageAuthor;
-    body: string;
-    internalNote: boolean;
-    createdAt: Date;
-    attachments?: {
-      id: string;
-      url: string;
-      fileName: string;
-      contentType: string;
-      sizeBytes: number;
-      kind: SupportAttachment["kind"];
-    }[];
-  }): SupportMessageView {
-    return {
+  /**
+   * Map a thread's messages for the API, minting a read URL for every
+   * attachment as it goes.
+   *
+   * The bucket is private, so there is no stored URL to hand back: each one is
+   * signed here and expires. Signing happens once for the whole thread rather
+   * than per message, because a ticket can carry several attachments across
+   * many replies and each signature would otherwise be its own round trip.
+   */
+  private async toMessages(messages: ThreadMessageRow[]): Promise<SupportMessageView[]> {
+    const paths = messages.flatMap((m) =>
+      (m.attachments ?? []).map((a) => a.path).filter((path): path is string => path !== null),
+    );
+    const signed = await this.storage.createSignedReadUrls(
+      SUPPORT_ATTACHMENTS_BUCKET,
+      paths,
+      ATTACHMENT_URL_TTL_SECONDS,
+    );
+
+    return messages.map((m) => ({
       id: m.id,
       authorType: m.authorType,
       body: m.body,
       internalNote: m.internalNote,
       createdAt: m.createdAt,
-      attachments: (m.attachments ?? []).map((a) => ({
-        id: a.id,
-        url: a.url,
-        fileName: a.fileName,
-        contentType: a.contentType,
-        sizeBytes: a.sizeBytes,
-        kind: a.kind,
-      })),
-    };
+      attachments: (m.attachments ?? []).flatMap((a) => {
+        // `url` is the pre-private-bucket fallback; it only still resolves for
+        // rows the backfill couldn't derive a path from. An attachment with
+        // neither is unreadable, so it's left out rather than rendered as a
+        // broken image in the middle of a support thread.
+        const url = (a.path ? signed.get(a.path) : null) ?? a.url;
+        if (!url) {
+          this.logger.warn(`Support attachment ${a.id} has no readable location — omitting`);
+          return [];
+        }
+        return [
+          {
+            id: a.id,
+            url,
+            fileName: a.fileName,
+            contentType: a.contentType,
+            sizeBytes: a.sizeBytes,
+            kind: a.kind,
+          },
+        ];
+      }),
+    }));
   }
 
   /** Build the nested `attachments.create` rows from the (already-uploaded)
-   * file references on a create/reply DTO. Returns `[]` when none were sent. */
+   * file references on a create/reply DTO. Returns `[]` when none were sent.
+   *
+   * Every reference is resolved to a storage path and checked against the
+   * caller's own account first — see `resolveAttachmentPath`. */
   private attachmentCreates(
+    accountId: string,
     attachments?: {
-      url: string;
+      path?: string;
+      url?: string;
       fileName: string;
       contentType: string;
       sizeBytes: number;
@@ -505,7 +568,7 @@ export class SupportService {
     }[],
   ): Prisma.SupportTicketMessageAttachmentCreateWithoutMessageInput[] {
     return (attachments ?? []).map((a) => ({
-      url: a.url,
+      path: this.resolveAttachmentPath(accountId, a),
       fileName: a.fileName,
       contentType: a.contentType,
       sizeBytes: a.sizeBytes,
@@ -513,11 +576,43 @@ export class SupportService {
     }));
   }
 
+  /**
+   * Resolve a submitted attachment reference to a storage path this account is
+   * allowed to attach, or refuse it.
+   *
+   * The client uploads straight to storage and then tells us what it uploaded,
+   * so this is the only point at which that claim is checked. Without it a
+   * caller can name any path they like: another account's attachment, an object
+   * in a different bucket, or — when the reference was a bare URL — a link to
+   * somewhere else entirely, which support would then open from the ops portal.
+   *
+   * Upload paths are `{accountId}/{uuid}-{file}` (see StorageService), so
+   * ownership is the leading segment. Comparing the whole segment matters:
+   * a `startsWith(accountId)` test would also accept a different account whose
+   * id merely begins with the same characters.
+   */
+  private resolveAttachmentPath(
+    accountId: string,
+    attachment: { path?: string; url?: string },
+  ): string {
+    const path = attachment.path?.trim() || pathFromPublicUrl(attachment.url);
+    if (!path) {
+      throw new BadRequestException("Attachment is missing a storage path");
+    }
+    // `..` can't climb out of a Supabase object key, but a path containing one
+    // is never something this API generated, so treat it as hostile input.
+    if (path.includes("..")) {
+      throw new BadRequestException("Attachment path is not valid");
+    }
+    if (path.split("/")[0] !== accountId) {
+      throw new ForbiddenException("Attachment does not belong to this account");
+    }
+    return path;
+  }
+
   /** Map operator user ids → their email for the assignee column. One query for
    * the whole page; nulls (unassigned) are skipped. */
-  private async resolveAssignees(
-    userIds: (string | null)[],
-  ): Promise<Map<string, string | null>> {
+  private async resolveAssignees(userIds: (string | null)[]): Promise<Map<string, string | null>> {
     const ids = [...new Set(userIds.filter((v): v is string => v !== null))];
     if (ids.length === 0) {
       return new Map();
@@ -548,8 +643,7 @@ export class SupportService {
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
     const ref = this.reference(detail.ticketNumber);
     const opsUrl = `${webAppUrl}/admin/support/${detail.id}`;
-    const heading =
-      kind === "new" ? `New support ticket ${ref}` : `New reply on ${ref}`;
+    const heading = kind === "new" ? `New support ticket ${ref}` : `New reply on ${ref}`;
     try {
       await this.email.sendTransactional({
         to,
@@ -662,4 +756,25 @@ export class SupportService {
   private reasonOf(error: unknown): string {
     return error instanceof Error ? error.message : "Unknown error";
   }
+}
+
+/**
+ * Pull the object path out of a Supabase public URL for the support bucket.
+ *
+ * Only used for the legacy `url` form a mid-deploy browser may still send.
+ * Returns null for anything that isn't a public URL for *this* bucket, so a
+ * link to somewhere else can't be laundered into a path — the caller then
+ * rejects it. Kept deliberately strict for the same reason.
+ */
+function pathFromPublicUrl(url: string | undefined): string | null {
+  if (!url) {
+    return null;
+  }
+  const marker = `/object/public/${SUPPORT_ATTACHMENTS_BUCKET}/`;
+  const at = url.indexOf(marker);
+  if (at === -1) {
+    return null;
+  }
+  const path = url.slice(at + marker.length).split("?")[0];
+  return path ? decodeURIComponent(path) : null;
 }

@@ -5,9 +5,12 @@ import { SupportOpsController } from "./support-ops.controller";
 import { AuditModule } from "../audit/audit.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { EmailModule } from "../email/email.module";
+import { StorageModule } from "../storage/storage.module";
 
 @Module({
-  imports: [AuditModule, NotificationsModule, EmailModule],
+  // StorageModule: support attachments live in a private bucket, so reads mint
+  // a signed URL per request instead of serving a stored one.
+  imports: [AuditModule, NotificationsModule, EmailModule, StorageModule],
   controllers: [SupportController, SupportOpsController],
   providers: [SupportService],
 })
