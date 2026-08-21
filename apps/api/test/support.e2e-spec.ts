@@ -169,6 +169,21 @@ describe("Support ticketing (e2e)", () => {
       }).expect(400);
     });
 
+    it("refuses a malformed URL without falling over", async () => {
+      const { token } = await signUp();
+
+      // decodeURIComponent throws URIError on a broken escape, and this string
+      // comes straight off the wire. Unhandled it is a 500; the caller should
+      // get a 400 for sending nonsense.
+      await attach(token, {
+        url: "https://proj.supabase.co/storage/v1/object/public/support-attachments/acct/%ZZ.png",
+        fileName: "shot.png",
+        contentType: "image/png",
+        sizeBytes: 512,
+        kind: "image",
+      }).expect(400);
+    });
+
     it("refuses a traversal attempt in the path", async () => {
       const { token, accountId } = await signUp();
 
