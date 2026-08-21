@@ -31,5 +31,12 @@
     "*.{ts,tsx,md,json}": [
       "prettier --write"
     ]
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-uri": ">=3.1.5",
+      "postcss": ">=8.5.23",
+      "sharp": ">=0.35.3"
+    }
   }
 }
