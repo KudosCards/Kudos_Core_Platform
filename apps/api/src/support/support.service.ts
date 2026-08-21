@@ -528,13 +528,19 @@ export class SupportService {
       internalNote: m.internalNote,
       createdAt: m.createdAt,
       attachments: (m.attachments ?? []).flatMap((a) => {
-        // `url` is the pre-private-bucket fallback; it only still resolves for
-        // rows the backfill couldn't derive a path from. An attachment with
-        // neither is unreadable, so it's left out rather than rendered as a
-        // broken image in the middle of a support thread.
-        const url = (a.path ? signed.get(a.path) : null) ?? a.url;
+        // A row with a path is served from a signed URL or not at all. Falling
+        // back to `url` here would paper over a signing failure with a public
+        // link that no longer resolves — a broken image where an error belongs,
+        // and one that would quietly keep working if the bucket were ever
+        // public again. `url` is only for legacy rows the backfill could not
+        // derive a path from.
+        const url = a.path ? signed.get(a.path) : a.url;
         if (!url) {
-          this.logger.warn(`Support attachment ${a.id} has no readable location — omitting`);
+          this.logger.warn(
+            a.path
+              ? `Support attachment ${a.id} could not be signed — omitting`
+              : `Support attachment ${a.id} has no storage path — omitting`,
+          );
           return [];
         }
         return [
@@ -776,5 +782,15 @@ function pathFromPublicUrl(url: string | undefined): string | null {
     return null;
   }
   const path = url.slice(at + marker.length).split("?")[0];
-  return path ? decodeURIComponent(path) : null;
+  if (!path) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    // decodeURIComponent throws URIError on a malformed escape ("%ZZ"), and
+    // this input comes straight off the wire. Unhandled it surfaces as a 500;
+    // treated as unparseable it becomes the 400 the caller deserves.
+    return null;
+  }
 }

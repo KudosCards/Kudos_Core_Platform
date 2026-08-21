@@ -81,3 +81,17 @@ jobs:
 
       - name: Build
         run: pnpm turbo run build
+
+      # Fails the build on a high or critical advisory in a dependency that
+      # actually ships. Scoped with --prod on purpose: the remaining known
+      # issues are all in build tooling (a PostCSS one via Tailwind, a js-yaml
+      # one via ESLint's config loader) which never runs in production, and
+      # gating on those would leave this permanently red — which teaches
+      # everyone to ignore it. --audit-level high keeps it to things worth
+      # stopping a deploy for.
+      #
+      # If an advisory lands with no fix available and this blocks an urgent
+      # deploy, raise the threshold to `critical` in a one-line PR rather than
+      # deleting the step, and open an issue to put it back.
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level high

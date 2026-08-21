@@ -600,7 +600,15 @@ export const PRIVACY: LegalDoc = {
         },
         {
           kind: "p",
-          text: "Where consent is required for non-essential cookies, we will request it through appropriate cookie controls.",
+          text: "The first five of those are strictly necessary: without them you could not log in or stay logged in, and we do not ask for consent to set them.",
+        },
+        {
+          kind: "p",
+          text: "To understand website usage we use Google Analytics, which is not strictly necessary. It is switched off until you agree. On your first visit we ask, and nothing is stored for analytics unless you choose Accept — choosing Reject is one click, exactly as Accept is. Your choice is remembered in your browser, and you can change it by clearing your browser storage for this site, which makes us ask again.",
+        },
+        {
+          kind: "p",
+          text: "Google Analytics sets cookies in your browser and processes usage data on our behalf, including a truncated record of your IP address. It tells us things like which pages are visited and which cards are viewed. It does not tell us who you are, and we do not use it to advertise to you.",
         },
       ],
     },
