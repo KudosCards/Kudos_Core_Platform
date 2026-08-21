@@ -85,7 +85,10 @@ export function SupportAttachmentsInput({
       .uploadToSignedUrl(signed.path, signed.token, file);
     if (uploadError) throw new Error(uploadError.message);
     return {
-      url: signed.publicUrl,
+      // The storage path, not a URL: the bucket is private, so the API mints a
+      // signed read URL per request. It also checks this path belongs to the
+      // caller's account before storing it.
+      path: signed.path,
       fileName: file.name,
       contentType: file.type,
       sizeBytes: file.size,
@@ -119,8 +122,14 @@ export function SupportAttachmentsInput({
     }
   }
 
-  function remove(url: string) {
-    onChange(value.filter((a) => a.url !== url));
+  /** Identity of a not-yet-submitted attachment. `path` is what this build
+   *  sends; `url` is the legacy field, kept so the shared type stays honest. */
+  function refOf(a: SupportAttachmentInput): string {
+    return a.path ?? a.url ?? a.fileName;
+  }
+
+  function remove(ref: string) {
+    onChange(value.filter((a) => refOf(a) !== ref));
   }
 
   return (
@@ -140,8 +149,8 @@ export function SupportAttachmentsInput({
         className="block w-full cursor-pointer rounded-md border border-border bg-surface text-sm text-muted file:mr-3 file:cursor-pointer file:border-0 file:bg-accent file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-accent-hover disabled:opacity-50"
       />
       <p className="text-xs text-muted">
-        Up to {SUPPORT_MAX_ATTACHMENTS} files, {formatBytes(MAX_BYTES)} each. Record your screen with
-        your phone or a tool like Loom, then upload the file here.
+        Up to {SUPPORT_MAX_ATTACHMENTS} files, {formatBytes(MAX_BYTES)} each. Record your screen
+        with your phone or a tool like Loom, then upload the file here.
       </p>
       {uploading > 0 && <p className="text-xs text-muted">Uploading…</p>}
       {error && <p className="text-xs text-accent">{error}</p>}
@@ -149,7 +158,7 @@ export function SupportAttachmentsInput({
         <ul className="flex flex-col gap-1">
           {value.map((a) => (
             <li
-              key={a.url}
+              key={refOf(a)}
               className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-1.5 text-sm"
             >
               <span className="flex min-w-0 items-center gap-2">
@@ -163,7 +172,7 @@ export function SupportAttachmentsInput({
               </span>
               <button
                 type="button"
-                onClick={() => remove(a.url)}
+                onClick={() => remove(refOf(a))}
                 disabled={disabled}
                 className="shrink-0 text-muted hover:text-accent"
                 aria-label={`Remove ${a.fileName}`}

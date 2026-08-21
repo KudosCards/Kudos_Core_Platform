@@ -56,7 +56,19 @@ export type SupportDiagnostics = z.infer<typeof supportDiagnosticsSchema>;
  * message. The bytes are PUT to a signed storage URL first (see the uploads
  * endpoint); this is just the resulting file reference. */
 export const supportAttachmentInputSchema = z.object({
-  url: z.string().url().max(2000),
+  /**
+   * Object path in the support-attachments bucket, as returned by the signed
+   * upload. Preferred over `url`, and the only one of the two the API trusts
+   * without deriving: it is checked against the caller's own account before
+   * anything is stored.
+   */
+  path: z.string().trim().min(1).max(500).optional(),
+  /**
+   * Legacy public URL. Still accepted so a browser running the previous build
+   * during a deploy can still attach files, but the API derives the path from
+   * it and applies the same ownership check. Exactly one of the two is required.
+   */
+  url: z.string().url().max(2000).optional(),
   fileName: z.string().trim().min(1).max(200),
   contentType: z.string().trim().min(1).max(120),
   sizeBytes: z.number().int().nonnegative(),

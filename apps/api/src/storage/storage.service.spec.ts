@@ -92,6 +92,7 @@ describe("StorageService", () => {
       name: "design-assets",
       allowedMimeTypes: ["image/png", "image/jpeg"],
       fileSizeLimit: "10MB",
+      public: true,
     };
 
     it("creates the bucket public with its mime/size limits", async () => {

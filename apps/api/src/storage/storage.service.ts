@@ -45,6 +45,19 @@ export interface BucketConfig {
   allowedMimeTypes: string[];
   /** Max upload size, as a Supabase size string (e.g. "10MB"). */
   fileSizeLimit: string;
+  /**
+   * Whether anyone holding the URL can read the object.
+   *
+   * True for the buckets whose URLs are persisted and rendered indefinitely —
+   * a card design or a message page stores its asset URL forever, and a signed
+   * URL would expire and break it. False for anything holding customer
+   * material, which is read through a short-lived signed URL instead.
+   *
+   * Declared here rather than set once by hand because `ensureBucketConfigured`
+   * re-applies this on every boot: a bucket flipped in the Supabase dashboard
+   * would be silently flipped back on the next deploy.
+   */
+  public: boolean;
 }
 
 /**
@@ -59,16 +72,21 @@ export const BUCKET_CONFIGS: readonly BucketConfig[] = [
     name: DESIGN_ASSETS_BUCKET,
     allowedMimeTypes: ["image/png", "image/jpeg", "image/webp", "image/gif"],
     fileSizeLimit: "10MB",
+    public: true,
   },
   {
     name: MESSAGE_VIDEOS_BUCKET,
     allowedMimeTypes: ["video/mp4", "video/quicktime", "video/webm"],
     fileSizeLimit: "50MB",
+    public: true,
   },
   {
     name: SUPPORT_ATTACHMENTS_BUCKET,
     allowedMimeTypes: SUPPORT_ATTACHMENT_MIME_TYPES,
     fileSizeLimit: "50MB",
+    // Customers attach screenshots of their own screens: other people's names
+    // and addresses, billing details, whatever else was open at the time.
+    public: false,
   },
 ];
 
@@ -86,7 +104,7 @@ export async function ensureBucketConfigured(
   logger?: Logger,
 ): Promise<void> {
   const options = {
-    public: true,
+    public: config.public,
     allowedMimeTypes: [...config.allowedMimeTypes],
     fileSizeLimit: config.fileSizeLimit,
   };
@@ -97,11 +115,22 @@ export async function ensureBucketConfigured(
       return;
     }
     if (/exist/i.test(error.message)) {
-      // Already there — enforce the current limits (and keep it public, so
-      // stored public URLs keep rendering) on the existing bucket.
+      // Already there — re-apply the configured limits and visibility, so a
+      // bucket created before this config existed (or changed by hand) is
+      // brought back into line.
       const { error: updateError } = await client.storage.updateBucket(config.name, options);
       if (updateError) {
-        logger?.warn(`Could not update "${config.name}" bucket limits: ${updateError.message}`);
+        // A private bucket that stayed public is a data-exposure failure, not a
+        // tidiness one: everything already uploaded is readable by anyone with
+        // the URL. It must not be swallowed at warn level with the size limits.
+        if (config.public) {
+          logger?.warn(`Could not update "${config.name}" bucket limits: ${updateError.message}`);
+        } else {
+          logger?.error(
+            `"${config.name}" bucket could NOT be set private — customer files there are ` +
+              `publicly readable until this succeeds: ${updateError.message}`,
+          );
+        }
       }
       return;
     }
@@ -122,9 +151,12 @@ export interface SignedUpload {
 /**
  * Generates signed Storage upload URLs so the browser can upload a file
  * directly to Supabase Storage — the file bytes never pass through this API.
- * See docs/adr/0006-phase-2-scope.md for why buckets are public-read
- * (design documents and message pages persist their asset URL indefinitely;
- * a signed *read* URL would expire and break them).
+ *
+ * Buckets differ in how they're read. Design assets and message videos are
+ * public-read: they persist their asset URL indefinitely and a signed URL would
+ * expire and break them (docs/adr/0006-phase-2-scope.md). Support attachments
+ * are private and read through `createSignedReadUrls` below, because they hold
+ * customer material and are only ever viewed in an authenticated thread.
  */
 @Injectable()
 export class StorageService implements OnApplicationBootstrap {
@@ -179,6 +211,50 @@ export class StorageService implements OnApplicationBootstrap {
     } = this.supabase.storage.from(bucket).getPublicUrl(data.path);
 
     return { path: data.path, token: data.token, publicUrl };
+  }
+
+  /**
+   * Short-lived read URLs for objects in a private bucket, signed in one round
+   * trip rather than one per file — a support thread can carry several
+   * attachments per message.
+   *
+   * Returns a map of path → URL. A path that can't be signed is simply absent
+   * rather than throwing: one unreadable attachment must not take down the
+   * whole ticket view, which is the thing support is trying to read.
+   */
+  async createSignedReadUrls(
+    bucket: string,
+    paths: string[],
+    expiresInSeconds: number,
+  ): Promise<Map<string, string>> {
+    const urls = new Map<string, string>();
+    if (paths.length === 0) {
+      return urls;
+    }
+
+    const unique = [...new Set(paths)];
+    const { data, error } = await this.supabase.storage
+      .from(bucket)
+      .createSignedUrls(unique, expiresInSeconds);
+    if (error || !data) {
+      this.logger.error(
+        `Could not sign ${unique.length} ${bucket} read URL(s): ${error?.message ?? "unknown error"}`,
+      );
+      return urls;
+    }
+
+    for (const entry of data) {
+      // Supabase reports per-path failures inside the array rather than on
+      // `error`, so a missing object shows up here, not above.
+      if (entry.error || !entry.signedUrl || !entry.path) {
+        this.logger.warn(
+          `Could not sign "${entry.path ?? "unknown"}" in ${bucket}: ${entry.error ?? "no URL returned"}`,
+        );
+        continue;
+      }
+      urls.set(entry.path, entry.signedUrl);
+    }
+    return urls;
   }
 }
 

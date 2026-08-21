@@ -1332,8 +1332,17 @@ model SupportTicketMessage {
 model SupportTicketMessageAttachment {
   id          String                @id @default(uuid())
   messageId   String                @map("message_id")
-  /// Public storage URL of the uploaded file.
-  url         String
+  /// Public storage URL of the uploaded file. Legacy: kept so attachments
+  /// created before `path` existed still resolve, and dropped once every row
+  /// has been backfilled. New rows are served from `path` instead and leave
+  /// this null — the bucket is private, so there is no public URL to store.
+  url         String?
+  /// Object path inside the support-attachments bucket, `{accountId}/{file}`.
+  ///
+  /// The bucket is private, so a URL can't be stored — reads mint a short-lived
+  /// signed URL from this path instead. The leading segment is the owning
+  /// account, which is what makes a read authorisable without another lookup.
+  path        String?
   /// Original filename, for the download label.
   fileName    String                @map("file_name")
   contentType String                @map("content_type")
