@@ -370,6 +370,11 @@ Do a full dry run on **Stripe test mode** before touching real cards:
     buckets hold uploaded artwork and personalised videos. For launch the risk is low (assets are
     regenerable/re-uploadable and the catalog re-syncs from Airtable), but note it so it isn't a
     surprise.
+- **Account security for the dashboards themselves** — 2FA, who still has access, branch
+  protection, and which keys to rotate if one is ever exposed. See
+  [`account-security-checklist.md`](./account-security-checklist.md). Nothing in the codebase
+  protects against someone logging into Railway or Stripe as you, which makes this the highest-
+  value item on the list and the only one no commit can cover.
 - A focused pre-launch security review of the newest, most sensitive surfaces — the public
   message endpoint and the cross-account fulfillment/platform-admin module — since these are the
   two places the usual per-account walls are deliberately down. (Full end-to-end review completed

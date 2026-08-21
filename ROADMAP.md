@@ -150,6 +150,12 @@ checkout directly, a public card shop, and the "free sample card / 90-second dem
      policy contradicts it.
   3. **Amend the privacy policy** to describe analytics accurately — cheap, but doesn't resolve
      the consent requirement itself.
+- **Account security checklist — 2FA and access review.** `docs/account-security-checklist.md`.
+  The platform's own security is in good shape (#324, #325: private support attachments with
+  ownership checks, zero known advisories in the shipping dependency graph, consent-gated
+  analytics). What's left is the dashboards behind it — Railway, Supabase, Stripe, GitHub and the
+  rest. Someone with those logins reads the database directly, and no commit changes that. About
+  an hour, and it's the highest-value security work remaining.
 - CRM integrations (import beyond CSV).
 - Coupons / discount codes, order notes at checkout.
 - Mobile-number login (WP allows email _or_ mobile).
