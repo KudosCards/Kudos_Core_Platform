@@ -406,6 +406,12 @@ export function BulkSendClient({
                   occasionId: m.occasionId,
                 }))
               : undefined,
+          // Opting the toggle off is a deliberate "send this as well as their
+          // birthday card" — so say so explicitly, or the server's default would
+          // date by the occasion and consume it anyway. Only sent when there was
+          // something to opt out of: a send with no matches at all is the
+          // hand-picked case, which should take the default. See ADR 0107/0119.
+          useOccasionDates: reconcileMatches.length > 0 && !markHandled ? false : undefined,
         }),
       });
       // …then hand off to the same Stripe checkout every other order uses.

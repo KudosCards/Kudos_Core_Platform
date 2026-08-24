@@ -9,6 +9,7 @@ import {
   BACK_RESERVED_FOOTER_MM,
   backReservedFooterTop,
   bakeScale,
+  isInBackReservedFooter,
   CARD_HEIGHT,
   CARD_SAFE_MARGIN,
   CARD_WIDTH,
@@ -489,7 +490,9 @@ export function DesignCanvas({
     }
     const overlaps = layer.find(".element").some((node) => {
       const box = node.getClientRect({ relativeTo: layer });
-      return box.height > 0 && box.y + box.height > reservedTop;
+      // The same predicate the print engine's band is derived from, rather than
+      // a second copy of "does it cross the line" that could drift from it.
+      return box.height > 0 && isInBackReservedFooter(box);
     });
     onReservedFooterOverlapChange(overlaps);
   }, [onReservedFooterOverlapChange, page.elements, reservedTop, fontsTick]);

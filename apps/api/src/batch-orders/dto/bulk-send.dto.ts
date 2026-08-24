@@ -73,7 +73,7 @@ export class BulkSendDto {
 
   @ApiPropertyOptional({
     description:
-      "Post each card on its own recipient's dated occasion (their birthday, say) rather than one shared date. The server finds those occasions itself, so this holds however the send was started — from a segment, a list, or a hand-picked selection. Recipients with no eligible occasion fall back to the shared timing. Mutually exclusive with deliverBy.",
+      "Post each card on its own recipient's dated occasion (their birthday, say) rather than one shared date. The server finds those occasions itself, so this holds however the send was started — from a segment, a list, or a hand-picked selection. Recipients with no eligible occasion fall back to the shared timing. Defaults to true when no deliverBy is given, so a bulk send is birthday-timed unless it asks not to be; pass false for a genuine same-day campaign. Mutually exclusive with an explicit true plus deliverBy.",
   })
   @IsOptional()
   @IsBoolean()
