@@ -1068,6 +1068,50 @@ describe("Batch orders (e2e)", () => {
       expect(new Set(dispatches.map((d) => d.dispatchDate?.getTime())).size).toBe(2);
     });
 
+    it("warns before payment when the back's artwork will be clipped", async () => {
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const recipientId = await createRecipientWithAddress(token);
+
+      const clean = await request(app.getHttpServer())
+        .post("/batch-orders/preflight")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [recipientId], postageClass: "second_class" })
+        .expect(201);
+      expect(
+        (clean.body as { backArtworkClipped: { background: boolean } }).backArtworkClipped,
+      ).toEqual({ background: false, elements: 0 });
+
+      // Fill the back edge to edge, exactly as the order that prompted the
+      // reserved strip did. A background is not an "element", which is why the
+      // editor's own check saw nothing wrong with it.
+      const design = await prisma.savedDesign.findUniqueOrThrow({ where: { id: savedDesignId } });
+      const document = design.document as { pages: { name: string }[] };
+      await prisma.savedDesign.update({
+        where: { id: savedDesignId },
+        data: {
+          document: {
+            ...document,
+            pages: document.pages.map((page) =>
+              page.name === "back"
+                ? { ...page, background: { type: "color", color: "#101010" } }
+                : page,
+            ),
+          } as never,
+        },
+      });
+
+      const flagged = await request(app.getHttpServer())
+        .post("/batch-orders/preflight")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [recipientId], postageClass: "second_class" })
+        .expect(201);
+      expect(
+        (flagged.body as { backArtworkClipped: { background: boolean } }).backArtworkClipped
+          .background,
+      ).toBe(true);
+    });
+
     it("previews the occasion dating the send will actually apply", async () => {
       const { token, accountId } = await signUp();
       const savedDesignId = await createSavedDesign(token);

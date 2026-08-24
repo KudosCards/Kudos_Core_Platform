@@ -1,6 +1,7 @@
 "use client";
 
 import type { DesignDocument, DesignPage } from "@kudos/shared-types";
+import { BACK_RESERVED_FOOTER_MM } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
@@ -63,6 +64,17 @@ export function CardFlip({ document, width = 300 }: { document: DesignDocument; 
   return (
     <div className="flex flex-col items-center gap-3">
       <CardFacePreview document={document} width={width} face={face} />
+      {/* The back previews with its bottom strip blank, because that is what
+          prints — the stock already carries our logo and QR there. Unexplained
+          it reads as a rendering fault, which is how it reached support the
+          first time. Said here, where the blank strip is actually being looked
+          at, rather than only in the editor. */}
+      {face === "back" && (
+        <p className="max-w-xs text-center text-xs text-muted">
+          The bottom {BACK_RESERVED_FOOTER_MM}mm is left blank here because your card already has
+          the Kudos logo and QR code printed there.
+        </p>
+      )}
       <div className="flex items-center gap-3">
         {many && (
           <button

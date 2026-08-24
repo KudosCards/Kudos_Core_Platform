@@ -315,6 +315,7 @@ export function DesignEditorClient({
   // selection-level: the case this exists for is a back filled edge-to-edge, and
   // warning about one tile at a time would badly understate it.
   const [reservedFooterOverlap, setReservedFooterOverlap] = useState(false);
+
   // Natural pixel sizes of placed images, keyed by asset URL — measured on demand
   // so we can warn when an image is too low-resolution to print sharply at the
   // size it's placed (docs/adr/0162).
@@ -384,6 +385,11 @@ export function DesignEditorClient({
   }, [isDirty, currentSnapshot, name, document_, savedDesign.id]);
 
   const page = document_.pages.find((p) => p.name === activePage) ?? document_.pages[0]!;
+  // A background always covers the reserved strip, and the canvas's overlap
+  // check only sees *elements* — a background is not one. That gap is why a back
+  // filled edge to edge with artwork produced no warning at all. Read straight
+  // from the page rather than measured, since it needs no measuring.
+  const backHasBackground = activePage === "back" && page.background != null;
   const selectedElement = page.elements.find((el) => el.id === selectedElementId) ?? null;
 
   // Measure the selected image's natural pixel size (once per URL) so the panel
@@ -1336,11 +1342,35 @@ export function DesignEditorClient({
             onSelectedOverflowChange={setSelectedOverflow}
             onReservedFooterOverlapChange={setReservedFooterOverlap}
           />
-          {reservedFooterOverlap && (
-            <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+          {/* Always on while the back is open, not only once something strays into
+              the strip: a customer should know the rule before they lay anything
+              out, not be corrected afterwards. Neutral, because on its own this
+              is information, not a problem. */}
+          {activePage === "back" && (
+            <p className="mt-2 rounded-md border border-black/10 bg-black/[0.03] px-3 py-2 text-xs text-muted dark:border-white/10 dark:bg-white/[0.04]">
               The bottom {BACK_RESERVED_FOOTER_MM}mm of the back is already printed on the card with
-              the Kudos logo and QR code, so anything there won&apos;t be printed. Move your content
-              above the dashed line — it will snap to it.
+              the Kudos logo and QR code. Anything below the dashed line won&apos;t be printed —
+              drag content above it and it will snap into place.
+            </p>
+          )}
+          {/* And amber once something actually is affected. A background is called
+              out separately because it always covers the strip, so "move it up"
+              is the wrong instruction — there is nothing to move. */}
+          {activePage === "back" && (backHasBackground || reservedFooterOverlap) && (
+            <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+              {backHasBackground && reservedFooterOverlap ? (
+                <>
+                  Your background stops at the dashed line, and something on this face reaches below
+                  it. Move that content up; the background will simply end there.
+                </>
+              ) : backHasBackground ? (
+                <>
+                  Your background stops at the dashed line — it won&apos;t reach the bottom of the
+                  card. Keep anything that matters above it.
+                </>
+              ) : (
+                <>Something on this face reaches below the dashed line and won&apos;t be printed.</>
+              )}
             </p>
           )}
         </div>

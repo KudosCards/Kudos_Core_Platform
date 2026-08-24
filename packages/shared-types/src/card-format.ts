@@ -165,3 +165,49 @@ export const CARD_SIZE_LABEL = cardSizeLabel(DEFAULT_CARD_SIZE);
  * library, the card preview and every checkout summary.
  */
 export const CARD_SIZE_NOTICE = `All cards are printed ${CARD_SIZE_LABEL}.`;
+
+/**
+ * What a design's back face puts into the reserved footer, judged from the
+ * stored document alone.
+ *
+ * `background` is the case that matters most and the one the editor's own check
+ * missed: a full-bleed image or colour always covers the strip, and it is how a
+ * customer most often fills a back. `elements` counts placed items whose box
+ * reaches into it.
+ *
+ * **Approximate for text**, deliberately. A text element's real height depends
+ * on wrapping and on which font has loaded, which only a renderer knows; this
+ * uses a single line at the standard 1.3 line-height, so a wrapped block that
+ * starts above the line and runs into it is not counted here. The editor
+ * measures the rendered nodes and does catch that, and the print engine clips
+ * the band regardless — this exists to warn *before payment*, not to be the
+ * guarantee. Erring toward under-reporting keeps it from crying wolf on designs
+ * that are actually fine.
+ */
+export function backArtworkInReservedFooter(
+  document: { pages: { name: string; background?: unknown; elements: unknown[] }[] },
+  size: CardSize = DEFAULT_CARD_SIZE,
+): { background: boolean; elements: number } {
+  const page = document.pages.find((p) => p.name === "back");
+  if (!page) return { background: false, elements: 0 };
+
+  let elements = 0;
+  for (const raw of page.elements) {
+    const el = raw as {
+      kind?: string;
+      y?: number;
+      height?: number;
+      size?: number;
+      fontSize?: number;
+    };
+    if (typeof el.y !== "number") continue;
+    const height =
+      el.kind === "qr"
+        ? (el.size ?? 0)
+        : el.kind === "text"
+          ? (el.fontSize ?? 0) * 1.3
+          : (el.height ?? 0);
+    if (isInBackReservedFooter({ y: el.y, height }, size)) elements += 1;
+  }
+  return { background: page.background != null, elements };
+}
