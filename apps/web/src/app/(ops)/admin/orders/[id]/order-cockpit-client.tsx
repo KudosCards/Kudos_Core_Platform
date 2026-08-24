@@ -1,9 +1,14 @@
 "use client";
 
-import { Printer, Truck } from "lucide-react";
+import { CalendarCheck, Printer, Truck } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { AdminOrderLine, FulfillmentJobStatus } from "@kudos/shared-types";
+import type {
+  AdminOrderLine,
+  BatchOrderStatus,
+  FulfillmentJobStatus,
+  OccasionRedateSummary,
+} from "@kudos/shared-types";
 import { royalMailTrackingUrl } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -28,6 +33,18 @@ const JOB_STATUS_CLASSES: Record<FulfillmentJobStatus, string> = {
   delivered: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
   returned_to_sender: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
   failed: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+};
+
+const REDATE_OUTCOME_LABELS: Record<OccasionRedateSummary["cards"][number]["outcome"], string> = {
+  redated: "Re-dated",
+  "already-repaired": "Already done",
+  "no-occasion": "No occasion — left alone",
+};
+
+const REDATE_OUTCOME_CLASSES: Record<OccasionRedateSummary["cards"][number]["outcome"], string> = {
+  redated: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
+  "already-repaired": "bg-foreground/[0.07] text-muted",
+  "no-occasion": "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
 };
 
 const POSTAGE_LABELS: Record<string, string> = {
@@ -96,13 +113,20 @@ function StatusTrail({ line }: { line: AdminOrderLine }) {
  * See ADR 0123.
  */
 export function OrderCockpit({
+  orderId,
+  orderStatus,
   lines,
   shippingEnabled,
   clickAndDropEnabled,
+  isSuperAdmin,
 }: {
+  orderId: string;
+  orderStatus: BatchOrderStatus;
   lines: AdminOrderLine[];
   shippingEnabled: boolean;
   clickAndDropEnabled: boolean;
+  /** Whether the viewer may run the super-admin-only occasion re-date. */
+  isSuperAdmin: boolean;
 }) {
   const router = useRouter();
   const [busyJob, setBusyJob] = useState<string | null>(null);
@@ -110,11 +134,21 @@ export function OrderCockpit({
   const [error, setError] = useState<string | null>(null);
   const [printCards, setPrintCards] = useState<PrintRunCard[] | null>(null);
   const [printLoading, setPrintLoading] = useState(false);
+  const [redate, setRedate] = useState<OccasionRedateSummary | null>(null);
 
   const jobIds = lines.flatMap((l) => (l.jobId ? [l.jobId] : []));
   const printedIds = lines.flatMap((l) => (l.jobId && l.jobStatus === "printed" ? [l.jobId] : []));
   const postedIds = lines.flatMap((l) => (l.jobId && l.jobStatus === "posted" ? [l.jobId] : []));
   const busy = busyJob !== null || bulkBusy !== null;
+
+  // Mirror the server's guard so the button isn't offered where it would only
+  // 409: a paid, not-yet-started order, every card still pending. A printed card
+  // has physically happened and can't be re-dated.
+  const canRedate =
+    isSuperAdmin &&
+    lines.length > 0 &&
+    (orderStatus === "paid" || orderStatus === "fulfilling") &&
+    lines.every((l) => l.jobStatus === null || l.jobStatus === "pending");
 
   function reportError(e: unknown) {
     setError(e instanceof ApiError ? e.message : "Something went wrong — try again.");
@@ -203,6 +237,44 @@ export function OrderCockpit({
     }
   }
 
+  /**
+   * Re-date every card in this order onto its own recipient's occasion.
+   *
+   * The repair for an order sent with `useOccasionDates` off, where every card
+   * was dated the send day instead of each recipient's birthday. Confirmed
+   * first because it rewrites dispatch dates across the whole order, and the
+   * per-card report is kept on screen afterwards — "we changed 76 things" is
+   * not something anyone can check.
+   */
+  async function runRedate() {
+    if (
+      !window.confirm(
+        `Re-date all ${lines.length} cards in this order onto each recipient's own occasion date?\n\n` +
+          "Cards with no dated occasion are left exactly as they are. This can be run again safely.",
+      )
+    ) {
+      return;
+    }
+    setBulkBusy("redate");
+    setError(null);
+    setRedate(null);
+    try {
+      setRedate(
+        await clientApiFetch<OccasionRedateSummary>(
+          `/admin/orders/${orderId}/redate-to-occasions`,
+          {
+            method: "POST",
+          },
+        ),
+      );
+      router.refresh();
+    } catch (e) {
+      reportError(e);
+    } finally {
+      setBulkBusy(null);
+    }
+  }
+
   const bulkTransition = (ids: string[], toStatus: FulfillmentJobStatus) =>
     clientApiFetch("/fulfillment/jobs/bulk-transition", {
       method: "POST",
@@ -217,6 +289,27 @@ export function OrderCockpit({
         </h2>
         {/* Order-level batch actions — each appears only when it has cards to act on. */}
         <div className="flex flex-wrap items-center gap-2">
+          {canRedate && (
+            <button
+              type="button"
+              disabled={busy}
+              title="Move every card onto its own recipient's occasion date, instead of the day the order was sent"
+              onClick={() => void runRedate()}
+              className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-40 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
+            >
+              {bulkBusy === "redate" ? (
+                "…"
+              ) : (
+                <>
+                  <CalendarCheck
+                    className="mr-1 inline h-3.5 w-3.5 align-text-bottom"
+                    aria-hidden
+                  />{" "}
+                  Re-date to birthdays
+                </>
+              )}
+            </button>
+          )}
           {jobIds.length > 0 && (
             <button
               type="button"
@@ -300,6 +393,68 @@ export function OrderCockpit({
         <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
           {error}
         </p>
+      )}
+
+      {/* The re-date report, card by card. Kept on screen until dismissed —
+          it's the only record of what the repair actually did, and the
+          "left alone" rows are the ones that need a human. */}
+      {redate && (
+        <div className="rounded-xl border border-border">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+            <p className="text-sm">
+              <span className="font-semibold tabular-nums">{redate.redated}</span> re-dated ·{" "}
+              <span className="font-semibold tabular-nums">{redate.unchanged}</span> left alone
+            </p>
+            <button
+              type="button"
+              onClick={() => setRedate(null)}
+              className="rounded-full border border-border px-3 py-1 text-xs font-medium hover:bg-foreground/5"
+            >
+              Dismiss
+            </button>
+          </div>
+          {redate.redated === 0 && (
+            <p className="border-b border-border bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+              Nothing moved. Every card here either has no dated occasion to move to — the recipient
+              has no birthday on file, or it&apos;s a genuine one-off campaign card — or was already
+              re-dated by an earlier run.
+            </p>
+          )}
+          <div className="max-h-80 overflow-y-auto">
+            <table className="w-full min-w-[520px] text-sm">
+              <thead className="sticky top-0 bg-background">
+                <tr className="border-b border-border text-left text-xs tracking-wide text-muted uppercase">
+                  <th className="px-4 py-2 font-medium">Recipient</th>
+                  <th className="px-4 py-2 font-medium">Was</th>
+                  <th className="px-4 py-2 font-medium">Now</th>
+                  <th className="px-4 py-2 font-medium">Outcome</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {redate.cards.map((card, i) => (
+                  <tr key={`${card.recipientName}-${i}`}>
+                    <td className="px-4 py-2 font-medium">{card.recipientName}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-muted">{fmtDay(card.from)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      {card.outcome === "redated" ? (
+                        <span className="font-medium">{fmtDay(card.to)}</span>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${REDATE_OUTCOME_CLASSES[card.outcome]}`}
+                      >
+                        {REDATE_OUTCOME_LABELS[card.outcome]}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       <div className="overflow-x-auto rounded-xl border border-border">

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { AdminOrderDetail } from "@kudos/shared-types";
+import type { AdminIdentity, AdminOrderDetail } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { ORDER_STATUS_CLASSES, ORDER_STATUS_LABELS, formatGbp, formatOrderDate } from "@/lib/orders";
 import { formatOrderNumber } from "@/lib/admin";
@@ -68,10 +68,14 @@ export default async function AdminOrderDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [order, shipping, clickAndDrop] = await Promise.all([
+  const [order, shipping, clickAndDrop, me] = await Promise.all([
     serverApiFetch<AdminOrderDetail>(`/admin/orders/${id}`),
     serverApiFetch<{ enabled: boolean }>("/fulfillment/shipping-status"),
     serverApiFetch<{ enabled: boolean }>("/fulfillment/click-and-drop-status"),
+    // The re-date repair is super-admin-only on the server. Fetch the viewer's
+    // role so the button isn't offered to an operator who would only get a 403.
+    // Non-fatal: without it the button is simply hidden.
+    serverApiFetch<AdminIdentity>("/admin/me").catch(() => null),
   ]);
   if (!order) {
     notFound();
@@ -154,9 +158,12 @@ export default async function AdminOrderDetailPage({
       </div>
 
       <OrderCockpit
+        orderId={order.id}
+        orderStatus={order.status}
         lines={order.lines}
         shippingEnabled={shipping?.enabled ?? false}
         clickAndDropEnabled={clickAndDrop?.enabled ?? false}
+        isSuperAdmin={me?.role === "super_admin"}
       />
     </div>
   );

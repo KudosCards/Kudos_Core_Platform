@@ -15,16 +15,14 @@ import type {
   CardSize,
   Customer360,
   DispatchReminderConfig,
+  OccasionRedateSummary,
   SeasonalDispatchRule,
 } from "@kudos/shared-types";
 import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import type { Paginated } from "../common/paginated";
 import { SeatBillingService, type SeatPriceStatus } from "../billing/seat-billing.service";
 import { DispatchConfigService } from "../dispatch/dispatch-config.service";
-import {
-  BatchOrdersService,
-  type OccasionRedateSummary,
-} from "../batch-orders/batch-orders.service";
+import { BatchOrdersService } from "../batch-orders/batch-orders.service";
 import { CardSizeConfigService } from "./card-size-config.service";
 import { UpdateSeasonalRulesDto } from "./dto/update-seasonal-rules.dto";
 import { UpdateReminderConfigDto } from "./dto/update-reminder-config.dto";

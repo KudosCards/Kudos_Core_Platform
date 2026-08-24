@@ -139,3 +139,31 @@ export const adminOrderDetailSchema = z.object({
   lines: z.array(adminOrderLineSchema),
 });
 export type AdminOrderDetail = z.infer<typeof adminOrderDetailSchema>;
+
+/**
+ * One card's outcome from an occasion re-date, for the operator's report.
+ *
+ * `from`/`to` are the card's dispatch date before and after. `outcome` is
+ * `redated` when it moved, `already-repaired` when it was already on the
+ * recipient's own occasion (the repair is safe to run twice), and
+ * `no-occasion` when that recipient has no dated occasion to move to — those
+ * keep the order's send date and need a human to look at them.
+ */
+export const occasionRedateCardSchema = z.object({
+  recipientName: z.string(),
+  from: z.coerce.date().nullable(),
+  to: z.coerce.date().nullable(),
+  outcome: z.enum(["redated", "already-repaired", "no-occasion"]),
+});
+export type OccasionRedateCard = z.infer<typeof occasionRedateCardSchema>;
+
+/** What an occasion re-date did to an order — reported card by card, because
+ *  "we changed 76 things" is not something anyone can check. */
+export const occasionRedateSummarySchema = z.object({
+  orderNumber: z.number(),
+  accountId: z.string().uuid(),
+  cards: z.array(occasionRedateCardSchema),
+  redated: z.number(),
+  unchanged: z.number(),
+});
+export type OccasionRedateSummary = z.infer<typeof occasionRedateSummarySchema>;
