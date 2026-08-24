@@ -98,6 +98,15 @@ describe("Batch orders (e2e)", () => {
     });
   });
 
+  /** A super-admin token — the re-date repair is ops-only. */
+  async function opsToken(): Promise<string> {
+    const userId = randomUUID();
+    await prisma.platformAdmin.create({
+      data: { userId, role: "super_admin", email: `ops-${userId}@kudoscards.co.uk` },
+    });
+    return mintToken(userId);
+  }
+
   async function signUp(): Promise<{ token: string; accountId: string }> {
     const token = await mintToken(randomUUID());
     const response = await request(app.getHttpServer())
@@ -1107,6 +1116,178 @@ describe("Batch orders (e2e)", () => {
         where: { id: soon.occasionId },
       });
       expect(occasion.dispatchDate!.getTime()).toBeGreaterThanOrEqual(today.getTime());
+    });
+
+    describe("ops re-date repair (orders placed before #328)", () => {
+      /** Reproduce the broken shape: a send that ignored the recipients' real
+       *  birthdays and dated every card the same day. */
+      async function misdatedOrder(token: string, accountId: string, daysAhead: number[]) {
+        const savedDesignId = await createSavedDesign(token);
+        const people = [];
+        for (const days of daysAhead) {
+          people.push(await contactWithBirthday(token, accountId, days));
+        }
+        const order = await request(app.getHttpServer())
+          .post("/batch-orders/bulk-send")
+          .set("Authorization", `Bearer ${token}`)
+          .send({
+            savedDesignId,
+            recipientIds: people.map((p) => p.contactId),
+            postageClass: "second_class",
+            // No occasion dating — exactly what the old composer sent.
+          })
+          .expect(201);
+        const orderId = (order.body as { id: string }).id;
+        await settleAsWebhookWould(orderId);
+        return { orderId, people };
+      }
+
+      /**
+       * Stand in for the payment webhook, mirroring settleFulfillment: paid,
+       * cards queued, and one pending job per card carrying the occasion's
+       * dispatch date.
+       *
+       * That denormalised dueDate is what the ops calendar plots, so the repair
+       * has to move it too — a test that only checked the occasion would miss
+       * the queue still showing the old day.
+       */
+      async function settleAsWebhookWould(orderId: string) {
+        await prisma.batchOrder.update({ where: { id: orderId }, data: { status: "paid" } });
+        const lines = await prisma.orderRecipient.findMany({
+          where: { batchOrderId: orderId },
+          include: { occasion: { select: { dispatchDate: true } } },
+        });
+        await prisma.orderRecipient.updateMany({
+          where: { batchOrderId: orderId },
+          data: { status: "queued" },
+        });
+        await prisma.fulfillmentJob.createMany({
+          data: lines.map((line) => ({
+            orderRecipientId: line.id,
+            status: "pending" as const,
+            dueDate: line.occasion?.dispatchDate ?? null,
+          })),
+        });
+      }
+
+      it("re-dates each card to its recipient's birthday and stops the birthday sending again", async () => {
+        const { token, accountId } = await signUp();
+        const ops = await opsToken();
+        const { orderId, people } = await misdatedOrder(token, accountId, [40, 90]);
+
+        // Precondition: both cards share one date. This is the bug, reproduced.
+        const before = await prisma.occasion.findMany({
+          where: { accountId, source: "one_off_campaign" },
+          select: { dispatchDate: true },
+        });
+        expect(new Set(before.map((o) => o.dispatchDate?.getTime())).size).toBe(1);
+
+        const response = await request(app.getHttpServer())
+          .post(`/admin/orders/${orderId}/redate-to-occasions`)
+          .set("Authorization", `Bearer ${ops}`)
+          .expect(201);
+        const summary = response.body as { redated: number; unchanged: number };
+        expect(summary.redated).toBe(2);
+        expect(summary.unchanged).toBe(0);
+
+        // Each card now posts ahead of its own birthday, on its own day.
+        const after = await prisma.occasion.findMany({
+          where: { accountId, source: "one_off_campaign" },
+          select: { dispatchDate: true, supersedesOccasionId: true },
+        });
+        expect(new Set(after.map((o) => o.dispatchDate?.getTime())).size).toBe(2);
+
+        // The part that matters most: each natural birthday is consumed, so it
+        // cannot independently fire a second card on the same day. Without this
+        // the repair would give every recipient two cards.
+        for (const person of people) {
+          const natural = await prisma.occasion.findUniqueOrThrow({
+            where: { id: person.occasionId },
+          });
+          expect(natural.status).toBe("skipped");
+        }
+        expect(after.every((o) => o.supersedesOccasionId !== null)).toBe(true);
+
+        // And the ops queue agrees — dueDate moved with it.
+        const jobs = await prisma.fulfillmentJob.findMany({
+          where: { orderRecipient: { batchOrder: { id: orderId } } },
+          select: { dueDate: true },
+        });
+        expect(new Set(jobs.map((j) => j.dueDate?.getTime())).size).toBe(2);
+      });
+
+      it("is safe to run twice", async () => {
+        const { token, accountId } = await signUp();
+        const ops = await opsToken();
+        const { orderId } = await misdatedOrder(token, accountId, [40, 90]);
+
+        const url = `/admin/orders/${orderId}/redate-to-occasions`;
+        await request(app.getHttpServer())
+          .post(url)
+          .set("Authorization", `Bearer ${ops}`)
+          .expect(201);
+        const second = await request(app.getHttpServer())
+          .post(url)
+          .set("Authorization", `Bearer ${ops}`)
+          .expect(201);
+
+        // Nothing left to do, and nothing re-consumed.
+        const summary = second.body as { redated: number; unchanged: number };
+        expect(summary.redated).toBe(0);
+        expect(summary.unchanged).toBe(2);
+      });
+
+      it("refuses once a card has left pending", async () => {
+        const { token, accountId } = await signUp();
+        const ops = await opsToken();
+        const { orderId } = await misdatedOrder(token, accountId, [40, 90]);
+
+        // One card is already being prepared — it has left the queue's control.
+        const job = await prisma.fulfillmentJob.findFirstOrThrow({
+          where: { orderRecipient: { batchOrder: { id: orderId } } },
+        });
+        await prisma.fulfillmentJob.update({
+          where: { id: job.id },
+          data: { status: "printed" },
+        });
+
+        await request(app.getHttpServer())
+          .post(`/admin/orders/${orderId}/redate-to-occasions`)
+          .set("Authorization", `Bearer ${ops}`)
+          .expect(409);
+      });
+
+      it("leaves a card alone when its recipient has no dated occasion", async () => {
+        const { token } = await signUp();
+        const ops = await opsToken();
+        const savedDesignId = await createSavedDesign(token);
+        // A genuine campaign recipient: no birthday on file.
+        const plain = await createRecipientWithAddress(token);
+        const order = await request(app.getHttpServer())
+          .post("/batch-orders/bulk-send")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ savedDesignId, recipientIds: [plain], postageClass: "second_class" })
+          .expect(201);
+        const plainOrderId = (order.body as { id: string }).id;
+        await settleAsWebhookWould(plainOrderId);
+
+        const response = await request(app.getHttpServer())
+          .post(`/admin/orders/${plainOrderId}/redate-to-occasions`)
+          .set("Authorization", `Bearer ${ops}`)
+          .expect(201);
+        const summary = response.body as { redated: number; unchanged: number };
+        expect(summary.redated).toBe(0);
+        expect(summary.unchanged).toBe(1);
+      });
+
+      it("refuses a non-operator", async () => {
+        const { token, accountId } = await signUp();
+        const { orderId } = await misdatedOrder(token, accountId, [40]);
+        await request(app.getHttpServer())
+          .post(`/admin/orders/${orderId}/redate-to-occasions`)
+          .set("Authorization", `Bearer ${token}`)
+          .expect(403);
+      });
     });
 
     it("reuses the natural birthday occasion as the send record when reconciled", async () => {

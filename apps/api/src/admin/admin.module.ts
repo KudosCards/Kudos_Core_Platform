@@ -8,13 +8,16 @@ import { AdminCustomerService } from "./admin-customer.service";
 import { AdminTeamController } from "./admin-team.controller";
 import { AdminTeamService } from "./admin-team.service";
 import { CardSizeConfigService } from "./card-size-config.service";
+import { BatchOrdersModule } from "../batch-orders/batch-orders.module";
 
 /** The Kudos super-admin surface (platform-wide orders, subscribers, KPIs, the
  * in-app seat-price provisioning action, and operator identity + team
  * management). PlatformAdminGuard is available app-wide via the global
  * AuthModule. See docs/adr/0040-admin-auth.md. */
 @Module({
-  imports: [BillingModule, DispatchModule, OpsActivityModule],
+  // BatchOrdersModule: the occasion re-date repair is ops-triggered but the
+  // scheduling logic belongs with orders, not duplicated here.
+  imports: [BillingModule, DispatchModule, OpsActivityModule, BatchOrdersModule],
   controllers: [AdminController, AdminTeamController],
   providers: [AdminService, AdminCustomerService, AdminTeamService, CardSizeConfigService],
 })
