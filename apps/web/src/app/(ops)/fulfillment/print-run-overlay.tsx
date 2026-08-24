@@ -317,6 +317,9 @@ export function PrintRunOverlay({
                 bordered={false}
                 qrUrl={entry.qrUrl}
                 pixelRatio={PRINT_PIXEL_RATIO}
+                // The run's chosen trim, so the back's reserved footer lands on
+                // the right line — 30mm is a different fraction of an A5.
+                size={size}
               />
             </div>
           </div>

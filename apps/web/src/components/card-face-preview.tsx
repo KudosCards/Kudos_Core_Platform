@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import type Konva from "konva";
 import { Stage, Layer, Rect, Text, Group, Image as KonvaImage } from "react-konva";
 import useImage from "use-image";
-import type { DesignDocument, DesignElement, DesignPage } from "@kudos/shared-types";
+import type { CardSize, DesignDocument, DesignElement, DesignPage } from "@kudos/shared-types";
 import {
   CARD_HEIGHT,
   CARD_WIDTH,
+  DEFAULT_CARD_SIZE,
+  backReservedFooterTop,
   konvaFontStyle,
   konvaTextDecoration,
   textWrapWidth,
@@ -114,6 +116,7 @@ export function CardFacePreview({
   bordered = true,
   qrUrl,
   pixelRatio,
+  size = DEFAULT_CARD_SIZE,
 }: {
   document: DesignDocument;
   width?: number;
@@ -130,8 +133,23 @@ export function CardFacePreview({
    * value so the rasterised face carries enough pixels to print sharply (the
    * canvas CSS size is unchanged — only the pixel count behind it grows). */
   pixelRatio?: number;
+  /** Trim size this face will be printed at. Only affects where the back's
+   * reserved footer falls (30mm is a different fraction of an A6 than an A5). */
+  size?: CardSize;
 }) {
   const scale = width / CANVAS_WIDTH;
+
+  // The bottom strip of the back is pre-printed on our card stock with the Kudos
+  // logo and QR, so nothing authored may show there — see card-format.ts
+  // BACK_RESERVED_FOOTER_MM. Clipped here, in the one read-only renderer every
+  // preview and the browser print overlay share, so what anyone is shown matches
+  // what the server-side PDF engine will actually lay down (print-pdf/render.ts
+  // applies the identical clip). The clip covers the page background too: a
+  // full-bleed image on the back would otherwise cover the branding.
+  const clip =
+    face === "back"
+      ? { x: 0, y: 0, width: CANVAS_WIDTH, height: backReservedFooterTop(size) }
+      : undefined;
   const front =
     document.pages.find((page) => page.name === face) ??
     document.pages.find((page) => page.name === "front") ??
@@ -183,42 +201,47 @@ export function CardFacePreview({
       >
         <Layer listening={false}>
           <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#ffffff" />
-          <PageBackground background={front?.background} />
-          {elements.map((element) => {
-            if (element.kind === "text") {
-              return (
-                <Text
-                  key={element.id}
-                  text={element.text}
-                  x={element.x}
-                  y={element.y}
-                  width={textWrapWidth(element)}
-                  align={element.align ?? "left"}
-                  wrap="word"
-                  lineHeight={1.3}
-                  fontFamily={resolveFontFamily(element.fontFamily)}
-                  fontSize={element.fontSize}
-                  fontStyle={konvaFontStyle(element.bold, element.italic)}
-                  textDecoration={konvaTextDecoration(element.underline)}
-                  fill={element.color}
-                  rotation={element.rotation}
-                />
-              );
-            }
-            if (element.kind === "image") {
-              return <ImageNode key={element.id} element={element} />;
-            }
-            if (element.kind === "shape") {
-              return (
-                <Group key={element.id} x={element.x} y={element.y} rotation={element.rotation}>
-                  <ShapePrimitive element={element} />
-                </Group>
-              );
-            }
-            // Real per-card QR when a link is supplied (print run), else a marked
-            // placeholder square (designer preview, before a code is minted).
-            return <QrNode key={element.id} element={element} qrUrl={qrUrl} />;
-          })}
+          {/* One Group rather than a second Layer: a Layer is a whole extra
+              canvas, and these previews are rendered dozens at a time in the
+              design and review grids. */}
+          <Group clip={clip}>
+            <PageBackground background={front?.background} />
+            {elements.map((element) => {
+              if (element.kind === "text") {
+                return (
+                  <Text
+                    key={element.id}
+                    text={element.text}
+                    x={element.x}
+                    y={element.y}
+                    width={textWrapWidth(element)}
+                    align={element.align ?? "left"}
+                    wrap="word"
+                    lineHeight={1.3}
+                    fontFamily={resolveFontFamily(element.fontFamily)}
+                    fontSize={element.fontSize}
+                    fontStyle={konvaFontStyle(element.bold, element.italic)}
+                    textDecoration={konvaTextDecoration(element.underline)}
+                    fill={element.color}
+                    rotation={element.rotation}
+                  />
+                );
+              }
+              if (element.kind === "image") {
+                return <ImageNode key={element.id} element={element} />;
+              }
+              if (element.kind === "shape") {
+                return (
+                  <Group key={element.id} x={element.x} y={element.y} rotation={element.rotation}>
+                    <ShapePrimitive element={element} />
+                  </Group>
+                );
+              }
+              // Real per-card QR when a link is supplied (print run), else a marked
+              // placeholder square (designer preview, before a code is minted).
+              return <QrNode key={element.id} element={element} qrUrl={qrUrl} />;
+            })}
+          </Group>
         </Layer>
       </Stage>
     </>

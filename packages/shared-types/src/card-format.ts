@@ -93,6 +93,58 @@ export function fittedCardMm(
   };
 }
 
+/**
+ * How much of the back of a card is ours, in millimetres, measured up from the
+ * bottom trim edge.
+ *
+ * Cards are printed on stock whose back already carries the Kudos logo and QR
+ * code in a strip along the bottom. Nothing in the software knew that, so the
+ * back was simply a fourth editable face and whatever a customer put there was
+ * sent to print — over branding that is physically already on the card. One
+ * customer filled it with a grid of partner adverts.
+ *
+ * Measured from the trim edge rather than from the printer safe area on
+ * purpose. It is the rule that is simplest to state to a customer ("the bottom
+ * 30mm is ours"), and it can only ever over-reserve: the alternative leaves a
+ * thin strip below the band where content would print into the branding.
+ */
+export const BACK_RESERVED_FOOTER_MM = 30;
+
+/**
+ * The reserved footer's height in design units for a given card size.
+ *
+ * Derived rather than hardcoded because the authoring canvas is one fixed
+ * CARD_WIDTH × CARD_HEIGHT space *fitted* onto whatever card is printed — so a
+ * fixed number of units is a fixed *fraction* of the card, which is a different
+ * number of millimetres at each size. 30mm is a physical property of the stock,
+ * so it has to be converted per size: ~128.5 units on A6, ~90.6 on A5.
+ */
+export function backReservedFooterUnits(size: CardSize = DEFAULT_CARD_SIZE): number {
+  const { heightMm } = CARD_SIZE_DIMENSIONS_MM[size];
+  return (BACK_RESERVED_FOOTER_MM * CARD_HEIGHT) / heightMm;
+}
+
+/** The y coordinate where the reserved footer begins — content must stay above
+ *  it. Pure, and shared by the editor guide and the print clip so they cannot
+ *  disagree about where the band is. */
+export function backReservedFooterTop(size: CardSize = DEFAULT_CARD_SIZE): number {
+  return CARD_HEIGHT - backReservedFooterUnits(size);
+}
+
+/**
+ * Whether an element's box reaches into the reserved footer on the back face.
+ *
+ * Only ever asked of the back — the other three faces are entirely the
+ * customer's. `width`/`height` are the rendered box, as `isOutsideSafeArea`
+ * takes them.
+ */
+export function isInBackReservedFooter(
+  box: { y: number; height: number },
+  size: CardSize = DEFAULT_CARD_SIZE,
+): boolean {
+  return box.y + box.height > backReservedFooterTop(size);
+}
+
 // --- Backward-compatible single-size exports -------------------------------
 // The customer-facing surfaces (card library, card preview, checkout summary)
 // state the size everyone gets. They're bound to the default size so existing

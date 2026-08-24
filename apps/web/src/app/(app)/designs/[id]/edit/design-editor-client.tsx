@@ -12,6 +12,7 @@ import type {
 } from "@kudos/shared-types";
 import type { LayerMove } from "@kudos/shared-types";
 import {
+  BACK_RESERVED_FOOTER_MM,
   CARD_HEIGHT,
   CARD_SAFE_MARGIN,
   CARD_WIDTH,
@@ -309,6 +310,11 @@ export function DesignEditorClient({
   // Whether the currently-selected text element spills outside the print safe
   // area — reported up from the canvas, which measures the rendered text.
   const [selectedOverflow, setSelectedOverflow] = useState(false);
+  // Whether anything on the back face reaches into the strip that's already
+  // printed on the card stock (the Kudos logo and QR). Page-level, not
+  // selection-level: the case this exists for is a back filled edge-to-edge, and
+  // warning about one tile at a time would badly understate it.
+  const [reservedFooterOverlap, setReservedFooterOverlap] = useState(false);
   // Natural pixel sizes of placed images, keyed by asset URL — measured on demand
   // so we can warn when an image is too low-resolution to print sharply at the
   // size it's placed (docs/adr/0162).
@@ -1328,7 +1334,15 @@ export function DesignEditorClient({
             onElementChange={updateElement}
             onDeselect={() => selectElement(null)}
             onSelectedOverflowChange={setSelectedOverflow}
+            onReservedFooterOverlapChange={setReservedFooterOverlap}
           />
+          {reservedFooterOverlap && (
+            <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+              The bottom {BACK_RESERVED_FOOTER_MM}mm of the back is already printed on the card with
+              the Kudos logo and QR code, so anything there won&apos;t be printed. Move your content
+              above the dashed line — it will snap to it.
+            </p>
+          )}
         </div>
 
         <aside className="flex w-full flex-col gap-3 rounded-lg border border-black/10 p-4 sm:w-64 lg:sticky lg:top-4 lg:w-72 lg:self-start dark:border-white/10">
