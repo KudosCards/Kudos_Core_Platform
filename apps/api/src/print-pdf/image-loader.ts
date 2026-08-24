@@ -93,7 +93,7 @@ async function loadImage(assetUrl: string, options: ImageResolverOptions): Promi
     options.onWarn?.(`print image skipped (${url}): host not in the allowlist`);
     return null;
   }
-  const fetched = await fetchBytes(url, options);
+  const fetched = await fetchAssetBytes(url, options);
   if (!fetched) return null;
   return decodeImage(fetched.buffer, fetched.contentType, url, options);
 }
@@ -138,7 +138,13 @@ export function hostOf(url: string): string | null {
   }
 }
 
-async function fetchBytes(
+/**
+ * Fetch an asset's raw bytes with the engine's size cap and timeout, or null if
+ * it can't be had. Exported because an operator downloading the *original*
+ * uploaded file needs exactly these protections and none of the decoding below —
+ * the point of that download is bytes that were never transformed.
+ */
+export async function fetchAssetBytes(
   url: string,
   options: ImageResolverOptions,
 ): Promise<{ buffer: Buffer; contentType: string | null } | null> {

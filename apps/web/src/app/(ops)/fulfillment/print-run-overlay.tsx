@@ -5,6 +5,7 @@ import {
   applyMergeTokens,
   BACK_RESERVED_FOOTER_MM,
   CARD_SIZES,
+  faceAssetUrls,
   cardSizeLabel,
   collectPrintImageTargets,
   DEFAULT_CARD_SIZE,
@@ -69,6 +70,7 @@ function occasionLabel(card: PrintRunCard): string | null {
 /** One face of one card, ready to lay out on its own physical page. */
 interface PrintFace {
   key: string;
+  jobId: string;
   document: DesignDocument;
   face: DesignPage["name"];
   recipientName: string;
@@ -134,6 +136,7 @@ export function PrintRunOverlay({
   // the hidden part is exactly the part in question. See ADR 0166.
   const [reservedFooter, setReservedFooter] = useState<"clip" | "reveal">("clip");
   const [downloading, setDownloading] = useState(false);
+  const [artworkBusy, setArtworkBusy] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   // Pre-flight: how many source images are too low-resolution for print at this
   // size (null while checking). See docs/adr/0162.
@@ -173,6 +176,35 @@ export function PrintRunOverlay({
       setDownloadError(error instanceof Error ? error.message : "Could not generate the PDF. Please try again.");
     } finally {
       setDownloading(false);
+    }
+  }
+
+  /**
+   * Download the original uploaded file behind one of a back face's images.
+   *
+   * Not a canvas export: the canvas has already cover-cropped the artwork into
+   * the 450x634 space and clipped the reserved footer off it, so a render is a
+   * picture of the part that survived. When artwork doesn't fit, that is exactly
+   * the wrong thing to hand someone. The server streams the stored asset
+   * untouched. See ADR 0166.
+   */
+  async function downloadArtwork(jobId: string, assetUrl: string) {
+    setArtworkBusy(assetUrl);
+    setDownloadError(null);
+    try {
+      await clientApiDownload(
+        "/fulfillment/print-run/artwork",
+        { method: "POST", body: JSON.stringify({ jobId, assetUrl }) },
+        "kudos-original-artwork",
+      );
+    } catch (error) {
+      setDownloadError(
+        error instanceof Error
+          ? error.message
+          : "Could not download that artwork. Please try again.",
+      );
+    } finally {
+      setArtworkBusy(null);
     }
   }
 
@@ -218,6 +250,7 @@ export function PrintRunOverlay({
         : undefined;
     return facesOf(merged).map((face) => ({
       key: `${card.jobId}-${face}`,
+      jobId: card.jobId,
       document: merged,
       face,
       recipientName: `${card.recipientFirstName} ${card.recipientLastName}`,
@@ -360,6 +393,28 @@ export function PrintRunOverlay({
             <span className="text-xs text-black/60 print:hidden">
               {entry.recipientName} · {entry.savedDesignName} · {FACE_LABEL[entry.face]}
             </span>
+            {/* Offered on the back only. It is the one face whose render is
+                unfaithful by design — the reserved footer is clipped out of it —
+                so it is the one face where "what did they actually send us?"
+                cannot be answered by looking. */}
+            {entry.face === "back" && (
+              <div className="flex flex-wrap justify-center gap-2 print:hidden">
+                {faceAssetUrls(entry.document, entry.face).map((assetUrl, i, all) => (
+                  <button
+                    key={assetUrl}
+                    type="button"
+                    disabled={artworkBusy !== null}
+                    onClick={() => void downloadArtwork(entry.jobId, assetUrl)}
+                    title="Download the file the customer uploaded, exactly as they uploaded it — full size, nothing cropped or clipped"
+                    className="rounded-full border border-black/20 px-3 py-1 text-xs font-medium text-black hover:bg-black/5 disabled:opacity-40"
+                  >
+                    {artworkBusy === assetUrl
+                      ? "Downloading…"
+                      : `Download original artwork${all.length > 1 ? ` (${i + 1} of ${all.length})` : ""}`}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* The physical page: a true A5/A6 box (mm) that renders at real size
                 on screen and maps 1:1 to the printed page. The card is centred
                 inside with the fitted safe margin. */}

@@ -104,6 +104,21 @@ rasterises what is on screen, so a revealed band must never reach paper. The
 server-side PDF is unaffected by the toggle, which is the point of enforcing
 this in the print engine rather than the UI.
 
+Seeing the band is not always enough. When artwork genuinely doesn't fit, the
+question becomes "what did the customer actually send us?" — and every rendered
+answer is wrong: a card face is a fixed 450x634 canvas with the background
+cover-cropped into it, so a render has already lost whatever fell outside the
+crop as well as whatever falls in the footer. The print-run overlay therefore
+offers **Download original artwork** on a back face: the stored upload, streamed
+untouched, so it can be repurposed (dropped on an inside page, say) or sent back
+to the customer to fix.
+
+That download fetches a URL server-side, and design documents carry
+customer-supplied URLs, so it is guarded twice: the URL must appear in that
+card's own stored design, and its host must be in the same allowlist the print
+engine uses. Either guard alone would let something through that the other
+catches, so both are tested against a URL the other would accept.
+
 The editor's band was softened from near-opaque to half-opaque for the same
 reason. Hiding a customer's artwork tells them "gone" when what they need to
 know is "gone, and here is what" — the label on the band and the panel warning
