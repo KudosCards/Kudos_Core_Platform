@@ -1,6 +1,8 @@
 "use client";
 
 import type { BatchOrderPreflight, PreflightBucket, PreflightIssue } from "@kudos/shared-types";
+import { BACK_RESERVED_FOOTER_MM } from "@kudos/shared-types";
+import Link from "next/link";
 import { useState } from "react";
 import { MailX, MapPin, PenLine, Repeat, type LucideIcon } from "lucide-react";
 
@@ -213,6 +215,36 @@ export function PreSendCheck({
             {needsAttention} need{needsAttention === 1 ? "s" : ""} attention
           </span>
           <span className="text-muted">of {total}</span>
+        </div>
+      )}
+
+      {/* A design-level warning, so it sits outside the per-recipient buckets and
+          shows even when every card is otherwise ready — the artwork is the same
+          on all of them, and being cut is not a reason a card "needs attention".
+          The last chance to catch this before it is printed. */}
+      {(preflight.backArtworkClipped.background || preflight.backArtworkClipped.elements > 0) && (
+        <div className="flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+          <span className="font-medium">
+            The bottom {BACK_RESERVED_FOOTER_MM}mm of the back won&apos;t be printed
+          </span>
+          <span className="text-xs">
+            That strip is already printed on the card with the Kudos logo and QR code.{" "}
+            {preflight.backArtworkClipped.background
+              ? "Your background stops at that line"
+              : `${preflight.backArtworkClipped.elements} item${
+                  preflight.backArtworkClipped.elements === 1 ? "" : "s"
+                } on the back reach into it`}
+            {preflight.backArtworkClipped.background &&
+              preflight.backArtworkClipped.elements > 0 &&
+              `, and ${preflight.backArtworkClipped.elements} item${
+                preflight.backArtworkClipped.elements === 1 ? "" : "s"
+              } reach into it`}
+            . These cards will still send —{" "}
+            <Link href={editDesignHref} className="font-medium underline">
+              open the design
+            </Link>{" "}
+            if you want to move anything up first.
+          </span>
         </div>
       )}
 

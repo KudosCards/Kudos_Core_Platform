@@ -125,6 +125,47 @@ know is "gone, and here is what" — the label on the band and the panel warning
 carry that message in words; the artwork underneath should stay legible enough
 to move.
 
+## Amendment — telling the customer, not just enforcing it
+
+The print engine guarantees the strip. That is not the same as a customer
+understanding it, and an audit of what they are actually *told* found the
+guidance thinner than the enforcement:
+
+- **The editor's overlap warning never fired for a page background.** It read
+  `layer.find(".element")`, and a background is not an element — so the single
+  most common way to fill a back, and the exact shape of the order that prompted
+  this ADR, produced no warning at all. A defect, not a decision.
+- **The customer's own preview clipped in silence.** In the flip viewer the back
+  showed a blank strip with no explanation, which reads as a rendering fault.
+- **Nothing appeared at the point of sale.** The pre-send check flagged
+  addresses, unresolved tokens and duplicates, and said nothing about artwork
+  about to be cut.
+- **Nothing appeared before the customer started.** The rule was only ever
+  stated after something had already been placed in the strip.
+
+All four now say it:
+
+| Surface | What it says |
+| --- | --- |
+| Editor, back tab | A standing neutral note, before anything is placed |
+| Editor, when affected | Amber — worded differently for a background (nothing to move) than for a stray element |
+| Customer's card preview | A line under the back face explaining the blank strip |
+| Pre-send check | A design-level warning, the last gate before payment |
+
+The pre-send warning is design-level rather than a per-recipient bucket: the
+artwork is identical on every card in the run, so a bucket would list all 76
+recipients for one problem. It is also not a reason a card "needs attention" —
+it sends perfectly well, it just prints without that strip — so it shows even
+when every card is otherwise ready.
+
+`backArtworkInReservedFooter` reads the stored document, and is deliberately
+approximate for text: real text height depends on wrapping and on which font has
+loaded, which only a renderer knows. It counts a single line at the standard
+line-height, so a wrapped block running into the strip is not counted there. The
+editor measures rendered nodes and does catch it, and the print engine clips
+regardless. Erring toward under-reporting keeps the pre-send check from crying
+wolf on designs that are fine.
+
 ## Consequences
 
 - 30 mm is a single constant. If the stock changes, one number moves and the

@@ -67,6 +67,15 @@ export interface BatchOrderPreflight {
   price: PricingBreakdown;
   /** What "no delivery date" would actually do to this selection's timing. */
   occasionDated: PreflightOccasionDating;
+  /**
+   * Content on the design's back face that falls in the strip already printed
+   * with the Kudos logo and QR, and so will not be printed (ADR 0166).
+   *
+   * A property of the *design*, not of any recipient, so it sits here rather
+   * than in a bucket: a bucket would list every recipient in the run for one
+   * problem that is the same on all of them.
+   */
+  backArtworkClipped: { background: boolean; elements: number };
 }
 
 /** The sender's timing choice, as the composer's picker reports it. `null` means

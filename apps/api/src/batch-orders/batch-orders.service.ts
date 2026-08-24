@@ -22,6 +22,7 @@ import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.constants";
 import {
   POSTAGE_LEAD_DAYS,
+  backArtworkInReservedFooter,
   computeDispatchDate,
   computePricingBreakdown,
   deliverByWindow,
@@ -625,6 +626,9 @@ export class BatchOrdersService {
       duplicate: { count: count.duplicate, sample: sample.duplicate },
       price,
       occasionDated,
+      // Design-level, so the composer can say "your back artwork is being cut"
+      // before payment rather than leaving it to be noticed on the printed card.
+      backArtworkClipped: backArtworkInReservedFooter(document),
     };
   }
 
