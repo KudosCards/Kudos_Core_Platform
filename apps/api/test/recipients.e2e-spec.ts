@@ -342,9 +342,9 @@ describe("Recipients (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
 
-    const birthday = occasionListSchema.parse(occasions.body).items.find(
-      (o) => o.type === "birthday",
-    );
+    const birthday = occasionListSchema
+      .parse(occasions.body)
+      .items.find((o) => o.type === "birthday");
     expect(birthday).toBeDefined();
     expect(birthday?.status).toBe("scheduled");
     expect(birthday?.occasionDate.slice(5, 10)).toBe("12-25");
@@ -394,7 +394,12 @@ describe("Recipients (e2e)", () => {
         await request(app.getHttpServer())
           .post("/recipients")
           .set("Authorization", `Bearer ${token}`)
-          .send({ firstName: "Change", lastName: "OfBirthday", dateOfBirth: "2015-12-25", ...MAILABLE })
+          .send({
+            firstName: "Change",
+            lastName: "OfBirthday",
+            dateOfBirth: "2015-12-25",
+            ...MAILABLE,
+          })
           .expect(201)
       ).body,
     );
@@ -451,7 +456,12 @@ describe("Recipients (e2e)", () => {
         await request(app.getHttpServer())
           .post("/recipients")
           .set("Authorization", `Bearer ${token}`)
-          .send({ firstName: "Field", lastName: "Test", customFields: { teacher: "Mrs Patel" }, ...MAILABLE })
+          .send({
+            firstName: "Field",
+            lastName: "Test",
+            customFields: { teacher: "Mrs Patel" },
+            ...MAILABLE,
+          })
           .expect(201)
       ).body,
     );
@@ -562,7 +572,12 @@ describe("Recipients (e2e)", () => {
         await request(app.getHttpServer())
           .post("/recipients")
           .set("Authorization", `Bearer ${token}`)
-          .send({ firstName: "Hidden", lastName: "WhenArchived", dateOfBirth: "2015-12-25", ...MAILABLE })
+          .send({
+            firstName: "Hidden",
+            lastName: "WhenArchived",
+            dateOfBirth: "2015-12-25",
+            ...MAILABLE,
+          })
           .expect(201)
       ).body,
     );
@@ -902,7 +917,7 @@ describe("Recipients (e2e)", () => {
   });
 
   it("rejects two concurrent creates that would both push the account over its cap", async () => {
-    const { token } = await signUp();
+    const { token, accountId } = await signUp();
     await prisma.planEntitlement.update({
       where: { planId: "free" },
       data: { recipientCap: 1 },
@@ -921,9 +936,20 @@ describe("Recipients (e2e)", () => {
       ]);
 
       const statuses = [first.status, second.status].sort();
-      // Exactly one should succeed and one should be rejected for being over
-      // cap — never both succeeding, which would silently exceed the plan.
-      expect(statuses).toEqual([201, 403]);
+
+      // The guarantee is that the cap holds, not which rejection the loser
+      // gets. Usually the second request loses the cap check and gets a 403;
+      // under enough contention the serializable retry budget is exhausted
+      // first and it gets a 503 with Retry-After instead. Both are correct —
+      // one create, one refusal — and pinning 403 made this fail on a loaded
+      // CI runner while the behaviour was right.
+      expect(statuses[0]).toBe(201);
+      expect([403, 503]).toContain(statuses[1]);
+
+      // The invariant itself, checked directly rather than inferred from a
+      // status code: the account is on a cap of 1 and holds exactly one.
+      const stored = await prisma.recipient.count({ where: { accountId } });
+      expect(stored).toBe(1);
     } finally {
       await prisma.planEntitlement.update({
         where: { planId: "free" },
