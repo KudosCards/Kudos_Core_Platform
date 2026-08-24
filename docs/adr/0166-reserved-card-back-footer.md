@@ -87,6 +87,44 @@ Measuring from the trim can only ever over-reserve. On A6 the two are the same
 edge; on A5 the design is centred in the trim, so the band lands ~0.75 mm high —
 in the safe direction.
 
+## Amendment — reviewing what the band hides
+
+Clipping the band in every preview made a full-bleed back impossible to review:
+the part being hidden is exactly the part an operator needs to look at, so
+"is the customer's artwork being cut, and by how much?" had no answer anywhere
+in the product. The first real case was the advert-grid back this ADR was
+written for — its bottom row simply vanished from the print preview.
+
+`CardFacePreview` therefore takes `reservedFooter: "clip" | "reveal"`.
+`clip` stays the default everywhere, because a preview should show what prints.
+`reveal` draws the artwork in full and marks the band instead — a light tint and
+a dashed rule on the line. The print-run overlay offers it as an **As printed /
+Full artwork** toggle, and disables browser print while it is on: that path
+rasterises what is on screen, so a revealed band must never reach paper. The
+server-side PDF is unaffected by the toggle, which is the point of enforcing
+this in the print engine rather than the UI.
+
+Seeing the band is not always enough. When artwork genuinely doesn't fit, the
+question becomes "what did the customer actually send us?" — and every rendered
+answer is wrong: a card face is a fixed 450x634 canvas with the background
+cover-cropped into it, so a render has already lost whatever fell outside the
+crop as well as whatever falls in the footer. The print-run overlay therefore
+offers **Download original artwork** on a back face: the stored upload, streamed
+untouched, so it can be repurposed (dropped on an inside page, say) or sent back
+to the customer to fix.
+
+That download fetches a URL server-side, and design documents carry
+customer-supplied URLs, so it is guarded twice: the URL must appear in that
+card's own stored design, and its host must be in the same allowlist the print
+engine uses. Either guard alone would let something through that the other
+catches, so both are tested against a URL the other would accept.
+
+The editor's band was softened from near-opaque to half-opaque for the same
+reason. Hiding a customer's artwork tells them "gone" when what they need to
+know is "gone, and here is what" — the label on the band and the panel warning
+carry that message in words; the artwork underneath should stay legible enough
+to move.
+
 ## Consequences
 
 - 30 mm is a single constant. If the stock changes, one number moves and the

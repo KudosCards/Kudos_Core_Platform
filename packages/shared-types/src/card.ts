@@ -237,3 +237,45 @@ export const createDesignAssetSchema = z.object({
   height: z.number().int().positive().optional(),
 });
 export type CreateDesignAssetInput = z.infer<typeof createDesignAssetSchema>;
+
+/**
+ * Every image asset one face references, background first then elements, in
+ * document order and deduplicated.
+ *
+ * Used to offer an operator the *original uploaded file* rather than a render of
+ * it. A card face is authored in a fixed 450×634 space and a background is
+ * cover-cropped into it, so anything derived from the canvas has already lost
+ * whatever fell outside the crop — and, on the back, whatever falls in the
+ * reserved footer. The only faithful copy of what a customer supplied is the
+ * asset itself. See docs/adr/0166.
+ */
+export function faceAssetUrls(document: DesignDocument, face: DesignPage["name"]): string[] {
+  const page = document.pages.find((p) => p.name === face);
+  if (!page) return [];
+  const urls: string[] = [];
+  if (page.background?.type === "image") urls.push(page.background.assetUrl);
+  for (const element of page.elements) {
+    if (element.kind === "image") urls.push(element.assetUrl);
+  }
+  return [...new Set(urls)];
+}
+
+/**
+ * Every image asset URL anywhere in a document.
+ *
+ * The server uses this to decide whether a URL an operator asked to download is
+ * one this design actually references. A design document carries
+ * customer-supplied URLs and the download is fetched server-side, so accepting a
+ * URL on the client's word would be a confused-deputy SSRF vector; membership of
+ * the stored document is the check that closes it.
+ */
+export function documentAssetUrls(document: DesignDocument): Set<string> {
+  const urls = new Set<string>();
+  for (const page of document.pages) {
+    if (page.background?.type === "image") urls.add(page.background.assetUrl);
+    for (const element of page.elements) {
+      if (element.kind === "image") urls.add(element.assetUrl);
+    }
+  }
+  return urls;
+}

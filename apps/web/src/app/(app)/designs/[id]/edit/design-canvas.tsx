@@ -681,11 +681,13 @@ export function DesignCanvas({
             );
           })}
           {/* The reserved strip on the back: pre-printed on the stock with the
-              Kudos logo and QR. Drawn *over* the elements, and near-opaque, so
-              it shows exactly what it shows in print — nothing. Both print paths
-              clip to the same line, so this is a preview of the outcome, not a
-              polite suggestion. Non-interactive: it must never eat a click meant
-              for an element sitting behind it. */}
+              Kudos logo and QR. Drawn *over* the elements, so the line is never
+              in doubt — but only half-opaque, because someone who has put
+              artwork down here needs to see what they are moving. Hiding it
+              outright says "gone" when what they need to know is "gone, and
+              here is what": the label and the panel warning carry that. Both
+              print paths clip to this same line. Non-interactive: it must never
+              eat a click meant for an element sitting behind it. */}
           {reservedTop !== null && (
             <Group listening={false}>
               <Rect
@@ -694,13 +696,13 @@ export function DesignCanvas({
                 width={CANVAS_WIDTH}
                 height={CANVAS_HEIGHT - reservedTop}
                 fill="#ffffff"
-                opacity={0.92}
+                opacity={0.55}
               />
               <Line
                 points={[0, reservedTop, CANVAS_WIDTH, reservedTop]}
-                stroke="#94a3b8"
-                strokeWidth={1}
-                dash={[4, 4]}
+                stroke="#dc2626"
+                strokeWidth={1.5}
+                dash={[8, 5]}
               />
               <Text
                 x={0}
@@ -710,7 +712,7 @@ export function DesignCanvas({
                 text={`Reserved — Kudos logo & QR (bottom ${BACK_RESERVED_FOOTER_MM}mm)`}
                 fontSize={14}
                 fontFamily="sans-serif"
-                fill="#64748b"
+                fill="#b91c1c"
               />
             </Group>
           )}

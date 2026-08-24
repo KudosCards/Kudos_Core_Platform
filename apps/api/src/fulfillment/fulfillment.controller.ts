@@ -32,6 +32,8 @@ import {
 import { DeliveryPollService } from "./delivery-poll.service";
 import { ArrivalNotificationService } from "./arrival-notification.service";
 import { PrintRunPdfService } from "./print-run-pdf.service";
+import { PrintRunArtworkService } from "./print-run-artwork.service";
+import { DownloadArtworkDto } from "./dto/download-artwork.dto";
 import { RenderPrintRunDto } from "./dto/render-print-run.dto";
 import { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { CalendarQueryDto } from "./dto/calendar-query.dto";
@@ -54,6 +56,7 @@ export class FulfillmentController {
     private readonly deliveryPoll: DeliveryPollService,
     private readonly arrivalNotifications: ArrivalNotificationService,
     private readonly printRunPdfService: PrintRunPdfService,
+    private readonly printRunArtworkService: PrintRunArtworkService,
   ) {}
 
   /** Lightweight check the web ops shell uses to gate its routes: a 200 means
@@ -133,6 +136,26 @@ export class FulfillmentController {
     );
     return new StreamableFile(pdf, {
       type: "application/pdf",
+      disposition: `attachment; filename="${filename}"`,
+    });
+  }
+
+  /** Stream the *original* uploaded file behind one of a card's images —
+   * untouched bytes, not a render. Everything else in the product shows a
+   * cover-cropped, footer-clipped card face, which is the wrong artefact when
+   * someone has to decide what to do about artwork that doesn't fit. Audited
+   * per card like every other print-run read. See ADR 0166. */
+  @Post("print-run/artwork")
+  async printRunArtwork(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body() dto: DownloadArtworkDto,
+  ): Promise<StreamableFile> {
+    const { bytes, contentType, filename } = await this.printRunArtworkService.downloadOriginal(
+      admin.userId,
+      dto,
+    );
+    return new StreamableFile(bytes, {
+      type: contentType,
       disposition: `attachment; filename="${filename}"`,
     });
   }

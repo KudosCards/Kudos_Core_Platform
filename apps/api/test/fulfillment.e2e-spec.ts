@@ -309,6 +309,57 @@ describe("Fulfillment (e2e)", () => {
       .expect(403);
   });
 
+  /**
+   * Downloading a customer's original artwork fetches a URL server-side, and
+   * design documents carry customer-supplied URLs — so an operator's click must
+   * never become an arbitrary server-side request. Two independent guards, and
+   * each is tested on a URL the *other* one would let through, because a test
+   * that both guards reject proves neither.
+   */
+  it("refuses an artwork URL on an allowed host that this design doesn't reference", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+    const order = await createPaidOrder(token);
+
+    // SUPABASE_URL's host, so the allowlist is satisfied and only membership of
+    // this card's own design can reject it — another account's asset, say.
+    const response = await request(app.getHttpServer())
+      .post("/fulfillment/print-run/artwork")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .send({
+        jobId: order.jobId,
+        assetUrl:
+          "https://example.supabase.co/storage/v1/object/public/design-assets/someone-else/private.png",
+      })
+      .expect(400);
+    // The message matters: without the membership check this URL passes the
+    // allowlist too, and the request only fails later at the fetch — a different
+    // 400 that would let this test pass while the guard was gone.
+    expect((response.body as { message: string }).message).toMatch(/isn't part of this card's design/i);
+  });
+
+  it("refuses an artwork URL pointing off our storage hosts", async () => {
+    const opsToken = await createOpsAdmin();
+    const { token } = await signUp();
+    const order = await createPaidOrder(token);
+
+    await request(app.getHttpServer())
+      .post("/fulfillment/print-run/artwork")
+      .set("Authorization", `Bearer ${opsToken}`)
+      .send({ jobId: order.jobId, assetUrl: "http://169.254.169.254/latest/meta-data/" })
+      .expect(400);
+  });
+
+  it("refuses the artwork download to a non-platform-admin", async () => {
+    const { token } = await signUp();
+    const order = await createPaidOrder(token);
+    await request(app.getHttpServer())
+      .post("/fulfillment/print-run/artwork")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ jobId: order.jobId, assetUrl: "https://example.com/a.png" })
+      .expect(403);
+  });
+
   it("returns personalised card designs for a print run, audited per card", async () => {
     const opsToken = await createOpsAdmin();
     const { token } = await signUp();
