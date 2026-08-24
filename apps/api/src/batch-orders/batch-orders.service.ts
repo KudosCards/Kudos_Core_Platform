@@ -31,6 +31,8 @@ import {
   type BatchOrderPreflight,
   type DesignDocument,
   type MergeContext,
+  type OccasionRedateCard,
+  type OccasionRedateSummary,
   type PreflightIssue,
 } from "@kudos/shared-types";
 import { MessagesService } from "../messages/messages.service";
@@ -100,24 +102,6 @@ export type BatchOrderDetail = Omit<OrderDetailPayload, "orderRecipients"> & {
 function notBeforeToday(dispatchDate: Date): Date {
   const soonest = sendNowDispatchDate();
   return dispatchDate.getTime() < soonest.getTime() ? soonest : dispatchDate;
-}
-
-/** One card's outcome from an occasion re-date, for the operator's report. */
-export interface OccasionRedateCard {
-  recipientName: string;
-  from: Date | null;
-  to: Date | null;
-  outcome: "redated" | "already-repaired" | "no-occasion";
-}
-
-/** What an occasion re-date did to an order — reported card by card, because
- *  "we changed 76 things" is not something anyone can check. */
-export interface OccasionRedateSummary {
-  orderNumber: number;
-  accountId: string;
-  cards: OccasionRedateCard[];
-  redated: number;
-  unchanged: number;
 }
 
 const RECONCILABLE_OCCASION_STATUSES = ["scheduled", "pending_approval", "approved"] as const;
