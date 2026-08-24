@@ -90,7 +90,54 @@ card?" is a guess, and a wrong guess here misdates real post.
   date or `useOccasionDates: false`. The composer only sends the flag when the
   sender opted out of reconciliation, so a hand-picked campaign send currently
   has no way to say "one date" other than choosing a delivery date.
-- **The composer's copy now understates what happens.** It says "send now" while
-  the server may spread the send across the year. Adding an explicit timing
-  choice to the composer is the follow-up, and is what makes this legible rather
-  than merely correct.
+- **The composer's copy understated what happens** — it said "send now" while
+  the server might spread the send across the year. Resolved by the amendment
+  below.
+
+
+## Amendment — the composer asks, instead of the server assuming
+
+Shipping the default without touching the composer left "Send now" meaning two
+incompatible things. A birthday send and a same-day campaign are both "now" to
+the sender, and only one of them should post today — so the picker was promising
+"Posted today, as soon as it's printed" on sends the server was about to spread
+across ten months. Worse, a hand-picked *campaign* send had no way to ask for one
+shared date at all: the explicit `useOccasionDates: false` was only sent when the
+sender opted out of reconciliation, which requires a segment.
+
+No wording fixes an option that has to mean two things. It needed a third.
+
+**The preflight now reports what would happen.** `BatchOrderPreflight` carries
+`occasionDated: { count, earliest, latest }`, computed with the same
+`findDatedOccasions` the send itself calls, over the same mailable subset the
+price covers. A preview computed a different way would eventually disagree with
+the send, which is worse than no preview — so an e2e asserts the previewed count
+and date span match what the send actually does, and fails if they drift.
+
+**The picker offers three options**, the first only when the selection has dated
+occasions to time to:
+
+| Option | Sends | Shown |
+| --- | --- | --- |
+| Time each card to its own occasion | *(nothing — the default)* | `count > 0` |
+| Send now — one date for everyone | `useOccasionDates: false` | always |
+| Schedule delivery | `deliverBy` | always |
+
+with real numbers rather than a description of the mechanism: "38 of 76 cards
+post ahead of that person's own occasion, spread from 2 Sep to 19 Jul. The other
+38 have no occasion on file and post today."
+
+None is pre-ticked; the choice stays a deliberate act (ADR 0159). The single-card
+send has no occasion matching and simply doesn't pass `occasionDating`, so it is
+unchanged.
+
+**Precedence lives in `occasionDatesInstruction`,** in shared-types rather than
+the composer, because three signals can each speak to timing — an event send's
+reconcile list, the "mark as handled" opt-out, and the picker — and getting their
+order wrong doesn't throw, it posts real cards on the wrong day months later. In
+shared-types it can be unit-tested; the web app has no test runner.
+
+One deliberate subtlety: until preflight resolves, the instruction is
+`undefined` rather than `false`. Taking "one date for everyone" literally before
+the sender has been shown that some cards *would* have been spread would quietly
+reinstate the bug this ADR exists to fix.

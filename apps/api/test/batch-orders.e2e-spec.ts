@@ -1068,6 +1068,50 @@ describe("Batch orders (e2e)", () => {
       expect(new Set(dispatches.map((d) => d.dispatchDate?.getTime())).size).toBe(2);
     });
 
+    it("previews the occasion dating the send will actually apply", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const alice = await contactWithBirthday(token, accountId, 40);
+      const bob = await contactWithBirthday(token, accountId, 90);
+      // No birthday on file — posts on the shared date, and must not be counted.
+      const carol = await createRecipientWithAddress(token);
+      const recipientIds = [alice.contactId, bob.contactId, carol];
+
+      const preflight = await request(app.getHttpServer())
+        .post("/batch-orders/preflight")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds, postageClass: "second_class" })
+        .expect(201);
+      const { occasionDated } = preflight.body as {
+        occasionDated: { count: number; earliest: string | null; latest: string | null };
+      };
+
+      expect(occasionDated.count).toBe(2);
+      expect(occasionDated.earliest).toBe(alice.occasionDate.toISOString().slice(0, 10));
+      expect(occasionDated.latest).toBe(bob.occasionDate.toISOString().slice(0, 10));
+
+      // The point of the preview is that it is not a second opinion. Send the
+      // same selection the same way the composer would and the outcome has to
+      // match it exactly — if these two ever drift, the composer is quietly
+      // lying to the sender about when their cards go.
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds, postageClass: "second_class" })
+        .expect(201);
+
+      const reused = await prisma.occasion.findMany({
+        where: { accountId, source: { not: "one_off_campaign" }, savedDesignId },
+        select: { occasionDate: true },
+        orderBy: { occasionDate: "asc" },
+      });
+      expect(reused).toHaveLength(occasionDated.count);
+      expect(reused[0]!.occasionDate.toISOString().slice(0, 10)).toBe(occasionDated.earliest);
+      expect(reused[reused.length - 1]!.occasionDate.toISOString().slice(0, 10)).toBe(
+        occasionDated.latest,
+      );
+    });
+
     it("still posts everything today for a campaign that opts out", async () => {
       const { token, accountId } = await signUp();
       const savedDesignId = await createSavedDesign(token);
