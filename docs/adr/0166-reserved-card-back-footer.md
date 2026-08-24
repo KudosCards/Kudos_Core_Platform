@@ -87,6 +87,29 @@ Measuring from the trim can only ever over-reserve. On A6 the two are the same
 edge; on A5 the design is centred in the trim, so the band lands ~0.75 mm high —
 in the safe direction.
 
+## Amendment — reviewing what the band hides
+
+Clipping the band in every preview made a full-bleed back impossible to review:
+the part being hidden is exactly the part an operator needs to look at, so
+"is the customer's artwork being cut, and by how much?" had no answer anywhere
+in the product. The first real case was the advert-grid back this ADR was
+written for — its bottom row simply vanished from the print preview.
+
+`CardFacePreview` therefore takes `reservedFooter: "clip" | "reveal"`.
+`clip` stays the default everywhere, because a preview should show what prints.
+`reveal` draws the artwork in full and marks the band instead — a light tint and
+a dashed rule on the line. The print-run overlay offers it as an **As printed /
+Full artwork** toggle, and disables browser print while it is on: that path
+rasterises what is on screen, so a revealed band must never reach paper. The
+server-side PDF is unaffected by the toggle, which is the point of enforcing
+this in the print engine rather than the UI.
+
+The editor's band was softened from near-opaque to half-opaque for the same
+reason. Hiding a customer's artwork tells them "gone" when what they need to
+know is "gone, and here is what" — the label on the band and the panel warning
+carry that message in words; the artwork underneath should stay legible enough
+to move.
+
 ## Consequences
 
 - 30 mm is a single constant. If the stock changes, one number moves and the

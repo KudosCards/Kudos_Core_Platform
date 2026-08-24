@@ -3,6 +3,7 @@
 import type { CardSize, DesignDocument, DesignPage } from "@kudos/shared-types";
 import {
   applyMergeTokens,
+  BACK_RESERVED_FOOTER_MM,
   CARD_SIZES,
   cardSizeLabel,
   collectPrintImageTargets,
@@ -127,6 +128,11 @@ export function PrintRunOverlay({
   defaultSize?: CardSize;
 }) {
   const [size, setSize] = useState<CardSize>(defaultSize);
+  // Whether the back's reserved strip hides the artwork under it (what prints)
+  // or is drawn over it (what the customer supplied). Defaults to what prints;
+  // "Full artwork" exists because reviewing a full-bleed back is impossible when
+  // the hidden part is exactly the part in question. See ADR 0166.
+  const [reservedFooter, setReservedFooter] = useState<"clip" | "reveal">("clip");
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   // Pre-flight: how many source images are too low-resolution for print at this
@@ -220,6 +226,10 @@ export function PrintRunOverlay({
     }));
   });
 
+  // Whether this run has a back face at all — the toggle is meaningless without
+  // one, and a dead control invites a support ticket.
+  const hasBack = faces.some((entry) => entry.face === "back");
+
   return createPortal(
     <div data-print-run className="fixed inset-0 z-[60] overflow-auto bg-white">
       {/* Physical page size for print — drives the PDF/paper page. Injected so
@@ -235,6 +245,14 @@ export function PrintRunOverlay({
         {downloadError && (
           <p className="order-last basis-full text-sm text-red-600" role="alert">
             {downloadError}
+          </p>
+        )}
+        {reservedFooter === "reveal" && (
+          <p className="order-last basis-full text-sm text-black/70" role="status">
+            Showing the customer&apos;s full uploaded artwork. Everything below the red dashed line
+            falls in the bottom {BACK_RESERVED_FOOTER_MM}mm that is already printed on the card with
+            the Kudos logo and QR, so it will not be printed. The print-ready PDF is unaffected by
+            this view.
           </p>
         )}
         {lowResCount !== null && lowResCount > 0 && (
@@ -268,6 +286,42 @@ export function PrintRunOverlay({
             ))}
           </div>
           <span className="hidden text-xs text-black/50 sm:inline">{cardSizeLabel(size)}</span>
+          {/* Back-artwork view. Only offered when the run actually has a back to
+              look at, so it isn't a permanently inert control on a run of
+              front-only cards. */}
+          {hasBack && (
+            <div
+              className="flex items-center overflow-hidden rounded-full border border-black/20"
+              role="group"
+              aria-label="Back artwork view"
+            >
+              {(
+                [
+                  ["clip", "As printed"],
+                  ["reveal", "Full artwork"],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setReservedFooter(mode)}
+                  aria-pressed={reservedFooter === mode}
+                  title={
+                    mode === "clip"
+                      ? "Show the back exactly as it will print — the bottom 30mm is pre-printed with the Kudos logo and QR"
+                      : "Show the customer's full uploaded artwork, with the reserved strip marked"
+                  }
+                  className={`px-3 py-1.5 text-sm font-medium ${
+                    reservedFooter === mode
+                      ? "bg-black text-white"
+                      : "bg-white text-black hover:bg-black/5"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             onClick={() => void downloadPdf()}
@@ -280,8 +334,13 @@ export function PrintRunOverlay({
           <button
             type="button"
             onClick={() => window.print()}
-            title="Print from the browser (rasterised, no bleed or crop marks)"
-            className="rounded-full border border-black/20 px-4 py-1.5 text-sm text-black hover:bg-black/5"
+            disabled={reservedFooter === "reveal"}
+            title={
+              reservedFooter === "reveal"
+                ? "Switch back to \u201cAs printed\u201d first — browser print rasterises what is on screen, and this view deliberately shows artwork that must not be printed"
+                : "Print from the browser (rasterised, no bleed or crop marks)"
+            }
+            className="rounded-full border border-black/20 px-4 py-1.5 text-sm text-black hover:bg-black/5 disabled:opacity-40"
           >
             Browser print
           </button>
@@ -320,6 +379,7 @@ export function PrintRunOverlay({
                 // The run's chosen trim, so the back's reserved footer lands on
                 // the right line — 30mm is a different fraction of an A5.
                 size={size}
+                reservedFooter={reservedFooter}
               />
             </div>
           </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type Konva from "konva";
-import { Stage, Layer, Rect, Text, Group, Image as KonvaImage } from "react-konva";
+import { Stage, Layer, Rect, Text, Group, Line, Image as KonvaImage } from "react-konva";
 import useImage from "use-image";
 import type { CardSize, DesignDocument, DesignElement, DesignPage } from "@kudos/shared-types";
 import {
@@ -117,6 +117,7 @@ export function CardFacePreview({
   qrUrl,
   pixelRatio,
   size = DEFAULT_CARD_SIZE,
+  reservedFooter = "clip",
 }: {
   document: DesignDocument;
   width?: number;
@@ -136,19 +137,35 @@ export function CardFacePreview({
   /** Trim size this face will be printed at. Only affects where the back's
    * reserved footer falls (30mm is a different fraction of an A6 than an A5). */
   size?: CardSize;
+  /**
+   * How the back's reserved footer is treated.
+   *
+   * `clip` (default) hides whatever falls in it — the truth about what prints.
+   * `reveal` draws the artwork in full and marks the band instead, for someone
+   * who needs to see what a customer actually supplied: under `clip` there is no
+   * way to review a full-bleed back, because the part being hidden is exactly
+   * the part you need to look at. Never the default — a preview should show what
+   * prints unless it is asked otherwise.
+   */
+  reservedFooter?: "clip" | "reveal";
 }) {
   const scale = width / CANVAS_WIDTH;
 
   // The bottom strip of the back is pre-printed on our card stock with the Kudos
   // logo and QR, so nothing authored may show there — see card-format.ts
-  // BACK_RESERVED_FOOTER_MM. Clipped here, in the one read-only renderer every
-  // preview and the browser print overlay share, so what anyone is shown matches
-  // what the server-side PDF engine will actually lay down (print-pdf/render.ts
+  // BACK_RESERVED_FOOTER_MM. Clipped by default, in the one read-only renderer
+  // every preview and the browser print overlay share, so what anyone is shown
+  // matches what the server-side PDF engine will lay down (print-pdf/render.ts
   // applies the identical clip). The clip covers the page background too: a
   // full-bleed image on the back would otherwise cover the branding.
+  //
+  // `reservedFooter: "reveal"` turns the clip off and marks the band instead —
+  // the only way to review artwork whose lost part is the part being judged.
+  // The print engine is unaffected either way; it is the actual guarantee.
+  const reservedTop = face === "back" ? backReservedFooterTop(size) : null;
   const clip =
-    face === "back"
-      ? { x: 0, y: 0, width: CANVAS_WIDTH, height: backReservedFooterTop(size) }
+    reservedTop !== null && reservedFooter === "clip"
+      ? { x: 0, y: 0, width: CANVAS_WIDTH, height: reservedTop }
       : undefined;
   const front =
     document.pages.find((page) => page.name === face) ??
@@ -242,6 +259,28 @@ export function CardFacePreview({
               return <QrNode key={element.id} element={element} qrUrl={qrUrl} />;
             })}
           </Group>
+          {/* Reveal mode: nothing is hidden, so the band has to be *marked* or
+              there is no way to tell which part of the artwork won't print. A
+              tint light enough to read the artwork through, and a rule on the
+              line itself. */}
+          {reservedTop !== null && reservedFooter === "reveal" && (
+            <Group listening={false}>
+              <Rect
+                x={0}
+                y={reservedTop}
+                width={CANVAS_WIDTH}
+                height={CANVAS_HEIGHT - reservedTop}
+                fill="#ffffff"
+                opacity={0.35}
+              />
+              <Line
+                points={[0, reservedTop, CANVAS_WIDTH, reservedTop]}
+                stroke="#dc2626"
+                strokeWidth={1.5}
+                dash={[8, 5]}
+              />
+            </Group>
+          )}
         </Layer>
       </Stage>
     </>
