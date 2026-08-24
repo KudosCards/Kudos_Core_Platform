@@ -6,6 +6,8 @@ import { Stage, Layer, Text, Rect, Line, Group, Image as KonvaImage, Transformer
 import useImage from "use-image";
 import type { DesignElement, DesignPage, SnapLine } from "@kudos/shared-types";
 import {
+  BACK_RESERVED_FOOTER_MM,
+  backReservedFooterTop,
   bakeScale,
   CARD_HEIGHT,
   CARD_SAFE_MARGIN,
@@ -382,6 +384,7 @@ export function DesignCanvas({
   onElementChange,
   onDeselect,
   onSelectedOverflowChange,
+  onReservedFooterOverlapChange,
 }: {
   page: DesignPage;
   selectedElementId: string | null;
@@ -393,6 +396,11 @@ export function DesignCanvas({
   /** Fires with whether the selected text element overflows the safe area, so
    * the editor panel can warn. */
   onSelectedOverflowChange?: (overflowing: boolean) => void;
+  /** Fires with whether *anything* on this face reaches into the back's reserved
+   * footer, so the editor can warn once for the whole face rather than only for
+   * the current selection — a back filled with a grid of adverts is the case
+   * this exists for, and every tile in it is equally wrong. */
+  onReservedFooterOverlapChange?: (overlapping: boolean) => void;
 }) {
   // The card is authored at a fixed 450×634, but on a phone that's wider than
   // the viewport. Scale the whole Stage down to fit the container so the entire
@@ -434,6 +442,16 @@ export function DesignCanvas({
 
   const reportOverflow = onSelectedOverflowChange ?? (() => {});
 
+  // The bottom strip of the back is pre-printed on our card stock (Kudos logo +
+  // QR), so it is not the customer's to design on — see card-format.ts
+  // BACK_RESERVED_FOOTER_MM. Null on every other face, which is entirely theirs.
+  //
+  // Deliberately the default (A6) size: ops picks the trim per print run, so the
+  // editor can't know it, and the A6 band is the taller of the two in design
+  // units (128.5 vs 90.6) — so guiding against A6 is safe for a design that ends
+  // up printed at A5, never the other way round.
+  const reservedTop = page.name === "back" ? backReservedFooterTop() : null;
+
   // Bumps when web fonts finish loading; used to re-measure text and redraw the
   // canvas so a chosen font paints for real instead of the fallback.
   const fontsTick = useFontsReady();
@@ -457,6 +475,25 @@ export function DesignCanvas({
     layerRef.current?.batchDraw();
   }, [fontsTick]);
 
+  // Report whether anything on this face reaches into the reserved strip.
+  // Measured from the rendered nodes rather than the stored coordinates because
+  // a text element's height depends on wrapping and on which font has actually
+  // loaded — the stored box would say "fits" for text that visibly doesn't.
+  // Re-measured on every element change and once fonts settle.
+  useLayoutEffect(() => {
+    if (!onReservedFooterOverlapChange) return;
+    const layer = layerRef.current;
+    if (!layer || reservedTop === null) {
+      onReservedFooterOverlapChange(false);
+      return;
+    }
+    const overlaps = layer.find(".element").some((node) => {
+      const box = node.getClientRect({ relativeTo: layer });
+      return box.height > 0 && box.y + box.height > reservedTop;
+    });
+    onReservedFooterOverlapChange(overlaps);
+  }, [onReservedFooterOverlapChange, page.elements, reservedTop, fontsTick]);
+
   const selected = page.elements.find((el) => el.id === selectedElementId) ?? null;
   // Text + QR scale uniformly (font/box together, square QR). A shape resizes
   // freely, so a rectangle/ellipse/line can be stretched into any proportion. An
@@ -478,6 +515,10 @@ export function DesignCanvas({
       const cardLines = cardSnapLines();
       const xs = [...cardLines.x];
       const ys = [...cardLines.y];
+      // Let an element click flush against the top of the reserved strip, the
+      // same way it clicks to the safe margin — the boundary you're asked to
+      // respect should be the easiest one to land on.
+      if (reservedTop !== null) ys.push(reservedTop);
       // Every other element contributes its left/centre/right and top/middle/
       // bottom as snap lines, so elements align to each other, not just the card.
       layer.find(".element").forEach((node) => {
@@ -636,6 +677,40 @@ export function DesignCanvas({
               />
             );
           })}
+          {/* The reserved strip on the back: pre-printed on the stock with the
+              Kudos logo and QR. Drawn *over* the elements, and near-opaque, so
+              it shows exactly what it shows in print — nothing. Both print paths
+              clip to the same line, so this is a preview of the outcome, not a
+              polite suggestion. Non-interactive: it must never eat a click meant
+              for an element sitting behind it. */}
+          {reservedTop !== null && (
+            <Group listening={false}>
+              <Rect
+                x={0}
+                y={reservedTop}
+                width={CANVAS_WIDTH}
+                height={CANVAS_HEIGHT - reservedTop}
+                fill="#ffffff"
+                opacity={0.92}
+              />
+              <Line
+                points={[0, reservedTop, CANVAS_WIDTH, reservedTop]}
+                stroke="#94a3b8"
+                strokeWidth={1}
+                dash={[4, 4]}
+              />
+              <Text
+                x={0}
+                y={reservedTop + 14}
+                width={CANVAS_WIDTH}
+                align="center"
+                text={`Reserved — Kudos logo & QR (bottom ${BACK_RESERVED_FOOTER_MM}mm)`}
+                fontSize={14}
+                fontFamily="sans-serif"
+                fill="#64748b"
+              />
+            </Group>
+          )}
           {/* Alignment guides — thin lines that appear while an element's edge or
               centre lines up with the card or another element. Non-interactive. */}
           {guides.map((g) =>

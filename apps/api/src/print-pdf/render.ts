@@ -18,6 +18,7 @@ import {
   CARD_HEIGHT,
   CARD_WIDTH,
   DEFAULT_CARD_SIZE,
+  backReservedFooterTop,
   textWrapWidth,
   type CardSize,
   type DesignDocument,
@@ -120,7 +121,7 @@ export async function renderRunPdf(faces: PrintFaceInput[], options: RenderRunOp
   for (const entry of faces) {
     doc.addPage({ size: [geometry.pageWidthPt, geometry.pageHeightPt], margin: 0 });
      
-    await renderFace(doc, entry, geometry, options.imageResolver);
+    await renderFace(doc, entry, geometry, size, options.imageResolver);
     if (withCropMarks) drawCropMarks(doc, geometry);
   }
 
@@ -133,10 +134,39 @@ async function renderFace(
   doc: PDFKit.PDFDocument,
   entry: PrintFaceInput,
   geometry: FaceGeometry,
+  size: CardSize,
   imageResolver?: ImageResolver,
 ): Promise<void> {
   const page = pageForFace(entry.document, entry.face);
   const elements = page?.elements ?? [];
+
+  // The back's bottom strip is already printed on the stock — the Kudos logo and
+  // QR — so nothing the customer authored may be drawn over it.
+  //
+  // Enforced here rather than only in the editor because the editor is a
+  // convenience and this is the guarantee: a design saved before the rule
+  // existed, or one built by any other route, still cannot reach the branding.
+  // Clipped rather than rejected so one stray element costs its own bottom edge,
+  // not the customer's whole card.
+  //
+  // The band is derived from the same shared `backReservedFooterTop` the editor
+  // guide uses, so what the customer is shown and what the printer enforces can
+  // never disagree. Measured from the *design's* bottom rather than the trim's,
+  // which are the same edge on A6 and 0.75 mm apart on A5 (the design is
+  // centred there) — so on A5 print reserves a hair more than the physical
+  // 30 mm, never less.
+  const reservedFromPt =
+    entry.face === "back"
+      ? geometry.translateYPt + backReservedFooterTop(size) * geometry.scalePtPerUnit
+      : null;
+
+  // Applied at page level, before the background: a background bleeds to the
+  // page edge, so clipping only the design space would let a full-bleed image
+  // on the back print straight over the logo.
+  if (reservedFromPt !== null) {
+    doc.save();
+    doc.rect(0, 0, geometry.pageWidthPt, reservedFromPt).clip();
+  }
 
   // --- Page level (absolute points): white base, then background, both bleeding
   // to the page edge. ---
@@ -165,6 +195,10 @@ async function renderFace(
   }
 
   doc.restore();
+
+  if (reservedFromPt !== null) {
+    doc.restore();
+  }
 }
 
 /** Dispatch one element to its drawer. */
