@@ -17,6 +17,7 @@ import {
   hasMergeTokens,
   hasQrElement,
   linkedMessagePageId,
+  occasionDatesInstruction,
   POSTAGE_MINOR as SHARED_POSTAGE_MINOR,
   ukPostcodeRegex,
 } from "@kudos/shared-types";
@@ -149,7 +150,8 @@ export function BulkSendClient({
     initialDesignId || designs[0]?.id || "",
   );
   const [postageClass, setPostageClass] = useState<"second_class" | "first_class">("second_class");
-  // Send now, or pay now and schedule delivery for a chosen date (ADR 0130).
+  // Send now, time each card to its own occasion, or pay now and schedule
+  // delivery for a chosen date (ADR 0130, ADR 0167).
   // Unselected by default — the sender must actively choose "Send now" or
   // "Schedule delivery" before paying (see ADR 0159), so nothing goes out on an
   // absent-minded default.
@@ -406,12 +408,16 @@ export function BulkSendClient({
                   occasionId: m.occasionId,
                 }))
               : undefined,
-          // Opting the toggle off is a deliberate "send this as well as their
-          // birthday card" — so say so explicitly, or the server's default would
-          // date by the occasion and consume it anyway. Only sent when there was
-          // something to opt out of: a send with no matches at all is the
-          // hand-picked case, which should take the default. See ADR 0107/0119.
-          useOccasionDates: reconcileMatches.length > 0 && !markHandled ? false : undefined,
+          // Whether to date each card by its own recipient's occasion —
+          // reconciling the sender's timing choice, the "mark as handled" toggle
+          // and the server's default. See occasionDatesInstruction.
+          useOccasionDates: occasionDatesInstruction({
+            isEventSend,
+            hasReconcileMatches: reconcileMatches.length > 0,
+            markHandled,
+            preflightReady: preflight !== null,
+            timingMode: effectiveTiming?.mode ?? null,
+          }),
         }),
       });
       // …then hand off to the same Stripe checkout every other order uses.
@@ -429,6 +435,15 @@ export function BulkSendClient({
       setBusy(false);
     }
   }
+
+  // What the server would do to this selection's timing, straight from the
+  // preflight, so the picker can say "38 of 76, from 2 Sep to 19 Jul" rather
+  // than describing the mechanism. Null until preflight lands for the current
+  // selection — see occasionDatesInstruction for why that matters.
+  const occasionDating =
+    preflight && preflight.occasionDated.count > 0
+      ? { ...preflight.occasionDated, total: sendable.length }
+      : null;
 
   // A send-timing choice is required — the picker starts unselected so it can't
   // be left on a default (ADR 0159).
@@ -884,6 +899,7 @@ export function BulkSendClient({
                   postageClass={postageClass}
                   value={timing}
                   onChange={setTiming}
+                  occasionDating={occasionDating}
                 />
                 {timing === null && sendable.length > 0 && (
                   <p className="mt-2 text-xs text-muted">Choose when to send to continue.</p>

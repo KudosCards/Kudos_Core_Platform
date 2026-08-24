@@ -24,6 +24,27 @@ export interface PreflightBucket {
   sample: PreflightIssue[];
 }
 
+/**
+ * How many of this send's cards would post timed to their own recipient's dated
+ * occasion rather than one shared date, and the span those dates cover.
+ *
+ * Occasion dating is the default for a send with no delivery date (ADR 0167), so
+ * without this the composer could not tell a sender whether "send now" means
+ * today or means spread across ten months — which is exactly the surprise the
+ * default was introduced to prevent. Computed with the same lookup the send
+ * itself uses, so the preview and the outcome cannot disagree.
+ *
+ * Counted over the *mailable* recipients only, matching `price`: a contact with
+ * no valid address gets no card, so counting them would overstate the spread.
+ */
+export interface PreflightOccasionDating {
+  count: number;
+  /** ISO `YYYY-MM-DD` of the soonest and furthest matched occasion, or null when
+   * nothing matched. */
+  earliest: string | null;
+  latest: string | null;
+}
+
 export interface BatchOrderPreflight {
   /** Recipients in the selection (that belong to the account). */
   total: number;
@@ -44,4 +65,47 @@ export interface BatchOrderPreflight {
    * estimate. Its `cardCount` can be lower than `total` when contacts still need
    * an address. */
   price: PricingBreakdown;
+  /** What "no delivery date" would actually do to this selection's timing. */
+  occasionDated: PreflightOccasionDating;
+}
+
+/** The sender's timing choice, as the composer's picker reports it. `null` means
+ * they haven't chosen yet. */
+export type SendTimingMode = "now" | "occasion" | "scheduled";
+
+/**
+ * The `useOccasionDates` instruction a bulk send should carry, or undefined to
+ * leave it to the server's default.
+ *
+ * Occasion dating is the default for a send with no delivery date (ADR 0167), so
+ * this decides when to *override* it, reconciling three signals that can each
+ * speak to timing:
+ *
+ * - A pure event send is dated by its reconcile list and never shows the timing
+ *   picker, so leave the default alone.
+ * - The sender turned off "mark these as handled" — a deliberate "send this as
+ *   well as their occasion card" (ADR 0107) — so don't let the server find that
+ *   occasion by another route and consume it anyway.
+ * - Otherwise the timing choice decides, but only once preflight has told us
+ *   what the alternative was. Taking "one date for everyone" literally before we
+ *   have shown the sender that some cards *would* have been spread would quietly
+ *   undo the very default the picker exists to expose.
+ *
+ * Lives here rather than in the composer so the precedence can be tested: it is
+ * the one piece of this flow where getting the order wrong sends real post on
+ * the wrong day, and the web app has no test runner.
+ */
+export function occasionDatesInstruction(input: {
+  isEventSend: boolean;
+  hasReconcileMatches: boolean;
+  markHandled: boolean;
+  preflightReady: boolean;
+  timingMode: SendTimingMode | null;
+}): boolean | undefined {
+  if (input.isEventSend) return undefined;
+  if (input.hasReconcileMatches && !input.markHandled) return false;
+  if (!input.preflightReady || input.timingMode === null) return undefined;
+  if (input.timingMode === "occasion") return true;
+  if (input.timingMode === "now") return false;
+  return undefined;
 }

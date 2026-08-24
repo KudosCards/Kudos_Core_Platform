@@ -25,6 +25,7 @@ import {
   computeDispatchDate,
   computePricingBreakdown,
   deliverByWindow,
+  isoDay,
   sendNowDispatchDate,
   startOfUtcDay,
   unresolvedMergeTokens,
@@ -589,6 +590,22 @@ export class BatchOrdersService {
       if (clean) ready += 1;
     }
 
+    // What "no delivery date" would actually do to this selection's timing.
+    // Occasion dating is the default (ADR 0167), so a sender picking "send now"
+    // needs to know whether that means today or means spread across ten months.
+    // The same lookup bulkSend uses, over the same mailable subset the price
+    // covers — a preview computed a different way would eventually disagree with
+    // the send, which is worse than no preview at all.
+    const mailableIds = recipients.filter(hasMailableAddress).map((r) => r.id);
+    const dated = [...(await this.findDatedOccasions(accountId, mailableIds)).values()]
+      .map((match) => match.occasionDate)
+      .sort((a, b) => a.getTime() - b.getTime());
+    const occasionDated = {
+      count: dated.length,
+      earliest: dated.length > 0 ? isoDay(dated[0]!) : null,
+      latest: dated.length > 0 ? isoDay(dated[dated.length - 1]!) : null,
+    };
+
     const total = recipients.length;
     const cardPer = computeCardPriceMinor(entitlement.cardDiscountPercent);
     const postagePer = computePostageMinor(dto.postageClass);
@@ -607,6 +624,7 @@ export class BatchOrdersService {
       unresolvedTokens: { count: count.unresolvedTokens, sample: sample.unresolvedTokens },
       duplicate: { count: count.duplicate, sample: sample.duplicate },
       price,
+      occasionDated,
     };
   }
 
