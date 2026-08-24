@@ -952,6 +952,163 @@ describe("Batch orders (e2e)", () => {
         .expect(201);
     });
 
+    /** A contact with a real dated occasion ahead of them, as a list-style send
+     *  would find: created directly, with no segment involved. */
+    async function contactWithBirthday(
+      token: string,
+      accountId: string,
+      daysAhead: number,
+    ): Promise<{ contactId: string; occasionId: string; occasionDate: Date }> {
+      const contactId = await createRecipientWithAddress(token);
+      const occasionDate = new Date();
+      occasionDate.setUTCDate(occasionDate.getUTCDate() + daysAhead);
+      occasionDate.setUTCHours(0, 0, 0, 0);
+      const occasion = await prisma.occasion.create({
+        data: {
+          accountId,
+          recipientId: contactId,
+          type: "birthday",
+          source: "recurring_per_recipient",
+          occasionDate,
+          dispatchDate: occasionDate,
+          status: "scheduled",
+          dispatchOption: "auto_send",
+          postageClass: "second_class",
+        },
+      });
+      return { contactId, occasionId: occasion.id, occasionDate };
+    }
+
+    it("posts on each recipient's own date when asked, with no reconcile list from the client", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      // Two contacts with birthdays months apart. This is the shape that broke:
+      // picked from a list rather than a segment, so the composer sends no
+      // `reconcile` and every card used to be dated today.
+      const alice = await contactWithBirthday(token, accountId, 40);
+      const bob = await contactWithBirthday(token, accountId, 90);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [alice.contactId, bob.contactId],
+          postageClass: "second_class",
+          useOccasionDates: true,
+          // Deliberately no `reconcile` — the server finds the occasions itself.
+        })
+        .expect(201);
+
+      // Their own birthday occasions were reused, not superseded by one-offs.
+      expect(
+        await prisma.occasion.count({ where: { accountId, source: "one_off_campaign" } }),
+      ).toBe(0);
+
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      for (const person of [alice, bob]) {
+        const occasion = await prisma.occasion.findUniqueOrThrow({
+          where: { id: person.occasionId },
+        });
+        expect(occasion.savedDesignId).toBe(savedDesignId);
+        // The whole point: posted ahead of their own birthday, not today.
+        expect(occasion.dispatchDate).not.toBeNull();
+        expect(occasion.dispatchDate!.getTime()).toBeGreaterThan(today.getTime());
+        expect(occasion.dispatchDate!.getTime()).toBeLessThanOrEqual(person.occasionDate.getTime());
+      }
+
+      // And the two cards post on different days, since the birthdays differ —
+      // the symptom was 76 cards all landing on one date.
+      const dates = await prisma.occasion.findMany({
+        where: { accountId },
+        select: { dispatchDate: true },
+      });
+      const distinct = new Set(dates.map((d) => d.dispatchDate?.getTime()));
+      expect(distinct.size).toBe(2);
+    });
+
+    it("still posts everything today when occasion dating isn't asked for", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      // A genuine campaign — "we've moved premises" — to contacts who happen to
+      // have birthdays coming. Those must NOT hijack the send's timing.
+      const alice = await contactWithBirthday(token, accountId, 40);
+      const bob = await contactWithBirthday(token, accountId, 90);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [alice.contactId, bob.contactId],
+          postageClass: "second_class",
+        })
+        .expect(201);
+
+      // Fresh one-off occasions for both, dated now — their birthdays untouched.
+      const oneOffs = await prisma.occasion.findMany({
+        where: { accountId, source: "one_off_campaign" },
+        select: { dispatchDate: true },
+      });
+      expect(oneOffs).toHaveLength(2);
+      const distinct = new Set(oneOffs.map((o) => o.dispatchDate?.getTime()));
+      expect(distinct.size).toBe(1);
+
+      for (const id of [alice.occasionId, bob.occasionId]) {
+        const untouched = await prisma.occasion.findUniqueOrThrow({ where: { id } });
+        expect(untouched.savedDesignId).toBeNull();
+        expect(untouched.status).toBe("scheduled");
+      }
+    });
+
+    it("refuses a send that asks for both a shared delivery date and occasion dates", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const alice = await contactWithBirthday(token, accountId, 40);
+      const deliverBy = new Date();
+      deliverBy.setUTCDate(deliverBy.getUTCDate() + 30);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [alice.contactId],
+          postageClass: "second_class",
+          useOccasionDates: true,
+          deliverBy: deliverBy.toISOString().slice(0, 10),
+        })
+        .expect(400);
+    });
+
+    it("never dates a card in the past, even for a birthday that is nearly here", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      // Tomorrow: back-computing the postage lead from it lands before today.
+      const soon = await contactWithBirthday(token, accountId, 1);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [soon.contactId],
+          postageClass: "second_class",
+          useOccasionDates: true,
+        })
+        .expect(201);
+
+      // Due now, not overdue on arrival — a card born into the ops overdue band
+      // is a false SLA alarm for an order placed a moment ago.
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      const occasion = await prisma.occasion.findUniqueOrThrow({
+        where: { id: soon.occasionId },
+      });
+      expect(occasion.dispatchDate!.getTime()).toBeGreaterThanOrEqual(today.getTime());
+    });
+
     it("reuses the natural birthday occasion as the send record when reconciled", async () => {
       const { token, accountId } = await signUp();
       const savedDesignId = await createSavedDesign(token);
@@ -991,9 +1148,9 @@ describe("Batch orders (e2e)", () => {
       // account, and no one_off_campaign send occasion exists.
       const occasions = await prisma.occasion.findMany({ where: { accountId } });
       expect(occasions).toHaveLength(1);
-      expect(await prisma.occasion.count({ where: { accountId, source: "one_off_campaign" } })).toBe(
-        0,
-      );
+      expect(
+        await prisma.occasion.count({ where: { accountId, source: "one_off_campaign" } }),
+      ).toBe(0);
 
       // The reused occasion keeps its birthday classification AND its own
       // birthday date — the card's calendar event sits on the real birthday, not

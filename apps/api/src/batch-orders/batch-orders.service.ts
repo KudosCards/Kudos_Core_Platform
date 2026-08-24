@@ -89,6 +89,19 @@ export type BatchOrderDetail = Omit<OrderDetailPayload, "orderRecipients"> & {
 /** Occasion statuses that can still be sent — a segment send only supersedes a
  * natural occasion still in one of these, so it never un-does an in-flight send.
  * See docs/adr/0107-occasion-reconciliation.md. */
+/**
+ * A post-by date can never be in the past — you cannot post a card yesterday.
+ *
+ * Back-computing from a date that's nearly here (a birthday tomorrow, with three
+ * working days of postage lead) lands before today. Stored as-is, the card is
+ * born into the ops "overdue" band, which is an SLA-breach signal — a false
+ * alarm for an order placed a moment ago. It is due *now*, not late.
+ */
+function notBeforeToday(dispatchDate: Date): Date {
+  const soonest = sendNowDispatchDate();
+  return dispatchDate.getTime() < soonest.getTime() ? soonest : dispatchDate;
+}
+
 const RECONCILABLE_OCCASION_STATUSES = ["scheduled", "pending_approval", "approved"] as const;
 
 /** A card can only be posted to a contact with a complete, valid UK address. */
@@ -328,6 +341,14 @@ export class BatchOrdersService {
     // calendar event sits on the actual birthday, keeps its birthday
     // classification, and no duplicate occasion is created. Validated +
     // account-scoped. See docs/adr/0119.
+    // Two different answers to "when does this post?" — refuse rather than pick
+    // one silently, which is how the original bug read to the sender.
+    if (dto.useOccasionDates && dto.deliverBy) {
+      throw new BadRequestException(
+        "Choose either a delivery date for the whole send or each recipient's own occasion date — not both.",
+      );
+    }
+
     const reconciledByRecipient = await this.resolveReconcile(accountId, dto);
 
     const byId = new Map(recipients.map((r) => [r.id, r]));
@@ -354,7 +375,9 @@ export class BatchOrdersService {
     if (reconciledByRecipient.size > 0) {
       const idsByDispatch = new Map<number, string[]>();
       for (const { occasionId, occasionDate } of reconciledByRecipient.values()) {
-        const dispatchDate = computeDispatchDate(occasionDate, POSTAGE_LEAD_DAYS[dto.postageClass]);
+        const dispatchDate = notBeforeToday(
+          computeDispatchDate(occasionDate, POSTAGE_LEAD_DAYS[dto.postageClass]),
+        );
         const key = dispatchDate.getTime();
         const ids = idsByDispatch.get(key) ?? [];
         ids.push(occasionId);
@@ -583,6 +606,80 @@ export class BatchOrdersService {
    * directly, so the send keeps the birthday's own date and classification.
    */
   private async resolveReconcile(
+    accountId: string,
+    dto: BulkSendDto,
+  ): Promise<Map<string, { occasionId: string; occasionDate: Date }>> {
+    const result = await this.resolveClientReconcile(accountId, dto);
+
+    // Server-side matching, and the reason this method exists in two halves.
+    //
+    // The client half below only ever fires when the composer was seeded from a
+    // segment — that is the only place it builds a `reconcile` list. So a send
+    // to the same people picked from a *list*, or by hand, arrived with nothing
+    // to reconcile and every card was dated today, even though each recipient
+    // had a birthday on file. Same contacts, same birthdays, different answer
+    // depending on which button started the flow.
+    //
+    // When the sender asks for occasion dating, the occasions are therefore
+    // found here rather than taken on trust from the browser. The API already
+    // holds them; it never needed telling.
+    if (!dto.useOccasionDates) return result;
+
+    const unmatched = dto.recipientIds.filter((id) => !result.has(id));
+    if (unmatched.length === 0) return result;
+
+    for (const [recipientId, match] of await this.findDatedOccasions(accountId, unmatched)) {
+      result.set(recipientId, match);
+    }
+    return result;
+  }
+
+  /**
+   * The eligible dated occasion for each of these recipients, newest-first-wins
+   * on the soonest upcoming date.
+   *
+   * Deliberately the same eligibility the explicit path applies — account-owned,
+   * not already a one-off campaign, in a reconcilable status — so a card dated
+   * by this route and one dated by the composer can never disagree. Occasions
+   * already in the past are skipped: posting a card for a birthday that has been
+   * and gone would land it as overdue the moment it was ordered.
+   */
+  private async findDatedOccasions(
+    accountId: string,
+    recipientIds: string[],
+  ): Promise<Map<string, { occasionId: string; occasionDate: Date }>> {
+    const result = new Map<string, { occasionId: string; occasionDate: Date }>();
+    if (recipientIds.length === 0) return result;
+
+    const occasions = await this.prisma.occasion.findMany({
+      where: {
+        accountId,
+        recipientId: { in: recipientIds },
+        source: { not: "one_off_campaign" },
+        status: { in: [...RECONCILABLE_OCCASION_STATUSES] },
+        occasionDate: { gte: startOfUtcDay(new Date()) },
+      },
+      orderBy: { occasionDate: "asc" },
+      select: { id: true, recipientId: true, occasionDate: true },
+    });
+
+    // Soonest first, so the first one seen per recipient is the one to use — the
+    // next birthday, not one eleven months out.
+    for (const occasion of occasions) {
+      // `recipientId` is nullable on Occasion (an account-level date belongs to
+      // nobody in particular); such a row can't date a card for a person.
+      if (!occasion.recipientId || result.has(occasion.recipientId)) continue;
+      result.set(occasion.recipientId, {
+        occasionId: occasion.id,
+        occasionDate: occasion.occasionDate,
+      });
+    }
+    return result;
+  }
+
+  /** The composer's explicit "mark these as handled" list, validated and
+   * account-scoped. Entries for recipients not being sent to are ignored. */
+  private async resolveClientReconcile(
     accountId: string,
     dto: BulkSendDto,
   ): Promise<Map<string, { occasionId: string; occasionDate: Date }>> {

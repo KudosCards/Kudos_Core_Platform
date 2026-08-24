@@ -4,6 +4,7 @@ import { Type } from "class-transformer";
 import {
   ArrayMinSize,
   ArrayUnique,
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsUUID,
@@ -69,6 +70,14 @@ export class BulkSendDto {
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "deliverBy must be an ISO date (YYYY-MM-DD)" })
   deliverBy?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Post each card on its own recipient's dated occasion (their birthday, say) rather than one shared date. The server finds those occasions itself, so this holds however the send was started — from a segment, a list, or a hand-picked selection. Recipients with no eligible occasion fall back to the shared timing. Mutually exclusive with deliverBy.",
+  })
+  @IsOptional()
+  @IsBoolean()
+  useOccasionDates?: boolean;
 
   @ApiPropertyOptional({
     type: [BulkSendReconcileDto],
