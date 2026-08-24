@@ -21,6 +21,10 @@ import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import type { Paginated } from "../common/paginated";
 import { SeatBillingService, type SeatPriceStatus } from "../billing/seat-billing.service";
 import { DispatchConfigService } from "../dispatch/dispatch-config.service";
+import {
+  BatchOrdersService,
+  type OccasionRedateSummary,
+} from "../batch-orders/batch-orders.service";
 import { CardSizeConfigService } from "./card-size-config.service";
 import { UpdateSeasonalRulesDto } from "./dto/update-seasonal-rules.dto";
 import { UpdateReminderConfigDto } from "./dto/update-reminder-config.dto";
@@ -35,6 +39,8 @@ import { AdminCustomerService } from "./admin-customer.service";
 import { ListAdminOrdersQueryDto } from "./dto/list-orders-query.dto";
 import { ListSubscribersQueryDto } from "./dto/list-subscribers-query.dto";
 import { SuperAdminGuard } from "../auth/super-admin.guard";
+import { CurrentPlatformAdmin } from "../auth/current-platform-admin.decorator";
+import type { PlatformAdminContext } from "../auth/types";
 import { OpsDigestService, type OpsDigestSummary } from "../ops-activity/ops-digest.service";
 import {
   SubscriptionInvoicesService,
@@ -59,6 +65,7 @@ export class AdminController {
     private readonly cardSizeConfig: CardSizeConfigService,
     private readonly opsDigest: OpsDigestService,
     private readonly subscriptionInvoices: SubscriptionInvoicesService,
+    private readonly batchOrders: BatchOrdersService,
   ) {}
 
   /**
@@ -89,6 +96,30 @@ export class AdminController {
   @Post("subscription-invoices/backfill")
   backfillSubscriptionInvoices(): Promise<SubscriptionInvoiceBackfillSummary> {
     return this.subscriptionInvoices.backfill();
+  }
+
+  /**
+   * Re-date one order's cards to their own recipients' occasions.
+   *
+   * For an order placed before bulk sends found occasions server-side (#328),
+   * where every card was dated the send day rather than each recipient's own
+   * birthday. `reschedule` can't fix that — it applies one arrive-by to the
+   * whole order, and one shared date is the problem.
+   *
+   * Also consumes each recipient's natural occasion, because re-dating alone
+   * would leave it free to fire a second card on the same day.
+   *
+   * Super-admin only, one order at a time, and refused once any card has left
+   * `pending` — a printed card can't be re-dated, it has already happened.
+   * Reports what it changed card by card, and is safe to run twice.
+   */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
+  @Post("orders/:id/redate-to-occasions")
+  redateOrderToOccasions(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<OccasionRedateSummary> {
+    return this.batchOrders.redateToRecipientOccasions(admin.userId, id);
   }
 
   @UseGuards(PlatformAdminGuard, SuperAdminGuard)

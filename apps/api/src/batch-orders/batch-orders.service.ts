@@ -102,6 +102,24 @@ function notBeforeToday(dispatchDate: Date): Date {
   return dispatchDate.getTime() < soonest.getTime() ? soonest : dispatchDate;
 }
 
+/** One card's outcome from an occasion re-date, for the operator's report. */
+export interface OccasionRedateCard {
+  recipientName: string;
+  from: Date | null;
+  to: Date | null;
+  outcome: "redated" | "already-repaired" | "no-occasion";
+}
+
+/** What an occasion re-date did to an order — reported card by card, because
+ *  "we changed 76 things" is not something anyone can check. */
+export interface OccasionRedateSummary {
+  orderNumber: number;
+  accountId: string;
+  cards: OccasionRedateCard[];
+  redated: number;
+  unchanged: number;
+}
+
 const RECONCILABLE_OCCASION_STATUSES = ["scheduled", "pending_approval", "approved"] as const;
 
 /** A card can only be posted to a contact with a complete, valid UK address. */
@@ -1200,6 +1218,142 @@ export class BatchOrdersService {
       targetId: id,
     });
     return order;
+  }
+
+  /**
+   * Repair an order whose cards were all dated one day, re-timing each to its
+   * own recipient's occasion. Ops-only, one order at a time, run deliberately.
+   *
+   * Exists because ~76 cards were ordered before bulk sends learned to find
+   * occasions server-side (#328) and every one landed dated today. `reschedule`
+   * cannot fix it: it takes a single arrive-by for the whole order, and the
+   * whole problem is that one shared date was applied to people with different
+   * birthdays.
+   *
+   * Re-dating alone would be worse than the bug. Each recipient's natural
+   * occasion is still sitting unconsumed, because reconciliation never ran — so
+   * once the ordered card is moved onto the birthday, that birthday could ALSO
+   * fire from approvals or auto-send and the recipient gets two cards. Each
+   * repaired card therefore takes the superseding link its send should have had
+   * and the natural occasion is marked `skipped`, exactly as settlement does for
+   * a superseding one-off (ADR 0107).
+   *
+   * Guarded like `reschedule`: every card must still be `pending`. A card that
+   * has been printed or posted has left the queue's control, and re-dating it
+   * would describe something that already physically happened.
+   *
+   * Idempotent. A second run finds each card already carrying its superseding
+   * link and reports it unchanged rather than searching for another occasion.
+   */
+  async redateToRecipientOccasions(
+    actorUserId: string,
+    batchOrderId: string,
+  ): Promise<OccasionRedateSummary> {
+    const summary = await this.prisma.$transaction(async (tx) => {
+      const order = await tx.batchOrder.findUnique({
+        where: { id: batchOrderId },
+        include: {
+          orderRecipients: {
+            include: {
+              recipient: { select: { firstName: true, lastName: true } },
+              occasion: {
+                select: { id: true, dispatchDate: true, postageClass: true, supersedesOccasionId: true },
+              },
+              fulfillmentJob: { select: { id: true, status: true } },
+            },
+          },
+        },
+      });
+      if (!order) {
+        throw new NotFoundException("Batch order not found");
+      }
+      if (order.status !== "paid" && order.status !== "fulfilling") {
+        throw new ConflictException(
+          `Only a paid order that hasn't posted can be re-dated (this one is "${order.status}").`,
+        );
+      }
+      const started = order.orderRecipients.some(
+        (line) => line.fulfillmentJob && line.fulfillmentJob.status !== "pending",
+      );
+      if (started) {
+        throw new ConflictException(
+          "Some cards are already being prepared, so this order can no longer be re-dated.",
+        );
+      }
+
+      // One lookup for the whole order rather than per card.
+      const alreadyRepaired = new Set(
+        order.orderRecipients
+          .filter((line) => line.occasion?.supersedesOccasionId)
+          .map((line) => line.recipientId),
+      );
+      const candidates = order.orderRecipients
+        .filter((line) => line.occasion && !alreadyRepaired.has(line.recipientId))
+        .map((line) => line.recipientId);
+      const natural = await this.findDatedOccasions(order.accountId, candidates);
+
+      const cards: OccasionRedateCard[] = [];
+      for (const line of order.orderRecipients) {
+        const name = `${line.recipient.firstName} ${line.recipient.lastName}`.trim();
+        const from = line.occasion?.dispatchDate ?? null;
+
+        if (!line.occasion) {
+          cards.push({ recipientName: name, from, to: null, outcome: "no-occasion" });
+          continue;
+        }
+        if (line.occasion.supersedesOccasionId) {
+          cards.push({ recipientName: name, from, to: from, outcome: "already-repaired" });
+          continue;
+        }
+        const match = natural.get(line.recipientId);
+        if (!match) {
+          // Nothing dated to move it to — a genuine campaign card, or a
+          // recipient with no birthday on file. Left exactly as it is.
+          cards.push({ recipientName: name, from, to: from, outcome: "no-occasion" });
+          continue;
+        }
+
+        const to = notBeforeToday(
+          computeDispatchDate(match.occasionDate, POSTAGE_LEAD_DAYS[line.occasion.postageClass]),
+        );
+        await tx.occasion.update({
+          where: { id: line.occasion.id },
+          data: { dispatchDate: to, supersedesOccasionId: match.occasionId },
+        });
+        // Consume the natural occasion so it can't independently send a second
+        // card on the same day. Status-guarded so an occasion that has since
+        // moved on is never dragged back.
+        await tx.occasion.updateMany({
+          where: { id: match.occasionId, status: { in: [...RECONCILABLE_OCCASION_STATUSES] } },
+          data: { status: "skipped" },
+        });
+        if (line.fulfillmentJob) {
+          await tx.fulfillmentJob.update({
+            where: { id: line.fulfillmentJob.id },
+            data: { dueDate: to },
+          });
+        }
+        cards.push({ recipientName: name, from, to, outcome: "redated" });
+      }
+
+      return {
+        orderNumber: order.orderNumber,
+        accountId: order.accountId,
+        cards,
+        redated: cards.filter((c) => c.outcome === "redated").length,
+        unchanged: cards.filter((c) => c.outcome !== "redated").length,
+      };
+    });
+
+    await this.audit.record({
+      accountId: summary.accountId,
+      actorUserId,
+      action: "redate_to_occasions",
+      targetType: "BatchOrder",
+      targetId: batchOrderId,
+      metadata: { redated: summary.redated, unchanged: summary.unchanged },
+    });
+    return summary;
   }
 
   /**
