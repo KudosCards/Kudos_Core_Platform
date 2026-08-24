@@ -1068,6 +1068,7 @@ describe("Batch orders (e2e)", () => {
       expect(new Set(dispatches.map((d) => d.dispatchDate?.getTime())).size).toBe(2);
     });
 
+<<<<<<< HEAD
     it("warns before payment when the back's artwork will be clipped", async () => {
       const { token } = await signUp();
       const savedDesignId = await createSavedDesign(token);
@@ -1112,6 +1113,8 @@ describe("Batch orders (e2e)", () => {
       ).toBe(true);
     });
 
+=======
+>>>>>>> 50aa4174638b0f31506fbb6c7e60cda226bde95f
     it("previews the occasion dating the send will actually apply", async () => {
       const { token, accountId } = await signUp();
       const savedDesignId = await createSavedDesign(token);

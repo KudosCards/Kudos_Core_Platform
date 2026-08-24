@@ -626,9 +626,12 @@ export class BatchOrdersService {
       duplicate: { count: count.duplicate, sample: sample.duplicate },
       price,
       occasionDated,
+<<<<<<< HEAD
       // Design-level, so the composer can say "your back artwork is being cut"
       // before payment rather than leaving it to be noticed on the printed card.
       backArtworkClipped: backArtworkInReservedFooter(document),
+=======
+>>>>>>> 50aa4174638b0f31506fbb6c7e60cda226bde95f
     };
   }
 
