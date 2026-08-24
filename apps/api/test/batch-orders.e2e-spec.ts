@@ -1037,7 +1037,38 @@ describe("Batch orders (e2e)", () => {
       expect(distinct.size).toBe(2);
     });
 
-    it("still posts everything today when occasion dating isn't asked for", async () => {
+    it("dates by birthday without being asked, which is the default", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      // The Anytime Fitness shape exactly: contacts picked by hand, no segment,
+      // no reconcile list, no flag, no delivery date. This used to date all of
+      // them today; birthday timing is now what a bulk send does unless it says
+      // otherwise.
+      const alice = await contactWithBirthday(token, accountId, 40);
+      const bob = await contactWithBirthday(token, accountId, 90);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [alice.contactId, bob.contactId],
+          postageClass: "second_class",
+        })
+        .expect(201);
+
+      // Their own birthdays were reused, so no one-offs were minted at all.
+      expect(
+        await prisma.occasion.count({ where: { accountId, source: "one_off_campaign" } }),
+      ).toBe(0);
+      const dispatches = await prisma.occasion.findMany({
+        where: { accountId },
+        select: { dispatchDate: true },
+      });
+      expect(new Set(dispatches.map((d) => d.dispatchDate?.getTime())).size).toBe(2);
+    });
+
+    it("still posts everything today for a campaign that opts out", async () => {
       const { token, accountId } = await signUp();
       const savedDesignId = await createSavedDesign(token);
       // A genuine campaign — "we've moved premises" — to contacts who happen to
@@ -1052,6 +1083,7 @@ describe("Batch orders (e2e)", () => {
           savedDesignId,
           recipientIds: [alice.contactId, bob.contactId],
           postageClass: "second_class",
+          useOccasionDates: false,
         })
         .expect(201);
 
@@ -1134,7 +1166,11 @@ describe("Batch orders (e2e)", () => {
             savedDesignId,
             recipientIds: people.map((p) => p.contactId),
             postageClass: "second_class",
-            // No occasion dating — exactly what the old composer sent.
+            // Opt out explicitly, which is now the only way to produce the
+            // broken shape this repair exists for. Before occasion dating became
+            // the default, simply omitting the flag did it — which is precisely
+            // how ~76 real cards ended up on one date.
+            useOccasionDates: false,
           })
           .expect(201);
         const orderId = (order.body as { id: string }).id;
@@ -1214,6 +1250,28 @@ describe("Batch orders (e2e)", () => {
           select: { dueDate: true },
         });
         expect(new Set(jobs.map((j) => j.dueDate?.getTime())).size).toBe(2);
+      });
+
+      it("moves each card's occasion date onto the birthday, not just its post date", async () => {
+        const { token, accountId } = await signUp();
+        const ops = await opsToken();
+        const { orderId } = await misdatedOrder(token, accountId, [40, 90]);
+
+        await request(app.getHttpServer())
+          .post(`/admin/orders/${orderId}/redate-to-occasions`)
+          .set("Authorization", `Bearer ${ops}`)
+          .expect(201);
+
+        // `occasionDate` is the field the {occasionDate} / {date} merge tokens
+        // print from — and the one the repair originally left behind, so a
+        // repaired card would post on the right day carrying the day it was
+        // ordered. Two recipients, two birthdays, two distinct dates.
+        const after = await prisma.occasion.findMany({
+          where: { accountId, source: "one_off_campaign" },
+          select: { occasionDate: true },
+        });
+        expect(after).toHaveLength(2);
+        expect(new Set(after.map((o) => o.occasionDate?.getTime())).size).toBe(2);
       });
 
       it("is safe to run twice", async () => {

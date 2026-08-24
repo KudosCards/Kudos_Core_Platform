@@ -112,11 +112,18 @@ describe("Occasion reconciliation (e2e)", () => {
     savedDesignId: string,
     recipientIds: string[],
     reconcile?: { recipientId: string; occasionId: string }[],
+    useOccasionDates?: boolean,
   ): Promise<string> {
     const res = await request(app.getHttpServer())
       .post("/batch-orders/bulk-send")
       .set("Authorization", `Bearer ${token}`)
-      .send({ savedDesignId, recipientIds, postageClass: "second_class", reconcile })
+      .send({
+        savedDesignId,
+        recipientIds,
+        postageClass: "second_class",
+        reconcile,
+        useOccasionDates,
+      })
       .expect(201);
     const batchOrderId = (res.body as { id: string }).id;
     await prisma.batchOrder.update({
@@ -172,8 +179,11 @@ describe("Occasion reconciliation (e2e)", () => {
     const savedDesignId = await createSavedDesign(token);
     const { recipientId, occasionId } = await addContactWithBirthday(token);
 
-    // No `reconcile` — the current default-off-at-API behaviour (the toggle sends none).
-    const batchOrderId = await bulkSend(token, savedDesignId, [recipientId]);
+    // What the composer sends when the toggle is turned off: no `reconcile`, and
+    // occasion dating explicitly declined. Both are needed — without the second,
+    // the server's default would find the birthday itself and consume it, which
+    // is exactly what the sender said not to do.
+    const batchOrderId = await bulkSend(token, savedDesignId, [recipientId], undefined, false);
     await settle(batchOrderId).expect(201);
 
     expect(await occasionStatus(occasionId)).toBe("scheduled");

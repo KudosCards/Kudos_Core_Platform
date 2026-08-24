@@ -104,6 +104,20 @@ function notBeforeToday(dispatchDate: Date): Date {
   return dispatchDate.getTime() < soonest.getTime() ? soonest : dispatchDate;
 }
 
+/**
+ * Whether this send dates each card by its own recipient's occasion.
+ *
+ * Default *on*: a bulk send with no shared delivery date is a send of birthday
+ * cards far more often than it is a same-day campaign, and the failure modes are
+ * not symmetric — a campaign card posted on someone's birthday is odd, a
+ * birthday card posted eleven months early is a refund. A sender who genuinely
+ * wants one shared date says so, either by choosing a delivery date or by
+ * passing `useOccasionDates: false`.
+ */
+function usesOccasionDates(dto: BulkSendDto): boolean {
+  return dto.useOccasionDates ?? !dto.deliverBy;
+}
+
 const RECONCILABLE_OCCASION_STATUSES = ["scheduled", "pending_approval", "approved"] as const;
 
 /** A card can only be posted to a contact with a complete, valid UK address. */
@@ -345,7 +359,7 @@ export class BatchOrdersService {
     // account-scoped. See docs/adr/0119.
     // Two different answers to "when does this post?" — refuse rather than pick
     // one silently, which is how the original bug read to the sender.
-    if (dto.useOccasionDates && dto.deliverBy) {
+    if (dto.useOccasionDates === true && dto.deliverBy) {
       throw new BadRequestException(
         "Choose either a delivery date for the whole send or each recipient's own occasion date — not both.",
       );
@@ -625,7 +639,7 @@ export class BatchOrdersService {
     // When the sender asks for occasion dating, the occasions are therefore
     // found here rather than taken on trust from the browser. The API already
     // holds them; it never needed telling.
-    if (!dto.useOccasionDates) return result;
+    if (!usesOccasionDates(dto)) return result;
 
     const unmatched = dto.recipientIds.filter((id) => !result.has(id));
     if (unmatched.length === 0) return result;
@@ -637,8 +651,9 @@ export class BatchOrdersService {
   }
 
   /**
-   * The eligible dated occasion for each of these recipients, newest-first-wins
-   * on the soonest upcoming date.
+   * The eligible dated occasion for each of these recipients: the soonest one
+   * still to come, so a card is timed to the next birthday rather than one
+   * eleven months out.
    *
    * Deliberately the same eligibility the explicit path applies — account-owned,
    * not already a one-off campaign, in a reconcilable status — so a card dated
@@ -1302,7 +1317,15 @@ export class BatchOrdersService {
         );
         await tx.occasion.update({
           where: { id: line.occasion.id },
-          data: { dispatchDate: to, supersedesOccasionId: match.occasionId },
+          data: {
+            dispatchDate: to,
+            // The card is now *for* that birthday, so its occasion date has to
+            // say so, not the day the order happened to be placed. This is the
+            // field `{occasionDate}` / `{date}` print from — leave it behind and
+            // a repaired card posts on the right day carrying the wrong date.
+            occasionDate: match.occasionDate,
+            supersedesOccasionId: match.occasionId,
+          },
         });
         // Consume the natural occasion so it can't independently send a second
         // card on the same day. Status-guarded so an occasion that has since
