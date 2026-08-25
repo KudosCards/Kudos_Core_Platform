@@ -320,6 +320,26 @@ export function OrderDetailClient({
             This order hasn&apos;t been paid yet. Pay to send it to production, or cancel to release
             its cards back to Approvals.
           </p>
+          {/* The wallet is spent first, automatically (ADR 0169). Say so before
+              they click: being charged less than the total is a pleasant
+              surprise, but a surprise on a payment screen is still bad. */}
+          {order.status === "draft" && walletBalanceMinor > 0 && (
+            <p className="text-sm text-foreground/80">
+              {canWalletPay ? (
+                <>
+                  Your wallet balance of <strong>{formatGbp(walletBalanceMinor)}</strong> covers this
+                  order in full — paying takes it from your balance, and your card won&apos;t be
+                  charged.
+                </>
+              ) : (
+                <>
+                  Your wallet balance of <strong>{formatGbp(walletBalanceMinor)}</strong> is used
+                  first, so your card will be charged{" "}
+                  <strong>{formatGbp(order.totalMinor - walletBalanceMinor)}</strong>.
+                </>
+              )}
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -329,15 +349,17 @@ export function OrderDetailClient({
             >
               {pending === "card" ? "Redirecting…" : "Pay by card"}
             </button>
-            {order.status === "draft" && (
+            {/* Kept for an order whose balance covers it outright, where it is
+                the more honest label — "Pay by card" now spends the wallet first
+                either way, so this is a shortcut, not a separate route. */}
+            {order.status === "draft" && canWalletPay && (
               <button
                 type="button"
-                disabled={pending !== null || !canWalletPay}
+                disabled={pending !== null}
                 onClick={() => void payWithWallet()}
-                title={canWalletPay ? undefined : "Not enough wallet balance — top up first"}
                 className="btn-secondary"
               >
-                {pending === "wallet" ? "Paying…" : "Pay with wallet"}
+                {pending === "wallet" ? "Paying…" : "Pay from wallet"}
               </button>
             )}
             <button

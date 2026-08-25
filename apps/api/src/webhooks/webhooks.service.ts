@@ -418,6 +418,10 @@ export class WebhooksService {
     }
 
     const order = await this.prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+    // The session held a reserved wallet draw for as long as it was live. It
+    // never will be paid now, so the money goes back — otherwise abandoning a
+    // checkout would quietly cost the customer their balance. See ADR 0169.
+    await this.batchOrders.releaseWalletReservation(order.accountId, batchOrderId);
     await this.audit.record({
       accountId: order.accountId,
       actorUserId: SYSTEM_ACTOR,

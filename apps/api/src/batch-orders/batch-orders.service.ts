@@ -1053,6 +1053,53 @@ export class BatchOrdersService {
       throw new ConflictException(`Batch order is "${existing.status}", not payable`);
     }
 
+    const webAppUrlForWallet = this.config.get("WEB_APP_URL", { infer: true });
+    const successPathForWallet = options?.successPath ?? "/batch-orders/success";
+
+    // The wallet is always spent first (ADR 0169). When it covers the whole
+    // order there is nothing for Stripe to charge, so settle it here and hand
+    // back the success page instead of a Checkout URL — every caller already
+    // redirects to whatever this returns.
+    //
+    // Only from `draft`: a resume is already past this point and may be carrying
+    // a reservation, which must not be double-spent.
+    if (existing.status === "draft") {
+      const paidFromWallet = await runSerializable(this.prisma, async (tx) => {
+        const balance = await this.walletBalance(tx, accountId);
+        if (balance < existing.totalMinor) return false;
+        const { count } = await tx.batchOrder.updateMany({
+          where: { id, accountId, status: "draft" },
+          data: { status: "paid", paymentMethod: "wallet" },
+        });
+        if (count === 0) return false; // a concurrent request claimed it
+        await tx.walletLedgerEntry.create({
+          data: {
+            accountId,
+            type: "charge",
+            amountMinor: -existing.totalMinor,
+            balanceAfterMinor: balance - existing.totalMinor,
+            reference: `order:${id}`,
+          },
+        });
+        await this.settleFulfillment(tx, id);
+        return true;
+      });
+      if (paidFromWallet) {
+        if (actorUserId) {
+          await this.audit.record({
+            accountId,
+            actorUserId,
+            action: "wallet_payment_succeeded",
+            targetType: "BatchOrder",
+            targetId: id,
+            metadata: { totalMinor: existing.totalMinor },
+          });
+        }
+        const query = new URLSearchParams({ batchOrderId: id, ...options?.successExtraParams });
+        return { checkoutUrl: `${webAppUrlForWallet}${successPathForWallet}?${query.toString()}` };
+      }
+    }
+
     // The status-guarded transition runs BEFORE the Stripe call — not after.
     // Calling Stripe first would let two concurrent checkout requests each
     // create a real, live Checkout Session before either learns it lost the DB
@@ -1070,15 +1117,44 @@ export class BatchOrdersService {
     //
     // `movedFromDraft` records whether we claimed a *draft*, so a failed Stripe
     // call hands only a draft back (a resume was already pending_payment).
+    //
+    // The wallet draw is reserved in this same transaction, not computed here
+    // and debited when payment settles: two concurrent checkouts would each size
+    // their Stripe charge against the same balance, and the second debit would
+    // overdraw it. Reserving under the claim means a balance can back exactly one
+    // order at a time.
     let movedFromDraft = false;
+    let walletApplied = 0;
     if (existing.status === "draft") {
-      const { count } = await this.prisma.batchOrder.updateMany({
-        where: { id, accountId, status: "draft" },
-        data: { status: "pending_payment" },
+      walletApplied = await runSerializable(this.prisma, async (tx) => {
+        const balance = await this.walletBalance(tx, accountId);
+        // Never the full total here — that case settled above and returned.
+        const draw = Math.min(
+          BatchOrdersService.walletDrawFor(balance, existing.totalMinor),
+          Math.max(0, existing.totalMinor - BatchOrdersService.STRIPE_MINIMUM_CHARGE_MINOR),
+        );
+        const { count } = await tx.batchOrder.updateMany({
+          where: { id, accountId, status: "draft" },
+          data: { status: "pending_payment", walletAppliedMinor: draw },
+        });
+        if (count === 0) {
+          throw new ConflictException(
+            "Batch order was already checked out by a concurrent request",
+          );
+        }
+        if (draw > 0) {
+          await tx.walletLedgerEntry.create({
+            data: {
+              accountId,
+              type: "charge",
+              amountMinor: -draw,
+              balanceAfterMinor: balance - draw,
+              reference: `order:${id}:wallet`,
+            },
+          });
+        }
+        return draw;
       });
-      if (count === 0) {
-        throw new ConflictException("Batch order was already checked out by a concurrent request");
-      }
       movedFromDraft = true;
     } else {
       // Already pending_payment (checked existing.status above). Only an
@@ -1096,6 +1172,9 @@ export class BatchOrdersService {
       if (count === 0) {
         throw new ConflictException("Batch order was already checked out by a concurrent request");
       }
+      // A resume re-uses the reservation the first attempt already took. Taking
+      // it again would debit the wallet twice for one order.
+      walletApplied = existing.walletAppliedMinor;
     }
 
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
@@ -1124,7 +1203,7 @@ export class BatchOrdersService {
           {
             price_data: {
               currency: existing.currency.toLowerCase(),
-              unit_amount: existing.totalMinor,
+              unit_amount: existing.totalMinor - walletApplied,
               product_data: {
                 name: `Kudos Cards order — ${existing.orderRecipients.length} card(s)`,
               },
@@ -1155,6 +1234,9 @@ export class BatchOrdersService {
       // was already pending_payment before this call, so leave it there —
       // reverting it to draft would be wrong, and it can simply be resumed again.
       if (movedFromDraft) {
+        // Hand the reservation back first: the money must not sit debited
+        // against an order that no longer has a live session behind it.
+        await this.releaseWalletReservation(accountId, id);
         await this.prisma.batchOrder.updateMany({
           where: { id, accountId, status: "pending_payment" },
           data: { status: "draft" },
@@ -1197,6 +1279,11 @@ export class BatchOrdersService {
    * forever, holding its occasions "queued" indefinitely.
    */
   async cancel(accountId: string, actorUserId: string, id: string): Promise<BatchOrder> {
+    // Before releasing the order: a pending_payment order may be holding a
+    // reserved wallet draw, and cancelling without returning it would keep the
+    // customer's money for a card that will never be printed. No-op when there
+    // is nothing reserved.
+    await this.releaseWalletReservation(accountId, id);
     const order = await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.batchOrder.updateMany({
         where: { id, accountId, status: { in: ["draft", "pending_payment"] } },
@@ -1514,6 +1601,14 @@ export class BatchOrdersService {
 
     if (order.paymentMethod === "wallet") {
       await this.refundWalletAndRelease(accountId, id, order.totalMinor);
+    } else if (order.walletAppliedMinor > 0) {
+      // A split order: Stripe took the remainder and the wallet took the rest,
+      // so both have to come back. The Stripe refund goes first — it is the leg
+      // that can fail, and it is idempotency-keyed, so a retry after a partial
+      // failure re-attempts the same single refund rather than double-crediting
+      // the wallet.
+      await this.refundCardAndRelease(accountId, id, order.stripePaymentIntentId);
+      await this.creditWalletPortion(accountId, id, order.walletAppliedMinor);
     } else {
       await this.refundCardAndRelease(accountId, id, order.stripePaymentIntentId);
     }
@@ -1562,6 +1657,115 @@ export class BatchOrdersService {
       if (count > 0) {
         await this.releaseRecipientsAndOccasions(tx, id, accountId);
       }
+    });
+  }
+
+  /**
+   * The smallest charge Stripe will take in GBP. A split that would leave less
+   * than this on the card is impossible to put through, so the wallet draw is
+   * reduced to leave exactly this much rather than failing the checkout.
+   */
+  private static readonly STRIPE_MINIMUM_CHARGE_MINOR = 30;
+
+  /** Balance = sum of all ledger amounts, the same definition WalletService
+   *  uses. Order-independent, so it can't drift from the ledger. */
+  private async walletBalance(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+  ): Promise<number> {
+    const { _sum } = await tx.walletLedgerEntry.aggregate({
+      where: { accountId },
+      _sum: { amountMinor: true },
+    });
+    return _sum.amountMinor ?? 0;
+  }
+
+  /**
+   * How much of `totalMinor` this balance should pay, leaving a card charge
+   * Stripe will actually accept.
+   *
+   * Covering the whole order is the caller's cue to skip Stripe entirely. Below
+   * that, the wallet pays as much as it can — except where the leftover would
+   * fall under Stripe's minimum, when the draw is trimmed so the card is charged
+   * exactly the minimum. Pure, so the arithmetic can be tested without a
+   * database.
+   */
+  static walletDrawFor(balanceMinor: number, totalMinor: number): number {
+    if (balanceMinor <= 0) return 0;
+    if (balanceMinor >= totalMinor) return totalMinor;
+    const remainder = totalMinor - balanceMinor;
+    if (remainder >= BatchOrdersService.STRIPE_MINIMUM_CHARGE_MINOR) return balanceMinor;
+    return Math.max(0, totalMinor - BatchOrdersService.STRIPE_MINIMUM_CHARGE_MINOR);
+  }
+
+  /**
+   * Hand a reserved wallet amount back, because the payment it was reserved for
+   * will never complete — the Stripe call failed, the session expired, or the
+   * buyer cancelled.
+   *
+   * Idempotent by construction: zeroing `walletAppliedMinor` is a
+   * compare-and-swap, so only the request that actually claims the reservation
+   * writes the credit. Every abandon path calls this, and missing one would
+   * quietly keep a customer's money.
+   */
+  async releaseWalletReservation(accountId: string, batchOrderId: string): Promise<void> {
+    await runSerializable(this.prisma, async (tx) => {
+      const order = await tx.batchOrder.findFirst({
+        where: { id: batchOrderId, accountId },
+        select: { walletAppliedMinor: true },
+      });
+      if (!order || order.walletAppliedMinor <= 0) {
+        return; // nothing reserved, or another request already released it
+      }
+      const reserved = order.walletAppliedMinor;
+      // Compare-and-swap on the exact amount, so the credit below is written by
+      // whichever request actually claimed the reservation and by no other.
+      const { count } = await tx.batchOrder.updateMany({
+        where: { id: batchOrderId, accountId, walletAppliedMinor: reserved },
+        data: { walletAppliedMinor: 0 },
+      });
+      if (count === 0) {
+        return;
+      }
+      const balance = await this.walletBalance(tx, accountId);
+      await tx.walletLedgerEntry.create({
+        data: {
+          accountId,
+          type: "refund",
+          amountMinor: reserved,
+          balanceAfterMinor: balance + reserved,
+          reference: `release:${batchOrderId}`,
+        },
+      });
+    });
+  }
+
+  /**
+   * The wallet half of a split order's refund.
+   *
+   * Separate from `refundWalletAndRelease` because the order has already been
+   * released by the Stripe leg — this only puts the money back. Idempotent on
+   * the reference, so a retried refund credits once.
+   */
+  private async creditWalletPortion(
+    accountId: string,
+    id: string,
+    walletAppliedMinor: number,
+  ): Promise<void> {
+    await runSerializable(this.prisma, async (tx) => {
+      const reference = `refund:${id}:wallet`;
+      const existing = await tx.walletLedgerEntry.findFirst({ where: { accountId, reference } });
+      if (existing) return;
+      const balance = await this.walletBalance(tx, accountId);
+      await tx.walletLedgerEntry.create({
+        data: {
+          accountId,
+          type: "refund",
+          amountMinor: walletAppliedMinor,
+          balanceAfterMinor: balance + walletAppliedMinor,
+          reference,
+        },
+      });
     });
   }
 

@@ -640,6 +640,13 @@ model BatchOrder {
   postageMinor          Int              @default(0) @map("postage_minor")
   totalMinor            Int              @default(0) @map("total_minor")
   paymentMethod         PaymentMethod?   @map("payment_method")
+  /// How much of this order was paid from the account wallet, in pence. Reserved
+  /// (debited) when the Checkout Session is created, not when payment settles —
+  /// two concurrent checkouts sizing their charge against the same balance would
+  /// otherwise overdraw it. Released back to the ledger on every path where the
+  /// payment never completes. 0 means no wallet money was used; a *fully*
+  /// wallet-paid order records that on `paymentMethod` instead. See ADR 0169.
+  walletAppliedMinor    Int              @default(0) @map("wallet_applied_minor")
   stripePaymentIntentId String?          @unique @map("stripe_payment_intent_id")
   /// Stripe's generated VAT invoice for a card-paid order (Stripe is the source
   /// of truth for VAT/company details, exactly like subscriber invoices). Set
