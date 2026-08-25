@@ -130,6 +130,9 @@ export const adminOrderDetailSchema = z.object({
   postageMinor: z.number(),
   totalMinor: z.number(),
   paymentMethod: z.string().nullable(),
+  /** How much of this order came from the account wallet, in pence. See
+   * batchOrderSchema — a split order records `card` as its payment method. */
+  walletAppliedMinor: z.number(),
   receiptUrl: z.string().nullable(),
   receiptPdfUrl: z.string().nullable(),
   createdAt: z.coerce.date(),

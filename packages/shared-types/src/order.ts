@@ -27,6 +27,12 @@ export const batchOrderSchema = z.object({
   postageMinor: z.number().int().nonnegative(),
   totalMinor: z.number().int().nonnegative(),
   paymentMethod: paymentMethodSchema.nullable(),
+  /** How much of this order was paid from the account wallet, in pence. The
+   * wallet is always spent before the card (ADR 0169), so a part-paid order
+   * records `card` as its payment method while some of it came from here —
+   * which is why the split has to be read from this rather than inferred from
+   * `paymentMethod`. 0 for an order that used no wallet money. */
+  walletAppliedMinor: z.number().int().nonnegative(),
   stripePaymentIntentId: z.string().nullable(),
   /** Stripe's hosted VAT invoice/receipt for a card-paid order — "view online".
    * Null until the invoice.paid webhook lands (and for wallet-paid orders, which

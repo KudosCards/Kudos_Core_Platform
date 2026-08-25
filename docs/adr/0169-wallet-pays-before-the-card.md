@@ -109,8 +109,12 @@ would not fix the wallet's underlying inability to part-pay.
   treatment of the wallet portion is a question for the bookkeeper, not the
   software.
 - `paymentMethod` remains a two-value enum, so a split order records `card`.
-  Surfacing the split in order history and the ops payment panel is deliberately
-  left to a follow-up.
+  Every surface therefore reads the split from `walletAppliedMinor` rather than
+  inferring it from the method: the customer's order sees "£10.00 from wallet /
+  £230.00 on card", and the ops order reads "Wallet + card" with the two amounts
+  itemised. The VAT receipt is labelled as covering the card portion only, since
+  its total genuinely does not match the order total and a customer has no other
+  way to know why.
 - This touches live payment for every order. The reservation and release paths
   are the most heavily tested code in the service, and each guard has been
   verified to fail without it.
