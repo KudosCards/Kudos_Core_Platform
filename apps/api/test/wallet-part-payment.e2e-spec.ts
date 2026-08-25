@@ -168,7 +168,9 @@ describe("Wallet part-payment (e2e)", () => {
     expect(row.paymentMethod).toBe("wallet");
     expect(await balanceOf(accountId)).toBe(5_000 - order.totalMinor);
     // Paid means printable: the cards are in the fulfilment queue.
-    expect(await prisma.fulfillmentJob.count({ where: { orderRecipient: { batchOrderId: order.id } } })).toBe(1);
+    expect(
+      await prisma.fulfillmentJob.count({ where: { orderRecipient: { batchOrderId: order.id } } }),
+    ).toBe(1);
   });
 
   it("leaves Stripe a chargeable amount when the balance nearly covers the order", async () => {
@@ -188,10 +190,7 @@ describe("Wallet part-payment (e2e)", () => {
     await credit(accountId, 100);
     const [a, b] = await Promise.all([draftOrder(token), draftOrder(token)]);
 
-    const results = await Promise.all([
-      checkout(token, a.id).send(),
-      checkout(token, b.id).send(),
-    ]);
+    const results = await Promise.all([checkout(token, a.id).send(), checkout(token, b.id).send()]);
     expect(results.every((r) => r.status === 201)).toBe(true);
 
     // Whatever order they landed in, the £1 can only have been spent once.
@@ -279,6 +278,31 @@ describe("Wallet part-payment (e2e)", () => {
     expect(await balanceOf(accountId)).toBe(100);
   });
 
+  it("reports the split on the order, for the customer and for ops", async () => {
+    const { token, accountId } = await signUp();
+    await credit(accountId, 100);
+    const order = await draftOrder(token);
+    await checkout(token, order.id).expect(201);
+
+    // The customer's own order view. Without this the page can only say "Card",
+    // and the £1 that came off their balance is invisible.
+    const mine = await request(app.getHttpServer())
+      .get(`/batch-orders/${order.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect((mine.body as { walletAppliedMinor: number }).walletAppliedMinor).toBe(100);
+
+    // And the ops Customer 360 order detail, so a support query about a receipt
+    // that disagrees with the order total can be answered from that screen.
+    const opsUserId = randomUUID();
+    await prisma.platformAdmin.create({ data: { userId: opsUserId, role: "super_admin" } });
+    const opsView = await request(app.getHttpServer())
+      .get(`/admin/orders/${order.id}`)
+      .set("Authorization", `Bearer ${await mintToken(opsUserId)}`)
+      .expect(200);
+    expect((opsView.body as { walletAppliedMinor: number }).walletAppliedMinor).toBe(100);
+  });
+
   it("is unchanged for an account with no balance", async () => {
     const { token, accountId } = await signUp();
     const order = await draftOrder(token);
@@ -287,8 +311,6 @@ describe("Wallet part-payment (e2e)", () => {
 
     expect(lastChargedMinor()).toBe(order.totalMinor);
     expect(await balanceOf(accountId)).toBe(0);
-    expect(
-      await prisma.walletLedgerEntry.count({ where: { accountId } }),
-    ).toBe(0);
+    expect(await prisma.walletLedgerEntry.count({ where: { accountId } })).toBe(0);
   });
 });

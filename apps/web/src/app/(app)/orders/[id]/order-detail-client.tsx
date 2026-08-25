@@ -167,12 +167,38 @@ export function OrderDetailClient({
         {order.paymentMethod && (
           <div className="flex justify-between text-muted">
             <span>Paid with</span>
-            <span>{order.paymentMethod === "wallet" ? "Wallet" : "Card"}</span>
+            {/* A split order records `card` as its payment method — the wallet
+                is always spent first (ADR 0169) — so the two-value method alone
+                would hide the wallet half entirely. Read the split from the
+                amount, not the method. */}
+            <span className="text-right">
+              {order.paymentMethod === "wallet" ? (
+                "Wallet"
+              ) : order.walletAppliedMinor > 0 ? (
+                <>
+                  {formatGbp(order.walletAppliedMinor)} from wallet
+                  <br />
+                  {formatGbp(order.totalMinor - order.walletAppliedMinor)} on card
+                </>
+              ) : (
+                "Card"
+              )}
+            </span>
           </div>
         )}
         {(order.receiptPdfUrl || order.receiptUrl) && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2">
-            <span className="text-muted">VAT receipt</span>
+            <span className="text-muted">
+              VAT receipt
+              {order.walletAppliedMinor > 0 && (
+                // Otherwise the receipt total silently disagrees with the order
+                // total, and the customer has no way to know why.
+                <span className="block text-xs">
+                  Covers the {formatGbp(order.totalMinor - order.walletAppliedMinor)} charged to
+                  your card
+                </span>
+              )}
+            </span>
             <span className="flex items-center gap-3">
               {order.receiptPdfUrl && (
                 <a

@@ -105,7 +105,16 @@ export default async function AdminOrderDetailPage({
           </Link>{" "}
           · {order.cardCount.toLocaleString("en-GB")} card
           {order.cardCount === 1 ? "" : "s"} · placed {formatOrderDate(order.createdAt)}
-          {order.paymentMethod && <> · {order.paymentMethod === "wallet" ? "Wallet" : "Card"}</>}
+          {order.paymentMethod && (
+            <>
+              {" · "}
+              {order.paymentMethod === "wallet"
+                ? "Wallet"
+                : order.walletAppliedMinor > 0
+                  ? "Wallet + card"
+                  : "Card"}
+            </>
+          )}
         </p>
       </div>
 
@@ -143,6 +152,23 @@ export default async function AdminOrderDetailPage({
               <dt>Total (inc. VAT)</dt>
               <dd className="tabular-nums">{formatGbp(order.totalMinor)}</dd>
             </div>
+            {/* Split out when the wallet paid part of it, so a support query
+                about "why does my receipt say less than my order?" can be
+                answered from this screen. See ADR 0169. */}
+            {order.walletAppliedMinor > 0 && (
+              <>
+                <div className="flex justify-between">
+                  <dt className="text-muted">From wallet</dt>
+                  <dd className="tabular-nums">−{formatGbp(order.walletAppliedMinor)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted">Charged to card</dt>
+                  <dd className="tabular-nums">
+                    {formatGbp(order.totalMinor - order.walletAppliedMinor)}
+                  </dd>
+                </div>
+              </>
+            )}
           </dl>
           {order.receiptUrl && (
             <a
