@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { Customer360 } from "@kudos/shared-types";
+import type { AdminIdentity, Customer360 } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { serverApiFetch } from "@/lib/api.server";
 import {
@@ -10,6 +10,7 @@ import {
   ORDER_STATUS_LABELS,
 } from "@/lib/orders";
 import { HEALTH_CLASSES, HEALTH_LABELS, formatOrderNumber, planLabel } from "@/lib/admin";
+import { WalletAdjustment } from "./wallet-adjustment-client";
 import type { BatchOrderStatus } from "@kudos/shared-types";
 
 const ENGAGEMENT: Record<Customer360["engagement"]["level"], { label: string; className: string }> =
@@ -49,6 +50,10 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
     if (error instanceof ApiError && (error.status === 404 || error.status === 400)) notFound();
     throw error;
   }
+  // Adjusting a wallet is super-admin only on the server. Fetch the viewer's
+  // role so the control isn't offered to an operator who would only get a 403.
+  // Non-fatal: without it the control is simply hidden.
+  const me = await serverApiFetch<AdminIdentity>("/admin/me").catch(() => null);
   if (!customer) notFound();
 
   const engagement = ENGAGEMENT[customer.engagement.level];
@@ -265,6 +270,15 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
                 : `${customer.returns.open} open · ${customer.returns.total} total`}
             </Row>
           </div>
+          {/* Super-admin only, matching the endpoint's own guard — an operator
+              who cannot use it should not be shown it. */}
+          {me?.role === "super_admin" && (
+            <WalletAdjustment
+              accountId={customer.id}
+              customerName={customer.name}
+              balanceMinor={customer.wallet.balanceMinor}
+            />
+          )}
         </Panel>
       </div>
 

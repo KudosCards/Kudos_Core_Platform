@@ -53,7 +53,7 @@ export class AdminCustomerService {
       lastRecipientUpdate,
       crmConnections,
       apiKeys,
-      walletEntry,
+      walletLedger,
       savedDesignCount,
       messageStats,
       paidAgg,
@@ -105,10 +105,16 @@ export class AdminCustomerService {
         select: { label: true, prefix: true, lastUsedAt: true, revokedAt: true },
         orderBy: { createdAt: "asc" },
       }),
-      this.prisma.walletLedgerEntry.findFirst({
+      // Sum the ledger rather than trusting the newest row's snapshot. The
+      // wallet's own definition of a balance is the sum (see WalletService), and
+      // `createdAt desc` picks an arbitrary row among any that share a
+      // timestamp — so a snapshot read could report a balance that is merely one
+      // of several plausible ones. Same aggregate the spend path uses, so ops
+      // and the customer can never be looking at different numbers.
+      this.prisma.walletLedgerEntry.aggregate({
         where: { accountId },
-        orderBy: { createdAt: "desc" },
-        select: { balanceAfterMinor: true, createdAt: true },
+        _sum: { amountMinor: true },
+        _max: { createdAt: true },
       }),
       this.prisma.savedDesign.count({ where: { accountId } }),
       // Views now live on the per-card link; count links (QRs) + sum their views.
@@ -188,7 +194,7 @@ export class AdminCustomerService {
         account.createdAt.getTime(),
         recentOrders[0]?.createdAt.getTime() ?? 0,
         lastRecipientUpdate?.updatedAt.getTime() ?? 0,
-        walletEntry?.createdAt.getTime() ?? 0,
+        walletLedger._max.createdAt?.getTime() ?? 0,
         ...crmConnections.map((c) => c.lastSyncedAt?.getTime() ?? 0),
         ...apiKeys.map((k) => k.lastUsedAt?.getTime() ?? 0),
       ),
@@ -288,7 +294,7 @@ export class AdminCustomerService {
           revoked: k.revokedAt !== null,
         })),
       },
-      wallet: { balanceMinor: walletEntry?.balanceAfterMinor ?? 0 },
+      wallet: { balanceMinor: walletLedger._sum.amountMinor ?? 0 },
       designs: { savedCount: savedDesignCount },
       messages: { pageCount: messageStats._count, totalViews: messageStats._sum.viewCount ?? 0 },
       orders: {

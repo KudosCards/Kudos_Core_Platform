@@ -34,6 +34,8 @@ import {
   type AdminSubscriberRow,
 } from "./admin.service";
 import { AdminCustomerService } from "./admin-customer.service";
+import { AdjustWalletDto } from "./dto/adjust-wallet.dto";
+import { WalletService, type WalletSummary } from "../wallet/wallet.service";
 import { ListAdminOrdersQueryDto } from "./dto/list-orders-query.dto";
 import { ListSubscribersQueryDto } from "./dto/list-subscribers-query.dto";
 import { SuperAdminGuard } from "../auth/super-admin.guard";
@@ -64,6 +66,7 @@ export class AdminController {
     private readonly opsDigest: OpsDigestService,
     private readonly subscriptionInvoices: SubscriptionInvoicesService,
     private readonly batchOrders: BatchOrdersService,
+    private readonly wallet: WalletService,
   ) {}
 
   /**
@@ -153,6 +156,28 @@ export class AdminController {
   @Get("customers/:id")
   customer(@Param("id", ParseUUIDPipe) id: string): Promise<Customer360> {
     return this.adminCustomer.getCustomer(id);
+  }
+
+  /**
+   * Credit (or correct) a customer's wallet by hand — a goodwill gesture to an
+   * engaged customer, without running a discount code.
+   *
+   * Super-admin only, capped at £1,000 either way, a reason required, and
+   * audited: this moves money on a customer's account with no payment behind it.
+   * A debit cannot take the balance below zero. Idempotent on `requestId`, so a
+   * double-submitted form credits once.
+   *
+   * Note for the books: unlike a top-up, an adjustment has no Stripe payment and
+   * therefore no VAT invoice behind it. It is a goodwill credit, not a sale.
+   */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
+  @Post("customers/:id/wallet-adjustment")
+  adjustCustomerWallet(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: AdjustWalletDto,
+  ): Promise<WalletSummary> {
+    return this.wallet.adjustBalance(id, admin.userId, dto);
   }
 
   /** Whether the £5/mo extra-seat Stripe Price is set up, and where its id

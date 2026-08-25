@@ -9,6 +9,7 @@ import { AdminTeamController } from "./admin-team.controller";
 import { AdminTeamService } from "./admin-team.service";
 import { CardSizeConfigService } from "./card-size-config.service";
 import { BatchOrdersModule } from "../batch-orders/batch-orders.module";
+import { WalletModule } from "../wallet/wallet.module";
 
 /** The Kudos super-admin surface (platform-wide orders, subscribers, KPIs, the
  * in-app seat-price provisioning action, and operator identity + team
@@ -17,7 +18,7 @@ import { BatchOrdersModule } from "../batch-orders/batch-orders.module";
 @Module({
   // BatchOrdersModule: the occasion re-date repair is ops-triggered but the
   // scheduling logic belongs with orders, not duplicated here.
-  imports: [BillingModule, DispatchModule, OpsActivityModule, BatchOrdersModule],
+  imports: [BillingModule, DispatchModule, OpsActivityModule, BatchOrdersModule, WalletModule],
   controllers: [AdminController, AdminTeamController],
   providers: [AdminService, AdminCustomerService, AdminTeamService, CardSizeConfigService],
 })
