@@ -264,6 +264,82 @@ export class WalletService {
     await this.batchOrders.settleFulfillment(tx, batchOrderId);
   }
 
+  /**
+   * Credit or debit an account's wallet by hand — a goodwill gesture, or a
+   * correction to one.
+   *
+   * An `adjustment` entry, which the ledger was designed for but nothing had
+   * ever written: the schema is append-only precisely so a correction is a new
+   * row rather than an edit, and this is the path that uses it.
+   *
+   * Debits are allowed because a credit-only tool has no remedy for its own
+   * mistakes — the first mistyped amount would otherwise need a hand-written SQL
+   * statement against a ledger whose whole point is that nobody does that. A
+   * debit may not take the balance below zero: money already spent on cards has
+   * gone to physical work, and an overdrawn wallet is not a state any other part
+   * of the system is written to expect.
+   *
+   * Idempotent on `requestId`, like the top-up path. A duplicate credit is not
+   * self-correcting — someone has to notice it and reverse it — so a
+   * double-submitted form must not be able to cause one.
+   *
+   * Serializable, like every other balance write, so it cannot interleave with a
+   * concurrent order payment and compute its balance from a stale read.
+   */
+  async adjustBalance(
+    accountId: string,
+    actorUserId: string,
+    input: { amountMinor: number; reason: string; requestId: string },
+  ): Promise<WalletSummary> {
+    const account = await this.prisma.account.findUnique({ where: { id: accountId } });
+    if (!account) {
+      throw new NotFoundException("Customer not found");
+    }
+
+    const reference = `adjustment:${input.requestId}`;
+    const applied = await runSerializable(this.prisma, async (tx) => {
+      const existing = await tx.walletLedgerEntry.findFirst({ where: { accountId, reference } });
+      if (existing) {
+        return false; // this same adjustment has already been applied
+      }
+      const balance = await this.balanceOf(tx, accountId);
+      if (balance + input.amountMinor < 0) {
+        throw new ConflictException(
+          `That would take the balance below zero (currently ${balance} pence).`,
+        );
+      }
+      await tx.walletLedgerEntry.create({
+        data: {
+          accountId,
+          type: "adjustment",
+          amountMinor: input.amountMinor,
+          balanceAfterMinor: balance + input.amountMinor,
+          reference,
+        },
+      });
+      return true;
+    });
+
+    if (applied) {
+      // Deliberately not fire-and-forget: this moves money on a customer's
+      // account with no payment behind it, so who did it and why is the record
+      // that makes it defensible.
+      await this.audit.record({
+        accountId,
+        actorUserId,
+        action: "wallet_adjustment_applied",
+        targetType: "Wallet",
+        targetId: accountId,
+        metadata: {
+          amountMinor: input.amountMinor,
+          reason: input.reason,
+          requestId: input.requestId,
+        },
+      });
+    }
+    return this.getSummary(accountId);
+  }
+
   /** Balance = sum of all ledger amounts. Order-independent; can't drift. */
   private async balanceOf(
     client: PrismaService | Prisma.TransactionClient,
