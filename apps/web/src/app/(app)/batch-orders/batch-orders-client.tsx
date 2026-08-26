@@ -4,7 +4,7 @@ import { Zap } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import type { AccountPricing } from "@kudos/shared-types";
+import type { AccountPricing, BatchOrderListRow } from "@kudos/shared-types";
 import { computePricingBreakdown, suggestFirstClass } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -46,7 +46,26 @@ function lineFromOccasion(occasion: OccasionWithRecipient | undefined): LineDraf
 
 const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
 
-export interface UnfinishedBatchOrder {
+/**
+ * A draft or awaiting-payment order, as the orders *list* returns it.
+ *
+ * Derived from BatchOrderListRow rather than hand-written, because a
+ * hand-written copy is what broke here: this declared `orderRecipients` and the
+ * list stopped sending them (ADR 0170), so `.length` read `undefined` at
+ * runtime. `serverApiFetch<T>` is an unchecked cast, so nothing caught it.
+ * Deriving means the next payload change fails typecheck instead.
+ */
+export type UnfinishedBatchOrder = Pick<
+  BatchOrderListRow,
+  "id" | "totalMinor" | "cardCount"
+> & {
+  status: "draft" | "pending_payment";
+};
+
+/** What POST /batch-orders returns: the created order *with* its lines, which is
+ * a different shape from the list row above. Normalised on the way in so both
+ * sources render through one path. */
+interface CreatedDraftResponse {
   id: string;
   status: "draft" | "pending_payment";
   totalMinor: number;
@@ -132,13 +151,19 @@ export function BatchOrdersClient({
     return null;
   }
 
-  function createDraftFromSelection(): Promise<UnfinishedBatchOrder> {
-    return clientApiFetch<UnfinishedBatchOrder>("/batch-orders", {
+  async function createDraftFromSelection(): Promise<UnfinishedBatchOrder> {
+    const created = await clientApiFetch<CreatedDraftResponse>("/batch-orders", {
       method: "POST",
       body: JSON.stringify({
         lines: selectedIds.map((occasionId) => ({ occasionId, ...lines[occasionId]! })),
       }),
     });
+    return {
+      id: created.id,
+      status: created.status,
+      totalMinor: created.totalMinor,
+      cardCount: created.orderRecipients.length,
+    };
   }
 
   /** A created draft whose payment step failed must not vanish — its occasions
@@ -311,7 +336,7 @@ export function BatchOrdersClient({
                 className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm"
               >
                 <span>
-                  {order.orderRecipients.length} card(s) · {formatGbp(order.totalMinor)} ·{" "}
+                  {order.cardCount} card(s) · {formatGbp(order.totalMinor)} ·{" "}
                   {order.status === "draft" ? "not checked out" : "payment pending"}
                 </span>
                 <div className="flex flex-wrap gap-2">

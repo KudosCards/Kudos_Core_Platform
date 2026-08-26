@@ -698,7 +698,7 @@ export class BatchOrdersService {
    * outcome for the recipient than a card whose reserved strip was clipped —
    * which is what the print engine does safely anyway. See ADR 0171.
    */
-  private assertDesignPrintable(document: Prisma.JsonValue): void {
+  private assertDesignPrintable(document: Prisma.JsonValue, designName?: string): void {
     const parsed = designDocumentSchema.safeParse(document);
     // An unparseable document is not this check's problem — the renderer and the
     // design editor both handle that, and failing a send here would be a
@@ -706,7 +706,9 @@ export class BatchOrdersService {
     if (!parsed.success) return;
     const violation = reservedFooterViolation(parsed.data);
     if (violation) {
-      throw new BadRequestException(violation.message);
+      throw new BadRequestException(
+        designName ? `"${designName}": ${violation.message}` : violation.message,
+      );
     }
   }
 
@@ -946,6 +948,25 @@ export class BatchOrdersService {
         throw new BadRequestException(
           `Occasion ${noRecipient.id} has no recipient and cannot be checked out`,
         );
+      }
+
+      // The third interactive path into an order, and the one that is easiest to
+      // miss: Checkout turns approved occasions into an order, and each occasion
+      // carries its own design. quickSend and bulkSend each hold a single design
+      // and check it where they load it; here there may be several, so they are
+      // checked together — before the occasions are consumed below, so a refusal
+      // cannot strand them in `queued`.
+      const designIds = [
+        ...new Set(occasions.map((o) => o.savedDesignId).filter((id): id is string => id !== null)),
+      ];
+      if (designIds.length > 0) {
+        const designs = await tx.savedDesign.findMany({
+          where: { id: { in: designIds }, accountId },
+          select: { name: true, document: true },
+        });
+        for (const design of designs) {
+          this.assertDesignPrintable(design.document, design.name);
+        }
       }
 
       // Status-guarded updateMany, not a bare update — if a concurrent request
