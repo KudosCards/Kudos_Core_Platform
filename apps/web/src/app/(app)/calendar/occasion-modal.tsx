@@ -111,7 +111,7 @@ export function OccasionModal({
       {editing ? (
         <form onSubmit={(event) => void handleSave(event)} className="flex flex-col gap-4">
           {error && (
-            <p className="rounded-lg bg-accent-soft px-3 py-2 text-sm font-medium text-accent">
+            <p className="notice notice-danger">
               {error}
             </p>
           )}

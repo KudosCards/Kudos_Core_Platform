@@ -103,7 +103,7 @@ export function ReturnRecoveryPanel({
         <h2 className="text-lg font-semibold text-amber-900">Address needs attention</h2>
       </div>
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+        <p className="notice notice-danger">
           {error}
         </p>
       )}

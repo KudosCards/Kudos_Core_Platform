@@ -15,7 +15,7 @@ import type { BatchOrderStatus } from "@kudos/shared-types";
 
 const ENGAGEMENT: Record<Customer360["engagement"]["level"], { label: string; className: string }> =
   {
-    activated: { label: "Activated", className: "bg-[#e8f1ea] text-[#2f7d54]" },
+    activated: { label: "Activated", className: "bg-success-soft text-success" },
     onboarding: { label: "Onboarding", className: "bg-[#fff4e5] text-[#a8630a]" },
     dormant: { label: "Dormant", className: "bg-foreground/[0.07] text-muted" },
   };
@@ -123,7 +123,7 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
             {signalRows.map((s) => (
               <li key={s.label} className="flex items-center justify-between text-sm">
                 <span>{s.label}</span>
-                <span className={s.on ? "text-[#2f7d54]" : "text-muted"}>
+                <span className={s.on ? "text-success" : "text-muted"}>
                   {s.on ? "✓ Yes" : "— No"}
                 </span>
               </li>

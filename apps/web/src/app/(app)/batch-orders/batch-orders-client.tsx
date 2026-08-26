@@ -283,12 +283,12 @@ export function BatchOrdersClient({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+        <p className="notice notice-danger">
           {error}
         </p>
       )}
       {notice && (
-        <p className="rounded-lg bg-[#e8f1ea] px-4 py-3 text-sm font-medium text-[#2f7d54]">
+        <p className="rounded-lg bg-success-soft px-4 py-3 text-sm font-medium text-success">
           {notice}
         </p>
       )}

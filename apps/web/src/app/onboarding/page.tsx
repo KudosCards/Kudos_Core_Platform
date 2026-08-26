@@ -193,7 +193,7 @@ export default function OnboardingPage() {
         <h1 className="text-xl font-bold tracking-tight">Set up your account</h1>
         <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
           {error && (
-            <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+            <p className="notice notice-danger">
               {error}
             </p>
           )}

@@ -129,9 +129,9 @@ export function WalletClient({
       </div>
 
       {topupStatus === "success" && (
-        <p className="flex items-center gap-2 rounded-lg bg-[#e8f1ea] px-4 py-3 text-sm font-medium text-[#2f7d54]">
+        <p className="flex items-center gap-2 rounded-lg bg-success-soft px-4 py-3 text-sm font-medium text-success">
           {refreshing && (
-            <span className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-[#2f7d54]/30 border-t-[#2f7d54]" />
+            <span className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-success/30 border-t-success" />
           )}
           Payment received — your balance updates here automatically.
         </p>
@@ -143,7 +143,7 @@ export function WalletClient({
       )}
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+        <p className="notice notice-danger">
           {error}
         </p>
       )}
@@ -219,7 +219,7 @@ export function WalletClient({
                   className={
                     entry.amountMinor < 0
                       ? "font-semibold text-foreground"
-                      : "font-semibold text-[#2f7d54]"
+                      : "font-semibold text-success"
                   }
                 >
                   {entry.amountMinor > 0 ? "+" : ""}

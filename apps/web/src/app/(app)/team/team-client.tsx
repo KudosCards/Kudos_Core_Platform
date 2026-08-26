@@ -136,7 +136,7 @@ export function TeamClient({ initialTeam }: { initialTeam: Team }) {
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="notice notice-danger">{error}</p>
       )}
 
       {/* Seat usage meter — shown to everyone on a seat-enabled plan. */}
