@@ -80,11 +80,7 @@ export function AddressModal({
       title={`Address for ${recipient.firstName} ${recipient.lastName}`}
     >
       <form onSubmit={(event) => void handleSubmit(event)} className="flex flex-col gap-3">
-        {error && (
-          <p className="notice notice-danger">
-            {error}
-          </p>
-        )}
+        {error && <p className="notice notice-danger">{error}</p>}
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted">Address line 1</span>
           <input

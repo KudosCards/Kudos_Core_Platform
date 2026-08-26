@@ -137,16 +137,12 @@ export function WalletClient({
         </p>
       )}
       {topupStatus === "cancelled" && (
-        <p className="rounded-lg bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
+        <p className="rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">
           Top-up cancelled — no payment was taken.
         </p>
       )}
 
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       <div className="card p-6">
         <p className="section-label">Current balance</p>

@@ -52,13 +52,15 @@ export function SetPasswordForm({
     if (tokenHash && type) {
       if (verifyStarted.current) return;
       verifyStarted.current = true;
-      void supabase.auth.verifyOtp({ type, token_hash: tokenHash }).then(({ data, error: verifyError }) => {
-        setHasSession(Boolean(data.session) && !verifyError);
-        setChecking(false);
-        // Strip the token from the URL so a refresh (or the browser restoring the
-        // tab) can't replay an already-spent token and show a false "invalid".
-        window.history.replaceState(null, "", window.location.pathname);
-      });
+      void supabase.auth
+        .verifyOtp({ type, token_hash: tokenHash })
+        .then(({ data, error: verifyError }) => {
+          setHasSession(Boolean(data.session) && !verifyError);
+          setChecking(false);
+          // Strip the token from the URL so a refresh (or the browser restoring the
+          // tab) can't replay an already-spent token and show a false "invalid".
+          window.history.replaceState(null, "", window.location.pathname);
+        });
       return;
     }
 
@@ -129,11 +131,7 @@ export function SetPasswordForm({
         <h1 className="text-xl font-bold tracking-tight">{heading}</h1>
         <p className="text-sm text-muted">{intro}</p>
       </div>
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
       <label className="flex flex-col gap-1 text-sm">
         New password
         <input

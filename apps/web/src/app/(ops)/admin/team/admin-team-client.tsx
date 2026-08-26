@@ -10,7 +10,7 @@ const ROLE_LABELS: Record<PlatformAdminRole, string> = {
   ops: "Operator",
 };
 
-const inputClass = "rounded-md border border-black/15 bg-surface px-3 py-2 text-sm dark:border-white/15";
+const inputClass = "rounded-md border border-black/15 bg-surface px-3 py-2 text-sm";
 
 export function AdminTeamClient({
   initialTeam,
@@ -75,38 +75,36 @@ export function AdminTeamClient({
         </p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">{error}</p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       {!emailConfigured && (
         <div className="rounded-lg border border-[#a8630a]/30 bg-[#fff4e5] px-4 py-3 text-sm text-[#7a4708]">
           <p className="font-semibold">Email sending isn&apos;t configured.</p>
           <p className="mt-0.5">
-            Invited operators won&apos;t receive an email — share the operator sign-in link with them
-            directly. They still get access as soon as they sign in with their invited email.
+            Invited operators won&apos;t receive an email — share the operator sign-in link with
+            them directly. They still get access as soon as they sign in with their invited email.
           </p>
         </div>
       )}
 
       {!isSuper && (
-        <p className="rounded-lg border border-black/10 px-4 py-2 text-sm text-foreground/60 dark:border-white/10">
+        <p className="rounded-lg border border-black/10 px-4 py-2 text-sm text-foreground/60">
           Only super admins can change the operator team.
         </p>
       )}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-foreground/70">Operators</h2>
-        <div className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/10">
+        <div className="overflow-x-auto rounded-xl border border-black/10">
           <table className="w-full min-w-[520px] text-sm">
-            <thead className="border-b border-black/10 text-left text-xs uppercase tracking-wide text-foreground/50 dark:border-white/10">
+            <thead className="border-b border-black/10 text-left text-xs uppercase tracking-wide text-foreground/50">
               <tr>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Role</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-black/5 dark:divide-white/5">
+            <tbody className="divide-y divide-black/5">
               {team.admins.map((admin) => (
                 <tr key={admin.userId}>
                   <td className="px-4 py-3">
@@ -142,7 +140,7 @@ export function AdminTeamClient({
                         onClick={() =>
                           void mutate(`/admin/team/${admin.userId}`, { method: "DELETE" })
                         }
-                        className="rounded-md border border-black/15 px-2.5 py-1 text-xs text-accent hover:bg-accent-soft disabled:opacity-40 dark:border-white/15"
+                        className="rounded-md border border-black/15 px-2.5 py-1 text-xs text-accent hover:bg-accent-soft disabled:opacity-40"
                       >
                         Revoke
                       </button>
@@ -161,7 +159,13 @@ export function AdminTeamClient({
           <form onSubmit={invite} className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex flex-1 flex-col gap-1 text-sm">
               <span className="text-foreground/60">Email</span>
-              <input name="email" type="email" required placeholder="name@kudoscards.co.uk" className={inputClass} />
+              <input
+                name="email"
+                type="email"
+                required
+                placeholder="name@kudoscards.co.uk"
+                className={inputClass}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-foreground/60">Role</span>
@@ -184,9 +188,12 @@ export function AdminTeamClient({
               <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground/40">
                 Pending invites
               </h3>
-              <ul className="flex flex-col divide-y divide-black/5 rounded-xl border border-black/10 dark:divide-white/5 dark:border-white/10">
+              <ul className="flex flex-col divide-y divide-black/5 rounded-xl border border-black/10">
                 {team.invites.map((inv) => (
-                  <li key={inv.email} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
+                  <li
+                    key={inv.email}
+                    className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm"
+                  >
                     <span className="min-w-0 truncate">
                       {inv.email}{" "}
                       <span className="text-xs text-foreground/40">· {ROLE_LABELS[inv.role]}</span>
@@ -200,7 +207,7 @@ export function AdminTeamClient({
                         disabled={pending || !emailConfigured}
                         title={emailConfigured ? undefined : "Email sending isn't configured"}
                         onClick={() => resend(inv.email)}
-                        className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                        className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
                       >
                         Resend email
                       </button>
@@ -208,11 +215,14 @@ export function AdminTeamClient({
                         type="button"
                         disabled={pending}
                         onClick={() =>
-                          void mutate(`/admin/team/invites?email=${encodeURIComponent(inv.email)}`, {
-                            method: "DELETE",
-                          })
+                          void mutate(
+                            `/admin/team/invites?email=${encodeURIComponent(inv.email)}`,
+                            {
+                              method: "DELETE",
+                            },
+                          )
                         }
-                        className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                        className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
                       >
                         Remove
                       </button>

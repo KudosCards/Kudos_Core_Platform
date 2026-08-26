@@ -19,12 +19,7 @@ import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { PricingBreakdownCard } from "@/components/pricing-breakdown";
 import { downloadOrderProofSheet } from "@/app/(app)/send/contact-sheet";
-import {
-  ORDER_RECIPIENT_STATUS_LABELS,
-  formatGbp,
-  formatOrderDate,
-  isPayable,
-} from "@/lib/orders";
+import { ORDER_RECIPIENT_STATUS_LABELS, formatGbp, formatOrderDate, isPayable } from "@/lib/orders";
 import { OrderStatusPill } from "@/components/order-status-pill";
 
 /** Mirrors summariseSendSchedule's idea of "already left us" — a posted card
@@ -273,7 +268,7 @@ export function OrderDetailClient({
                   min={isoDay(rescheduleWindow.earliest)}
                   max={isoDay(rescheduleWindow.latest)}
                   onChange={(e) => setNewDeliverBy(e.target.value)}
-                  className="w-fit rounded-md border border-black/15 px-2 py-1 dark:border-white/15"
+                  className="w-fit rounded-md border border-black/15 px-2 py-1"
                 />
               </label>
               {/* Rescheduling writes ONE arrive-by date to every card in the
@@ -391,9 +386,9 @@ export function OrderDetailClient({
             <p className="text-sm">
               {canWalletPay ? (
                 <>
-                  Your wallet balance of <strong>{formatGbp(walletBalanceMinor)}</strong> covers this
-                  order in full — paying takes it from your balance, and your card won&apos;t be
-                  charged.
+                  Your wallet balance of <strong>{formatGbp(walletBalanceMinor)}</strong> covers
+                  this order in full — paying takes it from your balance, and your card won&apos;t
+                  be charged.
                 </>
               ) : (
                 <>

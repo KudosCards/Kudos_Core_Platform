@@ -250,12 +250,12 @@ function ConfirmFooter({
         <div className="flex flex-col gap-1.5">
           {preflight ? (
             needsAttention === 0 ? (
-              <p className="text-sm font-medium text-emerald-700">
+              <p className="text-sm font-medium text-success">
                 ✓ All {preflight.total} cards ready to print, personalise and post.
               </p>
             ) : (
               <p className="text-sm">
-                <span className="font-semibold text-emerald-700">{preflight.ready} ready</span>
+                <span className="font-semibold text-success">{preflight.ready} ready</span>
                 <span className="text-muted"> · </span>
                 <span className="font-semibold text-accent">
                   {needsAttention} need{needsAttention === 1 ? "s" : ""} attention
@@ -284,9 +284,7 @@ function ConfirmFooter({
             <span className="text-xs text-muted">
               {chargeCount} card{chargeCount === 1 ? "" : "s"} · total
             </span>
-            <span className="text-lg font-semibold">
-              {total === null ? "—" : formatGbp(total)}
-            </span>
+            <span className="text-lg font-semibold">{total === null ? "—" : formatGbp(total)}</span>
           </div>
           <button
             type="button"

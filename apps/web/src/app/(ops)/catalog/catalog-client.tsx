@@ -71,7 +71,7 @@ export function CatalogClient({ configured }: { configured: boolean }) {
       </div>
 
       {!configured && (
-        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700">
           Airtable isn&apos;t connected yet. Set <code>AIRTABLE_API_KEY</code> and{" "}
           <code>AIRTABLE_BASE_ID</code> on the API service, then reload this page.
         </p>
@@ -91,7 +91,7 @@ export function CatalogClient({ configured }: { configured: boolean }) {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {summary && (
-        <div className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 text-sm dark:border-white/10">
+        <div className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 text-sm">
           <p className="font-medium">Sync complete</p>
           <ul className="grid grid-cols-2 gap-x-6 gap-y-1 text-foreground/70 sm:grid-cols-3">
             <li>Fetched: {summary.fetched}</li>
@@ -110,9 +110,9 @@ export function CatalogClient({ configured }: { configured: boolean }) {
               told to. Saying so is the difference between "it's on its way" and
               an hour of wondering whether the sync worked. */}
           {summary.published && (
-            <div className="border-t border-black/10 pt-2 dark:border-white/10">
+            <div className="border-t border-black/10 pt-2">
               {summary.published.outcome === "published" ? (
-                <p className="text-emerald-700 dark:text-emerald-400">
+                <p className="text-emerald-700">
                   Public card library refreshed — the changes are live on the website now.
                 </p>
               ) : (
@@ -129,7 +129,7 @@ export function CatalogClient({ configured }: { configured: boolean }) {
             </div>
           )}
           {summary.skippedNoImage.length > 0 && (
-            <div className="flex flex-col gap-1 border-t border-black/10 pt-2 dark:border-white/10">
+            <div className="flex flex-col gap-1 border-t border-black/10 pt-2">
               <p className="font-medium text-amber-600">
                 Not shown — no artwork attached in Airtable:
               </p>
@@ -142,7 +142,7 @@ export function CatalogClient({ configured }: { configured: boolean }) {
             </div>
           )}
           {summary.artworkFailed?.length > 0 && (
-            <div className="flex flex-col gap-1 border-t border-black/10 pt-2 dark:border-white/10">
+            <div className="flex flex-col gap-1 border-t border-black/10 pt-2">
               <p className="font-medium text-amber-600">
                 Updated, but still showing their previous artwork:
               </p>
@@ -161,7 +161,7 @@ export function CatalogClient({ configured }: { configured: boolean }) {
             </div>
           )}
           {summary.fieldMapping && (
-            <div className="flex flex-col gap-1 border-t border-black/10 pt-2 dark:border-white/10">
+            <div className="flex flex-col gap-1 border-t border-black/10 pt-2">
               <p className="font-medium">Columns read from Airtable</p>
               <p className="text-xs text-foreground/60">
                 Column names aren&rsquo;t fixed in code — the sync takes the first one it
@@ -188,7 +188,7 @@ export function CatalogClient({ configured }: { configured: boolean }) {
             </div>
           )}
           {summary.errors.length > 0 && (
-            <div className="flex flex-col gap-1 border-t border-black/10 pt-2 dark:border-white/10">
+            <div className="flex flex-col gap-1 border-t border-black/10 pt-2">
               <p className="font-medium text-red-600">Cards that didn&apos;t import:</p>
               {summary.errors.map((e) => (
                 <p key={e.externalId} className="text-xs text-foreground/60">

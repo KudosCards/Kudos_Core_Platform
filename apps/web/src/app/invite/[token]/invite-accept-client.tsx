@@ -7,7 +7,11 @@ import { createClient } from "@/lib/supabase/client";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 
-const ROLE_LABEL: Record<string, string> = { owner: "an owner", admin: "an admin", staff: "a staff member" };
+const ROLE_LABEL: Record<string, string> = {
+  owner: "an owner",
+  admin: "an admin",
+  staff: "a staff member",
+};
 
 const inputClass =
   "rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground focus:border-foreground/30 focus:outline-none disabled:opacity-60";
@@ -92,18 +96,19 @@ export function InviteAcceptClient({ token, preview }: { token: string; preview:
     <div className="card flex flex-col gap-5 p-8">
       <div className="flex flex-col gap-1 text-center">
         <h1 className="text-xl font-bold">Join {preview.accountName}</h1>
-        <p className="text-sm text-muted">
-          You&apos;ve been invited to join as {roleLabel}.
-        </p>
+        <p className="text-sm text-muted">You&apos;ve been invited to join as {roleLabel}.</p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">{error}</p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       {sessionEmail ? (
         sessionEmail.toLowerCase() === preview.email.toLowerCase() ? (
-          <button type="button" onClick={() => void accept()} disabled={busy} className="btn-accent">
+          <button
+            type="button"
+            onClick={() => void accept()}
+            disabled={busy}
+            className="btn-accent"
+          >
             {busy ? "Joining…" : "Accept invitation"}
           </button>
         ) : (
@@ -124,11 +129,7 @@ export function InviteAcceptClient({ token, preview }: { token: string; preview:
             <input type="password" name="password" required minLength={8} className={inputClass} />
           </label>
           <button type="submit" disabled={busy} className="btn-accent">
-            {busy
-              ? "Please wait…"
-              : mode === "create"
-                ? "Create login & join"
-                : "Sign in & join"}
+            {busy ? "Please wait…" : mode === "create" ? "Create login & join" : "Sign in & join"}
           </button>
           <button
             type="button"
@@ -138,9 +139,7 @@ export function InviteAcceptClient({ token, preview }: { token: string; preview:
             }}
             className="text-center text-xs text-muted hover:text-foreground"
           >
-            {mode === "create"
-              ? "Already have a Kudos login? Sign in"
-              : "Need a login? Create one"}
+            {mode === "create" ? "Already have a Kudos login? Sign in" : "Need a login? Create one"}
           </button>
         </form>
       )}

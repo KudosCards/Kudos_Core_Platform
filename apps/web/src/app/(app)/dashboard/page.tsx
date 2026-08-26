@@ -184,20 +184,20 @@ async function DashboardOverview() {
       )}
 
       {(summary?.contactsMissingAddress ?? 0) > 0 && (
-        <div className="flex flex-col gap-4 rounded-xl border border-amber-300 bg-amber-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 rounded-xl border border-warning/30 bg-warning-soft p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="font-semibold text-amber-900">
+            <p className="font-semibold text-foreground">
               {summary!.contactsMissingAddress} contact
               {summary!.contactsMissingAddress === 1 ? "" : "s"} need
               {summary!.contactsMissingAddress === 1 ? "s" : ""} an address
             </p>
-            <p className="text-sm text-amber-800">
+            <p className="text-sm text-warning">
               We post real cards, so these can&apos;t be sent until an address is added.
             </p>
           </div>
           <Link
             href="/recipients?missingAddress=true"
-            className="shrink-0 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600"
+            className="shrink-0 rounded-full bg-warning px-4 py-2 text-sm font-semibold text-white hover:bg-warning/90"
           >
             Add addresses <span aria-hidden>→</span>
           </Link>

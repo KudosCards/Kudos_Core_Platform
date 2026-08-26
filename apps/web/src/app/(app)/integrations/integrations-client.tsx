@@ -524,21 +524,13 @@ export function IntegrationsClient({
         </p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       {/* CRM connectors */}
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Connect a CRM</h2>
         {notice && (
-          <p
-            className={
-              notice.tone === "ok" ? "notice notice-success" : "notice notice-danger"
-            }
-          >
+          <p className={notice.tone === "ok" ? "notice notice-success" : "notice notice-danger"}>
             {notice.text}
           </p>
         )}

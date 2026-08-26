@@ -57,8 +57,8 @@ export function DailySummaryButton() {
         <p className="text-sm text-foreground">
           {result.adminsEmailed > 0 ? (
             <>
-              <span className="font-medium text-emerald-700 dark:text-emerald-400">Sent.</span>{" "}
-              {result.day}: {result.orders.length} order{result.orders.length === 1 ? "" : "s"},{" "}
+              <span className="font-medium text-emerald-700">Sent.</span> {result.day}:{" "}
+              {result.orders.length} order{result.orders.length === 1 ? "" : "s"},{" "}
               {result.signups.length} sign-up{result.signups.length === 1 ? "" : "s"},{" "}
               {result.cardsPosted.toLocaleString("en-GB")} card
               {result.cardsPosted === 1 ? "" : "s"} posted → {result.adminsEmailed} super admin

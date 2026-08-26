@@ -51,8 +51,8 @@ export default async function AdminEnterprisePage({
             href={`/admin/enterprise?status=${tab.value}`}
             className={`rounded-full border px-4 py-1.5 text-sm ${
               active === tab.value
-                ? "border-black/40 bg-black/5 font-medium dark:border-white/40 dark:bg-white/10"
-                : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                ? "border-black/40 bg-black/5 font-medium"
+                : "border-black/15 hover:bg-black/5"
             }`}
           >
             {tab.label}

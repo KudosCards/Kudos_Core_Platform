@@ -2,7 +2,16 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type Konva from "konva";
-import { Stage, Layer, Text, Rect, Line, Group, Image as KonvaImage, Transformer } from "react-konva";
+import {
+  Stage,
+  Layer,
+  Text,
+  Rect,
+  Line,
+  Group,
+  Image as KonvaImage,
+  Transformer,
+} from "react-konva";
 import useImage from "use-image";
 import type { DesignElement, DesignPage, SnapLine } from "@kudos/shared-types";
 import {
@@ -88,7 +97,9 @@ function QrNode({
   useEffect(() => {
     let active = true;
     const sampleUrl =
-      typeof window !== "undefined" ? `${window.location.origin}/r/preview` : "https://kudos/r/preview";
+      typeof window !== "undefined"
+        ? `${window.location.origin}/r/preview`
+        : "https://kudos/r/preview";
     void qrDataUrl(sampleUrl).then((url) => {
       if (active) setDataUrl(url);
     });
@@ -292,7 +303,8 @@ function TextNode({
     fontsTick,
   ]);
 
-  const overflowing = height > 0 && isOutsideSafeArea({ x: element.x, y: element.y, width, height });
+  const overflowing =
+    height > 0 && isOutsideSafeArea({ x: element.x, y: element.y, width, height });
 
   // Report overflow only while this element is the selected one (the panel warns
   // about the selection). A layout effect keeps it in sync without a render loop.
@@ -413,8 +425,7 @@ export function DesignCanvas({
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const measure = () =>
-      setFitScale(Math.min(MAX_CANVAS_SCALE, el.clientWidth / CANVAS_WIDTH));
+    const measure = () => setFitScale(Math.min(MAX_CANVAS_SCALE, el.clientWidth / CANVAS_WIDTH));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
@@ -562,7 +573,7 @@ export function DesignCanvas({
           aria-label="Zoom out"
           disabled={zoom <= ZOOM_MIN}
           onClick={() => setZoom((z) => steppedZoom(z, -1))}
-          className="flex size-8 items-center justify-center rounded-md border border-black/15 text-lg leading-none hover:bg-black/5 disabled:opacity-40 pointer-coarse:size-11 dark:border-white/15 dark:hover:bg-white/5"
+          className="flex size-8 items-center justify-center rounded-md border border-black/15 text-lg leading-none hover:bg-black/5 disabled:opacity-40 pointer-coarse:size-11"
         >
           −
         </button>
@@ -570,7 +581,7 @@ export function DesignCanvas({
           type="button"
           onClick={() => setZoom(1)}
           title="Fit to width"
-          className="flex min-w-14 items-center justify-center rounded-md border border-black/15 px-2 py-1 text-xs tabular-nums hover:bg-black/5 pointer-coarse:min-h-11 dark:border-white/15 dark:hover:bg-white/5"
+          className="flex min-w-14 items-center justify-center rounded-md border border-black/15 px-2 py-1 text-xs tabular-nums hover:bg-black/5 pointer-coarse:min-h-11"
         >
           {Math.round(zoom * 100)}%
         </button>
@@ -579,7 +590,7 @@ export function DesignCanvas({
           aria-label="Zoom in"
           disabled={zoom >= ZOOM_MAX}
           onClick={() => setZoom((z) => steppedZoom(z, 1))}
-          className="flex size-8 items-center justify-center rounded-md border border-black/15 text-lg leading-none hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+          className="flex size-8 items-center justify-center rounded-md border border-black/15 text-lg leading-none hover:bg-black/5 disabled:opacity-40"
         >
           +
         </button>
@@ -592,95 +603,95 @@ export function DesignCanvas({
           height={CANVAS_HEIGHT * scale}
           scaleX={scale}
           scaleY={scale}
-        onMouseDown={(e) => {
-          if (e.target === e.target.getStage()) {
-            onDeselect();
-          }
-        }}
-        // touch-none lets Konva own touch gestures on the canvas (reliable
-        // element dragging) instead of the browser scrolling/zooming the page.
-        className="touch-none rounded-md border border-black/10 bg-white dark:border-white/10"
-      >
-        <Layer ref={layerRef}>
-          <Rect
-            x={0}
-            y={0}
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
-            fill="#ffffff"
-            // The background fills the canvas, so a tap on "empty" space lands
-            // here, not the Stage — deselect from here too (works on touch).
-            onMouseDown={onDeselect}
-            onTap={onDeselect}
-          />
-          {/* The page's own background (colour / image) over the white base;
+          onMouseDown={(e) => {
+            if (e.target === e.target.getStage()) {
+              onDeselect();
+            }
+          }}
+          // touch-none lets Konva own touch gestures on the canvas (reliable
+          // element dragging) instead of the browser scrolling/zooming the page.
+          className="touch-none rounded-md border border-black/10 bg-white"
+        >
+          <Layer ref={layerRef}>
+            <Rect
+              x={0}
+              y={0}
+              width={CANVAS_WIDTH}
+              height={CANVAS_HEIGHT}
+              fill="#ffffff"
+              // The background fills the canvas, so a tap on "empty" space lands
+              // here, not the Stage — deselect from here too (works on touch).
+              onMouseDown={onDeselect}
+              onTap={onDeselect}
+            />
+            {/* The page's own background (colour / image) over the white base;
               non-interactive, so a click still deselects via the base Rect. */}
-          <PageBackground background={page.background} />
-          {/* Printer safe-area guide: keep content inside this dashed frame so
+            <PageBackground background={page.background} />
+            {/* Printer safe-area guide: keep content inside this dashed frame so
               nothing important is lost to bleed/trim. Non-interactive. */}
-          <Rect
-            x={CARD_SAFE_MARGIN}
-            y={CARD_SAFE_MARGIN}
-            width={CANVAS_WIDTH - CARD_SAFE_MARGIN * 2}
-            height={CANVAS_HEIGHT - CARD_SAFE_MARGIN * 2}
-            listening={false}
-            stroke="#94a3b8"
-            strokeWidth={1}
-            dash={[4, 4]}
-          />
-          {page.elements.map((element) => {
-            const isSelected = element.id === selectedElementId;
-            if (element.kind === "text") {
+            <Rect
+              x={CARD_SAFE_MARGIN}
+              y={CARD_SAFE_MARGIN}
+              width={CANVAS_WIDTH - CARD_SAFE_MARGIN * 2}
+              height={CANVAS_HEIGHT - CARD_SAFE_MARGIN * 2}
+              listening={false}
+              stroke="#94a3b8"
+              strokeWidth={1}
+              dash={[4, 4]}
+            />
+            {page.elements.map((element) => {
+              const isSelected = element.id === selectedElementId;
+              if (element.kind === "text") {
+                return (
+                  <TextNode
+                    key={element.id}
+                    element={element}
+                    isSelected={isSelected}
+                    scale={scale}
+                    drag={dragBridge}
+                    fontsTick={fontsTick}
+                    onSelect={() => onSelect(element.id)}
+                    onChange={onElementChange}
+                    onOverflowChange={reportOverflow}
+                  />
+                );
+              }
+              if (element.kind === "qr") {
+                return (
+                  <QrNode
+                    key={element.id}
+                    element={element}
+                    scale={scale}
+                    drag={dragBridge}
+                    onSelect={() => onSelect(element.id)}
+                    onChange={onElementChange}
+                  />
+                );
+              }
+              if (element.kind === "shape") {
+                return (
+                  <ShapeNode
+                    key={element.id}
+                    element={element}
+                    scale={scale}
+                    drag={dragBridge}
+                    onSelect={() => onSelect(element.id)}
+                    onChange={onElementChange}
+                  />
+                );
+              }
               return (
-                <TextNode
+                <ImageNode
                   key={element.id}
                   element={element}
-                  isSelected={isSelected}
-                  scale={scale}
-                  drag={dragBridge}
-                  fontsTick={fontsTick}
-                  onSelect={() => onSelect(element.id)}
-                  onChange={onElementChange}
-                  onOverflowChange={reportOverflow}
-                />
-              );
-            }
-            if (element.kind === "qr") {
-              return (
-                <QrNode
-                  key={element.id}
-                  element={element}
                   scale={scale}
                   drag={dragBridge}
                   onSelect={() => onSelect(element.id)}
                   onChange={onElementChange}
                 />
               );
-            }
-            if (element.kind === "shape") {
-              return (
-                <ShapeNode
-                  key={element.id}
-                  element={element}
-                  scale={scale}
-                  drag={dragBridge}
-                  onSelect={() => onSelect(element.id)}
-                  onChange={onElementChange}
-                />
-              );
-            }
-            return (
-              <ImageNode
-                key={element.id}
-                element={element}
-                scale={scale}
-                drag={dragBridge}
-                onSelect={() => onSelect(element.id)}
-                onChange={onElementChange}
-              />
-            );
-          })}
-          {/* The reserved strip on the back: pre-printed on the stock with the
+            })}
+            {/* The reserved strip on the back: pre-printed on the stock with the
               Kudos logo and QR. Drawn *over* the elements, so the line is never
               in doubt — but only half-opaque, because someone who has put
               artwork down here needs to see what they are moving. Hiding it
@@ -688,75 +699,75 @@ export function DesignCanvas({
               here is what": the label and the panel warning carry that. Both
               print paths clip to this same line. Non-interactive: it must never
               eat a click meant for an element sitting behind it. */}
-          {reservedTop !== null && (
-            <Group listening={false}>
-              <Rect
-                x={0}
-                y={reservedTop}
-                width={CANVAS_WIDTH}
-                height={CANVAS_HEIGHT - reservedTop}
-                fill="#ffffff"
-                opacity={0.55}
-              />
-              <Line
-                points={[0, reservedTop, CANVAS_WIDTH, reservedTop]}
-                stroke="#dc2626"
-                strokeWidth={1.5}
-                dash={[8, 5]}
-              />
-              <Text
-                x={0}
-                y={reservedTop + 14}
-                width={CANVAS_WIDTH}
-                align="center"
-                text={`Reserved — Kudos logo & QR (bottom ${BACK_RESERVED_FOOTER_MM}mm)`}
-                fontSize={14}
-                fontFamily="sans-serif"
-                fill="#b91c1c"
-              />
-            </Group>
-          )}
-          {/* Alignment guides — thin lines that appear while an element's edge or
+            {reservedTop !== null && (
+              <Group listening={false}>
+                <Rect
+                  x={0}
+                  y={reservedTop}
+                  width={CANVAS_WIDTH}
+                  height={CANVAS_HEIGHT - reservedTop}
+                  fill="#ffffff"
+                  opacity={0.55}
+                />
+                <Line
+                  points={[0, reservedTop, CANVAS_WIDTH, reservedTop]}
+                  stroke="#dc2626"
+                  strokeWidth={1.5}
+                  dash={[8, 5]}
+                />
+                <Text
+                  x={0}
+                  y={reservedTop + 14}
+                  width={CANVAS_WIDTH}
+                  align="center"
+                  text={`Reserved — Kudos logo & QR (bottom ${BACK_RESERVED_FOOTER_MM}mm)`}
+                  fontSize={14}
+                  fontFamily="sans-serif"
+                  fill="#b91c1c"
+                />
+              </Group>
+            )}
+            {/* Alignment guides — thin lines that appear while an element's edge or
               centre lines up with the card or another element. Non-interactive. */}
-          {guides.map((g) =>
-            g.axis === "x" ? (
-              <Line
-                key={`x-${g.position}`}
-                points={[g.position, 0, g.position, CANVAS_HEIGHT]}
-                stroke="#ec4899"
-                strokeWidth={1}
-                listening={false}
-              />
-            ) : (
-              <Line
-                key={`y-${g.position}`}
-                points={[0, g.position, CANVAS_WIDTH, g.position]}
-                stroke="#ec4899"
-                strokeWidth={1}
-                listening={false}
-              />
-            ),
-          )}
-          <Transformer
-            ref={trRef}
-            rotateEnabled
-            keepRatio={keepRatio}
-            enabledAnchors={keepRatio ? CORNER_ANCHORS : undefined}
-            anchorStroke="#2563eb"
-            anchorFill="#ffffff"
-            borderStroke="#2563eb"
-            anchorCornerRadius={6}
-            // Finger-sized handles on touch, tight handles for a mouse.
-            anchorSize={coarsePointer ? 20 : 10}
-            rotationSnaps={[0, 90, 180, 270]}
-            // Don't let a resize collapse an element to nothing.
-            boundBoxFunc={(oldBox, newBox) => {
-              const min = MIN_ELEMENT_SIZE * scale;
-              if (newBox.width < min || newBox.height < min) return oldBox;
-              return newBox;
-            }}
-          />
-        </Layer>
+            {guides.map((g) =>
+              g.axis === "x" ? (
+                <Line
+                  key={`x-${g.position}`}
+                  points={[g.position, 0, g.position, CANVAS_HEIGHT]}
+                  stroke="#ec4899"
+                  strokeWidth={1}
+                  listening={false}
+                />
+              ) : (
+                <Line
+                  key={`y-${g.position}`}
+                  points={[0, g.position, CANVAS_WIDTH, g.position]}
+                  stroke="#ec4899"
+                  strokeWidth={1}
+                  listening={false}
+                />
+              ),
+            )}
+            <Transformer
+              ref={trRef}
+              rotateEnabled
+              keepRatio={keepRatio}
+              enabledAnchors={keepRatio ? CORNER_ANCHORS : undefined}
+              anchorStroke="#2563eb"
+              anchorFill="#ffffff"
+              borderStroke="#2563eb"
+              anchorCornerRadius={6}
+              // Finger-sized handles on touch, tight handles for a mouse.
+              anchorSize={coarsePointer ? 20 : 10}
+              rotationSnaps={[0, 90, 180, 270]}
+              // Don't let a resize collapse an element to nothing.
+              boundBoxFunc={(oldBox, newBox) => {
+                const min = MIN_ELEMENT_SIZE * scale;
+                if (newBox.width < min || newBox.height < min) return oldBox;
+                return newBox;
+              }}
+            />
+          </Layer>
         </Stage>
       </div>
     </div>

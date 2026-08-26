@@ -8,7 +8,7 @@ export default function SendLoading() {
       <PageHeaderSkeleton />
       <div className="grid gap-6 lg:grid-cols-2">
         {Array.from({ length: 2 }).map((_, i) => (
-          <div key={i} className="flex flex-col gap-4 rounded-lg border border-black/10 p-6 dark:border-white/10">
+          <div key={i} className="flex flex-col gap-4 rounded-lg border border-black/10 p-6">
             <Skeleton className="h-5 w-40" />
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {Array.from({ length: 6 }).map((_, j) => (

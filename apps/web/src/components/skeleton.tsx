@@ -11,7 +11,7 @@ export function Skeleton({ className = "", ...props }: ComponentProps<"div">) {
   return (
     <div
       aria-hidden
-      className={`animate-pulse rounded-md bg-black/[0.06] dark:bg-white/[0.08] ${className}`}
+      className={`animate-pulse rounded-md bg-black/[0.06] ${className}`}
       {...props}
     />
   );
@@ -32,7 +32,7 @@ export function TableSkeleton({ rows = 6 }: { rows?: number }) {
   return (
     <div className="flex flex-col gap-6">
       <PageHeaderSkeleton />
-      <div className="flex flex-col divide-y divide-black/5 rounded-xl border border-black/10 dark:divide-white/5 dark:border-white/10">
+      <div className="flex flex-col divide-y divide-black/5 rounded-xl border border-black/10">
         {Array.from({ length: rows }).map((_, i) => (
           <div key={i} className="flex items-center justify-between gap-4 px-5 py-3.5">
             <Skeleton className="h-4 w-44" />

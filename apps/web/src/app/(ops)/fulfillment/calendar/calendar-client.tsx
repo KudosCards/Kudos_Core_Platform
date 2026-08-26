@@ -27,9 +27,9 @@ function todayYmd(): string {
  * are still open, amber today, neutral-green ahead. Mirrors the queue badges. */
 function dayTone(ymd: string, count: number, today: string): string {
   if (count === 0) return "";
-  if (ymd < today) return "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300";
-  if (ymd === today) return "bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-300";
-  return "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300";
+  if (ymd < today) return "bg-red-100 text-red-800";
+  if (ymd === today) return "bg-amber-100 text-amber-900";
+  return "bg-emerald-100 text-emerald-800";
 }
 
 function monthLabel(anchor: Date): string {
@@ -68,7 +68,10 @@ export function DispatchCalendarClient({
       go(view, addDaysUTC(anchorDate, direction * 7));
     } else {
       // month + list both step by a whole month.
-      go(view, new Date(Date.UTC(anchorDate.getUTCFullYear(), anchorDate.getUTCMonth() + direction, 1)));
+      go(
+        view,
+        new Date(Date.UTC(anchorDate.getUTCFullYear(), anchorDate.getUTCMonth() + direction, 1)),
+      );
     }
   }
 
@@ -91,10 +94,12 @@ export function DispatchCalendarClient({
       {calendar.overdueBefore > 0 && (
         <Link
           href="/fulfillment?due=overdue"
-          className="flex items-center justify-between rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 hover:bg-red-100 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300"
+          className="flex items-center justify-between rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 hover:bg-red-100"
         >
           <span>
-            <strong className="tabular-nums">{calendar.overdueBefore.toLocaleString("en-GB")}</strong>{" "}
+            <strong className="tabular-nums">
+              {calendar.overdueBefore.toLocaleString("en-GB")}
+            </strong>{" "}
             card{calendar.overdueBefore === 1 ? "" : "s"} overdue before this window
           </span>
           <span aria-hidden>→</span>
@@ -147,16 +152,22 @@ export function DispatchCalendarClient({
         </div>
       </div>
 
-      {view === "month" && (
-        <MonthGrid anchor={anchorDate} byDay={byDay} today={today} />
-      )}
+      {view === "month" && <MonthGrid anchor={anchorDate} byDay={byDay} today={today} />}
       {view === "week" && <WeekStrip anchor={anchorDate} byDay={byDay} today={today} />}
       {view === "list" && <AgendaList days={calendar.days} today={today} />}
     </div>
   );
 }
 
-function DayCount({ day, ymd, today }: { day: FulfillmentCalendarDay | undefined; ymd: string; today: string }) {
+function DayCount({
+  day,
+  ymd,
+  today,
+}: {
+  day: FulfillmentCalendarDay | undefined;
+  ymd: string;
+  today: string;
+}) {
   if (!day || day.total === 0) return null;
   return (
     <Link

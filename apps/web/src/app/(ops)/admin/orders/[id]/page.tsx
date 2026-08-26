@@ -1,8 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { AdminIdentity, AdminOrderDetail } from "@kudos/shared-types";
+import { describeSendSchedule, summariseSendSchedule } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
-import { ORDER_STATUS_CLASSES, ORDER_STATUS_LABELS, formatGbp, formatOrderDate } from "@/lib/orders";
+import {
+  ORDER_STATUS_CLASSES,
+  ORDER_STATUS_LABELS,
+  formatGbp,
+  formatOrderDate,
+} from "@/lib/orders";
 import { formatOrderNumber } from "@/lib/admin";
 import { OrderCockpit } from "./order-cockpit-client";
 
@@ -41,7 +47,9 @@ function ProgressBreakdown({ progress }: { progress: AdminOrderDetail["progress"
           .filter((c) => c.value > 0)
           .map((c) => (
             <div key={c.label} className="rounded-lg border border-border px-3 py-2">
-              <p className="text-lg font-semibold tabular-nums">{c.value.toLocaleString("en-GB")}</p>
+              <p className="text-lg font-semibold tabular-nums">
+                {c.value.toLocaleString("en-GB")}
+              </p>
               <p className="text-xs text-muted">{c.label}</p>
             </div>
           ))}
@@ -50,7 +58,7 @@ function ProgressBreakdown({ progress }: { progress: AdminOrderDetail["progress"
         <p className="text-xs text-muted">
           Click &amp; Drop: {progress.imported.toLocaleString("en-GB")} imported
           {progress.importErrors > 0 && (
-            <span className="text-amber-700 dark:text-amber-400">
+            <span className="text-amber-700">
               {" "}
               · {progress.importErrors.toLocaleString("en-GB")} import error
               {progress.importErrors === 1 ? "" : "s"}
@@ -116,6 +124,34 @@ export default async function AdminOrderDetailPage({
             </>
           )}
         </p>
+        {/* The same sentence the customer reads on their own order page, from
+            the same function. Ops could already see every card's post-by date
+            in the table below, but on a seventy-six card order that means
+            eyeballing seventy-six rows to answer "is this spread or not?" — so
+            a support conversation started from a different summary of the same
+            order than the customer was looking at. See ADR 0170. */}
+        {(() => {
+          const copy = describeSendSchedule(
+            summariseSendSchedule(
+              order.lines.map((line) => ({
+                // The fulfilment-job statuses that matter here — posted,
+                // delivered, returned_to_sender — share their names with the
+                // order-recipient ones the summariser keys on. Anything earlier
+                // (pending / in_progress / printed) is correctly "still to
+                // come": printed is not posted.
+                status: line.jobStatus ?? "pending",
+                dispatchDate: line.dueDate,
+              })),
+            ),
+            formatOrderDate,
+          );
+          return copy ? (
+            <p className="text-sm text-muted">
+              <span className="font-medium text-foreground">Scheduled — {copy.lead}</span>
+              {copy.detail ? ` ${copy.detail}` : ""}
+            </p>
+          ) : null;
+        })()}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">

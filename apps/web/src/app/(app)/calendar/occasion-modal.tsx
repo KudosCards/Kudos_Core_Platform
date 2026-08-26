@@ -104,17 +104,14 @@ export function OccasionModal({
   // The quickest path to a posted card: the one-page send flow, pre-seeded with
   // this contact. Offered whenever a card isn't already on its way, so the
   // subscriber can send straight from the calendar instead of hunting for it.
-  const canSendCard = Boolean(occasion.recipientId) && !OCCASION_CARD_IN_FLIGHT.has(occasion.status);
+  const canSendCard =
+    Boolean(occasion.recipientId) && !OCCASION_CARD_IN_FLIGHT.has(occasion.status);
 
   return (
     <Modal open onClose={onClose} title={occasionName(occasion)}>
       {editing ? (
         <form onSubmit={(event) => void handleSave(event)} className="flex flex-col gap-4">
-          {error && (
-            <p className="notice notice-danger">
-              {error}
-            </p>
-          )}
+          {error && <p className="notice notice-danger">{error}</p>}
           {canEditTitle && (
             <label className="flex flex-col gap-1 text-sm text-muted">
               Label
@@ -138,11 +135,7 @@ export function OccasionModal({
             />
           </label>
           <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="btn-accent disabled:opacity-60"
-            >
+            <button type="submit" disabled={saving} className="btn-accent disabled:opacity-60">
               {saving ? "Saving…" : "Save changes"}
             </button>
             <button

@@ -208,10 +208,9 @@ export function DesignsClient({
       // The API removes the design if nothing references it, or archives it out
       // of the library if a past order/occasion still points at it (that history
       // can't be broken). Either way it leaves the gallery — reflect which.
-      const result = await clientApiFetch<{ archived: boolean }>(
-        `/saved-designs/${design.id}`,
-        { method: "DELETE" },
-      );
+      const result = await clientApiFetch<{ archived: boolean }>(`/saved-designs/${design.id}`, {
+        method: "DELETE",
+      });
       setSavedDesigns((current) => current.filter((d) => d.id !== design.id));
       setNotice(
         result.archived
@@ -236,11 +235,7 @@ export function DesignsClient({
         </p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       {notice && (
         <p className="rounded-lg border border-border bg-surface px-4 py-2 text-sm text-muted">

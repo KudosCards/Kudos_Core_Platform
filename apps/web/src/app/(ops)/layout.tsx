@@ -73,7 +73,7 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
     <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
       {/* Desktop sidebar — brand + nav only. Operator identity, notifications and
           sign-out live in the content-column top bar (below). */}
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-black/10 px-4 py-6 lg:flex dark:border-white/10">
+      <aside className="hidden w-56 shrink-0 flex-col border-r border-black/10 px-4 py-6 lg:flex">
         <div className="flex flex-col gap-2 text-sm font-medium">
           {/* Brand — the Kudos mark, linking back to the ops dashboard. */}
           <Link href="/admin" className="mb-4 flex items-center gap-2 px-3">
@@ -91,7 +91,7 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="rounded-md px-3 py-2 text-foreground/70 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
+                    className="rounded-md px-3 py-2 text-foreground/70 hover:bg-black/5 hover:text-foreground"
                   >
                     {item.label}
                   </Link>
@@ -105,7 +105,7 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
         {/* Top bar — sticky across breakpoints. Notifications + sign-out sit
             top-right (the conventional place); the brand shows on mobile where
             there's no sidebar, and the operator identity on desktop. */}
-        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-black/10 bg-surface px-4 py-2.5 sm:px-6 lg:px-8 dark:border-white/10">
+        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-black/10 bg-surface px-4 py-2.5 sm:px-6 lg:px-8">
           <Link href="/admin" className="flex items-center gap-2 lg:hidden">
             <Logo className="h-8 w-auto" priority />
             <span className="text-sm font-semibold">Ops</span>
@@ -128,7 +128,7 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
         </header>
 
         {/* Mobile nav — horizontally-scrollable pills below the top bar. */}
-        <nav className="flex gap-1.5 overflow-x-auto border-b border-black/10 bg-surface px-4 py-2.5 lg:hidden dark:border-white/10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <nav className="flex gap-1.5 overflow-x-auto border-b border-black/10 bg-surface px-4 py-2.5 lg:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {navItems.map((item) => (
             <Link
               key={item.href}

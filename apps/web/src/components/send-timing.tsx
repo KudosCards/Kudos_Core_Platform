@@ -84,7 +84,12 @@ export function SendTimingPicker({
 
   const postsOn =
     value?.mode === "scheduled"
-      ? isoDay(computeDispatchDate(new Date(`${selected}T00:00:00.000Z`), POSTAGE_LEAD_DAYS[postageClass]))
+      ? isoDay(
+          computeDispatchDate(
+            new Date(`${selected}T00:00:00.000Z`),
+            POSTAGE_LEAD_DAYS[postageClass],
+          ),
+        )
       : null;
 
   // When "Send now" actually posts, honouring the same-day cut-off: today if
@@ -102,7 +107,7 @@ export function SendTimingPicker({
           always the right answer — but never pre-ticked: the choice stays a
           deliberate act (ADR 0159). */}
       {occasionDating && occasionDating.count > 0 && (
-        <label className="flex items-start gap-2 rounded-md border border-black/10 p-2.5 text-sm has-[:checked]:border-accent has-[:checked]:bg-accent/5 dark:border-white/10">
+        <label className="flex items-start gap-2 rounded-md border border-black/10 p-2.5 text-sm has-[:checked]:border-accent has-[:checked]:bg-accent/5">
           <input
             type="radio"
             name={idPrefix}
@@ -136,7 +141,7 @@ export function SendTimingPicker({
         </label>
       )}
 
-      <label className="flex items-start gap-2 rounded-md border border-black/10 p-2.5 text-sm has-[:checked]:border-accent has-[:checked]:bg-accent/5 dark:border-white/10">
+      <label className="flex items-start gap-2 rounded-md border border-black/10 p-2.5 text-sm has-[:checked]:border-accent has-[:checked]:bg-accent/5">
         <input
           type="radio"
           name={idPrefix}
@@ -153,20 +158,18 @@ export function SendTimingPicker({
               <>Posted today, as soon as it&apos;s printed.</>
             ) : (
               <>
-                Today&apos;s post has gone — we post it <strong>{formatLong(sendNowPostsOn)}</strong>.
+                Today&apos;s post has gone — we post it{" "}
+                <strong>{formatLong(sendNowPostsOn)}</strong>.
               </>
             )}
             {occasionDating && occasionDating.count > 0 && (
-              <>
-                {" "}
-                Occasion dates are ignored — every card goes together.
-              </>
+              <> Occasion dates are ignored — every card goes together.</>
             )}
           </span>
         </span>
       </label>
 
-      <label className="flex items-start gap-2 rounded-md border border-black/10 p-2.5 text-sm has-[:checked]:border-accent has-[:checked]:bg-accent/5 dark:border-white/10">
+      <label className="flex items-start gap-2 rounded-md border border-black/10 p-2.5 text-sm has-[:checked]:border-accent has-[:checked]:bg-accent/5">
         <input
           type="radio"
           name={idPrefix}
@@ -186,10 +189,8 @@ export function SendTimingPicker({
                 value={selected}
                 min={min}
                 max={max}
-                onChange={(e) =>
-                  onChange({ mode: "scheduled", deliverBy: e.target.value || min })
-                }
-                className="w-fit rounded-md border border-black/15 px-2 py-1 text-sm dark:border-white/15"
+                onChange={(e) => onChange({ mode: "scheduled", deliverBy: e.target.value || min })}
+                className="w-fit rounded-md border border-black/15 px-2 py-1 text-sm"
               />
               {postsOn && (
                 <span className="text-xs text-muted">

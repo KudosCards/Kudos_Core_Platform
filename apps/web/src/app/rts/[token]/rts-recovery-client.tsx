@@ -94,11 +94,7 @@ export function RtsRecoveryClient({
         </p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       {rtsCase.status === "awaiting_address" ? (
         <form onSubmit={(e) => submitAddress(e, "address")} className="flex flex-col gap-3">

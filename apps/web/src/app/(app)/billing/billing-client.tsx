@@ -90,9 +90,7 @@ export function BillingClient({
         <p className="text-muted">Manage your plan.</p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">{error}</p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4">
         <div>
@@ -137,12 +135,14 @@ export function BillingClient({
                 </span>
                 <span className="text-sm text-muted">/mo</span>
               </p>
-              <p className="text-sm font-medium text-emerald-600">{planCardPriceLabel(plan)}</p>
+              <p className="text-sm font-medium text-success">{planCardPriceLabel(plan)}</p>
               <ul className="flex flex-1 flex-col gap-1.5 text-sm text-muted">
-                {plan.inherits && <li className="font-medium text-foreground/70">{plan.inherits}</li>}
+                {plan.inherits && (
+                  <li className="font-medium text-foreground/70">{plan.inherits}</li>
+                )}
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-2">
-                    <span className="mt-0.5 text-emerald-500">✓</span>
+                    <span className="mt-0.5 text-success">✓</span>
                     {feature}
                   </li>
                 ))}
@@ -191,8 +191,8 @@ export function BillingClient({
         <div>
           <p className="font-semibold">Invoices &amp; receipts</p>
           <p className="text-sm text-muted">
-            Download your invoices and receipts, update your payment card, or cancel — all in Stripe&apos;s
-            secure billing portal.
+            Download your invoices and receipts, update your payment card, or cancel — all in
+            Stripe&apos;s secure billing portal.
           </p>
         </div>
         <button

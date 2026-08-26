@@ -14,11 +14,14 @@ const STATUS_LABELS: Record<EnterpriseEnquiryStatus, string> = {
 const STATUS_CLASSES: Record<EnterpriseEnquiryStatus, string> = {
   new: "bg-amber-100 text-amber-800",
   in_progress: "bg-sky-100 text-sky-800",
-  closed: "bg-black/5 text-foreground/60 dark:bg-white/10",
+  closed: "bg-black/5 text-foreground/60",
 };
 
 /** The next status a lead can move to, with the button label. */
-const NEXT_ACTIONS: Record<EnterpriseEnquiryStatus, { to: EnterpriseEnquiryStatus; label: string }[]> = {
+const NEXT_ACTIONS: Record<
+  EnterpriseEnquiryStatus,
+  { to: EnterpriseEnquiryStatus; label: string }[]
+> = {
   new: [
     { to: "in_progress", label: "Start" },
     { to: "closed", label: "Close" },
@@ -66,7 +69,7 @@ export function EnterpriseLeadsClient({ initialItems }: { initialItems: Enterpri
 
   if (items.length === 0) {
     return (
-      <p className="rounded-xl border border-black/10 p-8 text-center text-sm text-foreground/60 dark:border-white/10">
+      <p className="rounded-xl border border-black/10 p-8 text-center text-sm text-foreground/60">
         No enquiries here.
       </p>
     );
@@ -74,14 +77,9 @@ export function EnterpriseLeadsClient({ initialItems }: { initialItems: Enterpri
 
   return (
     <div className="flex flex-col gap-4">
-      {error && (
-        <p className="notice notice-danger">{error}</p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
       {items.map((lead) => (
-        <div
-          key={lead.id}
-          className="flex flex-col gap-3 rounded-xl border border-black/10 p-5 dark:border-white/10"
-        >
+        <div key={lead.id} className="flex flex-col gap-3 rounded-xl border border-black/10 p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex flex-col gap-0.5">
               <p className="font-semibold">{lead.organisation}</p>
@@ -92,9 +90,7 @@ export function EnterpriseLeadsClient({ initialItems }: { initialItems: Enterpri
                 </a>
                 {lead.phone ? ` · ${lead.phone}` : ""}
               </p>
-              {lead.teamSize && (
-                <p className="text-sm text-foreground/60">Size: {lead.teamSize}</p>
-              )}
+              {lead.teamSize && <p className="text-sm text-foreground/60">Size: {lead.teamSize}</p>}
             </div>
             <div className="flex flex-col items-end gap-1">
               <span
@@ -106,14 +102,14 @@ export function EnterpriseLeadsClient({ initialItems }: { initialItems: Enterpri
             </div>
           </div>
 
-          <p className="whitespace-pre-wrap rounded-lg bg-black/[0.03] p-3 text-sm dark:bg-white/[0.03]">
+          <p className="whitespace-pre-wrap rounded-lg bg-black/[0.03] p-3 text-sm">
             {lead.message}
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
             <a
               href={`mailto:${lead.email}?subject=${encodeURIComponent(`Kudos Cards — ${lead.organisation}`)}`}
-              className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+              className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5"
             >
               Reply by email
             </a>
@@ -123,7 +119,7 @@ export function EnterpriseLeadsClient({ initialItems }: { initialItems: Enterpri
                 type="button"
                 disabled={pendingId === lead.id}
                 onClick={() => void setStatus(lead.id, action.to)}
-                className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+                className="rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
               >
                 {action.label}
               </button>

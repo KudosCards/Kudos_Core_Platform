@@ -210,11 +210,7 @@ export function CardFacePreview({
         height={CANVAS_HEIGHT * scale}
         scaleX={scale}
         scaleY={scale}
-        className={
-          bordered
-            ? "rounded-md border border-black/10 bg-white dark:border-white/10"
-            : "bg-white"
-        }
+        className={bordered ? "rounded-md border border-black/10 bg-white" : "bg-white"}
       >
         <Layer listening={false}>
           <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#ffffff" />

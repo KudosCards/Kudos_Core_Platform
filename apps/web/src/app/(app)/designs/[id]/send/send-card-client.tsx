@@ -65,7 +65,10 @@ function formFromContact(c: ContactResult): AddressForm {
 
 /** One-line address preview for a search result row. */
 function addressPreview(c: ContactResult): string {
-  return [c.addressLine1, c.addressCity, c.addressPostcode].filter(Boolean).join(", ") || "No address on file";
+  return (
+    [c.addressLine1, c.addressCity, c.addressPostcode].filter(Boolean).join(", ") ||
+    "No address on file"
+  );
 }
 
 export function SendCardClient({
@@ -209,9 +212,7 @@ export function SendCardClient({
           // when the design carries a QR element (ADR 0132).
           ...(designHasQr && messagePageId ? { messagePageId } : {}),
           // Existing contact → reuse it; new contact → maybe save it.
-          ...(selectedContactId
-            ? { recipientId: selectedContactId }
-            : { saveToContacts }),
+          ...(selectedContactId ? { recipientId: selectedContactId } : { saveToContacts }),
         }),
       });
 
@@ -223,7 +224,9 @@ export function SendCardClient({
       window.location.href = checkoutUrl;
     } catch (submitError) {
       setError(
-        submitError instanceof ApiError ? submitError.message : "Something went wrong — please try again.",
+        submitError instanceof ApiError
+          ? submitError.message
+          : "Something went wrong — please try again.",
       );
       setBusy(false);
     }
@@ -231,13 +234,15 @@ export function SendCardClient({
 
   // text-base on mobile (16px) stops iOS Safari zooming in when a field is
   // focused; text-sm keeps it tidy on desktop. py-2.5 gives a comfier tap target.
-  const inputClass =
-    "rounded-md border border-border bg-surface px-3 py-2.5 text-base sm:text-sm";
+  const inputClass = "rounded-md border border-border bg-surface px-3 py-2.5 text-base sm:text-sm";
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 pb-24 lg:pb-0">
       <div className="flex flex-col gap-1">
-        <Link href={`/designs/${designId}/edit`} className="text-sm text-muted hover:text-foreground">
+        <Link
+          href={`/designs/${designId}/edit`}
+          className="text-sm text-muted hover:text-foreground"
+        >
           ← Back to editing
         </Link>
         <h1 className="text-3xl font-bold tracking-tight">Send your card</h1>
@@ -246,9 +251,7 @@ export function SendCardClient({
         </p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">{error}</p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       <form
         id="send-card-form"
@@ -405,8 +408,8 @@ export function SendCardClient({
             <fieldset className="flex flex-col gap-2 border-t border-border pt-4">
               <legend className="mb-1 text-sm font-medium">Message page</legend>
               <p className="text-xs text-muted">
-                This design has a QR code. Attach a message page so they see a video and a
-                personal note when they scan it.
+                This design has a QR code. Attach a message page so they see a video and a personal
+                note when they scan it.
               </p>
               {activeMessagePages.length > 0 ? (
                 <>

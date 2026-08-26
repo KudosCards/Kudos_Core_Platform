@@ -14,12 +14,12 @@ import { clientApiFetch } from "@/lib/api.client";
 const KIND_DOT: Record<string, string> = {
   pending_approval: "bg-accent",
   unpaid_order: "bg-accent",
-  pending_invite: "bg-blue-500",
-  upcoming_occasion: "bg-emerald-500",
-  order_paid: "bg-emerald-500",
-  auto_send: "bg-blue-500",
-  invite_accepted: "bg-blue-500",
-  card_returned: "bg-amber-500",
+  pending_invite: "bg-info",
+  upcoming_occasion: "bg-success-soft0",
+  order_paid: "bg-success-soft0",
+  auto_send: "bg-info",
+  invite_accepted: "bg-info",
+  card_returned: "bg-warning",
   support_reply: "bg-accent",
 };
 
@@ -133,7 +133,9 @@ export function NotificationBell() {
   }
 
   function markAllRead(): void {
-    setInbox((current) => (current ? current.map((n) => ({ ...n, readAt: n.readAt ?? new Date() })) : current));
+    setInbox((current) =>
+      current ? current.map((n) => ({ ...n, readAt: n.readAt ?? new Date() })) : current,
+    );
     setUnread(0);
     void clientApiFetch("/notifications/inbox/read-all", { method: "POST" }).catch(() => {});
   }
@@ -234,7 +236,9 @@ export function NotificationBell() {
                             <span className="min-w-0 flex-1">
                               <span
                                 className={`block truncate text-sm ${
-                                  unreadRow ? "font-semibold text-foreground" : "font-medium text-foreground/70"
+                                  unreadRow
+                                    ? "font-semibold text-foreground"
+                                    : "font-medium text-foreground/70"
                                 }`}
                               >
                                 {item.title}
