@@ -445,9 +445,24 @@ export function BulkSendClient({
       ? { ...preflight.occasionDated, total: sendable.length }
       : null;
 
+  // Artwork placed in the reserved strip on the back is never printed, so it
+  // blocks the send rather than warning about it — the server refuses the order
+  // too, and this is the half the customer can act on. Only *elements* block; a
+  // background simply ends at the line, which is the designed behaviour.
+  //
+  // Blocks only on a preflight for the current selection: `preflight` is null
+  // while one is in flight, and treating "not yet known" as "blocked" would
+  // flicker the pay button off on every change.
+  const artworkBlocksSend = (preflight?.backArtworkClipped.elements ?? 0) > 0;
+
   // A send-timing choice is required — the picker starts unselected so it can't
   // be left on a default (ADR 0159).
-  const canPay = !busy && !!selectedDesignId && sendable.length > 0 && effectiveTiming !== null;
+  const canPay =
+    !busy &&
+    !!selectedDesignId &&
+    sendable.length > 0 &&
+    effectiveTiming !== null &&
+    !artworkBlocksSend;
   // Scale-adaptive routing (ADR 0118): a large run pays through the deliberate
   // "Review & confirm" gate; a small run keeps the frictionless one-tap pay.
   const largeRun = sendable.length >= REVIEW_ALL_THRESHOLD;

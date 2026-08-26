@@ -322,6 +322,117 @@ describe("Batch orders (e2e)", () => {
     });
   });
 
+  describe("reserved footer (ADR 0171)", () => {
+    /**
+     * The net beneath the save-time guardrail.
+     *
+     * SavedDesignsService now refuses to *store* a design whose back reaches
+     * into the reserved strip, so nothing authored from here on can be
+     * unprintable. Designs saved before that guard existed still can be — and
+     * they are still sitting in customers' libraries, orderable. Every
+     * interactive send re-checks before taking money.
+     *
+     * The fixture is written straight to the database on purpose: the API can
+     * no longer produce this state, which is exactly why it models a legacy
+     * design rather than a new one.
+     */
+    async function seedLegacyBadDesign(accountId: string): Promise<string> {
+      const design = await prisma.savedDesign.create({
+        data: {
+          accountId,
+          name: "Legacy partner adverts",
+          document: {
+            version: 1,
+            pages: [
+              { name: "front", elements: [] },
+              { name: "inside-left", elements: [] },
+              { name: "inside-right", elements: [] },
+              {
+                name: "back",
+                // y=520 is inside the reserved strip on A6, which starts at 505.5.
+                elements: [
+                  {
+                    kind: "image",
+                    id: randomUUID(),
+                    assetUrl: "https://cdn.example.com/partner-advert.png",
+                    x: 0,
+                    y: 520,
+                    width: 450,
+                    height: 60,
+                    rotation: 0,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      });
+      return design.id;
+    }
+
+    it("refuses a quick-send from a design that reaches into the strip", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await seedLegacyBadDesign(accountId);
+
+      const response = await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          firstName: "Jamie",
+          lastName: "Pupil",
+          shippingAddressLine1: "1 Test Street",
+          shippingAddressCity: "London",
+          shippingAddressPostcode: "SW1A 1AA",
+          postageClass: "second_class",
+        })
+        .expect(400);
+      expect((response.body as { message: string }).message).toContain("QR code");
+
+      // Nothing half-created: a refused send must not leave an order behind.
+      expect(await prisma.batchOrder.count({ where: { accountId } })).toBe(0);
+    });
+
+    it("refuses a bulk send from the same design", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await seedLegacyBadDesign(accountId);
+      const recipientId = await createRecipient(token);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [recipientId], postageClass: "second_class" })
+        .expect(400);
+
+      expect(await prisma.batchOrder.count({ where: { accountId } })).toBe(0);
+    });
+
+    it("allows the send once the offending element moves above the line", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await seedLegacyBadDesign(accountId);
+      const stored = await prisma.savedDesign.findUniqueOrThrow({ where: { id: savedDesignId } });
+      const document = stored.document as {
+        pages: { name: string; elements: { y: number }[] }[];
+      };
+      document.pages.find((page) => page.name === "back")!.elements[0]!.y = 400;
+      await prisma.savedDesign.update({ where: { id: savedDesignId }, data: { document } });
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          firstName: "Jamie",
+          lastName: "Pupil",
+          shippingAddressLine1: "1 Test Street",
+          shippingAddressCity: "London",
+          shippingAddressPostcode: "SW1A 1AA",
+          postageClass: "second_class",
+        })
+        .expect(201);
+    });
+  });
+
   describe("quick-send (guided first order)", () => {
     function quickSendBody(savedDesignId: string) {
       return {

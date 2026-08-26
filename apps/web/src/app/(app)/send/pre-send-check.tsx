@@ -221,32 +221,44 @@ export function PreSendCheck({
         </div>
       )}
 
-      {/* A design-level warning, so it sits outside the per-recipient buckets and
-          shows even when every card is otherwise ready — the artwork is the same
-          on all of them, and being cut is not a reason a card "needs attention".
-          The last chance to catch this before it is printed. */}
-      {(preflight.backArtworkClipped.background || preflight.backArtworkClipped.elements > 0) && (
-        <div className="flex flex-col gap-1 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-foreground">
-          <span className="font-medium">
-            The bottom {BACK_RESERVED_FOOTER_MM}mm of the back won&apos;t be printed
+      {/* Two different things wearing one notice until now.
+          
+          An element reaching into the strip is authored content that will not be
+          printed, and the send is refused until it moves — the server refuses it
+          too, so this is the readable half of a rule rather than the whole rule.
+          
+          A background reaching into it is not a fault at all: a background
+          always covers the strip and simply stops at the line (ADR 0166). It
+          stays a note, because blocking on it would block very nearly every back
+          design ever made. */}
+      {preflight.backArtworkClipped.elements > 0 && (
+        <div className="flex flex-col gap-1 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2.5 text-sm text-foreground">
+          <span className="banner-lead">
+            {preflight.backArtworkClipped.elements} item
+            {preflight.backArtworkClipped.elements === 1 ? "" : "s"} on the back won&apos;t be
+            printed
           </span>
           <span className="text-xs">
-            That strip is already printed on the card with the Kudos logo and QR code.{" "}
-            {preflight.backArtworkClipped.background
-              ? "Your background stops at that line"
-              : `${preflight.backArtworkClipped.elements} item${
-                  preflight.backArtworkClipped.elements === 1 ? "" : "s"
-                } on the back reach into it`}
-            {preflight.backArtworkClipped.background &&
-              preflight.backArtworkClipped.elements > 0 &&
-              `, and ${preflight.backArtworkClipped.elements} item${
-                preflight.backArtworkClipped.elements === 1 ? "" : "s"
-              } reach into it`}
-            . These cards will still send —{" "}
+            The bottom {BACK_RESERVED_FOOTER_MM}mm of the back is already printed on the card with
+            the Kudos logo and QR code — the QR is how each recipient reaches their digital message.
+            Anything placed there is cut.{" "}
             <Link href={editDesignHref} className="font-medium underline">
-              open the design
+              Open the design
             </Link>{" "}
-            if you want to move anything up first.
+            and move {preflight.backArtworkClipped.elements === 1 ? "it" : "them"} above the dashed
+            line to continue.
+          </span>
+        </div>
+      )}
+
+      {preflight.backArtworkClipped.background && preflight.backArtworkClipped.elements === 0 && (
+        <div className="flex flex-col gap-1 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-foreground">
+          <span className="font-medium">
+            Your background stops {BACK_RESERVED_FOOTER_MM}mm above the bottom of the back
+          </span>
+          <span className="text-xs">
+            That strip is already printed with the Kudos logo and QR code, so the background ends
+            there. Nothing is lost — these cards are fine to send.
           </span>
         </div>
       )}

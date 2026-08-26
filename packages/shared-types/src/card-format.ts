@@ -211,3 +211,42 @@ export function backArtworkInReservedFooter(
   }
   return { background: page.background != null, elements };
 }
+
+/**
+ * Whether a design may be printed as it stands, or the reason it may not.
+ *
+ * The rule: **placed elements** must not reach into the reserved footer. A
+ * background may — it always covers the strip, it simply stops at the line, and
+ * that is the designed behaviour (ADR 0166), not a fault. Blocking on a
+ * background would block very nearly every back design anyone has ever made.
+ *
+ * Judged at `DEFAULT_CARD_SIZE`, deliberately, and that is not laziness. The
+ * reserved 30 mm converts to *more* design units on the smaller card — 128.5 on
+ * A6 against 90.6 on A5 — so A6 is the strictest of the two. A design that
+ * clears it clears every size we print, which means an admin changing the house
+ * print size can never retroactively invalidate designs that were already saved.
+ * It also happens to be the size in use, so today it is exactly accurate.
+ *
+ * Inherits `backArtworkInReservedFooter`'s deliberate under-reporting on wrapped
+ * text: a text block that starts above the line and wraps into it is not counted.
+ * That keeps this free of false positives, which is what earns it the right to
+ * *block* rather than warn — at the cost of not being a complete guarantee. The
+ * editor measures rendered nodes and does catch the wrapped case; the print
+ * engine clips regardless.
+ */
+export function reservedFooterViolation(
+  document: { pages: { name: string; background?: unknown; elements: unknown[] }[] },
+  size: CardSize = DEFAULT_CARD_SIZE,
+): { elements: number; message: string } | null {
+  const { elements } = backArtworkInReservedFooter(document, size);
+  if (elements === 0) return null;
+  return {
+    elements,
+    message:
+      `The bottom ${BACK_RESERVED_FOOTER_MM}mm of the card back is reserved for the Kudos logo ` +
+      `and QR code, which are already printed on the card. ${elements} ` +
+      `${elements === 1 ? "item reaches" : "items reach"} into that strip and ` +
+      `${elements === 1 ? "would not be" : "would not be"} printed. Open the design and move ` +
+      `${elements === 1 ? "it" : "them"} above the dashed line on the back face.`,
+  };
+}
