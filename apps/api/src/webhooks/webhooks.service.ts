@@ -436,10 +436,11 @@ export class WebhooksService {
    * A delayed-notification payment (e.g. a bank debit) failed to clear after the
    * Checkout Session completed. Nothing was ever fulfilled or credited — the
    * `completed` event was skipped because the session was still "unpaid" (see the
-   * payment_status guard) — so this just releases the stranded order back to
-   * `draft` so the buyer can retry, mirroring an expired session. A wallet top-up
-   * is credited only on success, so a failed top-up needs no undo. Synchronous
-   * methods (card/wallets/Link) never reach this event.
+   * payment_status guard) — so this releases the stranded order back to `draft`
+   * so the buyer can retry, mirroring an expired session, and hands back any
+   * wallet draw the session was holding. A wallet top-up is credited only on
+   * success, so a failed top-up needs no undo. Synchronous methods
+   * (card/wallets/Link) never reach this event.
    */
   private async handleAsyncPaymentFailed(session: Stripe.Checkout.Session): Promise<void> {
     if (session.metadata?.type === "wallet_topup") {
@@ -459,6 +460,10 @@ export class WebhooksService {
     }
 
     const order = await this.prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+    // Same reasoning as an expired session: the wallet was debited when the
+    // session was created, and this payment is never going to clear, so the
+    // money goes back. See ADR 0169.
+    await this.batchOrders.releaseWalletReservation(order.accountId, batchOrderId);
     await this.audit.record({
       accountId: order.accountId,
       actorUserId: SYSTEM_ACTOR,

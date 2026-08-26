@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { App } from "supertest/types";
-import type Stripe from "stripe";
+import Stripe from "stripe";
 import request from "supertest";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { STRIPE_CLIENT } from "../src/billing/stripe-client.provider";
 import { BatchOrdersService } from "../src/batch-orders/batch-orders.service";
+import type { EnvConfig } from "../src/config/env.schema";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
@@ -24,16 +26,26 @@ describe("Wallet part-payment (e2e)", () => {
   let prisma: PrismaService;
   let checkoutSessionsCreate: jest.Mock;
   let refundsCreate: jest.Mock;
+  let signWebhook: (payload: string) => string;
 
   beforeAll(async () => {
     checkoutSessionsCreate = jest.fn();
     refundsCreate = jest.fn();
+    // Session creation and refunds are mocked (they are network calls). Signature
+    // verification is not: `webhooks` is the real SDK's, which is pure local
+    // crypto, so a webhook test here still has to present a genuine signature.
+    const realStripe = new Stripe("sk_test_placeholder_for_signature_verification");
     const mockStripe = {
       checkout: { sessions: { create: checkoutSessionsCreate } },
       refunds: { create: refundsCreate },
+      webhooks: realStripe.webhooks,
     } as unknown as Stripe;
     app = await createTestApp([{ provide: STRIPE_CLIENT, useValue: mockStripe }]);
     prisma = app.get(PrismaService);
+    const secret = app
+      .get(ConfigService<EnvConfig, true>)
+      .get("STRIPE_WEBHOOK_SECRET", { infer: true });
+    signWebhook = (payload) => realStripe.webhooks.generateTestHeaderString({ payload, secret });
   });
 
   afterAll(async () => {
@@ -189,7 +201,11 @@ describe("Wallet part-payment (e2e)", () => {
   it("never lets two concurrent checkouts spend the same balance twice", async () => {
     const { token, accountId } = await signUp();
     await credit(accountId, 100);
-    const [a, b] = await Promise.all([draftOrder(token), draftOrder(token)]);
+    // Set up sequentially. Only the two checkouts below are meant to race; each
+    // draftOrder is three HTTP round trips, and running those in parallel too
+    // adds a socket race to the fixture that has nothing to do with the wallet.
+    const a = await draftOrder(token);
+    const b = await draftOrder(token);
 
     // Driven at the service, not over HTTP. What is being tested is a database
     // transaction racing itself; supertest binds a fresh ephemeral port per
@@ -322,6 +338,83 @@ describe("Wallet part-payment (e2e)", () => {
       .set("Authorization", `Bearer ${await mintToken(opsUserId)}`)
       .expect(200);
     expect((opsView.body as { walletAppliedMinor: number }).walletAppliedMinor).toBe(100);
+  });
+
+  it("refuses to hand back the wallet portion of an order that is already paid", async () => {
+    const { token, accountId } = await signUp();
+    await credit(accountId, 100);
+    const order = await draftOrder(token);
+    await checkout(token, order.id).expect(201);
+    // Settle it, as the payment webhook would.
+    await prisma.batchOrder.update({
+      where: { id: order.id },
+      data: { status: "paid", paymentMethod: "card" },
+    });
+
+    // Cancelling a paid order is refused — but the refusal must come *before*
+    // anything touches the money. Releasing first and checking after would
+    // credit a customer for a card that is already going to print, and destroy
+    // the order's record of its wallet portion so a later refund pays the
+    // wallet leg a second time.
+    await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/cancel`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+
+    expect(await balanceOf(accountId)).toBe(0);
+    const row = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.id } });
+    expect(row.walletAppliedMinor).toBe(100);
+    expect(row.status).toBe("paid");
+  });
+
+  it("gives the reservation back when a delayed payment method later fails", async () => {
+    const { token, accountId } = await signUp();
+    await credit(accountId, 100);
+    const order = await draftOrder(token);
+    await checkout(token, order.id).expect(201);
+    expect(await balanceOf(accountId)).toBe(0);
+
+    // A bank-debit style method completes checkout unpaid and settles later.
+    // When it settles *failed*, the order goes back to draft — and the money
+    // held against it has to come back too.
+    const session = (await checkoutSessionsCreate.mock.results.at(-1)?.value) as { id: string };
+    const payload = JSON.stringify({
+      id: `evt_${randomUUID()}`,
+      object: "event",
+      api_version: "2025-01-01",
+      created: Math.floor(Date.now() / 1000),
+      livemode: false,
+      pending_webhooks: 0,
+      request: null,
+      type: "checkout.session.async_payment_failed",
+      data: { object: { id: session.id, metadata: { batchOrderId: order.id } } },
+    });
+    await request(app.getHttpServer())
+      .post("/webhooks/stripe")
+      .set("Content-Type", "application/json")
+      .set("stripe-signature", signWebhook(payload))
+      .send(payload)
+      .expect(201);
+
+    expect(await balanceOf(accountId)).toBe(100);
+    const row = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.id } });
+    expect(row.status).toBe("draft");
+    expect(row.walletAppliedMinor).toBe(0);
+  });
+
+  it("tells Kudos HQ about an order paid entirely from the wallet", async () => {
+    const { token, accountId } = await signUp();
+    await credit(accountId, 5_000);
+    const order = await draftOrder(token);
+
+    await checkout(token, order.id).expect(201);
+
+    // Every other payment route raises this. An order settled from a balance is
+    // still an order HQ needs to know about — it is going to print.
+    const notified = await prisma.platformNotification.count({
+      where: { kind: "new_order", entityId: order.id },
+    });
+    expect(notified).toBeGreaterThan(0);
   });
 
   it("is unchanged for an account with no balance", async () => {

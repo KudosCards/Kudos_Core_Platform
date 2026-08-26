@@ -66,19 +66,30 @@ a concurrency test spend the same £1 twice, reproducibly.
 ### Every abandon path returns the reservation
 
 Because the money leaves before the payment completes, each way a payment can
-fail to complete has to give it back. There are four, and missing any one of them
+fail to complete has to give it back. There are five, and missing any one of them
 quietly costs a customer their balance:
 
 | Path | Release |
 | --- | --- |
 | Stripe session creation throws | Compensating release, then the order returns to `draft` |
 | `checkout.session.expired` webhook | Release, then back to `draft` |
+| `checkout.session.async_payment_failed` webhook | Release, then back to `draft` — a bank debit that never clears |
 | Buyer cancels an unpaid order | Release before the order is released |
 | Buyer resumes an abandoned checkout | **Not** released — the existing reservation is re-used, or the wallet would be debited twice for one order |
 
+(`payment_intent.payment_failed` is deliberately absent: Stripe's hosted page
+lets the buyer retry on the same live session, so the order stays
+`pending_payment` and keeps its reservation. It is released when that session
+eventually expires.)
+
 `releaseWalletReservation` is idempotent by compare-and-swap on
 `walletAppliedMinor`, so only the request that actually claims the reservation
-writes the credit.
+writes the credit. It also refuses outright to release an order that is not
+`draft` or `pending_payment`. That guard lives in the release rather than in each
+caller because it is what makes every call site correct regardless of the order
+it does things in: releasing a **paid** order would credit a customer for a card
+that is already going to print, and destroy the record of the wallet leg so a
+later refund would pay that leg a second time.
 
 A split order's refund returns both halves: Stripe refunds its leg first (it is
 the leg that can fail, and it is idempotency-keyed), then the wallet portion is

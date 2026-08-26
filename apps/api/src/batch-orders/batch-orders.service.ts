@@ -39,6 +39,7 @@ import {
 } from "@kudos/shared-types";
 import { MessagesService } from "../messages/messages.service";
 import { RecipientsService } from "../recipients/recipients.service";
+import { OpsActivityService } from "../ops-activity/ops-activity.service";
 import { UK_POSTCODE_REGEX } from "../common/uk-postcode";
 import type { CreateBatchOrderDto, CreateBatchOrderLineDto } from "./dto/create-batch-order.dto";
 import type { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
@@ -142,6 +143,7 @@ export class BatchOrdersService {
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
     private readonly messages: MessagesService,
     private readonly recipients: RecipientsService,
+    private readonly opsActivity: OpsActivityService,
   ) {}
 
   /**
@@ -1089,12 +1091,19 @@ export class BatchOrdersService {
           await this.audit.record({
             accountId,
             actorUserId,
-            action: "wallet_payment_succeeded",
+            // Same action name as WalletService.payOrder: to an auditor this is
+            // the same event — an order settled from the balance — and one name
+            // keeps it findable in a single query.
+            action: "wallet_order_paid",
             targetType: "BatchOrder",
             targetId: id,
             metadata: { totalMinor: existing.totalMinor },
           });
         }
+        // Kudos HQ's copy, post-commit like the audit entry above. This order
+        // never reaches Stripe, so the webhook path would never announce it —
+        // without this it would print with no operator ever being told.
+        await this.opsActivity.orderPaid(id);
         const query = new URLSearchParams({ batchOrderId: id, ...options?.successExtraParams });
         return { checkoutUrl: `${webAppUrlForWallet}${successPathForWallet}?${query.toString()}` };
       }
@@ -1279,10 +1288,12 @@ export class BatchOrdersService {
    * forever, holding its occasions "queued" indefinitely.
    */
   async cancel(accountId: string, actorUserId: string, id: string): Promise<BatchOrder> {
-    // Before releasing the order: a pending_payment order may be holding a
-    // reserved wallet draw, and cancelling without returning it would keep the
-    // customer's money for a card that will never be printed. No-op when there
-    // is nothing reserved.
+    // Must stay ahead of the transaction below: a pending_payment order may be
+    // holding a reserved wallet draw, and cancelling without returning it would
+    // keep the customer's money for a card that will never be printed. Running
+    // it afterwards would find the order already "cancelled", which the release
+    // refuses to touch. Safe to run first because that same status guard refuses
+    // a paid order, so a cancel that is about to 409 changes no money.
     await this.releaseWalletReservation(accountId, id);
     const order = await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.batchOrder.updateMany({
@@ -1707,21 +1718,38 @@ export class BatchOrdersService {
    * compare-and-swap, so only the request that actually claims the reservation
    * writes the credit. Every abandon path calls this, and missing one would
    * quietly keep a customer's money.
+   *
+   * Only ever releases an order that is still `draft` or `pending_payment` —
+   * an unpaid order, in other words. That guard lives here rather than in each
+   * caller on purpose: it is the invariant that makes every call site safe
+   * whatever order it does things in. Releasing a `paid` order would credit the
+   * wallet for a card that is already going to print, and wipe the record of
+   * the wallet leg so a later refund would pay that leg a second time.
    */
   async releaseWalletReservation(accountId: string, batchOrderId: string): Promise<void> {
     await runSerializable(this.prisma, async (tx) => {
       const order = await tx.batchOrder.findFirst({
-        where: { id: batchOrderId, accountId },
+        where: {
+          id: batchOrderId,
+          accountId,
+          status: { in: ["draft", "pending_payment"] },
+        },
         select: { walletAppliedMinor: true },
       });
       if (!order || order.walletAppliedMinor <= 0) {
-        return; // nothing reserved, or another request already released it
+        return; // paid/cancelled, nothing reserved, or already released
       }
       const reserved = order.walletAppliedMinor;
-      // Compare-and-swap on the exact amount, so the credit below is written by
-      // whichever request actually claimed the reservation and by no other.
+      // Compare-and-swap on the exact amount *and* the unpaid status, so the
+      // credit below is written by whichever request actually claimed the
+      // reservation and by no other — and never once the order has been paid.
       const { count } = await tx.batchOrder.updateMany({
-        where: { id: batchOrderId, accountId, walletAppliedMinor: reserved },
+        where: {
+          id: batchOrderId,
+          accountId,
+          walletAppliedMinor: reserved,
+          status: { in: ["draft", "pending_payment"] },
+        },
         data: { walletAppliedMinor: 0 },
       });
       if (count === 0) {
