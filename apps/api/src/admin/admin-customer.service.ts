@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { BatchOrderStatus, OccasionStatus, RecipientStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { AuditService } from "../audit/audit.service";
 import type { Customer360, EngagementLevel } from "@kudos/shared-types";
 import {
   ACTIVE_SUB_STATUSES,
@@ -29,7 +30,98 @@ const DEFAULT_CURRENCY = "gbp";
  */
 @Injectable()
 export class AdminCustomerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
+
+  /**
+   * Set an account's plan by hand, without a Stripe subscription behind it.
+   *
+   * For our own internal and test accounts, and for a comped customer. Normally
+   * a plan is not ours to choose: it is written only by the subscription webhook
+   * (webhooks.service.ts), from whatever Stripe says the account is paying for.
+   *
+   * Which is why this **refuses an account that has a live subscription**. The
+   * webhook rewrites `planId` on every subscription event, so an override here
+   * would be reverted the next time Stripe said anything about that account —
+   * silently, hours or weeks later, with the entitlements disappearing under a
+   * paying customer. An override that can be undone behind your back is worse
+   * than no override, so the refusal names Stripe as the place to make the
+   * change instead.
+   *
+   * Idempotent by nature — setting the same plan twice is a no-op — so unlike
+   * the wallet adjustment it needs no request id.
+   */
+  async setPlan(
+    accountId: string,
+    actorUserId: string,
+    input: { planId: string; reason: string },
+  ): Promise<{ accountId: string; previousPlanId: string | null; planId: string }> {
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+      select: { id: true, planId: true },
+    });
+    if (!account) {
+      throw new NotFoundException("Customer not found");
+    }
+
+    // Validated against the configured plans rather than a hardcoded list, so a
+    // plan added to PlanEntitlement later works with no code change — and a
+    // typo'd plan is refused here rather than leaving the account on a planId
+    // that EntitlementsService cannot resolve, which throws on every send.
+    const entitlement = await this.prisma.planEntitlement.findUnique({
+      where: { planId: input.planId },
+      select: { planId: true, teamSeatsEnabled: true },
+    });
+    if (!entitlement) {
+      const configured = await this.prisma.planEntitlement.findMany({ select: { planId: true } });
+      throw new NotFoundException(
+        `No plan "${input.planId}". Configured plans: ${configured.map((p) => p.planId).join(", ")}.`,
+      );
+    }
+
+    // Anything Stripe still considers live. `canceled` is the only status that
+    // has released the account back to us.
+    const live = await this.prisma.subscription.findFirst({
+      where: { accountId, status: { not: "canceled" } },
+      select: { status: true, planId: true },
+    });
+    if (live) {
+      throw new ConflictException(
+        `This account has a ${live.status} Stripe subscription on the "${live.planId}" plan. ` +
+          "Change the plan in Stripe instead — a plan set here would be overwritten the next " +
+          "time Stripe sends a subscription event for this account.",
+      );
+    }
+
+    const data: { planId: string; extraSeats?: number } = { planId: entitlement.planId };
+    // Mirrors what the webhook does when a subscription is cancelled: a plan
+    // without team seats must not leave paid seats behind, or the account keeps
+    // an invite allowance it is no longer entitled to.
+    if (!entitlement.teamSeatsEnabled) {
+      data.extraSeats = 0;
+    }
+    await this.prisma.account.update({ where: { id: accountId }, data });
+
+    // Deliberately not fire-and-forget: this grants paid entitlements with no
+    // payment behind them, so who did it and why is the record that makes it
+    // defensible.
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "plan_set_by_admin",
+      targetType: "Account",
+      targetId: accountId,
+      metadata: {
+        fromPlanId: account.planId,
+        toPlanId: entitlement.planId,
+        reason: input.reason,
+      },
+    });
+
+    return { accountId, previousPlanId: account.planId, planId: entitlement.planId };
+  }
 
   async getCustomer(accountId: string): Promise<Customer360> {
     const account = await this.prisma.account.findUnique({ where: { id: accountId } });
