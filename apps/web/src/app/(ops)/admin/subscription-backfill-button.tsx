@@ -62,7 +62,7 @@ export function SubscriptionBackfillButton() {
         double-count.
       </p>
 
-      {error && <p className="text-sm font-medium text-accent">{error}</p>}
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
       {result && (
         <div className="flex flex-col gap-1 text-sm text-foreground">
           <p>

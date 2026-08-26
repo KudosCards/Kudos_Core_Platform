@@ -47,7 +47,7 @@ export function ArrivalSweepButton() {
         use this to force a run now.
       </p>
 
-      {error && <p className="text-sm font-medium text-accent">{error}</p>}
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
       {result && (
         <p className="text-sm text-foreground">
           <span className="font-medium text-emerald-700 dark:text-emerald-400">Done.</span> Checked{" "}

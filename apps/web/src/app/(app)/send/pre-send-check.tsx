@@ -104,8 +104,13 @@ function BucketPanel({
   // On a huge run the sample is capped, so more may exist than we can list.
   const beyondSample = bucket.count - bucket.sample.length;
 
+  // A blocker stops the send and a warning doesn't, so they get the two status
+  // colours that mean exactly that. The blocker used to wear the brand accent,
+  // which since the status palette landed means "Kudos", not "problem".
   const ring =
-    tone === "blocker" ? "border-accent/30 bg-accent-soft" : "border-amber-300 bg-amber-50";
+    tone === "blocker"
+      ? "border-danger/30 bg-danger-soft"
+      : "border-warning/30 bg-warning-soft";
 
   return (
     <div className={`rounded-lg border px-3 py-2.5 ${ring}`}>
@@ -203,15 +208,15 @@ export function PreSendCheck({
       </div>
 
       {allReady ? (
-        <div className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-800">
+        <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success-soft px-3 py-2.5 text-sm font-medium text-success">
           <span aria-hidden>✓</span>
           All {total} card{total === 1 ? "" : "s"} are ready to print, personalise and post.
         </div>
       ) : (
         <div className="flex items-center gap-2 text-sm">
-          <span className="font-semibold text-emerald-700">{ready} ready</span>
+          <span className="font-semibold text-success">{ready} ready</span>
           <span className="text-muted">·</span>
-          <span className="font-semibold text-accent">
+          <span className="font-semibold text-danger">
             {needsAttention} need{needsAttention === 1 ? "s" : ""} attention
           </span>
           <span className="text-muted">of {total}</span>
@@ -223,7 +228,7 @@ export function PreSendCheck({
           on all of them, and being cut is not a reason a card "needs attention".
           The last chance to catch this before it is printed. */}
       {(preflight.backArtworkClipped.background || preflight.backArtworkClipped.elements > 0) && (
-        <div className="flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+        <div className="flex flex-col gap-1 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-foreground">
           <span className="font-medium">
             The bottom {BACK_RESERVED_FOOTER_MM}mm of the back won&apos;t be printed
           </span>

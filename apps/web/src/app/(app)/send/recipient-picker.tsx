@@ -192,7 +192,7 @@ export function RecipientPicker({
               className="rounded-md border border-border bg-surface px-3 py-2 text-sm"
             />
           </div>
-          {createError && <p className="text-xs font-medium text-accent">{createError}</p>}
+          {createError && <p className="text-xs font-medium text-danger">{createError}</p>}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"

@@ -52,7 +52,7 @@ function ContactPicker({
     };
   }, []);
 
-  if (error) return <p className="text-sm text-accent">{error}</p>;
+  if (error) return <p className="text-sm text-danger">{error}</p>;
   if (!seed) return <p className="text-sm text-muted">Loading contacts…</p>;
   return (
     <RecipientPicker
@@ -315,7 +315,7 @@ function ManageEvent({
     }
   }
 
-  if (error && !event) return <p className="text-sm text-accent">{error}</p>;
+  if (error && !event) return <p className="text-sm text-danger">{error}</p>;
   if (!event) return <p className="text-sm text-muted">Loading…</p>;
 
   const unsent = event.members.filter((m) => !isOccasionSent(m.status, m.order?.status));

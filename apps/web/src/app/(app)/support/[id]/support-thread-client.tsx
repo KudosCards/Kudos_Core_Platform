@@ -115,7 +115,7 @@ export function SupportThreadClient({ ticket }: { ticket: SupportTicketDetail })
         ))}
       </div>
 
-      {error && <p className="text-sm text-accent">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {closed ? (
         <div className="card p-5 text-center text-sm text-muted">

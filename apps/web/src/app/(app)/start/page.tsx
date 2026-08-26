@@ -66,7 +66,7 @@ export default function StartPage() {
     <div className="flex flex-1 flex-col items-center justify-center gap-4 py-24 text-center">
       {error ? (
         <>
-          <p className="text-sm font-medium text-accent">{error}</p>
+          <p className="text-sm font-medium text-danger">{error}</p>
           <Link href="/designs" className="btn-accent">
             Go to designs
           </Link>

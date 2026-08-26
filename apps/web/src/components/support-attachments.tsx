@@ -153,7 +153,7 @@ export function SupportAttachmentsInput({
         with your phone or a tool like Loom, then upload the file here.
       </p>
       {uploading > 0 && <p className="text-xs text-muted">Uploading…</p>}
-      {error && <p className="text-xs text-accent">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       {value.length > 0 && (
         <ul className="flex flex-col gap-1">
           {value.map((a) => (

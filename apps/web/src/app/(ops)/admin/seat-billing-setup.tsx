@@ -68,7 +68,7 @@ export function SeatBillingSetup() {
         )}
       </div>
 
-      {error && <p className="text-sm font-medium text-accent">{error}</p>}
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
 
       {status === null ? (
         <p className="text-sm text-muted">Loading…</p>

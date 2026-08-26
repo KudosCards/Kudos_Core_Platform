@@ -3,12 +3,8 @@ import Link from "next/link";
 import type { BatchOrder } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { Skeleton } from "@/components/skeleton";
-import {
-  ORDER_STATUS_CLASSES,
-  ORDER_STATUS_LABELS,
-  formatGbp,
-  formatOrderDate,
-} from "@/lib/orders";
+import { formatGbp, formatOrderDate } from "@/lib/orders";
+import { OrderStatusPill } from "@/components/order-status-pill";
 
 interface Paginated<T> {
   items: T[];
@@ -88,9 +84,10 @@ async function OrdersList() {
               {order.orderRecipients.length}
             </span>
             <span>
-              <span className={`pill ${ORDER_STATUS_CLASSES[order.status]}`}>
-                {ORDER_STATUS_LABELS[order.status]}
-              </span>
+              <OrderStatusPill
+                status={order.status}
+                lineStatuses={order.orderRecipients.map((line) => line.status)}
+              />
             </span>
             <span className="text-right font-semibold">{formatGbp(order.totalMinor)}</span>
           </Link>
