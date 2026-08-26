@@ -8,9 +8,11 @@ import type { BatchOrderDetail } from "@kudos/shared-types";
 import {
   computePricingBreakdown,
   deliverByWindow,
+  describeSendSchedule,
   isoDay,
   royalMailTrackingUrl,
   startOfUtcDay,
+  summariseSendSchedule,
 } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -23,6 +25,10 @@ import {
   isPayable,
   orderHeaderStatus,
 } from "@/lib/orders";
+
+/** Mirrors summariseSendSchedule's idea of "already left us" — a posted card
+ * has no upcoming post date to show, only a tracking link. */
+const DEPARTED_LINE_STATUSES = new Set(["posted", "delivered", "returned_to_sender", "cancelled"]);
 
 export function OrderDetailClient({
   order,
@@ -38,14 +44,27 @@ export function OrderDetailClient({
   const payable = isPayable(order.status);
   const canWalletPay = order.status === "draft" && walletBalanceMinor >= order.totalMinor;
 
-  // Scheduled-send management (ADR 0130). A paid order with a future post date,
-  // where no card has moved past `pending`, can still be moved to a new date.
-  const scheduledDispatch = order.orderRecipients.find((l) => l.dispatchDate)?.dispatchDate ?? null;
+  // Scheduled-send management (ADR 0130). A paid order still holding cards can
+  // be moved to a new date, as long as none has moved past `pending`.
+  //
+  // Summarised across every card rather than read off the first one. An
+  // occasion-timed order (ADR 0160) posts each card ahead of its own recipient's
+  // date, so "the order's post date" is usually several dates — and once the
+  // earliest card had gone, keying off it made the whole banner disappear while
+  // the rest were still waiting.
+  const schedule = summariseSendSchedule(order.orderRecipients);
+  // The wording lives in shared-types, pure and unit-tested — the exact
+  // sentences are what this change is for, so they are asserted rather than
+  // eyeballed. See describeSendSchedule.
+  const scheduleCopy = describeSendSchedule(schedule, formatOrderDate);
   const today = startOfUtcDay(new Date());
+  // Today counts as scheduled: a card going out this morning is still news, and
+  // having the banner vanish on the day is exactly the disappearing act above.
   const isScheduled =
     (order.status === "paid" || order.status === "fulfilling") &&
-    scheduledDispatch != null &&
-    startOfUtcDay(new Date(scheduledDispatch)).getTime() > today.getTime();
+    schedule.toCome > 0 &&
+    schedule.earliest !== null &&
+    startOfUtcDay(schedule.earliest).getTime() >= today.getTime();
   const anyStarted = order.orderRecipients.some((l) => l.jobStatus && l.jobStatus !== "pending");
   const canReschedule = isScheduled && !anyStarted;
   const rescheduleWindow = deliverByWindow(
@@ -221,13 +240,12 @@ export function OrderDetailClient({
         )}
       </div>
 
-      {isScheduled && scheduledDispatch && (
+      {isScheduled && scheduleCopy && (
         <div className="banner banner-info">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="banner-lead text-sm">
-              <Calendar className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden /> Scheduled —
-              we&apos;ll post {order.orderRecipients.length === 1 ? "it" : "these"} on{" "}
-              {formatOrderDate(scheduledDispatch)}.
+              <Calendar className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden /> Scheduled —{" "}
+              {scheduleCopy.lead}
             </p>
             {canReschedule && !rescheduleOpen && (
               <button
@@ -239,10 +257,18 @@ export function OrderDetailClient({
               </button>
             )}
           </div>
+          {/* Why the dates are what they are. A customer who chose "time each
+              card to its own occasion" at checkout was told their cards would
+              spread across a range; being handed a single date afterwards made
+              them doubt the scheduling had worked at all. Say the same thing on
+              both screens. */}
+          {scheduleCopy.detail && <p className="text-xs text-muted">{scheduleCopy.detail}</p>}
           {canReschedule && rescheduleOpen && (
             <div className="flex flex-col gap-2 border-t border-current/15 pt-3">
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">New arrive-by date</span>
+                <span className="font-medium">
+                  New arrive-by date{schedule.isSpread ? " for every card" : ""}
+                </span>
                 <input
                   type="date"
                   value={newDeliverBy}
@@ -252,6 +278,20 @@ export function OrderDetailClient({
                   className="w-fit rounded-md border border-black/15 px-2 py-1 dark:border-white/15"
                 />
               </label>
+              {/* Rescheduling writes ONE arrive-by date to every card in the
+                  order (batch-orders.service.ts reschedule). On an order whose
+                  cards are timed to their own occasions that quietly throws the
+                  timing away — seven birthdays collapsed onto one day — and it
+                  cannot be undone from here. Say so before they click, and put
+                  the consequence in the button's own label rather than relying
+                  on them having read the paragraph above it. */}
+              {schedule.isSpread && (
+                <p className="notice notice-warning">
+                  These {schedule.toCome} cards are timed to {schedule.dates.length} different
+                  occasions. Rescheduling moves all of them to the one date above and discards that
+                  timing — we can&apos;t put it back for you.
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -259,7 +299,11 @@ export function OrderDetailClient({
                   onClick={() => void submitReschedule()}
                   className="btn-accent text-sm"
                 >
-                  {pending === "reschedule" ? "Saving…" : "Save new date"}
+                  {pending === "reschedule"
+                    ? "Saving…"
+                    : schedule.isSpread
+                      ? `Move all ${schedule.toCome} cards to one date`
+                      : "Save new date"}
                 </button>
                 <button
                   type="button"
@@ -429,6 +473,16 @@ export function OrderDetailClient({
                   · {line.postageClass === "first_class" ? "First class" : "Second class"} ·{" "}
                   {formatGbp(line.priceMinor + line.postageMinor)}
                 </span>
+                {/* Each card's own post date. Without this the banner above was
+                    the only date anywhere in the customer's view of the order,
+                    so there was nothing to check it against — and on an
+                    occasion-timed send the single date it named was wrong for
+                    most of the cards. */}
+                {line.dispatchDate && !DEPARTED_LINE_STATUSES.has(line.status) && (
+                  <span className="text-xs text-muted">
+                    Posts {formatOrderDate(line.dispatchDate)}
+                  </span>
+                )}
                 {(line.trackingReference || line.messagePageSlug) && (
                   <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
                     {line.trackingReference && (
