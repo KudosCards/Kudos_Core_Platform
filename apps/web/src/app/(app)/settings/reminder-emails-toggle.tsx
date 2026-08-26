@@ -36,7 +36,7 @@ export function ReminderEmailsToggle({ initial }: { initial: boolean }) {
         <p className="text-xs text-muted">
           A weekly heads-up when contacts have birthdays coming up.
         </p>
-        {error && <p className="mt-1 text-xs font-medium text-accent">{error}</p>}
+        {error && <p className="mt-1 text-xs font-medium text-danger">{error}</p>}
       </div>
       <button
         type="button"

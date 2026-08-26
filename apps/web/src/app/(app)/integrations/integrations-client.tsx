@@ -222,7 +222,7 @@ function BrevoConnector({
         ) : null
       }
     >
-      {error && <p className="text-sm font-medium text-accent">{error}</p>}
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
       {connection && <LastSynced connection={connection} />}
       {result && <SyncSummary result={result} />}
 
@@ -401,7 +401,7 @@ function OAuthConnector({
         )
       }
     >
-      {error && <p className="text-sm font-medium text-accent">{error}</p>}
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
       {!connection && <p className="text-xs text-muted">{description}</p>}
       {connection && <LastSynced connection={connection} />}
       {result && <SyncSummary result={result} />}

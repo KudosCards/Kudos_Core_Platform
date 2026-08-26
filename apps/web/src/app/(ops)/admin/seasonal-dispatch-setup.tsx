@@ -100,7 +100,7 @@ export function SeasonalDispatchSetup() {
         post rush), and can nudge senders toward First Class. Applied straight away — no redeploy.
       </p>
 
-      {error && <p className="text-sm font-medium text-accent">{error}</p>}
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
 
       {rows === null ? (
         <p className="text-sm text-muted">Loading…</p>

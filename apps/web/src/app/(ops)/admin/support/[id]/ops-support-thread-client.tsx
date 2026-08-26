@@ -133,7 +133,7 @@ export function OpsSupportThreadClient({ ticket }: { ticket: SupportTicketOpsDet
           ))}
         </div>
 
-        {error && <p className="text-sm text-accent">{error}</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
 
         {closed ? (
           <p className="rounded-xl border border-black/10 p-5 text-center text-sm text-foreground/60 dark:border-white/10">

@@ -23,8 +23,8 @@ import {
   formatGbp,
   formatOrderDate,
   isPayable,
-  orderHeaderStatus,
 } from "@/lib/orders";
+import { OrderStatusPill } from "@/components/order-status-pill";
 
 /** Mirrors summariseSendSchedule's idea of "already left us" — a posted card
  * has no upcoming post date to show, only a tracking link. */
@@ -158,13 +158,10 @@ export function OrderDetailClient({
           <h1 className="text-3xl font-bold tracking-tight">
             {order.orderRecipients.length} card{order.orderRecipients.length === 1 ? "" : "s"}
           </h1>
-          {(() => {
-            const header = orderHeaderStatus(
-              order.status,
-              order.orderRecipients.map((l) => l.status),
-            );
-            return <span className={`pill ${header.className}`}>{header.label}</span>;
-          })()}
+          <OrderStatusPill
+            status={order.status}
+            lineStatuses={order.orderRecipients.map((l) => l.status)}
+          />
         </div>
         <p className="text-sm text-muted">Ordered {formatOrderDate(order.createdAt)}</p>
       </div>

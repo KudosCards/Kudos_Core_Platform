@@ -52,7 +52,7 @@ export function DailySummaryButton() {
         first time, to check it reaches you.
       </p>
 
-      {error && <p className="text-sm font-medium text-accent">{error}</p>}
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
       {result && (
         <p className="text-sm text-foreground">
           {result.adminsEmailed > 0 ? (

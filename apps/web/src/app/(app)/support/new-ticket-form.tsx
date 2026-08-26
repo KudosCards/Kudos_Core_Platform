@@ -189,7 +189,7 @@ export function NewTicketForm() {
         disabled={submitting}
       />
 
-      {error && <p className="text-sm text-accent">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex items-center gap-2">
         <button type="submit" className="btn-accent" disabled={submitting || uploadBusy}>

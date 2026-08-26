@@ -79,7 +79,7 @@ export function DispatchReminderSetup() {
         bell. Applied on the next run — no redeploy.
       </p>
 
-      {error && <p className="text-sm font-medium text-accent">{error}</p>}
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
 
       {config === null ? (
         <p className="text-sm text-muted">Loading…</p>

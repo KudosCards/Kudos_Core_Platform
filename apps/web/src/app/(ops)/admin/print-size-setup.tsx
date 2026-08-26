@@ -67,7 +67,7 @@ export function PrintSizeSetup() {
         individual run in the print preview. Applied immediately — no redeploy.
       </p>
 
-      {error && <p className="text-sm font-medium text-accent">{error}</p>}
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
 
       {size === null ? (
         <p className="text-sm text-muted">Loading…</p>
