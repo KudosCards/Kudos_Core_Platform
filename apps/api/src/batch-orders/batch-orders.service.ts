@@ -24,9 +24,11 @@ import {
   POSTAGE_LEAD_DAYS,
   backArtworkInReservedFooter,
   computeDispatchDate,
+  designDocumentSchema,
   computePricingBreakdown,
   deliverByWindow,
   isoDay,
+  reservedFooterViolation,
   sendNowDispatchDate,
   startOfUtcDay,
   summariseSendSchedule,
@@ -282,6 +284,7 @@ export class BatchOrdersService {
     if (!savedDesign) {
       throw new NotFoundException("Design not found");
     }
+    this.assertDesignPrintable(savedDesign.document);
 
     // Who this card is for. Three ways in (see the CRM-widget ADR):
     //  - recipientId → an existing address-book contact, reused as-is (no new
@@ -379,6 +382,7 @@ export class BatchOrdersService {
     if (!savedDesign) {
       throw new NotFoundException("Design not found");
     }
+    this.assertDesignPrintable(savedDesign.document);
 
     // Fetch every selected contact, scoped to the account. A short count means
     // one or more ids don't belong here — fail rather than silently drop them.
@@ -677,6 +681,33 @@ export class BatchOrdersService {
       // before payment rather than leaving it to be noticed on the printed card.
       backArtworkClipped: backArtworkInReservedFooter(document),
     };
+  }
+
+  /**
+   * The net for designs that predate the save-time guardrail.
+   *
+   * SavedDesignsService now refuses to *store* a design whose back reaches into
+   * the reserved footer, so nothing authored from here on can be unprintable.
+   * Designs saved before that still can be, and they are still orderable — so
+   * every interactive send re-checks before taking money. A customer who hits
+   * this opens the design, moves the item, and saves; the save-time guard then
+   * keeps it good.
+   *
+   * Unattended paths (auto-send, returns reprints) deliberately do NOT refuse.
+   * Nobody is watching them, and a card that silently never posts is a worse
+   * outcome for the recipient than a card whose reserved strip was clipped —
+   * which is what the print engine does safely anyway. See ADR 0171.
+   */
+  private assertDesignPrintable(document: Prisma.JsonValue): void {
+    const parsed = designDocumentSchema.safeParse(document);
+    // An unparseable document is not this check's problem — the renderer and the
+    // design editor both handle that, and failing a send here would be a
+    // confusing place to learn about it.
+    if (!parsed.success) return;
+    const violation = reservedFooterViolation(parsed.data);
+    if (violation) {
+      throw new BadRequestException(violation.message);
+    }
   }
 
   /**

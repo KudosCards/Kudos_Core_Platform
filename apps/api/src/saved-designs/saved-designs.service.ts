@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, type SavedDesign } from "@prisma/client";
-import { designDocumentSchema } from "@kudos/shared-types";
+import { designDocumentSchema, reservedFooterViolation } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { CardDesignsService } from "../card-designs/card-designs.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
@@ -34,7 +34,13 @@ export class SavedDesignsService {
     //     is required, and the plan must carry the customArtworkEnabled gate.
     if (dto.cardDesignId) {
       const template = await this.cardDesigns.findOne(dto.cardDesignId);
-      const document = dto.document ? this.parseDocument(dto.document) : template.document;
+      // A catalog template copied verbatim skips parseDocument, so check it here
+      // too — otherwise a template with a badly placed back element would be the
+      // one way to get an unprintable design into the library.
+      const document = dto.document
+        ? this.parseDocument(dto.document)
+        : (this.assertPrintable(template.document as Record<string, unknown>),
+          template.document);
       return this.prisma.savedDesign.create({
         data: {
           accountId,
@@ -147,6 +153,32 @@ export class SavedDesignsService {
         `Invalid design document: ${result.error.issues.map((issue) => issue.message).join(", ")}`,
       );
     }
+    this.assertPrintable(result.data);
     return result.data;
+  }
+
+  /**
+   * Refuse to store a design whose back reaches into the reserved footer.
+   *
+   * This is the guardrail, and it is here rather than at checkout on purpose. A
+   * design that cannot enter a bad state cannot be ordered in one — by *any*
+   * route, including the two that create orders straight through Prisma and
+   * never touch BatchOrdersService: unattended auto-send and returns reprints.
+   * Guarding the checkout paths alone would have left both of those open.
+   *
+   * It also fails at the moment the customer can actually act on it, with the
+   * design open in front of them, rather than at the payment screen after
+   * they have picked a hundred recipients.
+   *
+   * Only *placed elements* block. A background covers the strip by nature and
+   * simply stops at the line — see reservedFooterViolation.
+   */
+  private assertPrintable(document: Record<string, unknown>): void {
+    const violation = reservedFooterViolation(
+      document as unknown as { pages: { name: string; background?: unknown; elements: unknown[] }[] },
+    );
+    if (violation) {
+      throw new BadRequestException(violation.message);
+    }
   }
 }

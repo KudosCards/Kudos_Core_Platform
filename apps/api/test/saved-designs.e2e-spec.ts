@@ -298,4 +298,101 @@ describe("Saved designs (e2e)", () => {
     const designs = z.array(savedDesignSchema).parse(listResponse.body);
     expect(designs.some((d) => d.id === created.id && d.cardDesignId === null)).toBe(true);
   });
+
+  /**
+   * The reserved-footer guardrail (ADR 0171).
+   *
+   * The strip along the bottom of the back is physically pre-printed with the
+   * Kudos logo and the QR a recipient scans to reach their message. Anything a
+   * customer places there is clipped at print, silently. Rather than warn about
+   * that and then let it through — which is how a 76-card order went out with a
+   * partner advert grid running into the strip — a design that does it can no
+   * longer be *stored*. That closes every downstream route at once, including
+   * unattended auto-send and returns reprints, which create orders straight
+   * through Prisma and never reach BatchOrdersService.
+   */
+  describe("reserved footer", () => {
+    /** y=520 sits inside the reserved strip on A6 (it starts at y=505.5). */
+    const backWith = (elements: unknown[], background?: unknown) => ({
+      version: 1,
+      pages: [
+        artworkDocument.pages[0],
+        { name: "inside-left", elements: [] },
+        { name: "inside-right", elements: [] },
+        { name: "back", ...(background ? { background } : {}), elements },
+      ],
+    });
+
+    const advert = (y: number) => ({
+      kind: "image",
+      id: randomUUID(),
+      assetUrl: "https://cdn.example.com/partner-advert.png",
+      x: 0,
+      y,
+      width: 450,
+      height: 60,
+      rotation: 0,
+    });
+
+    it("refuses to store a design with an element in the reserved strip", async () => {
+      const { token, accountId } = await signUp();
+      await prisma.account.update({ where: { id: accountId }, data: { planId: "pro" } });
+      const response = await request(app.getHttpServer())
+        .post("/saved-designs")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: "Partner adverts", document: backWith([advert(520)]) })
+        .expect(400);
+      expect((response.body as { message: string }).message).toContain("30mm");
+      expect((response.body as { message: string }).message).toContain("QR code");
+    });
+
+    it("stores the same design once the element moves above the line", async () => {
+      const { token, accountId } = await signUp();
+      await prisma.account.update({ where: { id: accountId }, data: { planId: "pro" } });
+      await request(app.getHttpServer())
+        .post("/saved-designs")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: "Partner adverts", document: backWith([advert(400)]) })
+        .expect(201);
+    });
+
+    it("allows a background that runs into the strip", async () => {
+      // A background always covers it and simply ends at the line — the designed
+      // behaviour, not a fault. Refusing it would refuse nearly every back.
+      const { token, accountId } = await signUp();
+      await prisma.account.update({ where: { id: accountId }, data: { planId: "pro" } });
+      await request(app.getHttpServer())
+        .post("/saved-designs")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          name: "Full bleed back",
+          document: backWith([], { type: "color", color: "#123456" }),
+        })
+        .expect(201);
+    });
+
+    it("refuses to update a good design into a bad one", async () => {
+      const { token, accountId } = await signUp();
+      await prisma.account.update({ where: { id: accountId }, data: { planId: "pro" } });
+      const created = await request(app.getHttpServer())
+        .post("/saved-designs")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: "Fine for now", document: backWith([advert(400)]) })
+        .expect(201);
+      const id = (created.body as { id: string }).id;
+
+      await request(app.getHttpServer())
+        .patch(`/saved-designs/${id}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ document: backWith([advert(520)]) })
+        .expect(400);
+
+      // And the stored design is untouched — a refused save must not half-apply.
+      const stored = await prisma.savedDesign.findUniqueOrThrow({ where: { id } });
+      const back = (stored.document as { pages: { name: string; elements: { y: number }[] }[] })
+        .pages.find((page) => page.name === "back");
+      expect(back?.elements[0]?.y).toBe(400);
+    });
+  });
+
 });
