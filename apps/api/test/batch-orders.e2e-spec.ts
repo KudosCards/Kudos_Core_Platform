@@ -407,6 +407,52 @@ describe("Batch orders (e2e)", () => {
       expect(await prisma.batchOrder.count({ where: { accountId } })).toBe(0);
     });
 
+    it("refuses a Checkout of approved occasions carrying a bad design", async () => {
+      // The third interactive path, and the one the first pass missed: Checkout
+      // turns approved occasions into an order, and each occasion carries its
+      // own design — so guarding where quickSend and bulkSend load theirs was
+      // not enough.
+      const { token, accountId } = await signUp();
+      const savedDesignId = await seedLegacyBadDesign(accountId);
+      const recipientId = await createRecipient(token);
+      const created = await request(app.getHttpServer())
+        .post("/occasions")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ type: "achievement", occasionDate: "2026-09-01", recipientId })
+        .expect(201);
+      const occasionId = (created.body as { id: string }).id;
+      await request(app.getHttpServer())
+        .post(`/occasions/${occasionId}/approve`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId })
+        .expect(201);
+
+      const response = await request(app.getHttpServer())
+        .post("/batch-orders")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          lines: [
+            {
+              occasionId,
+              shippingAddressLine1: "1 Test Street",
+              shippingAddressCity: "London",
+              shippingAddressPostcode: "SW1A 1AA",
+              dispatchOption: "asap",
+              postageClass: "second_class",
+            },
+          ],
+        })
+        .expect(400);
+      // Names the design, because a Checkout can span several.
+      expect((response.body as { message: string }).message).toContain("Legacy partner adverts");
+
+      expect(await prisma.batchOrder.count({ where: { accountId } })).toBe(0);
+      // And the occasion is not stranded: a refusal must roll back the
+      // approved -> queued transition, or it could never be checked out again.
+      const occasion = await prisma.occasion.findUniqueOrThrow({ where: { id: occasionId } });
+      expect(occasion.status).toBe("approved");
+    });
+
     it("allows the send once the offending element moves above the line", async () => {
       const { token, accountId } = await signUp();
       const savedDesignId = await seedLegacyBadDesign(accountId);

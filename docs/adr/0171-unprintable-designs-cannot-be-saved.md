@@ -65,9 +65,14 @@ accurate.
 ## Consequences
 
 Designs saved **before** this guard can still be unprintable, and are still
-sitting in customers' libraries. So the interactive send paths — `quickSendMany`
-and `bulkSend` — re-check before taking money, and the composer blocks the pay
-button with a link to the design. A customer who hits it moves the item and
+sitting in customers' libraries. So every interactive path re-checks before
+taking money. There are **three**, and a first pass covered only two: `quickSend`
+and `bulkSend` each hold a single design and check it where they load it, while
+`create()` — the Checkout page, turning approved occasions into an order — holds
+one design *per occasion* and checks them together, before the occasions are
+consumed so a refusal cannot strand them in `queued`. Its message names the
+offending design, because a Checkout can span several. The composer also blocks
+the pay button with a link to the design. A customer who hits it moves the item and
 saves; the save-time guard then keeps it good.
 
 **Unattended paths deliberately do not refuse.** Auto-send and returns reprints
@@ -88,7 +93,7 @@ placement outright is the remaining piece and is not done here.
 
 Verified by removing each layer and watching the tests fail: dropping the
 save-time guard fails the two refusal cases in `saved-designs.e2e-spec.ts`;
-dropping the order-path net fails the two legacy-design cases in
-`batch-orders.e2e-spec.ts`. The order-path fixtures are written straight to the
+dropping the order-path net fails the three legacy-design cases in
+`batch-orders.e2e-spec.ts`, one per interactive path. The order-path fixtures are written straight to the
 database on purpose — the API can no longer produce that state, which is
 precisely why they model a legacy design rather than a new one.
