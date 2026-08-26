@@ -207,3 +207,139 @@ export const messagePageSchema = z.object({
   createdAt: z.coerce.date(),
 });
 export type MessagePage = z.infer<typeof messagePageSchema>;
+
+/**
+ * What an order's cards are actually scheduled to do, summarised from its lines.
+ *
+ * The order page used to read this off the *first* recipient that had a dispatch
+ * date and present that one date as the whole order's. That was true only while
+ * every card in an order went on the same day. It stopped being true when bulk
+ * sends became occasion-timed (ADR 0160): a segment send to "upcoming birthdays"
+ * posts each card ahead of that person's own date, so one order legitimately
+ * holds several. The old readout named one of them and stayed silent about the
+ * rest — and once the earliest card had gone, the whole banner disappeared while
+ * cards were still waiting to post.
+ *
+ * "Still to come" is decided by each card's status, not by comparing its date to
+ * today. A card that has been posted is gone whatever its date says, and the
+ * date is what we want to *report* rather than what we should infer state from.
+ */
+export interface OrderSendSchedule {
+  /** Distinct post dates still ahead, soonest first. Empty when nothing is due. */
+  dates: Date[];
+  /** Cards still to be posted, dated or not. */
+  toCome: number;
+  /** Cards already posted, delivered, or returned. */
+  gone: number;
+  /** Cards still to come that carry no date — they go as soon as they're printed. */
+  undated: number;
+  /** Soonest and furthest post dates still ahead, or null when none are dated. */
+  earliest: Date | null;
+  latest: Date | null;
+  /** True when the cards still to come don't all share a single post date. */
+  isSpread: boolean;
+}
+
+/** Statuses meaning the card has left us — it is no longer "scheduled". */
+const DEPARTED_STATUSES = new Set(["posted", "delivered", "returned_to_sender"]);
+
+/**
+ * Summarise the send schedule of an order's card lines. Pure, so the readout can
+ * be tested without a database or a rendered page.
+ *
+ * Cancelled cards are ignored entirely: they aren't going, and counting them
+ * would overstate what the customer is waiting for.
+ */
+export function summariseSendSchedule(
+  lines: ReadonlyArray<{ status: string; dispatchDate: Date | string | null }>,
+): OrderSendSchedule {
+  let toCome = 0;
+  let gone = 0;
+  let undated = 0;
+  const byTime = new Map<number, Date>();
+
+  for (const line of lines) {
+    if (line.status === "cancelled") continue;
+    if (DEPARTED_STATUSES.has(line.status)) {
+      gone += 1;
+      continue;
+    }
+    toCome += 1;
+    if (line.dispatchDate === null) {
+      undated += 1;
+      continue;
+    }
+    const date = line.dispatchDate instanceof Date ? line.dispatchDate : new Date(line.dispatchDate);
+    // An unparseable date is worse than no date: reporting `Invalid Date` to a
+    // customer is worse than saying nothing, so it falls in with the undated.
+    if (Number.isNaN(date.getTime())) {
+      undated += 1;
+      continue;
+    }
+    byTime.set(date.getTime(), date);
+  }
+
+  const dates = [...byTime.values()].sort((a, b) => a.getTime() - b.getTime());
+  return {
+    dates,
+    toCome,
+    gone,
+    undated,
+    earliest: dates[0] ?? null,
+    latest: dates.at(-1) ?? null,
+    isSpread: dates.length > 1,
+  };
+}
+
+/**
+ * The customer-facing sentences describing an order's send schedule.
+ *
+ * Kept here, pure and tested, rather than inline in the page. The wording *is*
+ * the deliverable — a customer told us a correct-but-terse readout made them
+ * doubt their order had scheduled properly — so the exact strings, their
+ * pluralisation and their branching are worth asserting rather than eyeballing.
+ * Dates are formatted by the caller, which owns the locale.
+ */
+export interface SendScheduleCopy {
+  /** The headline, after "Scheduled — ". */
+  lead: string;
+  /** The reassurance underneath, or null when there is nothing to add. */
+  detail: string | null;
+}
+
+export function describeSendSchedule(
+  schedule: OrderSendSchedule,
+  formatDate: (date: Date) => string,
+): SendScheduleCopy | null {
+  if (schedule.toCome === 0 || schedule.earliest === null) return null;
+
+  const lead = schedule.isSpread
+    ? `we'll post these on ${schedule.dates.length} dates, from ${formatDate(schedule.earliest)} to ${formatDate(schedule.latest!)}.`
+    : `we'll post ${schedule.toCome === 1 ? "it" : "these"} on ${formatDate(schedule.earliest)}.`;
+
+  const parts: string[] = [];
+  if (schedule.isSpread) {
+    // The question the customer actually asked: they chose occasion timing at
+    // checkout, so several dates is the feature working, not a fault.
+    parts.push(
+      "Each card is timed to its own recipient's occasion, so they post on different days — there's nothing to do.",
+    );
+  }
+  if (schedule.undated > 0) {
+    const n = schedule.undated;
+    parts.push(
+      n === 1
+        ? "1 of these has no occasion on file and goes as soon as it's printed."
+        : `${n} of these have no occasion on file and go as soon as they're printed.`,
+    );
+  }
+  if (schedule.gone > 0) {
+    parts.push(
+      schedule.gone === 1
+        ? "1 card has already been posted."
+        : `${schedule.gone} cards have already been posted.`,
+    );
+  }
+
+  return { lead, detail: parts.length > 0 ? parts.join(" ") : null };
+}
