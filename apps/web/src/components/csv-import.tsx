@@ -143,7 +143,7 @@ export function CsvImport({ onImported }: { onImported?: (summary: ImportSummary
         />
         {busy && <p className="text-sm text-muted">Reading your file…</p>}
         {error && (
-          <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+          <p className="notice notice-danger">
             {error}
           </p>
         )}
@@ -273,7 +273,7 @@ export function CsvImport({ onImported }: { onImported?: (summary: ImportSummary
       )}
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="notice notice-danger">{error}</p>
       )}
 
       <div className="flex items-center gap-3">

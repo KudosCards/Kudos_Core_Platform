@@ -16,7 +16,33 @@
   --border: #e7e3dd; /* hairline borders */
   --accent: #e5372a; /* brand red */
   --accent-hover: #c92e22;
-  --accent-soft: #fcebe9; /* red-tinted fills: active nav, banners, pills */
+  --accent-soft: #fcebe9; /* red-tinted fills: active nav, pills */
+
+  /*
+   * Status colours, which are NOT the brand colour.
+   *
+   * Before these existed the accent was the only tint in the system, so an
+   * ordinary "here's when this posts" notice was painted the same red as "your
+   * card was declined" — and customers read it as a warning, because everywhere
+   * else in the product it is one. Red now means something is wrong, and
+   * nothing else.
+   *
+   * Every `-fg` is measured against its own `-soft` tint at 5.0:1 or better,
+   * clearing WCAG AA (4.5:1) for body text with headroom. Both of the tones
+   * these replace failed it: the old error style was 3.71:1 and pill-positive
+   * 4.35:1. Ratios are asserted by scripts/check-design-tokens.mjs (the web
+   * package's `test` script, so it runs in CI), which reads them straight out of
+   * this file — darkening a tint or brightening a foreground fails the build
+   * rather than quietly dropping the system below AA.
+   */
+  --info: #2f63a3; /* 5.29:1 on --info-soft */
+  --info-soft: #e9eff7;
+  --success: #2b724d; /* 5.03:1 on --success-soft */
+  --success-soft: #e8f1ea;
+  --warning: #a94e08; /* 5.06:1 on --warning-soft */
+  --warning-soft: #fdf3e4;
+  --danger: #c02c21; /* 5.02:1 on --danger-soft */
+  --danger-soft: #fcebe9;
 }
 
 @theme inline {
@@ -28,6 +54,14 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -147,8 +181,85 @@ body {
   color: var(--muted);
 }
 .pill-positive {
-  background: #e8f1ea;
-  color: #2f7d54;
+  background: var(--success-soft);
+  color: var(--success); /* was #2f7d54 at 4.35:1 — under AA */
+}
+
+/*
+ * Status banners. One shape, four meanings, so a customer can tell at a glance
+ * whether a box is telling them something, congratulating them, asking them to
+ * act, or reporting a failure — without reading a word of it.
+ *
+ * Body copy is --foreground rather than the status colour: at 15.7:1 it is the
+ * most readable ink we have, and it keeps a long explanation from looking like
+ * shouting. The status colour carries the border and the icon, which is where
+ * the meaning actually lives. Use `.banner-lead` for the one line that should
+ * take the status colour.
+ */
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px solid;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  color: var(--foreground);
+}
+.banner-lead {
+  font-weight: 500;
+}
+.banner-info {
+  background: var(--info-soft);
+  border-color: color-mix(in srgb, var(--info) 30%, transparent);
+}
+.banner-info .banner-lead {
+  color: var(--info);
+}
+.banner-success {
+  background: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+}
+.banner-success .banner-lead {
+  color: var(--success);
+}
+.banner-warning {
+  background: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+.banner-warning .banner-lead {
+  color: var(--warning);
+}
+.banner-danger {
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.banner-danger .banner-lead {
+  color: var(--danger);
+}
+
+/* The one-line form: an error or notice with no actions under it. Same colours,
+   tighter box — this is what most `{error}` messages in the app want. */
+.notice {
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.notice-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.notice-info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.notice-success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.notice-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 /* Visible keyboard focus everywhere interactive — friendlier and accessible,

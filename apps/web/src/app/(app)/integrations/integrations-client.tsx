@@ -85,7 +85,7 @@ const CONNECTED_PILL = <span className="pill pill-positive">Connected</span>;
 /** Small green summary shown after a manual sync. */
 function SyncSummary({ result }: { result: CrmSyncResult }) {
   return (
-    <p className="rounded-lg bg-[#e8f1ea] px-4 py-2 text-sm font-medium text-[#2f7d54]">
+    <p className="rounded-lg bg-success-soft px-4 py-2 text-sm font-medium text-success">
       Imported {result.created} new, {result.updated} updated
       {result.skipped > 0 ? `, ${result.skipped} skipped` : ""} (of {result.fetched} fetched).
     </p>
@@ -525,7 +525,7 @@ export function IntegrationsClient({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+        <p className="notice notice-danger">
           {error}
         </p>
       )}
@@ -536,9 +536,7 @@ export function IntegrationsClient({
         {notice && (
           <p
             className={
-              notice.tone === "ok"
-                ? "rounded-lg bg-[#e8f1ea] px-4 py-2 text-sm font-medium text-[#2f7d54]"
-                : "rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent"
+              notice.tone === "ok" ? "notice notice-success" : "notice notice-danger"
             }
           >
             {notice.text}

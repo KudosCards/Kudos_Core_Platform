@@ -75,7 +75,7 @@ export function EnterpriseLeadsClient({ initialItems }: { initialItems: Enterpri
   return (
     <div className="flex flex-col gap-4">
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="notice notice-danger">{error}</p>
       )}
       {items.map((lead) => (
         <div

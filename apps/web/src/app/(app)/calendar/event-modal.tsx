@@ -149,7 +149,7 @@ function CreateEvent({
   return (
     <div className="flex flex-col gap-4">
       {error && (
-        <p className="rounded-lg bg-accent-soft px-3 py-2 text-sm font-medium text-accent">
+        <p className="notice notice-danger">
           {error}
         </p>
       )}
@@ -334,7 +334,7 @@ function ManageEvent({
   return (
     <div className="flex flex-col gap-4">
       {error && (
-        <p className="rounded-lg bg-accent-soft px-3 py-2 text-sm font-medium text-accent">
+        <p className="notice notice-danger">
           {error}
         </p>
       )}
@@ -515,7 +515,7 @@ function SendCohort({
   return (
     <div className="flex flex-col gap-4">
       {localError && (
-        <p className="rounded-lg bg-accent-soft px-3 py-2 text-sm font-medium text-accent">
+        <p className="notice notice-danger">
           {localError}
         </p>
       )}

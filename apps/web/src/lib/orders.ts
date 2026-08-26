@@ -17,7 +17,7 @@ export const ORDER_STATUS_CLASSES: Record<BatchOrderStatus, string> = {
   pending_payment: "bg-amber-500/15 text-amber-700",
   paid: "bg-blue-500/10 text-blue-700",
   fulfilling: "bg-accent-soft text-accent",
-  completed: "bg-[#e8f1ea] text-[#2f7d54]",
+  completed: "bg-success-soft text-success",
   cancelled: "bg-foreground/[0.07] text-muted",
 };
 

@@ -76,7 +76,7 @@ export function AdminTeamClient({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="notice notice-danger">{error}</p>
       )}
 
       {!emailConfigured && (
@@ -193,7 +193,7 @@ export function AdminTeamClient({
                     </span>
                     <div className="flex shrink-0 items-center gap-1.5">
                       {sentTo === inv.email && (
-                        <span className="text-xs font-medium text-[#2f7d54]">Sent ✓</span>
+                        <span className="text-xs font-medium text-success">Sent ✓</span>
                       )}
                       <button
                         type="button"

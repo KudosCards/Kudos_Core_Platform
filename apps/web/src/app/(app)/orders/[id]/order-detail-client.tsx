@@ -150,11 +150,7 @@ export function OrderDetailClient({
         <p className="text-sm text-muted">Ordered {formatOrderDate(order.createdAt)}</p>
       </div>
 
-      {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       <div className="card grid gap-2 p-5 text-sm">
         <PricingBreakdownCard
@@ -226,9 +222,9 @@ export function OrderDetailClient({
       </div>
 
       {isScheduled && scheduledDispatch && (
-        <div className="flex flex-col gap-3 rounded-xl border border-accent/30 bg-accent-soft p-4">
+        <div className="banner banner-info">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium text-foreground">
+            <p className="banner-lead text-sm">
               <Calendar className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden /> Scheduled —
               we&apos;ll post {order.orderRecipients.length === 1 ? "it" : "these"} on{" "}
               {formatOrderDate(scheduledDispatch)}.
@@ -244,7 +240,7 @@ export function OrderDetailClient({
             )}
           </div>
           {canReschedule && rescheduleOpen && (
-            <div className="flex flex-col gap-2 border-t border-accent/20 pt-3">
+            <div className="flex flex-col gap-2 border-t border-current/15 pt-3">
               <label className="flex flex-col gap-1 text-sm">
                 <span className="font-medium">New arrive-by date</span>
                 <input
@@ -277,7 +273,7 @@ export function OrderDetailClient({
             </div>
           )}
           {canReschedule ? (
-            <div className="flex flex-col gap-2 border-t border-accent/20 pt-3">
+            <div className="flex flex-col gap-2 border-t border-current/15 pt-3">
               {!confirmRefund ? (
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-muted">
@@ -341,8 +337,8 @@ export function OrderDetailClient({
       )}
 
       {payable && (
-        <div className="flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-          <p className="text-sm text-foreground/80">
+        <div className="banner banner-warning">
+          <p className="banner-lead text-sm">
             This order hasn&apos;t been paid yet. Pay to send it to production, or cancel to release
             its cards back to Approvals.
           </p>
@@ -350,7 +346,7 @@ export function OrderDetailClient({
               they click: being charged less than the total is a pleasant
               surprise, but a surprise on a payment screen is still bad. */}
           {order.status === "draft" && walletBalanceMinor > 0 && (
-            <p className="text-sm text-foreground/80">
+            <p className="text-sm">
               {canWalletPay ? (
                 <>
                   Your wallet balance of <strong>{formatGbp(walletBalanceMinor)}</strong> covers this

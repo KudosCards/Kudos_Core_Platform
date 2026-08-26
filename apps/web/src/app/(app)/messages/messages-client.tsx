@@ -128,7 +128,7 @@ export function MessagesClient({ initialPages }: { initialPages: AccountMessageP
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="notice notice-danger">{error}</p>
       )}
 
       {pages.length === 0 ? (

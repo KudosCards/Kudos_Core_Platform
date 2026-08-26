@@ -117,7 +117,7 @@ export function ApprovalsClient({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+        <p className="notice notice-danger">
           {error}
         </p>
       )}
@@ -271,7 +271,7 @@ export function ApprovalsClient({
               className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex items-center gap-3">
-                <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-[#e8f1ea] text-xs font-semibold text-[#2f7d54]">
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-success-soft text-xs font-semibold text-success">
                   {(OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type).slice(0, 3)}
                 </div>
                 <div>
@@ -293,7 +293,7 @@ export function ApprovalsClient({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-[#e8f1ea] px-2.5 py-0.5 text-xs font-medium text-[#2f7d54]">
+                <span className="rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">
                   Auto-send on
                 </span>
                 <button

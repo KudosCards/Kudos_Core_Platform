@@ -44,12 +44,12 @@ export default function LoginPage() {
     <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
       <h1 className="text-xl font-bold tracking-tight">Log in</h1>
       {justReset && !error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+        <p className="notice notice-success">
           Your password has been reset — log in with your new password.
         </p>
       )}
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">
+        <p className="notice notice-danger">
           {error}
         </p>
       )}

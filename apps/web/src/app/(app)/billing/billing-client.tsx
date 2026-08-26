@@ -91,7 +91,7 @@ export function BillingClient({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-accent-soft px-4 py-2 text-sm font-medium text-accent">{error}</p>
+        <p className="notice notice-danger">{error}</p>
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4">
