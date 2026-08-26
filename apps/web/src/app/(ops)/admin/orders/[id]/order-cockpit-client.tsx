@@ -27,12 +27,12 @@ const JOB_STATUS_LABELS: Record<FulfillmentJobStatus, string> = {
 
 const JOB_STATUS_CLASSES: Record<FulfillmentJobStatus, string> = {
   pending: "bg-foreground/[0.07] text-muted",
-  in_progress: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300",
-  printed: "bg-indigo-100 text-indigo-800 dark:bg-indigo-500/15 dark:text-indigo-300",
-  posted: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  delivered: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  returned_to_sender: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  failed: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+  in_progress: "bg-sky-100 text-sky-800",
+  printed: "bg-indigo-100 text-indigo-800",
+  posted: "bg-emerald-100 text-emerald-800",
+  delivered: "bg-emerald-100 text-emerald-800",
+  returned_to_sender: "bg-amber-100 text-amber-800",
+  failed: "bg-red-100 text-red-800",
 };
 
 const REDATE_OUTCOME_LABELS: Record<OccasionRedateSummary["cards"][number]["outcome"], string> = {
@@ -42,9 +42,9 @@ const REDATE_OUTCOME_LABELS: Record<OccasionRedateSummary["cards"][number]["outc
 };
 
 const REDATE_OUTCOME_CLASSES: Record<OccasionRedateSummary["cards"][number]["outcome"], string> = {
-  redated: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
+  redated: "bg-emerald-100 text-emerald-800",
   "already-repaired": "bg-foreground/[0.07] text-muted",
-  "no-occasion": "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+  "no-occasion": "bg-amber-100 text-amber-800",
 };
 
 const POSTAGE_LABELS: Record<string, string> = {
@@ -53,13 +53,14 @@ const POSTAGE_LABELS: Record<string, string> = {
 };
 
 /** The single forward step each status offers, mirroring the dispatch queue. */
-const NEXT_STEP: Partial<Record<FulfillmentJobStatus, { to: FulfillmentJobStatus; label: string }>> =
-  {
-    pending: { to: "printed", label: "Mark printed" },
-    in_progress: { to: "printed", label: "Mark printed" },
-    printed: { to: "posted", label: "Mark posted" },
-    posted: { to: "delivered", label: "Mark delivered" },
-  };
+const NEXT_STEP: Partial<
+  Record<FulfillmentJobStatus, { to: FulfillmentJobStatus; label: string }>
+> = {
+  pending: { to: "printed", label: "Mark printed" },
+  in_progress: { to: "printed", label: "Mark printed" },
+  printed: { to: "posted", label: "Mark posted" },
+  posted: { to: "delivered", label: "Mark delivered" },
+};
 
 /** The active job statuses whose posting deadline still matters. */
 const OPEN_STATUSES: FulfillmentJobStatus[] = ["pending", "in_progress", "printed"];
@@ -295,7 +296,7 @@ export function OrderCockpit({
               disabled={busy}
               title="Move every card onto its own recipient's occasion date, instead of the day the order was sent"
               onClick={() => void runRedate()}
-              className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-40 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
+              className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-40"
             >
               {bulkBusy === "redate" ? (
                 "…"
@@ -321,8 +322,8 @@ export function OrderCockpit({
                 "…"
               ) : (
                 <>
-                  <Printer className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden /> Print
-                  sheet ({jobIds.length})
+                  <Printer className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden />{" "}
+                  Print sheet ({jobIds.length})
                 </>
               )}
             </button>
@@ -345,8 +346,8 @@ export function OrderCockpit({
                 "…"
               ) : (
                 <>
-                  <Truck className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden /> Dispatch
-                  all ({printedIds.length})
+                  <Truck className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden />{" "}
+                  Dispatch all ({printedIds.length})
                 </>
               )}
             </button>
@@ -365,7 +366,9 @@ export function OrderCockpit({
             <button
               type="button"
               disabled={busy}
-              onClick={() => void runBulk("delivered", () => bulkTransition(postedIds, "delivered"))}
+              onClick={() =>
+                void runBulk("delivered", () => bulkTransition(postedIds, "delivered"))
+              }
               className="rounded-full border border-border px-3 py-1.5 text-xs font-medium hover:bg-foreground/5 disabled:opacity-40"
             >
               {bulkBusy === "delivered" ? "…" : `Mark all delivered (${postedIds.length})`}
@@ -390,7 +393,7 @@ export function OrderCockpit({
       </div>
 
       {error && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </p>
       )}
@@ -414,7 +417,7 @@ export function OrderCockpit({
             </button>
           </div>
           {redate.redated === 0 && (
-            <p className="border-b border-border bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+            <p className="border-b border-border bg-amber-50 px-4 py-3 text-xs text-amber-900">
               Nothing moved. Every card here either has no dated occasion to move to — the recipient
               has no birthday on file, or it&apos;s a genuine one-off campaign card — or was already
               re-dated by an earlier run.
@@ -489,11 +492,7 @@ export function OrderCockpit({
                   </td>
                   <td className="px-5 py-3 whitespace-nowrap">
                     {line.dueDate ? (
-                      <span
-                        className={
-                          overdue ? "font-medium text-red-600 dark:text-red-400" : "text-muted"
-                        }
-                      >
+                      <span className={overdue ? "font-medium text-red-600" : "text-muted"}>
                         {fmtDay(line.dueDate)}
                         {overdue && " · overdue"}
                       </span>
@@ -541,10 +540,7 @@ export function OrderCockpit({
                     )}
                     {clickAndDropEnabled && line.clickAndDropError && (
                       <p className="mt-1 text-xs">
-                        <span
-                          title={line.clickAndDropError}
-                          className="text-amber-700 dark:text-amber-400"
-                        >
+                        <span title={line.clickAndDropError} className="text-amber-700">
                           ⚠ Click &amp; Drop import failed
                         </span>{" "}
                         <button
@@ -582,7 +578,10 @@ export function OrderCockpit({
                             "…"
                           ) : (
                             <>
-                              <Truck className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden />{" "}
+                              <Truck
+                                className="mr-1 inline h-3.5 w-3.5 align-text-bottom"
+                                aria-hidden
+                              />{" "}
                               Dispatch
                             </>
                           )}
@@ -607,9 +606,7 @@ export function OrderCockpit({
         </table>
       </div>
 
-      {printCards && (
-        <PrintRunOverlay cards={printCards} onClose={() => setPrintCards(null)} />
-      )}
+      {printCards && <PrintRunOverlay cards={printCards} onClose={() => setPrintCards(null)} />}
     </section>
   );
 }

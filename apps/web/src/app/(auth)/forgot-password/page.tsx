@@ -62,11 +62,7 @@ export default function ForgotPasswordPage() {
           Enter your email and we&apos;ll send you a link to choose a new password.
         </p>
       </div>
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
       <label className="flex flex-col gap-1 text-sm">
         Email
         <input

@@ -18,8 +18,8 @@ export const ORDER_STATUS_LABELS: Record<BatchOrderStatus, string> = {
  * Composed with the pill sizing utilities at the call site. */
 export const ORDER_STATUS_CLASSES: Record<BatchOrderStatus, string> = {
   draft: "bg-foreground/[0.07] text-muted",
-  pending_payment: "bg-amber-500/15 text-amber-700",
-  paid: "bg-blue-500/10 text-blue-700",
+  pending_payment: "bg-warning-soft text-warning",
+  paid: "bg-info-soft text-info",
   fulfilling: "bg-accent-soft text-accent",
   completed: "bg-success-soft text-success",
   cancelled: "bg-foreground/[0.07] text-muted",

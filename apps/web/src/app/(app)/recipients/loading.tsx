@@ -6,13 +6,13 @@ export default function RecipientsLoading() {
     <div className="flex flex-col gap-6">
       <PageHeaderSkeleton subtitle={false} />
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="flex flex-col gap-4 rounded-lg border border-black/10 p-6 dark:border-white/10">
+        <div className="flex flex-col gap-4 rounded-lg border border-black/10 p-6">
           <Skeleton className="h-5 w-32" />
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-32" />
         </div>
-        <div className="flex flex-col gap-4 rounded-lg border border-black/10 p-6 dark:border-white/10">
+        <div className="flex flex-col gap-4 rounded-lg border border-black/10 p-6">
           <Skeleton className="h-5 w-40" />
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-10 w-28" />

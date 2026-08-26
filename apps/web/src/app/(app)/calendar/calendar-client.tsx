@@ -476,11 +476,7 @@ export function CalendarClient({
         </div>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       <CalendarLegend />
 
@@ -796,7 +792,7 @@ function ListView({
                           <span
                             aria-hidden
                             title="Approve this occasion (choose a design in Approvals) to add it to an order"
-                            className="inline-block size-3 shrink-0 rounded-[3px] border border-amber-400/70 bg-amber-100"
+                            className="inline-block size-3 shrink-0 rounded-[3px] border border-warning/40 bg-warning-soft"
                           />
                         ) : null}
                         <OccasionPill occasion={occasion} onOpen={onOpen} />

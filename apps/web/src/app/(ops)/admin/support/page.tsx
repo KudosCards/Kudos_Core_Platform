@@ -59,8 +59,8 @@ export default async function AdminSupportPage({
             href={`/admin/support?status=${tab.value}`}
             className={`rounded-full border px-4 py-1.5 text-sm ${
               active === tab.value
-                ? "border-black/40 bg-black/5 font-medium dark:border-white/40 dark:bg-white/10"
-                : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                ? "border-black/40 bg-black/5 font-medium"
+                : "border-black/15 hover:bg-black/5"
             }`}
           >
             {tab.label}
@@ -69,15 +69,15 @@ export default async function AdminSupportPage({
       </div>
 
       {items.length === 0 ? (
-        <p className="rounded-xl border border-black/10 p-8 text-center text-sm text-foreground/60 dark:border-white/10">
+        <p className="rounded-xl border border-black/10 p-8 text-center text-sm text-foreground/60">
           Nothing here.
         </p>
       ) : (
         <>
           {/* Table on ≥sm; a stacked-card list replaces it on phones. */}
-          <div className="hidden overflow-x-auto rounded-xl border border-black/10 sm:block dark:border-white/10">
+          <div className="hidden overflow-x-auto rounded-xl border border-black/10 sm:block">
             <table className="w-full min-w-[820px] text-sm">
-              <thead className="border-b border-black/10 text-left text-xs uppercase tracking-wide text-foreground/50 dark:border-white/10">
+              <thead className="border-b border-black/10 text-left text-xs uppercase tracking-wide text-foreground/50">
                 <tr>
                   <th className="px-4 py-3 font-medium">Ref</th>
                   <th className="px-4 py-3 font-medium">Business</th>
@@ -89,9 +89,9 @@ export default async function AdminSupportPage({
                   <th className="px-4 py-3 font-medium">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-black/5 dark:divide-white/5">
+              <tbody className="divide-y divide-black/5">
                 {items.map((t) => (
-                  <tr key={t.id} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
+                  <tr key={t.id} className="hover:bg-black/[0.02]">
                     <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">
                       <Link href={`/admin/support/${t.id}`} className="hover:underline">
                         {ticketRef(t.ticketNumber)}
@@ -136,7 +136,7 @@ export default async function AdminSupportPage({
               <Link
                 key={t.id}
                 href={`/admin/support/${t.id}`}
-                className="block rounded-xl border border-black/10 p-4 hover:bg-black/[0.02] dark:border-white/10 dark:hover:bg-white/[0.03]"
+                className="block rounded-xl border border-black/10 p-4 hover:bg-black/[0.02]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">

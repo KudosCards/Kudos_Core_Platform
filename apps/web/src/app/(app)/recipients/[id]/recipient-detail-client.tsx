@@ -27,12 +27,12 @@ const EVENT_TYPES = [
 /** How far along the card pipeline each status is — drives the badge colour. */
 const STATUS_STYLES: Record<string, string> = {
   scheduled: "bg-foreground/[0.06] text-muted",
-  pending_approval: "bg-amber-100 text-amber-800",
-  approved: "bg-emerald-100 text-emerald-800",
-  queued: "bg-sky-100 text-sky-800",
-  printed: "bg-sky-100 text-sky-800",
-  posted: "bg-sky-100 text-sky-800",
-  delivered: "bg-emerald-100 text-emerald-800",
+  pending_approval: "bg-warning-soft text-warning",
+  approved: "bg-success-soft text-success",
+  queued: "bg-info-soft text-info",
+  printed: "bg-info-soft text-info",
+  posted: "bg-info-soft text-info",
+  delivered: "bg-success-soft text-success",
   skipped: "bg-foreground/[0.06] text-muted",
 };
 
@@ -541,11 +541,7 @@ export function RecipientDetailClient({
         </div>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       <ReturnRecoveryPanel
         recipient={recipient}
@@ -599,10 +595,10 @@ export function RecipientDetailClient({
               </button>
             </div>
           ) : (
-            <div className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning-soft p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-semibold text-amber-900">No postal address yet</span>
-                <span className="text-sm text-amber-800">
+                <span className="text-sm font-semibold text-foreground">No postal address yet</span>
+                <span className="text-sm text-warning">
                   Add one so {recipient.firstName} can be posted a card.
                 </span>
               </div>

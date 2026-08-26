@@ -70,8 +70,8 @@ export default async function AdminReturnsPage({
             href={`/admin/returns?status=${tab.value}`}
             className={`rounded-full border px-4 py-1.5 text-sm ${
               active === tab.value
-                ? "border-black/40 bg-black/5 font-medium dark:border-white/40 dark:bg-white/10"
-                : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                ? "border-black/40 bg-black/5 font-medium"
+                : "border-black/15 hover:bg-black/5"
             }`}
           >
             {tab.label}
@@ -80,15 +80,15 @@ export default async function AdminReturnsPage({
       </div>
 
       {items.length === 0 ? (
-        <p className="rounded-xl border border-black/10 p-8 text-center text-sm text-foreground/60 dark:border-white/10">
+        <p className="rounded-xl border border-black/10 p-8 text-center text-sm text-foreground/60">
           Nothing here.
         </p>
       ) : (
         <>
           {/* Table on ≥sm; a stacked-card list replaces it on phones. */}
-          <div className="hidden overflow-x-auto rounded-xl border border-black/10 sm:block dark:border-white/10">
+          <div className="hidden overflow-x-auto rounded-xl border border-black/10 sm:block">
             <table className="w-full min-w-[720px] text-sm">
-              <thead className="border-b border-black/10 text-left text-xs uppercase tracking-wide text-foreground/50 dark:border-white/10">
+              <thead className="border-b border-black/10 text-left text-xs uppercase tracking-wide text-foreground/50">
                 <tr>
                   <th className="px-4 py-3 font-medium">Business</th>
                   <th className="px-4 py-3 font-medium">Contact</th>
@@ -99,13 +99,15 @@ export default async function AdminReturnsPage({
                   <th className="px-4 py-3 font-medium">Free recovery</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-black/5 dark:divide-white/5">
+              <tbody className="divide-y divide-black/5">
                 {items.map((item) => (
                   <tr key={item.id}>
                     <td className="px-4 py-3">{item.businessName}</td>
                     <td className="px-4 py-3">{item.recipientName}</td>
                     <td className="px-4 py-3">
-                      {item.occasionType ? OCCASION_LABELS[item.occasionType] ?? item.occasionType : "—"}
+                      {item.occasionType
+                        ? (OCCASION_LABELS[item.occasionType] ?? item.occasionType)
+                        : "—"}
                     </td>
                     <td className="px-4 py-3">{REASON_LABELS[item.reason] ?? item.reason}</td>
                     <td className="px-4 py-3">{item.daysSinceReturn}</td>
@@ -119,10 +121,7 @@ export default async function AdminReturnsPage({
 
           <div className="flex flex-col gap-3 sm:hidden">
             {items.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-xl border border-black/10 p-4 dark:border-white/10"
-              >
+              <div key={item.id} className="rounded-xl border border-black/10 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium">{item.recipientName}</p>
@@ -132,15 +131,19 @@ export default async function AdminReturnsPage({
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
                   <div>
-                    <dt className="text-[11px] uppercase tracking-wide text-foreground/50">Event</dt>
+                    <dt className="text-[11px] uppercase tracking-wide text-foreground/50">
+                      Event
+                    </dt>
                     <dd>
                       {item.occasionType
-                        ? OCCASION_LABELS[item.occasionType] ?? item.occasionType
+                        ? (OCCASION_LABELS[item.occasionType] ?? item.occasionType)
                         : "—"}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-[11px] uppercase tracking-wide text-foreground/50">Reason</dt>
+                    <dt className="text-[11px] uppercase tracking-wide text-foreground/50">
+                      Reason
+                    </dt>
                     <dd>{REASON_LABELS[item.reason] ?? item.reason}</dd>
                   </div>
                   <div>

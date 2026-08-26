@@ -67,9 +67,9 @@ function OpsTile({
   const numberClass = !active
     ? "text-muted"
     : tone === "red"
-      ? "text-red-600 dark:text-red-400"
+      ? "text-red-600"
       : tone === "amber"
-        ? "text-amber-600 dark:text-amber-400"
+        ? "text-amber-600"
         : "";
   return (
     <Link
@@ -188,9 +188,7 @@ export default async function AdminOverviewPage() {
             <Link
               href="/fulfillment"
               className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold ${
-                mustShip.overdue > 0
-                  ? "bg-red-50 text-red-800 dark:bg-red-500/10 dark:text-red-300"
-                  : "bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-300"
+                mustShip.overdue > 0 ? "bg-red-50 text-red-800" : "bg-amber-50 text-amber-900"
               }`}
             >
               <span>

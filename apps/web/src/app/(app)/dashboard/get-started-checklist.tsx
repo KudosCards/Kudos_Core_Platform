@@ -192,7 +192,7 @@ export function GetStartedChecklist({
                 <span
                   aria-hidden
                   className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                    step.done ? "bg-emerald-500 text-white" : "bg-accent text-white"
+                    step.done ? "bg-success text-white" : "bg-accent text-white"
                   }`}
                 >
                   {step.done ? "✓" : index + 1}

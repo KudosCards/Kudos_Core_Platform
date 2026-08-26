@@ -48,11 +48,7 @@ export default function LoginPage() {
           Your password has been reset — log in with your new password.
         </p>
       )}
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
       <label className="flex flex-col gap-1 text-sm">
         Email
         <input

@@ -135,9 +135,7 @@ export function TeamClient({ initialTeam }: { initialTeam: Team }) {
         <p className="text-muted">Invite colleagues to help manage your Kudos Cards account.</p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">{error}</p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       {/* Seat usage meter — shown to everyone on a seat-enabled plan. */}
       {team.teamSeatsEnabled && (
@@ -179,7 +177,7 @@ export function TeamClient({ initialTeam }: { initialTeam: Team }) {
           {/* Usage bar */}
           <div className="h-2 w-full overflow-hidden rounded-full bg-foreground/[0.06]">
             <div
-              className={`h-full rounded-full ${atLimit ? "bg-accent" : "bg-emerald-500"}`}
+              className={`h-full rounded-full ${atLimit ? "bg-accent" : "bg-success-soft0"}`}
               style={{ width: `${Math.min(100, Math.round((seats.used / seats.limit) * 100))}%` }}
             />
           </div>

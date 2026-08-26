@@ -95,25 +95,21 @@ export function ReturnRecoveryPanel({
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-5">
+    <section className="flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning-soft p-5">
       <div className="flex items-center gap-2">
         <span aria-hidden className="text-lg">
           ⚠️
         </span>
-        <h2 className="text-lg font-semibold text-amber-900">Address needs attention</h2>
+        <h2 className="text-lg font-semibold text-foreground">Address needs attention</h2>
       </div>
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       {open.map((c) => {
         const busy = pendingId === c.id;
         return (
           <div
             key={c.id}
-            className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-surface p-4"
+            className="flex flex-col gap-3 rounded-lg border border-warning/25 bg-surface p-4"
           >
             <p className="text-sm text-foreground">
               A card to <strong>{c.recipientName}</strong> (order ORD-{c.orderNumber}) was returned
@@ -182,7 +178,7 @@ export function ReturnRecoveryPanel({
                   Address updated — choose how to recover this card
                 </p>
                 {c.resend.birthdayPassed && (
-                  <p className="rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900">
+                  <p className="rounded-md bg-warning-soft px-3 py-2 text-xs text-foreground">
                     This birthday has already passed, so it can&apos;t be resent in time — you can
                     still have the original card hand-delivered to your business, or archive it.
                   </p>

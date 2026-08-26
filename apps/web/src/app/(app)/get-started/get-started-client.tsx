@@ -38,7 +38,7 @@ function Step({
       <div className="flex items-center gap-3">
         <span
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-            done ? "bg-emerald-500 text-white" : "bg-accent text-white"
+            done ? "bg-success-soft0 text-white" : "bg-accent text-white"
           }`}
         >
           {done ? "✓" : n}
@@ -80,7 +80,6 @@ export function GetStartedClient({
       // Non-fatal — the step just won't tick over until the next load.
     }
   }
-
 
   async function handleAddManual(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -158,26 +157,34 @@ export function GetStartedClient({
         </p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">{error}</p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       {plan && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent-soft/40 p-4">
           <div>
             <p className="font-semibold">Activate your {planDisplayName(plan)} plan</p>
             <p className="text-sm text-muted">
-              Unlock more contacts, auto-send and a discount on every card. You can do this any time.
+              Unlock more contacts, auto-send and a discount on every card. You can do this any
+              time.
             </p>
           </div>
-          <button type="button" onClick={() => void activatePlan()} disabled={activating} className="btn-accent">
+          <button
+            type="button"
+            onClick={() => void activatePlan()}
+            disabled={activating}
+            className="btn-accent"
+          >
             {activating ? "Redirecting…" : `Activate ${planDisplayName(plan)}`}
           </button>
         </div>
       )}
 
       {/* Step 1 — the priority: get the first person(s) in. */}
-      <Step n={1} done={hasContacts} title={personal ? "Add your first birthday" : "Upload your contact list"}>
+      <Step
+        n={1}
+        done={hasContacts}
+        title={personal ? "Add your first birthday" : "Upload your contact list"}
+      >
         {hasContacts ? (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-muted">
@@ -195,7 +202,11 @@ export function GetStartedClient({
             </p>
             <form onSubmit={(event) => void handleAddManual(event)} className="flex flex-col gap-2">
               <div className="flex flex-wrap gap-2">
-                <input name="firstName" placeholder="First name" className={`${inputClass} flex-1`} />
+                <input
+                  name="firstName"
+                  placeholder="First name"
+                  className={`${inputClass} flex-1`}
+                />
                 <input name="lastName" placeholder="Last name" className={`${inputClass} flex-1`} />
                 <input
                   type="date"

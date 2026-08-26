@@ -83,20 +83,17 @@ async function OrdersList() {
                   page gives, from the same function. */}
               {(() => {
                 const copy = describeSendSchedule(order.sendSchedule, formatOrderDate);
-                return copy ? <span className="text-xs text-muted">Scheduled — {copy.lead}</span> : null;
+                return copy ? (
+                  <span className="text-xs text-muted">Scheduled — {copy.lead}</span>
+                ) : null;
               })()}
             </div>
             <span className="hidden text-sm text-muted sm:block">
               {formatOrderDate(order.createdAt)}
             </span>
-            <span className="hidden text-right text-sm text-muted sm:block">
-              {order.cardCount}
-            </span>
+            <span className="hidden text-right text-sm text-muted sm:block">{order.cardCount}</span>
             <span>
-              <OrderStatusPill
-                status={order.status}
-                cardStatusCounts={order.cardStatusCounts}
-              />
+              <OrderStatusPill status={order.status} cardStatusCounts={order.cardStatusCounts} />
             </span>
             <span className="text-right font-semibold">{formatGbp(order.totalMinor)}</span>
           </Link>

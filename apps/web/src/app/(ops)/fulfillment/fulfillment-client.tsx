@@ -135,30 +135,30 @@ const DUE_TABS: { key: DueFilter; label: string; bucket: keyof FulfillmentCounts
  * when the card has no dated deadline. */
 function dueBadge(workingDaysUntilDue: number | null): { label: string; className: string } {
   if (workingDaysUntilDue === null) {
-    return { label: "No date", className: "bg-black/5 text-foreground/50 dark:bg-white/10" };
+    return { label: "No date", className: "bg-black/5 text-foreground/50" };
   }
   if (workingDaysUntilDue < 0) {
     const n = Math.abs(workingDaysUntilDue);
     return {
       label: `Overdue ${n}wd`,
-      className: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+      className: "bg-red-100 text-red-800",
     };
   }
   if (workingDaysUntilDue === 0) {
     return {
       label: "Due today",
-      className: "bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-300",
+      className: "bg-amber-100 text-amber-900",
     };
   }
   if (workingDaysUntilDue <= 5) {
     return {
       label: `Due in ${workingDaysUntilDue}wd`,
-      className: "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200",
+      className: "bg-amber-50 text-amber-800",
     };
   }
   return {
     label: `Due in ${workingDaysUntilDue}wd`,
-    className: "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300",
+    className: "bg-emerald-50 text-emerald-800",
   };
 }
 
@@ -633,7 +633,7 @@ export function FulfillmentClient({
             onClick={() => void testClickAndDrop()}
             disabled={cndTesting}
             title="Fire one live read-only call to Royal Mail Click & Drop to check the API key + connection"
-            className="rounded-full border border-black/15 px-4 py-1.5 text-sm hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+            className="rounded-full border border-black/15 px-4 py-1.5 text-sm hover:bg-black/5 disabled:opacity-40"
           >
             {cndTesting ? (
               "Testing…"
@@ -646,7 +646,7 @@ export function FulfillmentClient({
           </button>
           <a
             href="/fulfillment/calendar"
-            className="rounded-full border border-black/15 px-4 py-1.5 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+            className="rounded-full border border-black/15 px-4 py-1.5 text-sm hover:bg-black/5"
           >
             <Calendar className="mr-1 inline h-4 w-4 align-text-bottom" aria-hidden /> Dispatch
             calendar
@@ -655,7 +655,7 @@ export function FulfillmentClient({
       </div>
 
       {cndTestResult && (
-        <pre className="max-w-full overflow-x-auto rounded-lg border border-black/10 bg-black/[0.03] p-3 text-xs whitespace-pre-wrap dark:border-white/10 dark:bg-white/[0.03]">
+        <pre className="max-w-full overflow-x-auto rounded-lg border border-black/10 bg-black/[0.03] p-3 text-xs whitespace-pre-wrap">
           {cndTestResult}
         </pre>
       )}
@@ -664,12 +664,12 @@ export function FulfillmentClient({
           an operator can confirm our ORD-… orders are landing in the dashboard
           (vs any legacy WooCommerce #NNNN orders on the same account). ADR 0114. */}
       {cndStatus && (
-        <div className="rounded-xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
+        <div className="rounded-xl border border-black/10 bg-black/[0.02] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold">Click &amp; Drop import status</h2>
               {!cndStatus.enabled && (
-                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
+                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-700">
                   not configured
                 </span>
               )}
@@ -678,20 +678,20 @@ export function FulfillmentClient({
               type="button"
               onClick={() => void loadImportStatus()}
               disabled={cndStatusLoading}
-              className="rounded-full border border-black/15 px-3 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5"
+              className="rounded-full border border-black/15 px-3 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
             >
               {cndStatusLoading ? "Refreshing…" : "↻ Refresh"}
             </button>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2 text-sm">
-            <span className="rounded-lg bg-emerald-500/[0.12] px-3 py-1 text-emerald-700 dark:text-emerald-300">
+            <span className="rounded-lg bg-emerald-500/[0.12] px-3 py-1 text-emerald-700">
               Imported <strong className="tabular-nums">{cndStatus.imported}</strong>
             </span>
-            <span className="rounded-lg bg-rose-500/[0.12] px-3 py-1 text-rose-700 dark:text-rose-300">
+            <span className="rounded-lg bg-rose-500/[0.12] px-3 py-1 text-rose-700">
               Errored <strong className="tabular-nums">{cndStatus.errored}</strong>
             </span>
-            <span className="rounded-lg bg-black/[0.05] px-3 py-1 dark:bg-white/[0.06]">
+            <span className="rounded-lg bg-black/[0.05] px-3 py-1">
               Awaiting <strong className="tabular-nums">{cndStatus.awaiting}</strong>
             </span>
           </div>
@@ -705,7 +705,7 @@ export function FulfillmentClient({
               <ul className="mt-1.5 space-y-1 text-xs">
                 {cndStatus.recentImports.map((sample) => (
                   <li key={sample.jobId} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <code className="rounded bg-black/[0.06] px-1.5 py-0.5 dark:bg-white/[0.08]">
+                    <code className="rounded bg-black/[0.06] px-1.5 py-0.5">
                       {sample.orderReference}
                     </code>
                     <span className="text-foreground/50">→ RM order {sample.orderIdentifier}</span>
@@ -726,16 +726,16 @@ export function FulfillmentClient({
               <ul className="mt-1.5 space-y-1 text-xs">
                 {cndStatus.recentErrors.map((sample) => (
                   <li key={sample.jobId} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <code className="rounded bg-black/[0.06] px-1.5 py-0.5 dark:bg-white/[0.08]">
+                    <code className="rounded bg-black/[0.06] px-1.5 py-0.5">
                       {sample.orderReference}
                     </code>
-                    <span className="text-rose-600 dark:text-rose-400">{sample.error}</span>
+                    <span className="text-rose-600">{sample.error}</span>
                     {clickAndDropEnabled && (
                       <button
                         type="button"
                         disabled={cndRetryId === sample.jobId}
                         onClick={() => void retryClickAndDropById(sample.jobId)}
-                        className="rounded-full border border-black/20 px-2 py-0.5 hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+                        className="rounded-full border border-black/20 px-2 py-0.5 hover:bg-black/5 disabled:opacity-40"
                       >
                         {cndRetryId === sample.jobId ? "Retrying…" : "Retry now"}
                       </button>
@@ -778,9 +778,7 @@ export function FulfillmentClient({
             type="button"
             onClick={() => router.push(statusHref(tab))}
             className={`flex items-center gap-2 rounded-full px-3 py-1 capitalize ${
-              tab === status
-                ? "bg-accent text-white"
-                : "border border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+              tab === status ? "bg-accent text-white" : "border border-black/15 hover:bg-black/5"
             }`}
           >
             <span>{tab.replaceAll("_", " ")}</span>
@@ -814,8 +812,8 @@ export function FulfillmentClient({
                   active
                     ? "bg-foreground text-background"
                     : urgent
-                      ? "border border-red-300 bg-red-50 text-red-800 hover:bg-red-100 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300"
-                      : "border border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                      ? "border border-red-300 bg-red-50 text-red-800 hover:bg-red-100"
+                      : "border border-black/15 hover:bg-black/5"
                 }`}
               >
                 <span>{tab.label}</span>
@@ -840,7 +838,7 @@ export function FulfillmentClient({
             type="button"
             disabled={exportPending || selected.size === 0}
             onClick={() => void exportAddresses()}
-            className="rounded-full border border-black/20 px-4 py-1.5 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+            className="rounded-full border border-black/20 px-4 py-1.5 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {exportPending ? "Exporting…" : `Export addresses (${selected.size})`}
           </button>
@@ -848,7 +846,7 @@ export function FulfillmentClient({
             type="button"
             disabled={printPending || selected.size === 0}
             onClick={() => void printRun()}
-            className="rounded-full border border-black/20 px-4 py-1.5 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+            className="rounded-full border border-black/20 px-4 py-1.5 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {printPending ? "Preparing…" : `Print sheet (${selected.size})`}
           </button>
@@ -875,7 +873,7 @@ export function FulfillmentClient({
             return (
               <div
                 key={job.id}
-                className="flex flex-col gap-2 rounded-lg border border-black/10 p-4 sm:flex-row sm:items-start sm:justify-between dark:border-white/10"
+                className="flex flex-col gap-2 rounded-lg border border-black/10 p-4 sm:flex-row sm:items-start sm:justify-between"
               >
                 <div className="flex items-start gap-3">
                   <input
@@ -943,14 +941,14 @@ export function FulfillmentClient({
                     {clickAndDropEnabled && (
                       <p className="mt-1 text-xs">
                         {job.clickAndDropOrderId ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800">
                             ✓ In Click &amp; Drop
                           </span>
                         ) : job.clickAndDropError ? (
                           <span className="inline-flex flex-wrap items-center gap-1.5">
                             <span
                               title={job.clickAndDropError}
-                              className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+                              className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
                             >
                               ⚠️ Click &amp; Drop import failed
                             </span>
@@ -958,7 +956,7 @@ export function FulfillmentClient({
                               type="button"
                               disabled={cndRetryId === job.id}
                               onClick={() => void retryClickAndDrop(job)}
-                              className="rounded-full border border-black/20 px-2 py-0.5 hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+                              className="rounded-full border border-black/20 px-2 py-0.5 hover:bg-black/5 disabled:opacity-40"
                             >
                               {cndRetryId === job.id ? "Retrying…" : "Retry"}
                             </button>
@@ -976,7 +974,7 @@ export function FulfillmentClient({
                     type="button"
                     disabled={previewLoadingId === job.id}
                     onClick={() => void openPreview(job.id)}
-                    className="rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+                    className="rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5 disabled:opacity-40"
                   >
                     {previewLoadingId === job.id ? "…" : "Preview card"}
                   </button>
@@ -1003,7 +1001,7 @@ export function FulfillmentClient({
                       type="button"
                       disabled={pendingId === job.id}
                       onClick={() => void advance(job)}
-                      className="rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/20 dark:hover:bg-white/5"
+                      className="rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {pendingId === job.id ? "…" : step.label}
                     </button>
@@ -1015,7 +1013,7 @@ export function FulfillmentClient({
                           aria-label="Return reason"
                           defaultValue="moved"
                           id={`rts-reason-${job.id}`}
-                          className="rounded-full border border-black/20 px-3 py-1.5 text-sm dark:border-white/20"
+                          className="rounded-full border border-black/20 px-3 py-1.5 text-sm"
                         >
                           {RETURN_REASONS.map((r) => (
                             <option key={r.value} value={r.value}>
@@ -1039,7 +1037,7 @@ export function FulfillmentClient({
                         <button
                           type="button"
                           onClick={() => setReturningId(null)}
-                          className="rounded-full border border-black/20 px-3 py-1.5 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
+                          className="rounded-full border border-black/20 px-3 py-1.5 text-sm hover:bg-black/5"
                         >
                           Cancel
                         </button>
@@ -1048,7 +1046,7 @@ export function FulfillmentClient({
                       <button
                         type="button"
                         onClick={() => setReturningId(job.id)}
-                        className="rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
+                        className="rounded-full border border-black/20 px-4 py-1.5 text-sm hover:bg-black/5"
                       >
                         Returned to sender
                       </button>

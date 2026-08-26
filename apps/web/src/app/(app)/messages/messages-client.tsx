@@ -127,9 +127,7 @@ export function MessagesClient({ initialPages }: { initialPages: AccountMessageP
         </p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">{error}</p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       {pages.length === 0 ? (
         <div className="card p-8 text-center text-sm text-muted">

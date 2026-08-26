@@ -46,8 +46,7 @@ export function WalletAdjustment({
   // Mirrors the server's rules so the button doesn't offer something that will
   // only come back as a 400 or 409.
   const overdraws = balanceMinor + amountMinor < 0;
-  const valid =
-    magnitude > 0 && magnitude <= 100_000 && reason.trim().length >= 4 && !overdraws;
+  const valid = magnitude > 0 && magnitude <= 100_000 && reason.trim().length >= 4 && !overdraws;
 
   async function apply() {
     if (!valid) return;
@@ -82,7 +81,7 @@ export function WalletAdjustment({
     return (
       <div className="mt-3 flex flex-col gap-2">
         {done && (
-          <p className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300">
+          <p className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
             {done}
           </p>
         )}
@@ -102,7 +101,11 @@ export function WalletAdjustment({
 
   return (
     <div className="mt-3 flex flex-col gap-3 rounded-lg border border-border p-3">
-      <div className="flex items-center overflow-hidden rounded-full border border-border" role="group" aria-label="Direction">
+      <div
+        className="flex items-center overflow-hidden rounded-full border border-border"
+        role="group"
+        aria-label="Direction"
+      >
         {(
           [
             ["credit", "Credit"],
@@ -165,20 +168,20 @@ export function WalletAdjustment({
         <p className="text-xs text-muted">
           {direction === "credit" ? "Adds" : "Takes"} <strong>{gbp(magnitude)}</strong>
           {direction === "credit" ? " to " : " from "}
-          {customerName}. New balance{" "}
-          <strong>{gbp(balanceMinor + amountMinor)}</strong>. Takes effect immediately, and there is
-          no VAT invoice behind it — this is a goodwill credit, not a sale.
+          {customerName}. New balance <strong>{gbp(balanceMinor + amountMinor)}</strong>. Takes
+          effect immediately, and there is no VAT invoice behind it — this is a goodwill credit, not
+          a sale.
         </p>
       )}
       {overdraws && (
-        <p className="text-xs text-amber-700 dark:text-amber-400">
+        <p className="text-xs text-amber-700">
           That is more than the balance. A wallet cannot go below zero.
         </p>
       )}
       {magnitude > 100_000 && (
-        <p className="text-xs text-amber-700 dark:text-amber-400">£1,000 is the most in one go.</p>
+        <p className="text-xs text-amber-700">£1,000 is the most in one go.</p>
       )}
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
 
       <div className="flex items-center gap-2">
         <button

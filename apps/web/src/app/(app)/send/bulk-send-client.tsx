@@ -517,11 +517,7 @@ export function BulkSendClient({
         </div>
       )}
 
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.5fr_1fr]">
         <div className="flex min-w-0 flex-col gap-6">

@@ -19,13 +19,7 @@ function SendToListLink({ segment }: { segment: SegmentSummary }) {
 }
 
 /** One segment card: name, live count, a small member preview, and its actions. */
-function SegmentCard({
-  segment,
-  action,
-}: {
-  segment: SegmentSummary;
-  action: React.ReactNode;
-}) {
+function SegmentCard({ segment, action }: { segment: SegmentSummary; action: React.ReactNode }) {
   return (
     <div className="card flex flex-col gap-3 p-5">
       <div className="flex items-start justify-between gap-3">
@@ -43,7 +37,10 @@ function SegmentCard({
       ) : (
         <ul className="flex flex-col gap-1 text-sm">
           {segment.sample.map((member) => (
-            <li key={`${member.recipientId}-${member.detail}`} className="flex justify-between gap-3">
+            <li
+              key={`${member.recipientId}-${member.detail}`}
+              className="flex justify-between gap-3"
+            >
               <Link href={`/recipients/${member.recipientId}`} className="truncate hover:underline">
                 {member.name}
               </Link>
@@ -115,9 +112,7 @@ export function SegmentsClient({ initial }: { initial: SegmentsOverview }) {
         </p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">{error}</p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Suggested</h2>

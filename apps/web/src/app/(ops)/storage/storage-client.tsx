@@ -53,12 +53,12 @@ export function StorageClient({ enabled }: { enabled: boolean }) {
       </div>
 
       {enabled ? (
-        <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-700 dark:text-emerald-300">
+        <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-700">
           Cleanup is <span className="font-medium">enabled</span> — it also runs automatically each
           night. Always <span className="font-medium">Preview</span> first to see what would go.
         </p>
       ) : (
-        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700">
           Cleanup is <span className="font-medium">off</span>. You can still{" "}
           <span className="font-medium">Preview</span> what would be reclaimed; nothing is deleted
           until <code>STORAGE_REAPER_ENABLED</code> is set on the API service.
@@ -88,7 +88,7 @@ export function StorageClient({ enabled }: { enabled: boolean }) {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {summary && (
-        <div className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 text-sm dark:border-white/10">
+        <div className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 text-sm">
           <p className="font-medium">
             {summary.dryRun
               ? "Preview — nothing was deleted"
@@ -102,14 +102,14 @@ export function StorageClient({ enabled }: { enabled: boolean }) {
             <li>Deleted: {summary.deleted}</li>
           </ul>
           {summary.dryRun && summary.orphaned > 0 && (
-            <p className="border-t border-black/10 pt-2 text-xs text-foreground/60 dark:border-white/10">
+            <p className="border-t border-black/10 pt-2 text-xs text-foreground/60">
               {enabled
                 ? `Run cleanup to delete ${summary.orphaned} orphaned file${summary.orphaned === 1 ? "" : "s"}.`
                 : "These would be deleted once cleanup is enabled."}
             </p>
           )}
           {summary.capped && (
-            <p className="border-t border-black/10 pt-2 text-xs text-amber-600 dark:border-white/10">
+            <p className="border-t border-black/10 pt-2 text-xs text-amber-600">
               The per-run cap was hit — run again to reclaim the rest.
             </p>
           )}

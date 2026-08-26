@@ -41,7 +41,7 @@ import { createClient } from "@/lib/supabase/client";
 const DesignCanvas = dynamic(() => import("./design-canvas").then((mod) => mod.DesignCanvas), {
   ssr: false,
   loading: () => (
-    <div className="flex aspect-[105/148] w-full max-w-[640px] items-center justify-center rounded-md border border-black/10 text-sm text-foreground/50 dark:border-white/10">
+    <div className="flex aspect-[105/148] w-full max-w-[640px] items-center justify-center rounded-md border border-black/10 text-sm text-foreground/50">
       Loading canvas…
     </div>
   ),
@@ -319,7 +319,9 @@ export function DesignEditorClient({
   // Natural pixel sizes of placed images, keyed by asset URL — measured on demand
   // so we can warn when an image is too low-resolution to print sharply at the
   // size it's placed (docs/adr/0162).
-  const [imageNaturalSizes, setImageNaturalSizes] = useState<Record<string, { width: number; height: number }>>({});
+  const [imageNaturalSizes, setImageNaturalSizes] = useState<
+    Record<string, { width: number; height: number }>
+  >({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bgFileInputRef = useRef<HTMLInputElement>(null);
   // The text-element editor's textarea, so "Insert merge field" can drop a token
@@ -880,7 +882,7 @@ export function DesignEditorClient({
             value={name}
             onChange={(e) => setName(e.target.value)}
             aria-label="Design name"
-            className="min-w-0 flex-1 rounded-md border border-black/10 px-3 py-2 text-lg font-semibold dark:border-white/10"
+            className="min-w-0 flex-1 rounded-md border border-black/10 px-3 py-2 text-lg font-semibold"
           />
           <div className="flex items-center gap-3">
             {isDirty ? (
@@ -896,7 +898,7 @@ export function DesignEditorClient({
               type="button"
               disabled={saving || sending}
               onClick={() => void handleSave()}
-              className="rounded-full border border-black/15 px-5 py-2 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5"
+              className="rounded-full border border-black/15 px-5 py-2 text-sm hover:bg-black/5 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
             </button>
@@ -924,7 +926,7 @@ export function DesignEditorClient({
       </div>
 
       {recoverable && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <span className="flex-1">
             You have <strong>unsaved changes</strong> from a previous session on this device.
           </span>
@@ -945,7 +947,7 @@ export function DesignEditorClient({
               clearDraft(savedDesign.id);
               setRecoverable(null);
             }}
-            className="rounded-full border border-amber-400 px-4 py-1.5 text-xs font-medium hover:bg-amber-100 dark:hover:bg-amber-500/20"
+            className="rounded-full border border-amber-400 px-4 py-1.5 text-xs font-medium hover:bg-amber-100"
           >
             Discard
           </button>
@@ -953,9 +955,9 @@ export function DesignEditorClient({
       )}
 
       {saveError && (
-        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200">
+        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
           <p className="font-medium">{saveError.message}</p>
-          <p className="mt-1 text-red-700 dark:text-red-300/90">
+          <p className="mt-1 text-red-700">
             Your work is backed up on this device, so nothing is lost
             {saveError.authExpired
               ? " — sign in again in another tab, then come back and press Save."
@@ -965,7 +967,7 @@ export function DesignEditorClient({
             type="button"
             disabled={saving || sending}
             onClick={() => void handleSave()}
-            className="mt-2 rounded-full border border-red-400 px-4 py-1.5 text-xs font-semibold hover:bg-red-100 disabled:opacity-50 dark:hover:bg-red-500/20"
+            className="mt-2 rounded-full border border-red-400 px-4 py-1.5 text-xs font-semibold hover:bg-red-100 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Try saving again"}
           </button>
@@ -975,7 +977,7 @@ export function DesignEditorClient({
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {bracketMistakes.length > 0 && (
-        <div className="flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+        <div className="flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="font-semibold">
               These won&apos;t personalise — use curly braces, not square brackets
@@ -1002,7 +1004,7 @@ export function DesignEditorClient({
 
       {/* Page switcher (front / inside / back). Sticky so it stays reachable
           when the toolbar + canvas push it off-screen on a long scroll. */}
-      <div className="sticky top-0 z-10 flex flex-wrap gap-2 border-b border-black/10 bg-background/95 py-2 backdrop-blur dark:border-white/10">
+      <div className="sticky top-0 z-10 flex flex-wrap gap-2 border-b border-black/10 bg-background/95 py-2 backdrop-blur">
         {PAGE_NAMES.map((pageName) => (
           <button
             key={pageName}
@@ -1014,7 +1016,7 @@ export function DesignEditorClient({
             className={`rounded-full px-4 py-2 text-sm ${
               activePage === pageName
                 ? "bg-foreground text-background"
-                : "text-foreground/60 hover:bg-black/5 dark:hover:bg-white/5"
+                : "text-foreground/60 hover:bg-black/5"
             }`}
           >
             {pageName}
@@ -1028,7 +1030,7 @@ export function DesignEditorClient({
             <button
               type="button"
               onClick={addTextElement}
-              className="rounded-full border border-black/20 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
+              className="rounded-full border border-black/20 px-4 py-2 text-sm hover:bg-black/5"
             >
               Add text
             </button>
@@ -1036,14 +1038,14 @@ export function DesignEditorClient({
               type="button"
               disabled={uploading}
               onClick={() => fileInputRef.current?.click()}
-              className="rounded-full border border-black/20 px-4 py-2 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/5"
+              className="rounded-full border border-black/20 px-4 py-2 text-sm hover:bg-black/5 disabled:opacity-50"
             >
               {uploading ? "Uploading…" : "Add image"}
             </button>
             <button
               type="button"
               onClick={addQrElement}
-              className="rounded-full border border-black/20 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
+              className="rounded-full border border-black/20 px-4 py-2 text-sm hover:bg-black/5"
             >
               Add scan-to-watch QR
             </button>
@@ -1069,7 +1071,7 @@ export function DesignEditorClient({
                 title={`Add ${label.toLowerCase()}`}
                 aria-label={`Add ${label.toLowerCase()}`}
                 onClick={() => addShapeElement(shape)}
-                className="flex size-9 items-center justify-center rounded-md border border-black/15 text-base leading-none hover:bg-black/5 pointer-coarse:size-11 dark:border-white/15 dark:hover:bg-white/5"
+                className="flex size-9 items-center justify-center rounded-md border border-black/15 text-base leading-none hover:bg-black/5 pointer-coarse:size-11"
               >
                 {glyph}
               </button>
@@ -1086,7 +1088,7 @@ export function DesignEditorClient({
                 title={`Add ${sticker.label.toLowerCase()} sticker`}
                 aria-label={`Add ${sticker.label.toLowerCase()} sticker`}
                 onClick={() => insertSticker(sticker.src)}
-                className="flex size-9 items-center justify-center rounded-md border border-black/15 p-1 hover:bg-black/5 pointer-coarse:size-11 dark:border-white/15 dark:hover:bg-white/5"
+                className="flex size-9 items-center justify-center rounded-md border border-black/15 p-1 hover:bg-black/5 pointer-coarse:size-11"
               >
                 {/* Static bundled SVG art — a plain <img> is intentional here. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1099,7 +1101,7 @@ export function DesignEditorClient({
               from the small Stickers above). Thumbnails are tiny WebPs; the
               full art (vector, or a print-grade WebP for the heavy pieces) is
               placed as an image at its true aspect ratio. */}
-          <div className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 dark:border-white/10">
+          <div className="flex flex-col gap-2 rounded-lg border border-black/10 p-3">
             <span className="text-xs font-medium text-foreground/70">Clipart</span>
             {CLIPART_CATEGORIES.map((group) => (
               <div key={group.id} className="flex flex-col gap-1">
@@ -1114,7 +1116,7 @@ export function DesignEditorClient({
                       title={`Add ${item.label.toLowerCase()}`}
                       aria-label={`Add ${item.label.toLowerCase()} clipart`}
                       onClick={() => insertImage(item.src, item.width, item.height)}
-                      className="flex size-12 items-center justify-center rounded-md border border-black/15 bg-white p-1 hover:ring-2 hover:ring-accent pointer-coarse:size-14 dark:border-white/15"
+                      className="flex size-12 items-center justify-center rounded-md border border-black/15 bg-white p-1 hover:ring-2 hover:ring-accent pointer-coarse:size-14"
                     >
                       {/* Bundled WebP thumbnail — a plain <img> is intentional. */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1132,7 +1134,7 @@ export function DesignEditorClient({
           </div>
 
           {assets.length > 0 && (
-            <div className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 dark:border-white/10">
+            <div className="flex flex-col gap-2 rounded-lg border border-black/10 p-3">
               <span className="text-xs font-medium text-foreground/70">
                 Your uploads — click to place again
               </span>
@@ -1143,7 +1145,7 @@ export function DesignEditorClient({
                       type="button"
                       onClick={() => insertImage(asset.url, asset.width, asset.height)}
                       title={`Add ${asset.fileName}`}
-                      className="size-14 overflow-hidden rounded-md border border-black/10 hover:ring-2 hover:ring-accent dark:border-white/10"
+                      className="size-14 overflow-hidden rounded-md border border-black/10 hover:ring-2 hover:ring-accent"
                     >
                       {/* Library thumbnails come from arbitrary user uploads, so a
                           plain <img> (not next/image) is intentional here. */}
@@ -1158,7 +1160,7 @@ export function DesignEditorClient({
                       type="button"
                       onClick={() => void removeAsset(asset.id)}
                       aria-label={`Remove ${asset.fileName} from your uploads`}
-                      className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border border-black/10 bg-surface text-xs text-muted opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 dark:border-white/10"
+                      className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border border-black/10 bg-surface text-xs text-muted opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
                     >
                       ×
                     </button>
@@ -1169,7 +1171,7 @@ export function DesignEditorClient({
           )}
 
           {hasQr && (
-            <div className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 text-xs text-foreground/60 dark:border-white/10">
+            <div className="flex flex-col gap-2 rounded-lg border border-black/10 p-3 text-xs text-foreground/60">
               <span className="font-medium text-foreground">
                 What plays when they scan this QR?
               </span>
@@ -1193,7 +1195,7 @@ export function DesignEditorClient({
                   className={`rounded-md px-3 py-1 font-medium transition-colors ${
                     qrMode === "page"
                       ? "bg-foreground text-background"
-                      : "border border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                      : "border border-black/15 hover:bg-black/5"
                   }`}
                 >
                   A message page
@@ -1210,7 +1212,7 @@ export function DesignEditorClient({
                   className={`rounded-md px-3 py-1 font-medium transition-colors ${
                     qrMode === "video"
                       ? "bg-foreground text-background"
-                      : "border border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                      : "border border-black/15 hover:bg-black/5"
                   }`}
                 >
                   Just a video link
@@ -1228,7 +1230,7 @@ export function DesignEditorClient({
                       onChange={(e) =>
                         setDocument((doc) => ({ ...doc, messagePageId: e.target.value || null }))
                       }
-                      className="rounded-md border border-black/10 px-2 py-1 text-sm text-foreground dark:border-white/10"
+                      className="rounded-md border border-black/10 px-2 py-1 text-sm text-foreground"
                     >
                       {!selectedQrMessagePage && (
                         <option value="" disabled>
@@ -1246,7 +1248,7 @@ export function DesignEditorClient({
                     </select>
                     {selectedQrMessagePage && (
                       <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center gap-2 rounded-md border border-black/10 bg-black/[0.02] p-2 dark:border-white/10 dark:bg-white/[0.03]">
+                        <div className="flex items-center gap-2 rounded-md border border-black/10 bg-black/[0.02] p-2">
                           <span className="flex size-8 shrink-0 items-center justify-center rounded bg-accent-soft text-base">
                             {selectedQrMessagePage.emoji ?? "💌"}
                           </span>
@@ -1317,7 +1319,7 @@ export function DesignEditorClient({
                     onChange={(e) =>
                       setDocument((doc) => ({ ...doc, videoUrl: e.target.value || null }))
                     }
-                    className="rounded-md border border-black/10 px-2 py-1 text-sm text-foreground dark:border-white/10"
+                    className="rounded-md border border-black/10 px-2 py-1 text-sm text-foreground"
                   />
                   <span>
                     We&apos;ll build a simple page with just this video. It&apos;s the default for
@@ -1347,7 +1349,7 @@ export function DesignEditorClient({
               out, not be corrected afterwards. Neutral, because on its own this
               is information, not a problem. */}
           {activePage === "back" && (
-            <p className="mt-2 rounded-md border border-black/10 bg-black/[0.03] px-3 py-2 text-xs text-muted dark:border-white/10 dark:bg-white/[0.04]">
+            <p className="mt-2 rounded-md border border-black/10 bg-black/[0.03] px-3 py-2 text-xs text-muted">
               The bottom {BACK_RESERVED_FOOTER_MM}mm of the back is already printed on the card with
               the Kudos logo and QR code. Anything below the dashed line won&apos;t be printed —
               drag content above it and it will snap into place.
@@ -1357,7 +1359,7 @@ export function DesignEditorClient({
               out separately because it always covers the strip, so "move it up"
               is the wrong instruction — there is nothing to move. */}
           {activePage === "back" && (backHasBackground || reservedFooterOverlap) && (
-            <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+            <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               {backHasBackground && reservedFooterOverlap ? (
                 <>
                   Your background stops at the dashed line, and something on this face reaches below
@@ -1375,10 +1377,10 @@ export function DesignEditorClient({
           )}
         </div>
 
-        <aside className="flex w-full flex-col gap-3 rounded-lg border border-black/10 p-4 sm:w-64 lg:sticky lg:top-4 lg:w-72 lg:self-start dark:border-white/10">
+        <aside className="flex w-full flex-col gap-3 rounded-lg border border-black/10 p-4 sm:w-64 lg:sticky lg:top-4 lg:w-72 lg:self-start">
           {/* Page-level background (applies to the active face), independent of
               any element selection. */}
-          <div className="flex flex-col gap-2 border-b border-black/10 pb-3 dark:border-white/10">
+          <div className="flex flex-col gap-2 border-b border-black/10 pb-3">
             <span className="text-sm font-semibold">Background — {activePage}</span>
             <div className="flex gap-1">
               {(
@@ -1399,7 +1401,7 @@ export function DesignEditorClient({
                     className={`flex-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50 pointer-coarse:py-3.5 ${
                       active
                         ? "border-accent bg-accent/10 font-semibold text-foreground"
-                        : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                        : "border-black/15 hover:bg-black/5"
                     }`}
                   >
                     {type === "image" && bgUploading ? "Uploading…" : label}
@@ -1413,7 +1415,7 @@ export function DesignEditorClient({
                 aria-label="Background colour"
                 value={page.background.color}
                 onChange={(e) => setPageBackground({ type: "color", color: e.target.value })}
-                className="h-8 w-full rounded-md border border-black/10 dark:border-white/10"
+                className="h-8 w-full rounded-md border border-black/10"
               />
             )}
             {page.background?.type === "image" && (
@@ -1421,7 +1423,7 @@ export function DesignEditorClient({
                 type="button"
                 disabled={bgUploading}
                 onClick={() => bgFileInputRef.current?.click()}
-                className="rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5"
+                className="rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-50"
               >
                 Replace background image
               </button>
@@ -1451,7 +1453,7 @@ export function DesignEditorClient({
                   value={selectedElement.text}
                   onChange={(e) => updateElement({ ...selectedElement, text: e.target.value })}
                   rows={3}
-                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm"
                 />
               </label>
               {/* Insert a merge token at the caret — so designers pick "First
@@ -1466,7 +1468,7 @@ export function DesignEditorClient({
                   onChange={(e) => {
                     if (e.target.value) insertMergeField(e.target.value);
                   }}
-                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm"
                 >
                   <option value="">Insert merge field…</option>
                   {MERGE_FIELDS.map((field) => (
@@ -1487,7 +1489,7 @@ export function DesignEditorClient({
                   onChange={(e) =>
                     updateElement({ ...selectedElement, fontFamily: e.target.value })
                   }
-                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm"
                 >
                   {FONT_GROUPS.map((group) => (
                     <optgroup key={group.label} label={group.label}>
@@ -1523,7 +1525,7 @@ export function DesignEditorClient({
                         className={`flex-1 rounded-md border px-2 py-1 text-sm pointer-coarse:py-3.5 ${className} ${
                           active
                             ? "border-accent bg-accent/10 font-semibold text-foreground"
-                            : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                            : "border-black/15 hover:bg-black/5"
                         }`}
                       >
                         {label}
@@ -1542,7 +1544,7 @@ export function DesignEditorClient({
                   onChange={(e) =>
                     updateElement({ ...selectedElement, fontSize: Number(e.target.value) || 1 })
                   }
-                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm"
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs text-foreground/60">
@@ -1551,7 +1553,7 @@ export function DesignEditorClient({
                   type="color"
                   value={selectedElement.color}
                   onChange={(e) => updateElement({ ...selectedElement, color: e.target.value })}
-                  className="h-8 w-full rounded-md border border-black/10 dark:border-white/10"
+                  className="h-8 w-full rounded-md border border-black/10"
                 />
               </label>
               {/* Text-box width guard rail: a set width word-wraps the text
@@ -1574,13 +1576,13 @@ export function DesignEditorClient({
                           : Math.min(CARD_WIDTH, Math.max(40, Number(raw) || 40));
                       updateElement({ ...selectedElement, width: next });
                     }}
-                    className="w-full rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                    className="w-full rounded-md border border-black/10 px-2 py-1 text-sm"
                   />
                   {selectedElement.width !== undefined && (
                     <button
                       type="button"
                       onClick={() => updateElement({ ...selectedElement, width: undefined })}
-                      className="shrink-0 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                      className="shrink-0 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5"
                     >
                       Fit to card
                     </button>
@@ -1601,7 +1603,7 @@ export function DesignEditorClient({
                         className={`flex-1 rounded-md border px-2 py-1 text-xs capitalize pointer-coarse:py-3.5 ${
                           active
                             ? "border-accent bg-accent/10 font-semibold text-foreground"
-                            : "border-black/15 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                            : "border-black/15 hover:bg-black/5"
                         }`}
                       >
                         {align}
@@ -1611,7 +1613,7 @@ export function DesignEditorClient({
                 </div>
               </div>
               {selectedOverflow && (
-                <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
                   This text spills outside the card&apos;s safe area (the dashed frame). Shorten it,
                   shrink the font, or narrow the box so it isn&apos;t clipped when printed.
                 </p>
@@ -1626,7 +1628,7 @@ export function DesignEditorClient({
                   const verdict = printDpiVerdict(selectedImageDpi);
                   if (verdict === "ok") {
                     return (
-                      <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                      <p className="text-[11px] text-emerald-700">
                         Print resolution: ~{Math.round(selectedImageDpi)} dpi ✓
                       </p>
                     );
@@ -1636,8 +1638,8 @@ export function DesignEditorClient({
                     <div
                       className={`rounded-md border px-2 py-1.5 text-[11px] ${
                         low
-                          ? "border-red-300 bg-red-50 text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200"
-                          : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+                          ? "border-red-300 bg-red-50 text-red-800"
+                          : "border-amber-300 bg-amber-50 text-amber-900"
                       }`}
                     >
                       <p className="font-medium">
@@ -1676,7 +1678,7 @@ export function DesignEditorClient({
                       : selectedElement.height;
                     updateElement({ ...selectedElement, width, height });
                   }}
-                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm"
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs text-foreground/60">
@@ -1695,7 +1697,7 @@ export function DesignEditorClient({
                       : selectedElement.width;
                     updateElement({ ...selectedElement, width, height });
                   }}
-                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm"
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs text-foreground/60">
@@ -1706,7 +1708,7 @@ export function DesignEditorClient({
                   onChange={(e) =>
                     updateElement({ ...selectedElement, rotation: Number(e.target.value) || 0 })
                   }
-                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm"
                 />
               </label>
             </>
@@ -1731,7 +1733,7 @@ export function DesignEditorClient({
                         size: Math.max(40, selectedElement.size - 10),
                       })
                     }
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-black/15 text-xl hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-black/15 text-xl hover:bg-black/5"
                   >
                     −
                   </button>
@@ -1747,7 +1749,7 @@ export function DesignEditorClient({
                         size: Math.min(300, Math.max(40, Number(e.target.value) || 40)),
                       })
                     }
-                    className="h-11 w-16 rounded-md border border-black/10 px-2 text-center text-sm dark:border-white/10"
+                    className="h-11 w-16 rounded-md border border-black/10 px-2 text-center text-sm"
                   />
                   <button
                     type="button"
@@ -1758,7 +1760,7 @@ export function DesignEditorClient({
                         size: Math.min(300, selectedElement.size + 10),
                       })
                     }
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-black/15 text-xl hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-black/15 text-xl hover:bg-black/5"
                   >
                     +
                   </button>
@@ -1772,7 +1774,7 @@ export function DesignEditorClient({
                     rotation: (selectedElement.rotation + 90) % 360,
                   })
                 }
-                className="flex h-11 items-center justify-center gap-2 rounded-md border border-black/15 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                className="flex h-11 items-center justify-center gap-2 rounded-md border border-black/15 text-sm hover:bg-black/5"
               >
                 Rotate 90°
                 <span className="text-foreground/50">{selectedElement.rotation}°</span>
@@ -1791,12 +1793,12 @@ export function DesignEditorClient({
                       aria-label="Fill colour"
                       value={selectedElement.fill ?? "#93c5fd"}
                       onChange={(e) => updateElement({ ...selectedElement, fill: e.target.value })}
-                      className="h-8 flex-1 rounded-md border border-black/10 dark:border-white/10"
+                      className="h-8 flex-1 rounded-md border border-black/10"
                     />
                     <button
                       type="button"
                       onClick={() => updateElement({ ...selectedElement, fill: undefined })}
-                      className="shrink-0 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                      className="shrink-0 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5"
                     >
                       None
                     </button>
@@ -1818,7 +1820,7 @@ export function DesignEditorClient({
                       strokeWidth: selectedElement.strokeWidth ?? 2,
                     })
                   }
-                  className="h-8 w-full rounded-md border border-black/10 dark:border-white/10"
+                  className="h-8 w-full rounded-md border border-black/10"
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs text-foreground/60">
@@ -1834,7 +1836,7 @@ export function DesignEditorClient({
                       strokeWidth: Math.max(0, Number(e.target.value) || 0),
                     })
                   }
-                  className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                  className="rounded-md border border-black/10 px-2 py-1 text-sm"
                 />
               </label>
               {selectedElement.shape === "rect" && (
@@ -1851,7 +1853,7 @@ export function DesignEditorClient({
                         cornerRadius: Math.max(0, Number(e.target.value) || 0),
                       })
                     }
-                    className="rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+                    className="rounded-md border border-black/10 px-2 py-1 text-sm"
                   />
                 </label>
               )}
@@ -1871,7 +1873,7 @@ export function DesignEditorClient({
                       onClick={() => reorderSelected("back")}
                       disabled={isBackmost}
                       title="Send to back"
-                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5 dark:border-white/15 dark:hover:bg-white/5"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5"
                     >
                       To back
                     </button>
@@ -1880,7 +1882,7 @@ export function DesignEditorClient({
                       onClick={() => reorderSelected("backward")}
                       disabled={isBackmost}
                       title="Send backward (⌘/Ctrl+[)"
-                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5 dark:border-white/15 dark:hover:bg-white/5"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5"
                     >
                       Back
                     </button>
@@ -1889,7 +1891,7 @@ export function DesignEditorClient({
                       onClick={() => reorderSelected("forward")}
                       disabled={isFrontmost}
                       title="Bring forward (⌘/Ctrl+])"
-                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5 dark:border-white/15 dark:hover:bg-white/5"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5"
                     >
                       Forward
                     </button>
@@ -1898,7 +1900,7 @@ export function DesignEditorClient({
                       onClick={() => reorderSelected("front")}
                       disabled={isFrontmost}
                       title="Bring to front"
-                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5 dark:border-white/15 dark:hover:bg-white/5"
+                      className="flex-1 rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40 pointer-coarse:py-3.5"
                     >
                       To front
                     </button>
@@ -1909,14 +1911,14 @@ export function DesignEditorClient({
                 <button
                   type="button"
                   onClick={duplicateSelected}
-                  className="flex-1 rounded-full border border-black/15 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+                  className="flex-1 rounded-full border border-black/15 px-4 py-2 text-sm hover:bg-black/5"
                 >
                   Duplicate
                 </button>
                 <button
                   type="button"
                   onClick={deleteSelected}
-                  className="flex-1 rounded-full border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+                  className="flex-1 rounded-full border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                 >
                   Delete
                 </button>

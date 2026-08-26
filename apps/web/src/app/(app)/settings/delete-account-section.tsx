@@ -48,8 +48,8 @@ export function DeleteAccountSection({ accountName }: { accountName: string }) {
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-semibold text-red-600 dark:text-red-400">Danger zone</h2>
-      <div className="card flex flex-col gap-4 border-red-500/30 p-5">
+      <h2 className="font-semibold text-danger">Danger zone</h2>
+      <div className="card flex flex-col gap-4 border-danger/30 p-5">
         <div className="flex flex-col gap-1">
           <p className="font-medium">Delete this account</p>
           <p className="text-sm text-muted">
@@ -62,7 +62,7 @@ export function DeleteAccountSection({ accountName }: { accountName: string }) {
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="self-start rounded-md border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-400"
+            className="self-start rounded-md border border-danger/40 px-4 py-2 text-sm font-semibold text-danger transition-colors hover:bg-danger/10"
           >
             Delete account
           </button>
@@ -70,7 +70,8 @@ export function DeleteAccountSection({ accountName }: { accountName: string }) {
           <div className="flex flex-col gap-3">
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="text-muted">
-                Type <span className="font-semibold text-foreground">{accountName}</span> to confirm.
+                Type <span className="font-semibold text-foreground">{accountName}</span> to
+                confirm.
               </span>
               <input
                 type="text"
@@ -78,18 +79,18 @@ export function DeleteAccountSection({ accountName }: { accountName: string }) {
                 onChange={(e) => setConfirmName(e.target.value)}
                 autoComplete="off"
                 placeholder={accountName}
-                className="w-full max-w-sm rounded-md border border-border bg-surface px-3 py-2 outline-none focus:border-red-500"
+                className="w-full max-w-sm rounded-md border border-border bg-surface px-3 py-2 outline-none focus:border-danger"
               />
             </label>
 
-            {error && <p className="text-sm font-medium text-red-600 dark:text-red-400">{error}</p>}
+            {error && <p className="text-sm font-medium text-danger">{error}</p>}
 
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 disabled={!canDelete}
                 onClick={() => void handleDelete()}
-                className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-md bg-danger px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {pending ? "Deleting…" : "Permanently delete account"}
               </button>

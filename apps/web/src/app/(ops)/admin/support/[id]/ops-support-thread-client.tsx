@@ -20,9 +20,9 @@ import {
 } from "@/lib/support";
 import { SupportAttachmentList } from "@/components/support-attachments";
 
-const inputClass = "rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/15";
+const inputClass = "rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm";
 const controlBtn =
-  "rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40 dark:border-white/15 dark:hover:bg-white/5";
+  "rounded-md border border-black/15 px-2.5 py-1 text-xs hover:bg-black/5 disabled:opacity-40";
 
 const STATUS_OPTIONS: SupportTicketStatus[] = ["open", "awaiting_customer", "resolved", "closed"];
 const PRIORITY_OPTIONS: SupportTicketPriority[] = ["low", "normal", "high", "urgent"];
@@ -46,7 +46,7 @@ function OpsMessage({ message }: { message: SupportMessage }) {
     <div className={`flex flex-col gap-1 ${fromSupport ? "items-end" : "items-start"}`}>
       <div
         className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm ${
-          fromSupport ? "bg-accent text-white" : "bg-black/[0.05] text-foreground dark:bg-white/[0.08]"
+          fromSupport ? "bg-accent text-white" : "bg-black/[0.05] text-foreground"
         }`}
       >
         {message.body}
@@ -123,11 +123,12 @@ export function OpsSupportThreadClient({ ticket }: { ticket: SupportTicketOpsDet
           </div>
           <p className="text-sm text-foreground/60">
             {ticketRef(ticket.ticketNumber)} · {ticket.businessName} ·{" "}
-            {SUPPORT_CATEGORY_LABELS[ticket.category]} · opened {formatSupportDate(ticket.createdAt)}
+            {SUPPORT_CATEGORY_LABELS[ticket.category]} · opened{" "}
+            {formatSupportDate(ticket.createdAt)}
           </p>
         </div>
 
-        <div className="flex flex-col gap-4 rounded-xl border border-black/10 p-5 dark:border-white/10">
+        <div className="flex flex-col gap-4 rounded-xl border border-black/10 p-5">
           {ticket.messages.map((m) => (
             <OpsMessage key={m.id} message={m} />
           ))}
@@ -136,21 +137,23 @@ export function OpsSupportThreadClient({ ticket }: { ticket: SupportTicketOpsDet
         {error && <p className="text-sm text-danger">{error}</p>}
 
         {closed ? (
-          <p className="rounded-xl border border-black/10 p-5 text-center text-sm text-foreground/60 dark:border-white/10">
+          <p className="rounded-xl border border-black/10 p-5 text-center text-sm text-foreground/60">
             This ticket is closed. Reopen it (set the status to Needs reply or Awaiting customer) to
             reply again.
           </p>
         ) : (
           <form
             onSubmit={sendReply}
-            className="flex flex-col gap-3 rounded-xl border border-black/10 p-5 dark:border-white/10"
+            className="flex flex-col gap-3 rounded-xl border border-black/10 p-5"
           >
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={4}
               maxLength={5000}
-              placeholder={internalNote ? "Add a support-only internal note…" : "Reply to the customer…"}
+              placeholder={
+                internalNote ? "Add a support-only internal note…" : "Reply to the customer…"
+              }
               className={`${inputClass} resize-y`}
             />
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -171,7 +174,7 @@ export function OpsSupportThreadClient({ ticket }: { ticket: SupportTicketOpsDet
       </div>
 
       {/* Manage panel */}
-      <aside className="flex w-full flex-col gap-4 rounded-xl border border-black/10 p-5 lg:w-72 lg:shrink-0 dark:border-white/10">
+      <aside className="flex w-full flex-col gap-4 rounded-xl border border-black/10 p-5 lg:w-72 lg:shrink-0">
         <h2 className="text-sm font-semibold">Manage</h2>
 
         <label className="flex flex-col gap-1 text-sm">
@@ -232,7 +235,7 @@ export function OpsSupportThreadClient({ ticket }: { ticket: SupportTicketOpsDet
         </div>
 
         {ticket.diagnostics && (
-          <div className="flex flex-col gap-1.5 border-t border-black/10 pt-4 text-sm dark:border-white/10">
+          <div className="flex flex-col gap-1.5 border-t border-black/10 pt-4 text-sm">
             <span className="text-foreground/60">Diagnostics</span>
             <dl className="flex flex-col gap-1.5 text-xs">
               {ticket.diagnostics.pageUrl && (

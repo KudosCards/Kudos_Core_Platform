@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { BatchOrderStatus, OrderFulfillmentProgress } from "@kudos/shared-types";
-import { ORDER_STATUS_CLASSES, ORDER_STATUS_LABELS, formatGbp, formatOrderDate } from "@/lib/orders";
+import {
+  ORDER_STATUS_CLASSES,
+  ORDER_STATUS_LABELS,
+  formatGbp,
+  formatOrderDate,
+} from "@/lib/orders";
 import { formatOrderNumber } from "@/lib/admin";
 
 export interface AdminOrderRow {
@@ -57,7 +62,7 @@ function ProgressCell({ progress }: { progress: OrderFulfillmentProgress }) {
         {progress.importErrors > 0 && (
           <span
             title={`${progress.importErrors} Click & Drop import error(s)`}
-            className="rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+            className="rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800"
           >
             ⚠ {progress.importErrors}
           </span>
@@ -147,7 +152,9 @@ export function AdminOrdersClient({
         />
         <select
           value={status}
-          onChange={(e) => navigate({ status: e.target.value as BatchOrderStatus | "all", page: 1 })}
+          onChange={(e) =>
+            navigate({ status: e.target.value as BatchOrderStatus | "all", page: 1 })
+          }
           className={`${inputClass} sm:max-w-xs`}
         >
           {STATUS_OPTIONS.map((option) => (

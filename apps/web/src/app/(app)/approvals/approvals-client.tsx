@@ -116,11 +116,7 @@ export function ApprovalsClient({
         </p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       {occasions.length === 0 ? (
         <div className="card p-8 text-center text-sm text-muted">
@@ -239,7 +235,7 @@ export function ApprovalsClient({
                                   }))
                                 }
                                 title={nudge.reason}
-                                className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200"
+                                className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-1 text-xs font-medium text-warning hover:bg-warning/15"
                               >
                                 <Zap className="h-3.5 w-3.5" aria-hidden /> {nudge.reason} Use First
                                 Class

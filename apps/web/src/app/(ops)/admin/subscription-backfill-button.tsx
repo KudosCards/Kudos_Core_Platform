@@ -66,8 +66,8 @@ export function SubscriptionBackfillButton() {
       {result && (
         <div className="flex flex-col gap-1 text-sm text-foreground">
           <p>
-            <span className="font-medium text-emerald-700 dark:text-emerald-400">Done.</span>{" "}
-            Recorded {result.recorded.toLocaleString("en-GB")} subscription invoice
+            <span className="font-medium text-emerald-700">Done.</span> Recorded{" "}
+            {result.recorded.toLocaleString("en-GB")} subscription invoice
             {result.recorded === 1 ? "" : "s"} from {result.scanned.toLocaleString("en-GB")} paid
             invoice{result.scanned === 1 ? "" : "s"} in Stripe.
           </p>

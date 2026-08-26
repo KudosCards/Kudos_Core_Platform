@@ -43,14 +43,14 @@ export function ArrivalSweepButton() {
       <p className="text-sm text-muted">
         Estimated-arrival emails for stamped post. Standard letters aren&rsquo;t tracked, so a daily
         sweep marks each posted card delivered once its estimated arrival has passed and emails the
-        buyer a &ldquo;should have arrived&rdquo; note. Runs automatically each morning when enabled —
-        use this to force a run now.
+        buyer a &ldquo;should have arrived&rdquo; note. Runs automatically each morning when enabled
+        — use this to force a run now.
       </p>
 
       {error && <p className="text-sm font-medium text-danger">{error}</p>}
       {result && (
         <p className="text-sm text-foreground">
-          <span className="font-medium text-emerald-700 dark:text-emerald-400">Done.</span> Checked{" "}
+          <span className="font-medium text-emerald-700">Done.</span> Checked{" "}
           {result.checked.toLocaleString("en-GB")} posted card{result.checked === 1 ? "" : "s"};{" "}
           {result.notified.toLocaleString("en-GB")} marked arrived &amp; emailed.
           {result.checked > 0 && result.notified === 0 && (

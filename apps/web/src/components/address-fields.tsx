@@ -157,7 +157,7 @@ export function AddressFields({
       />
       {message && (
         <p
-          className={`text-xs sm:col-span-2 ${message.tone === "ok" ? "text-success" : "text-amber-700"}`}
+          className={`text-xs sm:col-span-2 ${message.tone === "ok" ? "text-success" : "text-warning"}`}
         >
           {message.text}
         </p>

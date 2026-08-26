@@ -123,11 +123,7 @@ export default function RegisterPage() {
   return (
     <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
       <h1 className="text-xl font-bold tracking-tight">Create your account</h1>
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
       <div className="flex flex-col gap-1.5 text-sm">
         <span>Who&apos;s this for?</span>
         <div className="grid grid-cols-2 gap-2">

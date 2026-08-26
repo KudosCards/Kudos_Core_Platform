@@ -282,11 +282,7 @@ export function BatchOrdersClient({
         </p>
       </div>
 
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
       {notice && (
         <p className="rounded-lg bg-success-soft px-4 py-3 text-sm font-medium text-success">
           {notice}
@@ -302,7 +298,7 @@ export function BatchOrdersClient({
       </p>
 
       {unfinishedOrders.length > 0 && (
-        <div className="flex flex-col gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+        <div className="flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning-soft p-4">
           <h2 className="font-semibold">Unfinished orders</h2>
           <p className="text-sm text-foreground/60">
             These orders haven&apos;t been paid for yet — resume checkout or cancel to release their
@@ -382,7 +378,7 @@ export function BatchOrdersClient({
               )
               .join(", ");
             return (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="rounded-xl border border-warning/30 bg-warning-soft p-4 text-sm text-foreground">
                 <p className="font-semibold">⚠️ Check the address before sending</p>
                 <p className="mt-1">
                   A card to {names} was recently returned. Update the address on the contact record
@@ -400,7 +396,7 @@ export function BatchOrdersClient({
             );
             if (missingName.length === 0) return null;
             return (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="rounded-xl border border-warning/30 bg-warning-soft p-4 text-sm text-foreground">
                 <p className="font-semibold">
                   ⚠️ {missingName.length} contact{missingName.length === 1 ? " is" : "s are"}{" "}
                   missing a first name
@@ -439,7 +435,7 @@ export function BatchOrdersClient({
                     <Link
                       href={`/recipients/${occasion.recipientId}`}
                       title="A card to this contact was returned — check the address before sending"
-                      className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
+                      className="ml-auto inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning hover:bg-warning/15"
                     >
                       ⚠️ Address returned
                     </Link>
@@ -512,7 +508,7 @@ export function BatchOrdersClient({
                           type="button"
                           onClick={() => updateLine(occasion.id, { postageClass: "first_class" })}
                           title={nudge.reason}
-                          className="inline-flex items-center gap-1 self-start rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200 sm:col-span-2"
+                          className="inline-flex items-center gap-1 self-start rounded-full bg-warning-soft px-2 py-1 text-xs font-medium text-warning hover:bg-warning/15 sm:col-span-2"
                         >
                           <Zap className="h-3.5 w-3.5" aria-hidden /> {nudge.reason} Use First Class
                         </button>
@@ -557,7 +553,7 @@ export function BatchOrdersClient({
           <p className="text-sm text-muted">
             {selectedIds.length} of {maxPerOrder} selected
             {selectedIds.length > maxPerOrder && (
-              <span className="ml-2 font-medium text-amber-700">
+              <span className="ml-2 font-medium text-warning">
                 — that&apos;s over the {maxPerOrder}-card limit for this order. Deselect{" "}
                 {selectedIds.length - maxPerOrder} to continue.
               </span>

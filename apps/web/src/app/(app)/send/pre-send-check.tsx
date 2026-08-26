@@ -108,9 +108,7 @@ function BucketPanel({
   // colours that mean exactly that. The blocker used to wear the brand accent,
   // which since the status palette landed means "Kudos", not "problem".
   const ring =
-    tone === "blocker"
-      ? "border-danger/30 bg-danger-soft"
-      : "border-warning/30 bg-warning-soft";
+    tone === "blocker" ? "border-danger/30 bg-danger-soft" : "border-warning/30 bg-warning-soft";
 
   return (
     <div className={`rounded-lg border px-3 py-2.5 ${ring}`}>

@@ -45,7 +45,7 @@ export const SUPPORT_STATUS_LABELS_OPS: Record<SupportTicketStatus, string> = {
  * call site (same convention as ORDER_STATUS_CLASSES). */
 export const SUPPORT_STATUS_CLASSES: Record<SupportTicketStatus, string> = {
   open: "bg-accent-soft text-accent",
-  awaiting_customer: "bg-amber-500/15 text-amber-700",
+  awaiting_customer: "bg-warning-soft text-warning",
   resolved: "bg-[#e8f1ea] text-[#2f7d54]",
   closed: "bg-foreground/[0.07] text-muted",
 };
@@ -53,7 +53,7 @@ export const SUPPORT_STATUS_CLASSES: Record<SupportTicketStatus, string> = {
 export const SUPPORT_PRIORITY_CLASSES: Record<SupportTicketPriority, string> = {
   low: "bg-foreground/[0.07] text-muted",
   normal: "bg-foreground/[0.07] text-muted",
-  high: "bg-amber-500/15 text-amber-700",
+  high: "bg-warning-soft text-warning",
   urgent: "bg-accent-soft text-accent",
 };
 

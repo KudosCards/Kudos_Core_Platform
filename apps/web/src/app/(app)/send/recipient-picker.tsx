@@ -250,11 +250,7 @@ export function RecipientPicker({
         </div>
       )}
 
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       <ul className="max-h-80 divide-y divide-border overflow-y-auto rounded-lg border border-border">
         {data.items.length === 0 ? (

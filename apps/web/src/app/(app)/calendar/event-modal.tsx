@@ -148,11 +148,7 @@ function CreateEvent({
 
   return (
     <div className="flex flex-col gap-4">
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm text-muted sm:col-span-2">
           Title
@@ -333,11 +329,7 @@ function ManageEvent({
 
   return (
     <div className="flex flex-col gap-4">
-      {error && (
-        <p className="notice notice-danger">
-          {error}
-        </p>
-      )}
+      {error && <p className="notice notice-danger">{error}</p>}
 
       <div className="flex flex-col gap-0.5">
         <h3 className="text-lg font-semibold">{event.title}</h3>
@@ -514,11 +506,7 @@ function SendCohort({
 
   return (
     <div className="flex flex-col gap-4">
-      {localError && (
-        <p className="notice notice-danger">
-          {localError}
-        </p>
-      )}
+      {localError && <p className="notice notice-danger">{localError}</p>}
       <p className="text-sm text-muted">
         One card to {unsentCount} contact{unsentCount === 1 ? "" : "s"} on {event.title}. Each is
         addressed from the contact&apos;s own record.
@@ -568,7 +556,7 @@ function SendCohort({
           type="button"
           onClick={() => setPostage("first_class")}
           title={nudge.reason}
-          className="inline-flex items-center gap-1 self-start rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200"
+          className="inline-flex items-center gap-1 self-start rounded-full bg-warning-soft px-2 py-1 text-xs font-medium text-warning hover:bg-warning/15"
         >
           <Zap className="h-3.5 w-3.5" aria-hidden /> {nudge.reason} Use First Class
         </button>
