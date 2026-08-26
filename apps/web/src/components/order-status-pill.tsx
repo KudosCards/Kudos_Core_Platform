@@ -1,4 +1,4 @@
-import type { BatchOrderStatus, OrderRecipientStatus } from "@kudos/shared-types";
+import type { BatchOrderStatus, OrderCardStatusCounts } from "@kudos/shared-types";
 import { orderHeaderStatus } from "@/lib/orders";
 
 /**
@@ -19,11 +19,11 @@ import { orderHeaderStatus } from "@/lib/orders";
  */
 export function OrderStatusPill({
   status,
-  lineStatuses,
+  cardStatusCounts,
 }: {
   status: BatchOrderStatus;
-  lineStatuses: OrderRecipientStatus[];
+  cardStatusCounts: OrderCardStatusCounts;
 }) {
-  const { label, className } = orderHeaderStatus(status, lineStatuses);
+  const { label, className } = orderHeaderStatus(status, cardStatusCounts);
   return <span className={`pill ${className}`}>{label}</span>;
 }

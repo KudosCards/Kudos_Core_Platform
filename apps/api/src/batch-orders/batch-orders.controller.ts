@@ -24,7 +24,7 @@ import { QuickSendDto } from "./dto/quick-send.dto";
 import { BulkSendDto } from "./dto/bulk-send.dto";
 import { PreflightBatchOrderDto } from "./dto/preflight-batch-order.dto";
 import { RescheduleBatchOrderDto } from "./dto/reschedule-batch-order.dto";
-import type { BatchOrderPreflight } from "@kudos/shared-types";
+import type { BatchOrderListRow, BatchOrderPreflight } from "@kudos/shared-types";
 
 @ApiTags("batch-orders")
 @ApiBearerAuth()
@@ -81,7 +81,7 @@ export class BatchOrdersController {
     @CurrentMembership() membership: CurrentMembershipContext,
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: ListBatchOrdersQueryDto,
-  ): Promise<Paginated<BatchOrder>> {
+  ): Promise<Paginated<BatchOrderListRow>> {
     return this.batchOrdersService.list(membership.accountId, user.id, query);
   }
 

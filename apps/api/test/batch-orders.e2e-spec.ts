@@ -41,8 +41,32 @@ const batchOrderSchema = z.object({
   orderRecipients: z.array(orderRecipientSchema),
 });
 
+/** The list row: a summary, deliberately without the cards. Declared here
+ * independently of shared-types so a change to the shipped shape has to be made
+ * in two places on purpose, rather than silently agreeing with itself. */
+const batchOrderListRowSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string().uuid(),
+  status: z.string(),
+  subtotalMinor: z.number(),
+  postageMinor: z.number(),
+  totalMinor: z.number(),
+  paymentMethod: z.string().nullable(),
+  cardCount: z.number(),
+  cardStatusCounts: z.record(z.string(), z.number()),
+  sendSchedule: z.object({
+    dateCount: z.number(),
+    toCome: z.number(),
+    gone: z.number(),
+    undated: z.number(),
+    earliest: z.string().nullable(),
+    latest: z.string().nullable(),
+    isSpread: z.boolean(),
+  }),
+});
+
 const paginatedBatchOrdersSchema = z.object({
-  items: z.array(batchOrderSchema),
+  items: z.array(batchOrderListRowSchema),
   total: z.number(),
 });
 
@@ -188,6 +212,114 @@ describe("Batch orders (e2e)", () => {
 
     const occasion = await prisma.occasion.findUniqueOrThrow({ where: { id: occasionId } });
     expect(occasion.status).toBe("queued");
+  });
+
+  describe("GET /batch-orders (the list)", () => {
+    /**
+     * The list row is a summary, not the order plus its cards.
+     *
+     * It used to be `include: { orderRecipients: true }`, so every card's whole
+     * row — 636 bytes of address, price and timestamps — was fetched and sent to
+     * render a count and a status pill. A bulk sender's fifty orders of
+     * seventy-six cards came to over two megabytes of which about seventy
+     * kilobytes was used, and every row carried a recipient's postal address to
+     * a page that shows none.
+     */
+    it("summarises each order instead of shipping its cards", async () => {
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          firstName: "Jamie",
+          lastName: "Pupil",
+          shippingAddressLine1: "1 Test Street",
+          shippingAddressCity: "London",
+          shippingAddressPostcode: "SW1A 1AA",
+          postageClass: "second_class",
+        })
+        .expect(201);
+
+      const response = await request(app.getHttpServer())
+        .get("/batch-orders")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+
+      const row = batchOrderListRowSchema.parse(
+        (response.body as { items: unknown[] }).items[0],
+      );
+      expect(row.cardCount).toBe(1);
+      expect(row.cardStatusCounts).toEqual({ approved: 1 });
+      expect(row.sendSchedule.toCome).toBe(1);
+    });
+
+    it("never puts a recipient's postal address on the list", async () => {
+      // The guard that matters. This is a page that renders no addresses, and
+      // the ops order view already withholds them on the same reasoning (see
+      // adminOrderLineSchema). Asserted on the raw JSON so re-adding an
+      // `include` — at any nesting depth — fails here rather than shipping.
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          firstName: "Jamie",
+          lastName: "Pupil",
+          shippingAddressLine1: "77 Distinctive Avenue",
+          shippingAddressCity: "London",
+          shippingAddressPostcode: "SW1A 1AA",
+          postageClass: "second_class",
+        })
+        .expect(201);
+
+      const response = await request(app.getHttpServer())
+        .get("/batch-orders")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+
+      const raw = JSON.stringify(response.body);
+      expect(raw).not.toContain("77 Distinctive Avenue");
+      expect(raw).not.toContain("shippingAddress");
+      expect(raw).not.toContain("SW1A 1AA");
+    });
+
+    it("tells the list when each card posts, which it could not before", async () => {
+      // The occasion join is the whole reason the list can signpost a scheduled
+      // order at all. Without it every sendSchedule would report zero dates.
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const deliverBy = new Date(Date.now() + 21 * 86_400_000).toISOString().slice(0, 10);
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          firstName: "Jamie",
+          lastName: "Pupil",
+          shippingAddressLine1: "1 Test Street",
+          shippingAddressCity: "London",
+          shippingAddressPostcode: "SW1A 1AA",
+          postageClass: "second_class",
+          deliverBy,
+        })
+        .expect(201);
+
+      const response = await request(app.getHttpServer())
+        .get("/batch-orders")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+
+      const row = batchOrderListRowSchema.parse(
+        (response.body as { items: unknown[] }).items[0],
+      );
+      expect(row.sendSchedule.dateCount).toBe(1);
+      expect(row.sendSchedule.earliest).not.toBeNull();
+      expect(row.sendSchedule.isSpread).toBe(false);
+    });
   });
 
   describe("quick-send (guided first order)", () => {
