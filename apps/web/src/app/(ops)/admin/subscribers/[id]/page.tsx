@@ -11,6 +11,7 @@ import {
 } from "@/lib/orders";
 import { HEALTH_CLASSES, HEALTH_LABELS, formatOrderNumber, planLabel } from "@/lib/admin";
 import { WalletAdjustment } from "./wallet-adjustment-client";
+import { SetPlan } from "./set-plan-client";
 import type { BatchOrderStatus } from "@kudos/shared-types";
 
 const ENGAGEMENT: Record<Customer360["engagement"]["level"], { label: string; className: string }> =
@@ -273,11 +274,19 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
           {/* Super-admin only, matching the endpoint's own guard — an operator
               who cannot use it should not be shown it. */}
           {me?.role === "super_admin" && (
-            <WalletAdjustment
-              accountId={customer.id}
-              customerName={customer.name}
-              balanceMinor={customer.wallet.balanceMinor}
-            />
+            <>
+              <WalletAdjustment
+                accountId={customer.id}
+                customerName={customer.name}
+                balanceMinor={customer.wallet.balanceMinor}
+              />
+              <SetPlan
+                accountId={customer.id}
+                customerName={customer.name}
+                currentPlanId={customer.plan}
+                subscriptionStatus={customer.subscription?.status ?? null}
+              />
+            </>
           )}
         </Panel>
       </div>

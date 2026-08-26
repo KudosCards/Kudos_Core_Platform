@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AuditModule } from "../audit/audit.module";
 import { BillingModule } from "../billing/billing.module";
 import { DispatchModule } from "../dispatch/dispatch.module";
 import { OpsActivityModule } from "../ops-activity/ops-activity.module";
@@ -18,7 +19,14 @@ import { WalletModule } from "../wallet/wallet.module";
 @Module({
   // BatchOrdersModule: the occasion re-date repair is ops-triggered but the
   // scheduling logic belongs with orders, not duplicated here.
-  imports: [BillingModule, DispatchModule, OpsActivityModule, BatchOrdersModule, WalletModule],
+  imports: [
+    AuditModule,
+    BillingModule,
+    DispatchModule,
+    OpsActivityModule,
+    BatchOrdersModule,
+    WalletModule,
+  ],
   controllers: [AdminController, AdminTeamController],
   providers: [AdminService, AdminCustomerService, AdminTeamService, CardSizeConfigService],
 })

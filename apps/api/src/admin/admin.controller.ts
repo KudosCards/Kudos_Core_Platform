@@ -35,6 +35,7 @@ import {
 } from "./admin.service";
 import { AdminCustomerService } from "./admin-customer.service";
 import { AdjustWalletDto } from "./dto/adjust-wallet.dto";
+import { SetPlanDto } from "./dto/set-plan.dto";
 import { WalletService, type WalletSummary } from "../wallet/wallet.service";
 import { ListAdminOrdersQueryDto } from "./dto/list-orders-query.dto";
 import { ListSubscribersQueryDto } from "./dto/list-subscribers-query.dto";
@@ -178,6 +179,27 @@ export class AdminController {
     @Body() dto: AdjustWalletDto,
   ): Promise<WalletSummary> {
     return this.wallet.adjustBalance(id, admin.userId, dto);
+  }
+
+  /**
+   * Set a customer's plan by hand, with no Stripe subscription behind it.
+   *
+   * For our own internal and test accounts, and for a comped customer. A plan is
+   * normally written only by the subscription webhook, from what Stripe says the
+   * account is paying for — so this refuses any account with a live subscription
+   * rather than setting a value Stripe would later overwrite. See ADR 0172.
+   *
+   * Super-admin only, a reason required, and audited: it grants paid
+   * entitlements with no payment behind them.
+   */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
+  @Post("customers/:id/plan")
+  setCustomerPlan(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: SetPlanDto,
+  ): Promise<{ accountId: string; previousPlanId: string | null; planId: string }> {
+    return this.adminCustomer.setPlan(id, admin.userId, dto);
   }
 
   /** Whether the £5/mo extra-seat Stripe Price is set up, and where its id
