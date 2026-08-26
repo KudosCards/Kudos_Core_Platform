@@ -29,7 +29,10 @@ import {
   isoDay,
   sendNowDispatchDate,
   startOfUtcDay,
+  summariseSendSchedule,
+  tallyCardStatuses,
   unresolvedMergeTokens,
+  type BatchOrderListRow,
   type BatchOrderPreflight,
   type DesignDocument,
   type MergeContext,
@@ -51,12 +54,54 @@ const ORDER_RECIPIENTS_INCLUDE = { orderRecipients: true } as const;
 
 export type BatchOrder = Prisma.BatchOrderGetPayload<{ include: typeof ORDER_RECIPIENTS_INCLUDE }>;
 
+/** The order header fields the list row carries — batchOrderListRowSchema's
+ * shape, minus the computed summaries. Listed explicitly rather than spread
+ * from the model so a new column can't silently join the payload. */
+const ORDER_LIST_SCALARS = {
+  id: true,
+  accountId: true,
+  createdByUserId: true,
+  status: true,
+  currency: true,
+  subtotalMinor: true,
+  postageMinor: true,
+  totalMinor: true,
+  paymentMethod: true,
+  walletAppliedMinor: true,
+  stripePaymentIntentId: true,
+  receiptUrl: true,
+  receiptPdfUrl: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.BatchOrderSelect;
+
+/**
+ * The orders *list* read. Order scalars plus, per card, only its status and its
+ * occasion's post-by date — nothing else.
+ *
+ * It used to be ORDER_RECIPIENTS_INCLUDE, i.e. every card's full row. The page
+ * reads a count and a status off each one, so 636 bytes per card were fetched,
+ * serialised and sent to render 19 bytes' worth: over two megabytes for a bulk
+ * sender's fifty orders of seventy-six cards. Worse, every row carried the
+ * recipient's postal address to a page that renders none — the ops order view
+ * already withholds addresses for exactly this reason (see adminOrderLineSchema).
+ *
+ * The occasion join is what lets the list say *when* an order posts, which it
+ * could not before. It costs one extra batched query, not a query per row.
+ */
+const ORDER_LIST_SELECT = {
+  ...ORDER_LIST_SCALARS,
+  orderRecipients: {
+    select: { status: true, occasion: { select: { dispatchDate: true } } },
+  },
+} satisfies Prisma.BatchOrderSelect;
+
 /**
  * The single-order detail read: each card line carries the recipient's name (so
  * the buyer sees *who* each card is for, not just a postcode), its fulfilment
  * stage + Royal Mail tracking reference, and its digital-message-page slug. This
- * heavier shape is used only by findOne — the orders *list* stays lean on
- * ORDER_RECIPIENTS_INCLUDE. See docs/adr/0109-order-detail.md.
+ * heavier shape is used only by findOne — the orders *list* reads
+ * ORDER_LIST_SELECT — a summary, never the cards. See docs/adr/0170.
  */
 const ORDER_DETAIL_INCLUDE = {
   orderRecipients: {
@@ -961,7 +1006,7 @@ export class BatchOrdersService {
     accountId: string,
     actorUserId: string,
     query: ListBatchOrdersQueryDto,
-  ): Promise<Paginated<BatchOrder>> {
+  ): Promise<Paginated<BatchOrderListRow>> {
     const page = parsePage(query.page);
     const perPage = parsePerPage(query.perPage, 25);
     const where: Prisma.BatchOrderWhereInput = {
@@ -972,14 +1017,31 @@ export class BatchOrdersService {
     // Two plain queries, not a $transaction — a paginated total needn't be a
     // consistent snapshot with the page, and an explicit read transaction is
     // what misbehaves on a pgBouncer pool (see docs/go-live-runbook.md §1c).
-    const items = await this.prisma.batchOrder.findMany({
+    const rows = await this.prisma.batchOrder.findMany({
       where,
       skip: (page - 1) * perPage,
       take: perPage,
       orderBy: { createdAt: "desc" },
-      include: ORDER_RECIPIENTS_INCLUDE,
+      select: ORDER_LIST_SELECT,
     });
     const total = await this.prisma.batchOrder.count({ where });
+
+    // Summarise here rather than shipping the cards. `dates` is dropped on
+    // purpose: an order can hold seventy-odd distinct birthdays and the row
+    // only ever renders "how many dates, first and last".
+    const items: BatchOrderListRow[] = rows.map(({ orderRecipients, ...order }) => {
+      const lines = orderRecipients.map((line) => ({
+        status: line.status,
+        dispatchDate: line.occasion?.dispatchDate ?? null,
+      }));
+      const { dates: _dates, ...sendSchedule } = summariseSendSchedule(lines);
+      return {
+        ...order,
+        cardCount: orderRecipients.length,
+        cardStatusCounts: tallyCardStatuses(lines),
+        sendSchedule,
+      };
+    });
 
     await this.audit.record({
       accountId,

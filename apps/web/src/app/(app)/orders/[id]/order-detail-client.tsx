@@ -13,6 +13,7 @@ import {
   royalMailTrackingUrl,
   startOfUtcDay,
   summariseSendSchedule,
+  tallyCardStatuses,
 } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -160,7 +161,7 @@ export function OrderDetailClient({
           </h1>
           <OrderStatusPill
             status={order.status}
-            lineStatuses={order.orderRecipients.map((l) => l.status)}
+            cardStatusCounts={tallyCardStatuses(order.orderRecipients)}
           />
         </div>
         <p className="text-sm text-muted">Ordered {formatOrderDate(order.createdAt)}</p>

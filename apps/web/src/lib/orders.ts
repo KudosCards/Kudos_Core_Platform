@@ -1,4 +1,8 @@
-import type { BatchOrderStatus, OrderRecipientStatus } from "@kudos/shared-types";
+import type {
+  BatchOrderStatus,
+  OrderCardStatusCounts,
+  OrderRecipientStatus,
+} from "@kudos/shared-types";
 
 /** Customer-facing labels for a batch order's lifecycle. */
 export const ORDER_STATUS_LABELS: Record<BatchOrderStatus, string> = {
@@ -49,11 +53,17 @@ export function isPayable(status: BatchOrderStatus): boolean {
  */
 export function orderHeaderStatus(
   status: BatchOrderStatus,
-  lineStatuses: OrderRecipientStatus[],
+  cardStatusCounts: OrderCardStatusCounts,
 ): { label: string; className: string } {
   if (status === "fulfilling") {
-    const active = lineStatuses.filter((s) => s !== "cancelled");
-    if (active.length > 0 && active.every((s) => s === "posted" || s === "delivered")) {
+    const n = (key: OrderRecipientStatus) => cardStatusCounts[key] ?? 0;
+    // A tally, not a list of statuses. The orders list used to receive every
+    // card's whole row just to map over `.status` here; it now gets counts, and
+    // the order page tallies its own lines into the same shape so both screens
+    // still answer from one function.
+    const active =
+      Object.entries(cardStatusCounts).reduce((sum, [, count]) => sum + count, 0) - n("cancelled");
+    if (active > 0 && n("posted") + n("delivered") === active) {
       // Blue "in transit" tone (shared with `paid`) — clearly past production.
       return { label: "On its way", className: ORDER_STATUS_CLASSES.paid };
     }

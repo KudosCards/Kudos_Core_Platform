@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import type { BatchOrder } from "@kudos/shared-types";
+import type { BatchOrderListRow } from "@kudos/shared-types";
+import { describeSendSchedule } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { Skeleton } from "@/components/skeleton";
 import { formatGbp, formatOrderDate } from "@/lib/orders";
@@ -37,7 +38,7 @@ export default function OrdersPage() {
 }
 
 async function OrdersList() {
-  const orders = await serverApiFetch<Paginated<BatchOrder>>("/batch-orders?perPage=50");
+  const orders = await serverApiFetch<Paginated<BatchOrderListRow>>("/batch-orders?perPage=50");
   const items = orders?.items ?? [];
 
   if (items.length === 0) {
@@ -70,23 +71,31 @@ async function OrdersList() {
           >
             <div className="flex flex-col gap-0.5">
               <span className="font-semibold">
-                {order.orderRecipients.length} card
-                {order.orderRecipients.length === 1 ? "" : "s"}
+                {order.cardCount} card{order.cardCount === 1 ? "" : "s"}
               </span>
               <span className="text-xs text-muted sm:hidden">
                 {formatOrderDate(order.createdAt)}
               </span>
+              {/* When this order actually posts. The list used to show only the
+                  date it was placed, so a customer with a card scheduled for
+                  November saw "Paid" and nothing else — the one question they
+                  came to the page with went unanswered. Same sentence the order
+                  page gives, from the same function. */}
+              {(() => {
+                const copy = describeSendSchedule(order.sendSchedule, formatOrderDate);
+                return copy ? <span className="text-xs text-muted">Scheduled — {copy.lead}</span> : null;
+              })()}
             </div>
             <span className="hidden text-sm text-muted sm:block">
               {formatOrderDate(order.createdAt)}
             </span>
             <span className="hidden text-right text-sm text-muted sm:block">
-              {order.orderRecipients.length}
+              {order.cardCount}
             </span>
             <span>
               <OrderStatusPill
                 status={order.status}
-                lineStatuses={order.orderRecipients.map((line) => line.status)}
+                cardStatusCounts={order.cardStatusCounts}
               />
             </span>
             <span className="text-right font-semibold">{formatGbp(order.totalMinor)}</span>

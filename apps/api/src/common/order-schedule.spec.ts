@@ -1,4 +1,4 @@
-import { describeSendSchedule, summariseSendSchedule } from "@kudos/shared-types";
+import { describeSendSchedule, summariseSendSchedule, tallyCardStatuses } from "@kudos/shared-types";
 
 /**
  * The order page's send readout.
@@ -125,6 +125,7 @@ describe("summariseSendSchedule", () => {
     const s = summariseSendSchedule([]);
     expect(s).toEqual({
       dates: [],
+      dateCount: 0,
       toCome: 0,
       gone: 0,
       undated: 0,
@@ -233,5 +234,33 @@ describe("describeSendSchedule", () => {
     expect(copy?.detail).not.toMatch(/ {2}/);
     expect(copy?.detail).not.toMatch(/,,|\.\./);
     expect(copy?.detail?.endsWith(".")).toBe(true);
+  });
+});
+
+/**
+ * The status tally the orders list carries instead of every card's row.
+ */
+describe("tallyCardStatuses", () => {
+  it("counts each status, and omits the ones that don't occur", () => {
+    expect(
+      tallyCardStatuses([
+        { status: "queued" },
+        { status: "queued" },
+        { status: "posted" },
+        { status: "cancelled" },
+      ]),
+    ).toEqual({ queued: 2, posted: 1, cancelled: 1 });
+  });
+
+  it("is an empty object for an order with no cards, not undefined", () => {
+    expect(tallyCardStatuses([])).toEqual({});
+  });
+
+  it("stays O(1) in size however many cards an order holds", () => {
+    // The point of the tally: a 76-card bulk order and a 2-card one produce the
+    // same handful of keys. The list used to carry one 636-byte row per card.
+    const many = Array.from({ length: 76 }, () => ({ status: "queued" as const }));
+    expect(Object.keys(tallyCardStatuses(many))).toHaveLength(1);
+    expect(tallyCardStatuses(many)).toEqual({ queued: 76 });
   });
 });

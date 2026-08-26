@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ukPostcodeRegex } from "./recipient";
+import type { OrderRecipientStatus } from "./enums";
 import {
   batchOrderStatusSchema,
   dispatchOptionSchema,
@@ -18,7 +19,11 @@ import {
 export const batchOrderSchema = z.object({
   id: z.string().uuid(),
   accountId: z.string().uuid(),
-  createdByUserId: z.string().uuid(),
+  /** Null for a guest one-off purchase, which has no logged-in user behind it
+   * (ADR 0025) — the column is nullable and this schema used to claim it wasn't.
+   * Nothing caught it because the API returns Prisma rows rather than parsing
+   * through here, so the lie only ever surfaced as a type. */
+  createdByUserId: z.string().uuid().nullable(),
   status: batchOrderStatusSchema,
   // A plain string column defaulting to "GBP" in Postgres, not a fixed
   // literal — checkout.ts lowercases it for Stripe, so it's read as variable.
@@ -224,20 +229,35 @@ export type MessagePage = z.infer<typeof messagePageSchema>;
  * today. A card that has been posted is gone whatever its date says, and the
  * date is what we want to *report* rather than what we should infer state from.
  */
-export interface OrderSendSchedule {
-  /** Distinct post dates still ahead, soonest first. Empty when nothing is due. */
-  dates: Date[];
+/**
+ * An order's send schedule, small enough to put on every row of a list.
+ *
+ * The endpoints and the counts, never the dates themselves. A bulk sender's
+ * order can hold seventy-odd distinct birthdays, and the readout only ever
+ * needs "how many dates, first and last" — shipping the array as well would
+ * put kilobytes on a row to render one sentence.
+ */
+export const orderSendScheduleSummarySchema = z.object({
+  /** How many distinct post dates are still ahead. */
+  dateCount: z.number().int().nonnegative(),
   /** Cards still to be posted, dated or not. */
-  toCome: number;
+  toCome: z.number().int().nonnegative(),
   /** Cards already posted, delivered, or returned. */
-  gone: number;
+  gone: z.number().int().nonnegative(),
   /** Cards still to come that carry no date — they go as soon as they're printed. */
-  undated: number;
-  /** Soonest and furthest post dates still ahead, or null when none are dated. */
-  earliest: Date | null;
-  latest: Date | null;
+  undated: z.number().int().nonnegative(),
+  earliest: z.coerce.date().nullable(),
+  latest: z.coerce.date().nullable(),
   /** True when the cards still to come don't all share a single post date. */
-  isSpread: boolean;
+  isSpread: z.boolean(),
+});
+export type OrderSendScheduleSummary = z.infer<typeof orderSendScheduleSummarySchema>;
+
+export interface OrderSendSchedule extends OrderSendScheduleSummary {
+  /** Distinct post dates still ahead, soonest first. Empty when nothing is due.
+   * Only the in-memory summary carries these; the orders *list* sends the
+   * counts and endpoints instead, which is all the readout needs. */
+  dates: Date[];
 }
 
 /** Statuses meaning the card has left us — it is no longer "scheduled". */
@@ -282,6 +302,7 @@ export function summariseSendSchedule(
   const dates = [...byTime.values()].sort((a, b) => a.getTime() - b.getTime());
   return {
     dates,
+    dateCount: dates.length,
     toCome,
     gone,
     undated,
@@ -308,13 +329,13 @@ export interface SendScheduleCopy {
 }
 
 export function describeSendSchedule(
-  schedule: OrderSendSchedule,
+  schedule: OrderSendScheduleSummary,
   formatDate: (date: Date) => string,
 ): SendScheduleCopy | null {
   if (schedule.toCome === 0 || schedule.earliest === null) return null;
 
   const lead = schedule.isSpread
-    ? `we'll post these on ${schedule.dates.length} dates, from ${formatDate(schedule.earliest)} to ${formatDate(schedule.latest!)}.`
+    ? `we'll post these on ${schedule.dateCount} dates, from ${formatDate(schedule.earliest)} to ${formatDate(schedule.latest!)}.`
     : `we'll post ${schedule.toCome === 1 ? "it" : "these"} on ${formatDate(schedule.earliest)}.`;
 
   const parts: string[] = [];
@@ -343,3 +364,47 @@ export function describeSendSchedule(
 
   return { lead, detail: parts.length > 0 ? parts.join(" ") : null };
 }
+
+/**
+ * How many of an order's cards sit at each fulfilment stage.
+ *
+ * The orders list needs this to decide what to call an order, and nothing more.
+ * It used to receive every card's whole row — address, price, timestamps — and
+ * read `.status` off each one, which meant a bulk sender's list shipped
+ * megabytes to render a handful of pills. A tally is O(1) in the card count.
+ */
+export const orderCardStatusCountsSchema = z.record(orderRecipientStatusSchema, z.number());
+export type OrderCardStatusCounts = Partial<Record<OrderRecipientStatus, number>>;
+
+/** Tally card statuses, so the list and the order page derive the order's
+ * headline label from an identical shape. */
+export function tallyCardStatuses(
+  lines: ReadonlyArray<{ status: OrderRecipientStatus }>,
+): OrderCardStatusCounts {
+  const counts: OrderCardStatusCounts = {};
+  for (const line of lines) {
+    counts[line.status] = (counts[line.status] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/**
+ * One row of the buyer's orders list.
+ *
+ * Deliberately NOT the order plus its recipients. That shape shipped 636 bytes
+ * per card — a bulk sender's fifty orders of seventy-six cards came to well over
+ * two megabytes — to render a card count and a status pill, and it included
+ * every recipient's postal address on a page that shows none. (The ops order
+ * view already withholds addresses on exactly this reasoning; see
+ * adminOrderLineSchema.) The list now carries a count, a status tally and a
+ * schedule summary: everything it renders, and nothing it doesn't.
+ */
+export const batchOrderListRowSchema = batchOrderSchema
+  .omit({ orderRecipients: true })
+  .extend({
+    cardCount: z.number().int().nonnegative(),
+    cardStatusCounts: orderCardStatusCountsSchema,
+    /** When this order's remaining cards post. See summariseSendSchedule. */
+    sendSchedule: orderSendScheduleSummarySchema,
+  });
+export type BatchOrderListRow = z.infer<typeof batchOrderListRowSchema>;
