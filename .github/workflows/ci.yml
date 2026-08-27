@@ -61,6 +61,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Cheap, needs no database, and the usual cause of a failure is an ADR
+      # added without regenerating the index — so it runs first, where it costs
+      # seconds rather than a full pipeline. The index is the landing page three
+      # READMEs send people to; letting it drift is how it ended up listing ten
+      # records out of a hundred and seventy-two.
+      - name: Check the ADR index is current
+        run: pnpm adr:index:check
+
       - name: Apply database migrations
         run: pnpm --filter @kudos/api exec prisma migrate deploy
 

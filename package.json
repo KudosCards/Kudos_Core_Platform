@@ -15,6 +15,8 @@
     "test": "turbo run test",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore",
     "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore",
+    "adr:index": "node scripts/build-adr-index.mjs",
+    "adr:index:check": "node scripts/build-adr-index.mjs --check",
     "prepare": "husky"
   },
   "devDependencies": {
