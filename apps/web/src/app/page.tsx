@@ -7,6 +7,9 @@ import {
   formatPlanPrice,
   planCardPriceLabel,
 } from "@kudos/shared-types";
+import { fetchCatalogCards } from "@/lib/catalog";
+import { isPublishableCard } from "@/lib/card-urls";
+import { CardCarousel, type CarouselCard } from "@/components/card-carousel";
 import { openGraphFor } from "@/lib/site";
 import { organisationSchema, webSiteSchema } from "@/lib/structured-data";
 import { JsonLd } from "@/components/json-ld";
@@ -40,6 +43,12 @@ export const metadata: Metadata = {
 };
 
 const CORAL = "#ef5b52";
+
+// ISR: the showcase carousel reads the live card catalog, which is the same for
+// everyone — so serve this from the CDN and regenerate hourly rather than hitting
+// the API per visit. Matches /cards, and shares its cache tag, so a finished
+// catalog sync drops this page too. See docs/adr/0044-public-catalog-isr.md.
+export const revalidate = 3600;
 
 const pains = [
   "Birthdays and milestones that quietly slip past",
@@ -116,6 +125,29 @@ const heroCards = {
     alt: "A personalised Achievement card",
   },
 };
+
+/**
+ * How many designs the showcase carousel pulls from the library. Enough that it
+ * reads as a range worth browsing, few enough that the position dots stay a row
+ * rather than a block.
+ */
+const SHOWCASE_CARD_LIMIT = 8;
+
+/**
+ * What the carousel shows when the catalog cannot be read.
+ *
+ * `fetchCatalogCards()` returns `[]` rather than throwing when the API is
+ * unreachable, which is the right call for a marketing page — but an empty
+ * carousel is a hole in the middle of the homepage, and this section's whole job
+ * is to show that we have cards. So it falls back to the four fronts already
+ * shipped in /public, which are always there because they are part of the build.
+ */
+const FALLBACK_SHOWCASE_CARDS: CarouselCard[] = [
+  { id: "fallback-birthday", name: "Happy Birthday", thumbnailUrl: heroCards.birthday.src },
+  { id: "fallback-welldone", name: "Congratulations", thumbnailUrl: heroCards.wellDone.src },
+  { id: "fallback-thankyou", name: "Thank You", thumbnailUrl: heroCards.thankYou.src },
+  { id: "fallback-achievement", name: "Achievement", thumbnailUrl: heroCards.achievement.src },
+];
 
 /**
  * The benefits section's visual: one customer's year, so "people who feel
@@ -197,7 +229,17 @@ function HeroCard({ src, alt, priority }: { src: string; alt: string; priority?:
   );
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+  // Cards with no slug yet cannot be linked to and are half-published; the same
+  // filter the library itself applies. See isPublishableCard().
+  const catalog = (await fetchCatalogCards()).filter(isPublishableCard);
+  const showcaseCards: CarouselCard[] =
+    catalog.length > 0
+      ? catalog
+          .slice(0, SHOWCASE_CARD_LIMIT)
+          .map((card) => ({ id: card.id, name: card.name, thumbnailUrl: card.thumbnailUrl }))
+      : FALLBACK_SHOWCASE_CARDS;
+
   return (
     <div className="min-h-screen bg-white text-slate-900">
       {/* Who we are, for search engines: the registered company behind the site. */}
@@ -388,14 +430,7 @@ export default function HomePage() {
             Browse the card library →
           </Link>
         </div>
-        <Image
-          src="/marketing/card-welldone.png"
-          alt="A personalised Well Done card"
-          width={300}
-          height={450}
-          className="mx-auto w-full max-w-xs rounded-xl shadow-2xl ring-1 ring-slate-100"
-          sizes="(max-width: 768px) 100vw, 320px"
-        />
+        <CardCarousel cards={showcaseCards} />
       </section>
 
       {/* Benefits */}
