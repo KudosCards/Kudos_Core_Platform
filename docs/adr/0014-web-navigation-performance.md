@@ -6,13 +6,13 @@ Date: 2026-07-17
 ## Context
 
 The authenticated app shell felt slow and unresponsive when clicking between pages. Two
-independent causes, both on the critical path of *every* navigation:
+independent causes, both on the critical path of _every_ navigation:
 
 1. **The proxy middleware (`src/proxy.ts` → `updateSession`) called `supabase.auth.getUser()`
    on every request.** `getUser()` sends a network request to the Supabase Auth server to
    validate the access token. Next.js runs middleware for every navigation and every RSC
    prefetch (the matcher covers all non-asset paths), so each page change paid a full round-trip
-   to Supabase *before* the destination page even began fetching its own data.
+   to Supabase _before_ the destination page even began fetching its own data.
 
 2. **There were no `loading.tsx` boundaries anywhere.** Every app page is a dynamic Server
    Component that awaits an API round-trip to Railway. With no loading boundary, a click produced

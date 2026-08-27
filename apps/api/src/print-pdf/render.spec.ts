@@ -17,14 +17,60 @@ const document: DesignDocument = {
       name: "front",
       background: { type: "color", color: "#faf5ff" },
       elements: [
-        { kind: "text", id: "t", text: "Happy Birthday, Sam!", x: 30, y: 60, width: 380, align: "center", fontFamily: "Playfair Display", fontSize: 32, color: "#4c1d95", bold: true },
-        { kind: "shape", id: "s", shape: "heart", x: 200, y: 200, width: 50, height: 50, fill: "#ef4444", rotation: 0 },
+        {
+          kind: "text",
+          id: "t",
+          text: "Happy Birthday, Sam!",
+          x: 30,
+          y: 60,
+          width: 380,
+          align: "center",
+          fontFamily: "Playfair Display",
+          fontSize: 32,
+          color: "#4c1d95",
+          bold: true,
+        },
+        {
+          kind: "shape",
+          id: "s",
+          shape: "heart",
+          x: 200,
+          y: 200,
+          width: 50,
+          height: 50,
+          fill: "#ef4444",
+          rotation: 0,
+        },
         { kind: "qr", id: "q", x: 320, y: 500, size: 90, rotation: 0 },
         // An image element with no resolver supplied — must be skipped, not throw.
-        { kind: "image", id: "i", assetUrl: "https://example.com/a.png", x: 20, y: 300, width: 120, height: 120, rotation: 0 },
+        {
+          kind: "image",
+          id: "i",
+          assetUrl: "https://example.com/a.png",
+          x: 20,
+          y: 300,
+          width: 120,
+          height: 120,
+          rotation: 0,
+        },
       ],
     },
-    { name: "inside-right", elements: [{ kind: "text", id: "t2", text: "With love", x: 40, y: 300, fontFamily: "Lora", fontSize: 20, color: "#111111", italic: true }] },
+    {
+      name: "inside-right",
+      elements: [
+        {
+          kind: "text",
+          id: "t2",
+          text: "With love",
+          x: 40,
+          y: 300,
+          fontFamily: "Lora",
+          fontSize: 20,
+          color: "#111111",
+          italic: true,
+        },
+      ],
+    },
   ],
 };
 
@@ -35,7 +81,9 @@ function pdfPageCount(pdf: Buffer): number {
 
 describe("renderRunPdf", () => {
   it("produces a valid PDF for a single face", async () => {
-    const pdf = await renderRunPdf([{ document, face: "front", qrUrl: "https://kudoscards.co.uk/r/demo" }]);
+    const pdf = await renderRunPdf([
+      { document, face: "front", qrUrl: "https://kudoscards.co.uk/r/demo" },
+    ]);
     expect(pdf.length).toBeGreaterThan(1000);
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
     expect(pdfPageCount(pdf)).toBe(1);
@@ -130,7 +178,17 @@ describe("reserved back footer", () => {
         name: "back",
         background: { type: "color", color: "#101010" },
         elements: [
-          { kind: "shape", id: "ad", shape: "rect", x: 20, y: 540, width: 410, height: 80, fill: "#ff0000", rotation: 0 },
+          {
+            kind: "shape",
+            id: "ad",
+            shape: "rect",
+            x: 20,
+            y: 540,
+            width: 410,
+            height: 80,
+            fill: "#ff0000",
+            rotation: 0,
+          },
         ],
       },
     ],

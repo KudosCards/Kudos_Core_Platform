@@ -23,7 +23,7 @@ day. There was no way to nudge a single card's dispatch day without moving the o
   date can't be after the occasion it's for.
 - **The override wins over recompute — until the baseline moves.** Approval's auto-send re-timing and
   the event-cohort re-dating skip the recompute when the card is overridden. But changing the
-  *occasion date* (the timing baseline itself) clears the override and recomputes, since the manual
+  _occasion date_ (the timing baseline itself) clears the override and recomputes, since the manual
   placement was relative to the old date.
 - **Drag-and-drop on the calendar.** With "Dispatch dates" on, month/week grid cards are draggable
   (native HTML5 DnD, no new dependency) and day cells are drop targets; dropping calls the endpoint
@@ -35,7 +35,7 @@ day. There was no way to nudge a single card's dispatch day without moving the o
 
 - **A separate `dispatchDateOverride` column with `COALESCE(override, dispatchDate)` everywhere.**
   Rejected: it would touch the auto-send query and every read that cares about the effective date.
-  Storing the override *in* `dispatchDate` plus a flag keeps the effective date in one place and the
+  Storing the override _in_ `dispatchDate` plus a flag keeps the effective date in one place and the
   cron untouched; the flag exists only to protect the value from recompute.
 - **A drag-and-drop library (dnd-kit, react-dnd).** Rejected for a single, simple interaction —
   native draggable + drop handlers are enough and add no bundle weight.

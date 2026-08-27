@@ -10,7 +10,7 @@ client bundle — confirm heavy client components stay code-split, and defer any
 non-critical JS loaded eagerly.
 
 The backlog named `@next/bundle-analyzer`, but the app builds with **Turbopack**
-(the Next 16 default). `@next/bundle-analyzer` hooks the *webpack* config, which a
+(the Next 16 default). `@next/bundle-analyzer` hooks the _webpack_ config, which a
 Turbopack build never runs, so it produces no report. Turbopack's `next build`
 also omits the per-route "First Load JS" table that webpack builds print. So the
 audit reads the chunks Turbopack actually emitted (`.next/static/chunks`).
@@ -20,10 +20,10 @@ audit reads the chunks Turbopack actually emitted (`.next/static/chunks`).
 The client output is **57 chunks, ~2.0 MB total** (that's every route's code
 summed, not any single page's first load). The largest chunks:
 
-| Size | Contents | Loaded |
-| --- | --- | --- |
-| 409 KB | React + Next runtime (`react-dom`, `next/dist`) | first load — framework floor, unavoidable |
-| 304 KB | `react-konva` / `konva` — the card editor & preview | **lazy only** (see below) |
+| Size   | Contents                                               | Loaded                                    |
+| ------ | ------------------------------------------------------ | ----------------------------------------- |
+| 409 KB | React + Next runtime (`react-dom`, `next/dist`)        | first load — framework floor, unavoidable |
+| 304 KB | `react-konva` / `konva` — the card editor & preview    | **lazy only** (see below)                 |
 | 236 KB | `react-dom` + `@supabase/*` — the Supabase auth client | near first load — needed for auth/session |
 
 **Heavy client components are already properly code-split.** Every `react-konva`

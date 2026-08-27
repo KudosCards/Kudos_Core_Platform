@@ -77,7 +77,7 @@ every PR.
   `pnpm --filter @kudos/api start:deploy`. That script runs `prisma migrate deploy` before
   booting the server, so every deploy applies any new migrations automatically — no manual
   migration step needed once the service's `DATABASE_URL`/`DIRECT_URL` point at the real
-  database. `prisma db seed` is intentionally *not* run on every deploy (seeding isn't something
+  database. `prisma db seed` is intentionally _not_ run on every deploy (seeding isn't something
   you want firing automatically); run it once by hand via the platform's console/shell after the
   first successful deploy: `pnpm --filter @kudos/api exec prisma db seed`.
 - **Web** (Netlify): auto-deploys on every push to `main`. Build config lives in

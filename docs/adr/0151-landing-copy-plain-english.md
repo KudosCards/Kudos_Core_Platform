@@ -24,8 +24,8 @@ images, structure, and pricing exactly as they were.
   now says what actually happens ("tell us the birthdays and we'll post a card
   every year", "we print and post real cards for you").
 - **Clearer steps.** The "01 / 02 / 03" labels became "1 / 2 / 3", and the step
-  titles are now plain and action-first: *Add the people you care about* →
-  *Choose when it goes* → *We print it and post it*.
+  titles are now plain and action-first: _Add the people you care about_ →
+  _Choose when it goes_ → _We print it and post it_.
 - **Consistent CTAs.** The three "Start Free — No (Credit) Card Needed" buttons
   are now a single, dash-free "Start for free, no card needed".
 

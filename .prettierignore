@@ -1,0 +1,11 @@
+# Prettier reads .gitignore as well as this file, so build output and
+# node_modules are already covered. This file is only for things that are
+# tracked in git but must not be reformatted.
+
+# pnpm's own files, which pnpm rewrites in its own style. Formatting them sets
+# up a fight nobody wins: `pnpm approve-builds` writes single-quoted entries
+# into pnpm-workspace.yaml, so a reformat to double quotes turns CI red the next
+# time anyone runs it. The lockfile is the same argument, plus an enormous diff
+# no one will ever read.
+pnpm-lock.yaml
+pnpm-workspace.yaml

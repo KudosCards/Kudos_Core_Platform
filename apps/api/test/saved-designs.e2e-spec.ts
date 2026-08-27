@@ -389,10 +389,10 @@ describe("Saved designs (e2e)", () => {
 
       // And the stored design is untouched — a refused save must not half-apply.
       const stored = await prisma.savedDesign.findUniqueOrThrow({ where: { id } });
-      const back = (stored.document as { pages: { name: string; elements: { y: number }[] }[] })
-        .pages.find((page) => page.name === "back");
+      const back = (
+        stored.document as { pages: { name: string; elements: { y: number }[] }[] }
+      ).pages.find((page) => page.name === "back");
       expect(back?.elements[0]?.y).toBe(400);
     });
   });
-
 });

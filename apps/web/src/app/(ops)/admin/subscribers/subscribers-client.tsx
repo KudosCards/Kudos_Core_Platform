@@ -262,64 +262,73 @@ export function AdminSubscribersClient({
           {/* Table on ≥sm; a stacked-card list replaces it on phones so this wide
               9-column row never becomes a sideways-scrolling wall. */}
           <div className="hidden overflow-x-auto rounded-xl border border-border sm:block">
-          <table className="w-full min-w-[900px] text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs tracking-wide text-muted uppercase">
-                <th className="w-10 px-4 py-3">
-                  <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all" />
-                </th>
-                <th className="px-4 py-3 font-medium">Account</th>
-                <th className="px-4 py-3 font-medium">Plan</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Joined</th>
-                <th className="px-4 py-3 text-right font-medium">Contacts</th>
-                <th className="px-4 py-3 text-right font-medium">Orders</th>
-                <th className="px-4 py-3 text-right font-medium">Cards sent</th>
-                <th className="px-4 py-3 text-right font-medium">Spent</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.map((row) => (
-                <tr key={row.id} className="hover:bg-foreground/[0.02]">
-                  <td className="px-4 py-3.5">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs tracking-wide text-muted uppercase">
+                  <th className="w-10 px-4 py-3">
                     <input
                       type="checkbox"
-                      checked={selected.has(row.id)}
-                      onChange={() => toggle(row.id)}
-                      aria-label={`Select ${row.name}`}
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      aria-label="Select all"
                     />
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <Link href={`/admin/subscribers/${row.id}`} className="flex flex-col group">
-                      <span className="font-medium group-hover:text-accent">{row.name}</span>
-                      <span className="text-xs text-muted capitalize">{row.type}</span>
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3.5">{planLabel(row.plan)}</td>
-                  <td className="px-4 py-3.5">
-                    {row.health !== "none" && (
-                      <span
-                        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${HEALTH_CLASSES[row.health]}`}
-                      >
-                        {HEALTH_LABELS[row.health]}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3.5 whitespace-nowrap text-muted">
-                    {formatOrderDate(row.createdAt)}
-                  </td>
-                  <td className="px-4 py-3.5 text-right tabular-nums text-muted">
-                    {row.recipientCount}
-                  </td>
-                  <td className="px-4 py-3.5 text-right tabular-nums text-muted">{row.orderCount}</td>
-                  <td className="px-4 py-3.5 text-right tabular-nums text-muted">{row.cardsSent}</td>
-                  <td className="px-4 py-3.5 text-right font-semibold tabular-nums">
-                    {formatGbp(row.totalSpentMinor)}
-                  </td>
+                  </th>
+                  <th className="px-4 py-3 font-medium">Account</th>
+                  <th className="px-4 py-3 font-medium">Plan</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Joined</th>
+                  <th className="px-4 py-3 text-right font-medium">Contacts</th>
+                  <th className="px-4 py-3 text-right font-medium">Orders</th>
+                  <th className="px-4 py-3 text-right font-medium">Cards sent</th>
+                  <th className="px-4 py-3 text-right font-medium">Spent</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {rows.map((row) => (
+                  <tr key={row.id} className="hover:bg-foreground/[0.02]">
+                    <td className="px-4 py-3.5">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(row.id)}
+                        onChange={() => toggle(row.id)}
+                        aria-label={`Select ${row.name}`}
+                      />
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <Link href={`/admin/subscribers/${row.id}`} className="flex flex-col group">
+                        <span className="font-medium group-hover:text-accent">{row.name}</span>
+                        <span className="text-xs text-muted capitalize">{row.type}</span>
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3.5">{planLabel(row.plan)}</td>
+                    <td className="px-4 py-3.5">
+                      {row.health !== "none" && (
+                        <span
+                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${HEALTH_CLASSES[row.health]}`}
+                        >
+                          {HEALTH_LABELS[row.health]}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 whitespace-nowrap text-muted">
+                      {formatOrderDate(row.createdAt)}
+                    </td>
+                    <td className="px-4 py-3.5 text-right tabular-nums text-muted">
+                      {row.recipientCount}
+                    </td>
+                    <td className="px-4 py-3.5 text-right tabular-nums text-muted">
+                      {row.orderCount}
+                    </td>
+                    <td className="px-4 py-3.5 text-right tabular-nums text-muted">
+                      {row.cardsSent}
+                    </td>
+                    <td className="px-4 py-3.5 text-right font-semibold tabular-nums">
+                      {formatGbp(row.totalSpentMinor)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           <div className="flex flex-col gap-3 sm:hidden">

@@ -94,7 +94,9 @@ export function parseRecipientRow(row: Record<string, string>): ParsedRecipientR
   if (dobRaw) {
     dateOfBirth = parseFlexibleDate(dobRaw);
     if (!dateOfBirth) {
-      warnings.push(`Date of birth "${dobRaw}" wasn't recognised (use dd/mm/yyyy) — imported without it`);
+      warnings.push(
+        `Date of birth "${dobRaw}" wasn't recognised (use dd/mm/yyyy) — imported without it`,
+      );
     }
   }
 

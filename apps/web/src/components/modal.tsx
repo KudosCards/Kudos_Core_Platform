@@ -67,7 +67,16 @@ export function Modal({
             aria-label="Close"
             className="-mr-1 -mt-1 rounded-md p-1 text-muted hover:bg-foreground/[0.05] hover:text-foreground"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
               <path d="M18 6 6 18M6 6l12 12" />
             </svg>
           </button>

@@ -67,14 +67,22 @@ export function parseVideoEmbed(raw: string): VideoEmbed | null {
     const fromPath = path.match(/^\/(?:shorts|embed|live)\/([^/?#]+)/)?.[1];
     const id = fromQuery ?? fromPath;
     if (id && YOUTUBE_ID.test(id)) {
-      return { provider: "youtube", videoId: id, embedUrl: `https://www.youtube-nocookie.com/embed/${id}` };
+      return {
+        provider: "youtube",
+        videoId: id,
+        embedUrl: `https://www.youtube-nocookie.com/embed/${id}`,
+      };
     }
     return null;
   }
   if (hostIs(url, "youtu.be")) {
     const id = path.slice(1).split(/[/?#]/)[0];
     if (id && YOUTUBE_ID.test(id)) {
-      return { provider: "youtube", videoId: id, embedUrl: `https://www.youtube-nocookie.com/embed/${id}` };
+      return {
+        provider: "youtube",
+        videoId: id,
+        embedUrl: `https://www.youtube-nocookie.com/embed/${id}`,
+      };
     }
     return null;
   }
@@ -103,7 +111,11 @@ export function parseVideoEmbed(raw: string): VideoEmbed | null {
     const fromQuery = url.searchParams.get("id") ?? undefined;
     const id = fromPath ?? fromQuery;
     if (id && DRIVE_ID.test(id)) {
-      return { provider: "google_drive", videoId: id, embedUrl: `https://drive.google.com/file/d/${id}/preview` };
+      return {
+        provider: "google_drive",
+        videoId: id,
+        embedUrl: `https://drive.google.com/file/d/${id}/preview`,
+      };
     }
     return null;
   }

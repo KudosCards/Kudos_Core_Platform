@@ -26,7 +26,7 @@ Let **Stripe generate the invoice** for card orders too, and surface its PDF.
    checkout sessions (`batch-orders.service`) now pass
    `invoice_creation: { enabled: true, invoice_data: { metadata: { batchOrderId } } }`.
    Stripe produces a finalized VAT invoice for each one-off purchase using the
-   account's business/VAT settings — the *same* source that makes subscriber
+   account's business/VAT settings — the _same_ source that makes subscriber
    invoices VAT invoices. The `batchOrderId` on the invoice metadata is the link
    back to our order.
 

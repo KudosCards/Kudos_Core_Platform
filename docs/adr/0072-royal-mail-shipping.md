@@ -14,7 +14,7 @@ programmatically — create a shipment, buy the postage, allocate a tracking
 number, and return a label — so the ops queue can dispatch a card in one click
 and the buyer gets a real tracking link.
 
-(Note: this is the *shipping* API, not address lookup. House-level address
+(Note: this is the _shipping_ API, not address lookup. House-level address
 autocomplete needs Royal Mail's PAF **data** via a licensed reseller — a
 separate integration, ADR 0071 follow-up.)
 

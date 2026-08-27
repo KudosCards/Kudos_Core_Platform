@@ -43,7 +43,12 @@ describe("Account deletion (e2e)", () => {
     deleteUser.mockClear();
   });
 
-  async function signUp(): Promise<{ token: string; userId: string; accountId: string; name: string }> {
+  async function signUp(): Promise<{
+    token: string;
+    userId: string;
+    accountId: string;
+    name: string;
+  }> {
     const userId = randomUUID();
     const token = await mintToken(userId);
     const name = `Test Centre ${randomUUID()}`;

@@ -24,7 +24,12 @@ describe("buildScheduledKeyDateOccasion", () => {
 
   it("omits the title when no label is given", () => {
     const occasion = buildScheduledKeyDateOccasion(
-      { accountId: "acc", recipientId: "rec", type: "anniversary", date: new Date(Date.UTC(2019, 5, 1)) },
+      {
+        accountId: "acc",
+        recipientId: "rec",
+        type: "anniversary",
+        date: new Date(Date.UTC(2019, 5, 1)),
+      },
       today,
     );
     expect(occasion.title).toBeUndefined();

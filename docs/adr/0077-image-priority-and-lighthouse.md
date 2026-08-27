@@ -29,7 +29,7 @@ Two genuine gaps remained:
 
 **1. `priority` on the two LCP heroes.** `/cards/[id]` and `/cards/[id]/send`
 mark their single hero image `priority`, so it loads eagerly instead of lazily.
-Deliberately *not* applied to the catalog/designs grids — priority-loading a
+Deliberately _not_ applied to the catalog/designs grids — priority-loading a
 whole grid would defeat lazy-loading and hurt, not help; grids stay lazy.
 
 **2. A shared blur placeholder.** `CARD_BLUR_DATA_URL` in `lib/card-image.ts` —

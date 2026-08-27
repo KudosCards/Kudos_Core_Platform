@@ -17,17 +17,16 @@ with 409, so only one request ever reaches Stripe.
 ADR 0119-era work added a **resume** path (PR #210): if the buyer starts
 checkout but closes the Stripe page without paying, the order is stranded in
 `pending_payment` with no live session. "Resume checkout" hits the same endpoint
-again and must be allowed to mint a *fresh* session — so the endpoint began
+again and must be allowed to mint a _fresh_ session — so the endpoint began
 accepting `pending_payment` orders, not just `draft`.
 
 That reopened the double-session hole. A `draft` order checked out twice
 concurrently can interleave as:
 
 1. **T1** wins the CAS (`draft → pending_payment`), calls Stripe, returns 201.
-2. **T2** reads the order *after* T1 committed, sees `pending_payment`, and —
+2. **T2** reads the order _after_ T1 committed, sees `pending_payment`, and —
    because the endpoint now treats any `pending_payment` order as resumable —
-   **skips the guard entirely**, calls Stripe a second time, and also returns
-   201.
+   **skips the guard entirely**, calls Stripe a second time, and also returns 201.
 
 Result: two live sessions for one order. A concurrency e2e test
 (`rejects checking out a batch order twice concurrently`) caught this
@@ -35,7 +34,7 @@ intermittently (~1 in 3–4 runs) — the outcome depended purely on whether T2'
 read landed before or after T1's commit.
 
 The root difficulty: a legitimate **resume** and an illegitimate **concurrent
-double-submit** are *indistinguishable by stored state*. Both are a second
+double-submit** are _indistinguishable by stored state_. Both are a second
 checkout of a `pending_payment` order; they differ only in timing. No status
 column, lock, or optimistic-version check can separate "T2 raced the initial
 checkout" from "the user came back an hour later" — because in the failing
@@ -57,12 +56,12 @@ Concretely, in `BatchOrdersService.checkout`:
 - `status === "pending_payment"`:
   - **no `resume` intent** → 409. This is the safety net for the concurrent
     double-submit: T2 reads `pending_payment` but, being an unflagged first
-    checkout, is rejected instead of misread as a resume. Two racing *Pay*
+    checkout, is rejected instead of misread as a resume. Two racing _Pay_
     clicks therefore always resolve to exactly one session.
   - **`resume` intent** → allowed, but still guarded by a compare-and-swap on
     `(status, updatedAt)`. `@updatedAt` bumps on every write, so two concurrent
-    *resume* clicks of the same snapshot collide — the loser's `updatedAt` no
-    longer matches and it 409s. This closes the symmetric double-*Resume* race
+    _resume_ clicks of the same snapshot collide — the loser's `updatedAt` no
+    longer matches and it 409s. This closes the symmetric double-_Resume_ race
     too.
 - anything past payment (`paid`/`fulfilling`/`completed`) or `cancelled` → 409,
   unchanged.
@@ -89,13 +88,13 @@ unaffected.
 
 - The concurrent-double-submit test is now deterministic; the double-session /
   double-charge risk on the initial checkout is closed.
-- A first checkout is now the *only* unflagged path. Any client that re-POSTs
+- A first checkout is now the _only_ unflagged path. Any client that re-POSTs
   checkout on a `pending_payment` order without `{ resume: true }` gets a 409 —
   an intentional contract change. The one such caller (the Resume button) sends
   the flag; a stray retry of a first checkout correctly fails closed.
 - The distinction is client-declared, which is acceptable: a client that always
-  sends `resume: true` can at worst mint extra sessions for *its own* order, all
+  sends `resume: true` can at worst mint extra sessions for _its own_ order, all
   keyed to the same `batchOrderId`; the Stripe webhook settles that order
-  idempotently, so no second charge lands. The flag removes an *accidental*
+  idempotently, so no second charge lands. The flag removes an _accidental_
   double-session, which is the realistic failure mode (a double-click), not a
   security boundary.

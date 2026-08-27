@@ -39,7 +39,7 @@ Serve the public catalog pages from the CDN via Incremental Static Regeneration
   natural follow-up if that lag ever matters.
 - The per-token public pages (invite, gift claim, RTS) are unchanged — still
   `no-store`.
-- Trade-off: `publicApiFetch` returning `null` on a *transient* failure during a
+- Trade-off: `publicApiFetch` returning `null` on a _transient_ failure during a
   first-ever render of an id can cache a 404 until the next revalidation. Low risk
   (stale-while-revalidate keeps serving the last good page for already-cached
   ids), and no worse for the user than the previous no-store 404.

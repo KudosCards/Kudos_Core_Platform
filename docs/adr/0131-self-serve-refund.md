@@ -9,7 +9,7 @@ Accepted (lifts the refund deferral in ADR 0008 for this one case)
 Scheduled sends (ADR 0130) let a customer pay now and have a card posted on a
 later date. Managing that order was already partly self-serve — a scheduled
 order can be **rescheduled** while none of its cards have printed — but
-**cancelling** a *paid* order still routed to support, who issued the refund by
+**cancelling** a _paid_ order still routed to support, who issued the refund by
 hand in the Stripe Dashboard. ADR 0008 had deferred all automated refunds; ADR
 0130 explicitly flagged self-serve cancel/refund as "a deliberate later
 decision". This is that decision: the platform's first automated refund.
@@ -47,7 +47,7 @@ payment method:
 1. **Card — refund first, then release.** Issue
    `stripe.refunds.create({ payment_intent }, { idempotencyKey: "refund:<id>" })`
    **before** touching the database. The idempotency key is the order id, so a
-   retry or a concurrent double-submit collapses onto the *same single refund* —
+   retry or a concurrent double-submit collapses onto the _same single refund_ —
    Stripe never refunds twice. Only after a confirmed refund does a transaction
    claim the order `cancelled` (status-guarded on `paid`/`fulfilling`) and run
    the shared release. The worst failure is "refunded but not yet released",

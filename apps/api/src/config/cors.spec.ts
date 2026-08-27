@@ -47,9 +47,9 @@ describe("isOriginAllowed", () => {
   it("does not treat suffixes as substrings of an arbitrary host", () => {
     // Endswith, not includes: a look-alike host that merely contains the suffix
     // mid-string is not allowed.
-    expect(
-      isOriginAllowed("https://--kudos-cards.netlify.app.evil.com", allowed, suffixes),
-    ).toBe(false);
+    expect(isOriginAllowed("https://--kudos-cards.netlify.app.evil.com", allowed, suffixes)).toBe(
+      false,
+    );
   });
 });
 

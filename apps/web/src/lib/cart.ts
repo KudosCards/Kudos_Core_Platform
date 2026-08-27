@@ -101,7 +101,8 @@ function getServerSnapshot(): CartItem[] {
 /** Add a card for one recipient. Returns false (and no-ops) at the cap. */
 export function addToCart(item: Omit<CartItem, "id">): boolean {
   if (items.length >= CART_MAX_ITEMS) return false;
-  const id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`;
+  const id =
+    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`;
   set([...items, { ...item, id }]);
   return true;
 }

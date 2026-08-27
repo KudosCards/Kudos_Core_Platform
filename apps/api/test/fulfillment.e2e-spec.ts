@@ -335,7 +335,9 @@ describe("Fulfillment (e2e)", () => {
     // The message matters: without the membership check this URL passes the
     // allowlist too, and the request only fails later at the fetch — a different
     // 400 that would let this test pass while the guard was gone.
-    expect((response.body as { message: string }).message).toMatch(/isn't part of this card's design/i);
+    expect((response.body as { message: string }).message).toMatch(
+      /isn't part of this card's design/i,
+    );
   });
 
   it("refuses an artwork URL pointing off our storage hosts", async () => {

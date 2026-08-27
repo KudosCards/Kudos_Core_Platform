@@ -117,6 +117,11 @@ describe("Design assets (e2e)", () => {
       .get("/design-assets")
       .set("Authorization", `Bearer ${tokenA}`)
       .expect(200);
-    expect(z.array(designAssetSchema).parse(listA.body).map((a) => a.id)).toContain(assetId);
+    expect(
+      z
+        .array(designAssetSchema)
+        .parse(listA.body)
+        .map((a) => a.id),
+    ).toContain(assetId);
   });
 });

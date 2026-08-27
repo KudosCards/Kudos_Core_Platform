@@ -18,11 +18,11 @@ Two failures resulted:
 2. More subtly, `/register` stashes the chosen account type + name in
    `localStorage` (`pendingAccount`) and `/onboarding` reads it back to finish
    creating the account after confirmation. Because the confirmation landed on a
-   *different origin*, that stash was unreadable there — so **the account was
+   _different origin_, that stash was unreadable there — so **the account was
    never created**.
 
 Every other auth email in the platform (password reset, operator/customer
-invites — ADR 0051) is generated *server-side* from the canonical `WEB_APP_URL`
+invites — ADR 0051) is generated _server-side_ from the canonical `WEB_APP_URL`
 using `auth.admin.generateLink` + a `token_hash` the landing page consumes with
 `verifyOtp`. Signup confirmation was the lone exception, fired client-side and
 therefore beholden to the dashboard Site URL.
@@ -66,7 +66,7 @@ Moving to the custom domain surfaced a related trap: the API's CORS allow-list i
 a **single** origin (`WEB_APP_URL`). Once that became `https://kudos-cards.co.uk`,
 the app still served from the free `kudos-cards.netlify.app` subdomain had all its
 API calls (login, password reset, admin dashboard) blocked by CORS. Setting the
-custom domain as Netlify's *primary* domain does **not** auto-redirect the
+custom domain as Netlify's _primary_ domain does **not** auto-redirect the
 `.netlify.app` subdomain (only other custom aliases like `www`). So `netlify.toml`
 now force-redirects `https://kudos-cards.netlify.app/*` → the custom domain (301),
 making the custom domain the single origin every request comes from. Deploy

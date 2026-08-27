@@ -17,11 +17,7 @@ import { CurrentMembership } from "../auth/current-membership.decorator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser, CurrentMembershipContext } from "../auth/types";
 import type { BatchOrder } from "../batch-orders/batch-orders.service";
-import {
-  EventsService,
-  type EventSummary,
-  type EventWithMembers,
-} from "./events.service";
+import { EventsService, type EventSummary, type EventWithMembers } from "./events.service";
 import { CreateEventDto } from "./dto/create-event.dto";
 import { UpdateEventDto } from "./dto/update-event.dto";
 import { AddEventMembersDto } from "./dto/add-event-members.dto";

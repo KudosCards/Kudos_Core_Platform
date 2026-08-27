@@ -17,7 +17,7 @@ met where customers expect them to:
 
 - **The card designer** (`/designs/[id]/edit`) only offers a **raw video URL**
   (`DesignDocument.videoUrl`, ADR 0132). At settlement, a card with no chosen
-  page gets a bare auto-created *"Your message"* page seeded with that video.
+  page gets a bare auto-created _"Your message"_ page seeded with that video.
   The rich Message Pages a customer built are **invisible in the designer**.
 - **Message Pages** are built in a separate `/message-pages` area and can only
   be attached at **send time**, via a dropdown that appears only when the design
@@ -78,7 +78,7 @@ settlement honours that choice verbatim (it never re-derives from the design):
 > design-linked page **at settlement** (step 2 below), which could not tell an
 > explicit "no page" from "not chosen": a nullable `messagePageId` collapses
 > both to null, so a sender who cleared the page still had the design's page
-> re-attached — their opt-out was ignored. Resolution therefore moved *upstream*
+> re-attached — their opt-out was ignored. Resolution therefore moved _upstream_
 > to the point that knows the difference. The interactive composers already
 > carry an explicit choice; auto-send (the only path with no composer) now
 > resolves the design's linked page itself. Settlement no longer consults the
@@ -86,8 +86,8 @@ settlement honours that choice verbatim (it never re-derives from the design):
 
 ### Phases
 
-- **Phase 1 — Designer.** When a QR element is present, the panel asks *"What
-  plays when they scan this?"*: pick one of the account's active Message Pages
+- **Phase 1 — Designer.** When a QR element is present, the panel asks _"What
+  plays when they scan this?"_: pick one of the account's active Message Pages
   (with an inline preview + a "New page" link) **or** "just a video link" (the
   existing field, reframed). Sets `messagePageId` or `videoUrl` on the document.
   The editor's server page now also loads the account's message pages and its

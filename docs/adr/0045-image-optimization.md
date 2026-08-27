@@ -64,6 +64,6 @@ production was never affected (it still had `unoptimized`).
 Fix: `isOptimizableThumbnail(src)` (`lib/card-image.ts`) — optimize a thumbnail
 only when it's one of our Supabase public-storage URLs, and render everything
 else `unoptimized` (`unoptimized={!isOptimizableThumbnail(src)}` at all five call
-sites). This is robust to *any* non-Supabase host — placeholders now, plus any
+sites). This is robust to _any_ non-Supabase host — placeholders now, plus any
 future/legacy URL — so it can never crash the page again. Real catalog art still
 gets optimized (the actual perf win); placeholders just render as-is.

@@ -10,7 +10,7 @@ Every ad-hoc card purchase — the "Send a card" bulk composer (`/send`) and the
 guided single-card wizard (`/designs/[id]/send`) — posted **today**. The order
 engine hard-coded the created occasion's `dispatchDate` to `today`, so there was
 no way to buy a card now and have it posted later, and the checkout never even
-said *when* a card would go — a customer couldn't tell "send today" from
+said _when_ a card would go — a customer couldn't tell "send today" from
 "schedule". Auto-send birthdays already pay-once-post-later on a computed
 `dispatchDate`; ad-hoc sends had no equivalent.
 
@@ -28,7 +28,7 @@ send flows, choosing an **arrive-by** date. Payment is taken now either way;
 scheduling only changes when the card is posted.
 
 1. **Arrive-by, not post-by.** The customer picks the date they want the card to
-   *land*; the API back-computes the **post-by** (`dispatchDate`) from it with
+   _land_; the API back-computes the **post-by** (`dispatchDate`) from it with
    the same working-days + seasonal lead engine occasions use
    (`computeDispatchDate(deliverBy, POSTAGE_LEAD_DAYS[class])`). "Send now" keeps
    the today/today behaviour (ADR 0119) so it reads as due-now, not overdue.
@@ -43,7 +43,7 @@ scheduling only changes when the card is posted.
 3. **A single optional field.** `deliverBy` (`YYYY-MM-DD`) on the bulk-send and
    quick-send inputs; absent = send now. The service's `resolveSendSchedule`
    sets the occasion's `occasionDate`/`dispatchDate` accordingly (for a segment
-   send that *reuses* a natural birthday occasion, the birthday `occasionDate`
+   send that _reuses_ a natural birthday occasion, the birthday `occasionDate`
    is kept and only `dispatchDate` is set — `dispatchDate` is what drives
    posting). Everything downstream — `dueDate`, the ops queue bucket, the
    dispatch calendar, the reminders — flows unchanged.
@@ -58,7 +58,7 @@ scheduling only changes when the card is posted.
    scheduled card is paid but not yet posted, the customer can **reschedule** it
    (change the arrive-by date) while none of its cards have printed — recomputing
    the occasion `dispatchDate` and the pending jobs' `dueDate`. **Cancelling** a
-   *paid* order means a refund, which the platform still defers (ADR 0008), so
+   _paid_ order means a refund, which the platform still defers (ADR 0008), so
    for now cancel-after-payment routes to support/ops (who refund in Stripe);
    self-serve refund-on-cancel is a deliberate later decision.
 

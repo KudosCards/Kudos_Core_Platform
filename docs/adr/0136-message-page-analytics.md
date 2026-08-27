@@ -11,14 +11,14 @@ Message-page insights (ADR 0132, Phase 3) expose an engagement funnel
 notes were flagged during that work:
 
 1. **Read efficiency.** `insights()` and `accountInsights()`
-   (`message-pages.service.ts`) loaded every page's links *and every reply row*
+   (`message-pages.service.ts`) loaded every page's links _and every reply row_
    via `PAGE_INCLUDE`, then counted in JS. Correct and cheap today, but the
    account rollup grows without bound — it materialises reply bodies just to
    produce ~8 integers.
 
 2. **No time dimension.** Engagement is stored as running counters on
    `MessagePageLink` (`viewCount`, `ctaClickCount`, `firstViewedAt`) and reply
-   rows. We know *how many*, never *when* — so "views over the last 30 days",
+   rows. We know _how many_, never _when_ — so "views over the last 30 days",
    trend sparklines, and "someone just viewed your card" are impossible.
 
 Confirmed by tracing the code: the three public write paths all live in
@@ -30,18 +30,20 @@ deny a recipient their message. `admin-customer.service.ts` already uses
 
 ## Decision
 
-Counters stay the source of truth for *current state*; an event log is added
-purely for *over-time*, and event capture never sits on the critical response
+Counters stay the source of truth for _current state_; an event log is added
+purely for _over-time_, and event capture never sits on the critical response
 path. Delivered in five independently shippable, individually verified phases
 (one PR each, tests + verify gate).
 
 ### Phase 1 — Insights read efficiency (no schema/contract change)
+
 Replace the full-include counting in `insights()`/`accountInsights()` with
 database aggregates (`aggregate`/`count`/`groupBy`) over the matching links and
 replies. Output shape is byte-identical, so `shared-types` and the UI are
 untouched; the existing e2e funnel test is the equivalence guard.
 
 ### Phase 2 — Event log foundation (capture only, zero user-facing change)
+
 - New `MessagePageEvent`: `id`, `type` (`viewed | cta_clicked | replied`),
   `createdAt`, `messagePageLinkId`, **plus denormalised `accountId` and
   `messagePageId`** so account-level time-series never has to 2-hop join
@@ -59,17 +61,20 @@ untouched; the existing e2e funnel test is the equivalence guard.
   on a DB read, since the thing it disables is DB load.
 
 ### Phase 3 — Retention (prune-only to start)
+
 Daily `@Cron` (storage-reaper pattern) prunes raw events older than
 `MESSAGE_EVENTS_RETENTION_DAYS` (default 90; blank/invalid → 90). Charts only
 ever show a bounded window and lifetime counters remain the long-term truth, so
 no rollup table yet — add daily rollups later only if a longer window is wanted.
 
 ### Phase 4 — Time-series API + contract
+
 `GET /message-pages/:id/insights/timeseries?days=30` and an account variant →
 daily buckets `[{ date, views, clicks, replies }]` via `date_trunc` `groupBy`
 over events. New additive `shared-types` schema. Reads stay open.
 
 ### Phase 5 — Frontend charts
+
 A hand-rolled SVG multi-series line chart (`TrendChart`) — views/clicks/replies
 over the window, no chart dependency, matching the custom calendar-grid approach
 — with a legend, hover crosshair + per-day tooltip, and a zero-filled empty
@@ -86,10 +91,10 @@ the legend and its value shown on hover.
 Two new **optional, defaulted, API-only** env vars — nothing existing changes,
 nothing is required for boot, no web/Netlify vars:
 
-| Var | Phase | Default | Purpose |
-|---|---|---|---|
-| `MESSAGE_EVENTS_ENABLED` | 2 | unset = off | Kill switch for event capture. |
-| `MESSAGE_EVENTS_RETENTION_DAYS` | 3 | 90 | Raw-event retention window. |
+| Var                             | Phase | Default     | Purpose                        |
+| ------------------------------- | ----- | ----------- | ------------------------------ |
+| `MESSAGE_EVENTS_ENABLED`        | 2     | unset = off | Kill switch for event capture. |
+| `MESSAGE_EVENTS_RETENTION_DAYS` | 3     | 90          | Raw-event retention window.    |
 
 ## Consequences / blast radius
 

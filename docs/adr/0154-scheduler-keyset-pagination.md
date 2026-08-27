@@ -11,6 +11,7 @@ A platform scale review flagged the daily recurring-occasion scheduler
 cron whose cost grows with **total platform size** rather than daily work.
 
 The old implementation loaded, in a single `findMany` each:
+
 - **every** active recipient with a date of birth, across every tenant, and
 - **every** key date whose recipient is active,
 

@@ -1,0 +1,14 @@
+# Format whatever is being committed, so nobody has to remember.
+#
+# lint-staged has been configured in package.json since the repo was set up, but
+# this file never existed — and husky's dispatcher exits 0 when it is absent,
+# silently. So nothing had ever run: 248 files had drifted out of Prettier's
+# style by the time anyone noticed. CI checks formatting too; this is what stops
+# you finding out from a red build.
+#
+# Formatting only, deliberately — no `eslint --fix`. ESLint lives in each
+# package, not at the root, with a flat config that resolves from the working
+# directory; a root-level `eslint` here finds whatever happens to be on PATH
+# (a global install, a different major version) and no config to run it with.
+# Linting stays where it works: `pnpm turbo run lint`, per package, in CI.
+lint-staged

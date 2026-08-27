@@ -15,7 +15,7 @@ policy, so it can't create the Price either).
 
 Key realisation: **the deployed API already holds the live Stripe key and can
 reach Stripe** — that's how plan checkout works in production. So the platform can
-provision the Price *itself*, on demand, with no dashboard, env var, or redeploy.
+provision the Price _itself_, on demand, with no dashboard, env var, or redeploy.
 
 ## Decision
 
@@ -36,6 +36,7 @@ var and no redeploy**. An explicit env var still wins, so nothing existing break
 ### Provision from an ops action
 
 `SeatBillingService.ensureSeatPrice()` — idempotent:
+
 - if an env var provides the id, respect it (create nothing);
 - else if we already stored one, reuse it;
 - else look up an existing Price by the stable `lookup_key`
@@ -45,6 +46,7 @@ var and no redeploy**. An explicit env var still wins, so nothing existing break
   store its id.
 
 Exposed as **platform-admin-only** endpoints on the existing admin surface:
+
 - `GET  /admin/billing/seat-price` — status (`{ priceId, source }`).
 - `POST /admin/billing/seat-price` — provision (returns the same shape).
 

@@ -12,7 +12,7 @@ and Card-fields sections — but the address was nowhere on screen. It only
 appeared once you pressed **Edit details**, which surfaced the full edit form
 (name, DOB, email, and the four address lines) in one block. So the single most
 common reason to open a profile — "post a card to this person, they need an
-address" — required guessing that a button labelled *Edit details* was where an
+address" — required guessing that a button labelled _Edit details_ was where an
 address lived. The space to type one wasn't obvious.
 
 ## Decision
@@ -38,7 +38,7 @@ Show the postal address in read mode, and make adding one a first-class action.
    1** input carries `autoFocus={openedForAddress}`, so the cursor lands in the
    address straight away rather than at the top of the form. When opened this way
    for a recipient with no address, the form heading reads **Add postal address**
-   instead of *Edit details*, matching what the user set out to do.
+   instead of _Edit details_, matching what the user set out to do.
 
 3. **Editing stays one obvious form.** The header **Edit details** button (and a
    new **Edit** link in the card header) open the same form via `openEditor(false)`

@@ -28,7 +28,7 @@ isn't trapped inside browser-only canvas event handlers.
    on a line, just outside the threshold, no-snap passthrough) without a browser.
 
 2. **Canvas wiring via a shared drag bridge.** On drag start the canvas gathers
-   the snap targets once — the card lines plus every *other* element's
+   the snap targets once — the card lines plus every _other_ element's
    edges/centres, measured in real design units via
    `node.getClientRect({ relativeTo: layer })` (so text uses its actual rendered
    box, not an estimate). On each drag move it snaps the node by the computed
@@ -53,7 +53,7 @@ isn't trapped inside browser-only canvas event handlers.
 - The snap logic is pure and unit-tested; the canvas only supplies measured
   boxes and draws lines. Re-measuring sibling boxes at drag start (not every
   frame) keeps the per-move work to one `getClientRect` + the pure calc.
-- Scope is deliberately **drag** snapping. Snapping during a Transformer *resize*
+- Scope is deliberately **drag** snapping. Snapping during a Transformer _resize_
   is a natural follow-on but more involved (anchor-aware) and left for later.
 - Follow-on Phase 1 items still open: layer ordering (z-index controls). Then
   Phase 2+ (stickers, richer fonts + bold/italic, per-page background, zoom).

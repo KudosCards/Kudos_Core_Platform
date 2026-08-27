@@ -9,7 +9,7 @@ Accepted
 Two gaps on the calendar (and the recipient record), raised by the user:
 
 1. **No visual "already sent" signal.** The calendar coloured occasion pills
-   purely by *type*, so a birthday whose card had already been printed and
+   purely by _type_, so a birthday whose card had already been printed and
    posted looked identical to one still weeks away. Once a card was dispatched
    there was no instant confirmation of "this one's done."
 2. **No way to follow an occasion/contact through to its order.** From the
@@ -17,8 +17,9 @@ Two gaps on the calendar (and the recipient record), raised by the user:
    on to see its fulfilment history.
 
 Both facts already exist in the data:
+
 - `Occasion.status` advances `scheduled → pending_approval → approved → queued →
-  printed → posted → delivered` (or `skipped`) — the fulfilment job updates the
+printed → posted → delivered` (or `skipped`) — the fulfilment job updates the
   occasion in lockstep with its order line (see fulfillment.service). So
   anything `queued`-or-later has been sent.
 - `OrderRecipient` carries both `recipientId` and `occasionId`, so each occasion
@@ -29,6 +30,7 @@ Both facts already exist in the data:
 **1. Sent-state on the calendar (web only — no API change needed).**
 `occasionProgress(status)` collapses the lifecycle to `upcoming | sent |
 skipped`. The pill renders:
+
 - **sent** — a "done" emerald fill with a ✓ tick, so a sent birthday reads
   instantly differently from an upcoming one;
 - **skipped** — muted and struck through;
@@ -44,6 +46,7 @@ into a single order, but ordering defensively covers any re-order edge). It's
 `null` until the occasion has been checked out.
 
 Surfaced in two places, both fed by the same enriched payload:
+
 - the **calendar occasion modal** — a "View order ORD-#### →" row;
 - the **recipient detail events list** — an "ORD-#### →" chip per event.
 
@@ -51,6 +54,7 @@ So an order can be followed from either an event (calendar) or a contact
 (recipient record) without a new endpoint.
 
 ### Alternatives considered
+
 - A dedicated `GET /recipients/:id/orders` endpoint for a full per-contact order
   history table. Rejected for now: the events list already lists a contact's
   occasions, and nesting the order link onto those covers "follow the order"

@@ -47,9 +47,7 @@ export function MessagePageView({
         </h1>
       )}
 
-      {greetingName && (
-        <p className="-mt-3 text-base font-medium text-muted">For {greetingName}</p>
-      )}
+      {greetingName && <p className="-mt-3 text-base font-medium text-muted">For {greetingName}</p>}
 
       {embedUrl && (
         <div className="aspect-video w-full overflow-hidden rounded-xl border border-border bg-black/5 shadow-sm">

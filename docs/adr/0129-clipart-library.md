@@ -27,7 +27,7 @@ set with a repeatable build pipeline — separate from Stickers, sharing the
 existing image-element placement.
 
 1. **A build pipeline** (`apps/web/scripts/build-clipart.mjs`, `pnpm
-   clipart:build`). Dev drops raw SVGs into `clipart-src/<category>/` and runs
+clipart:build`). Dev drops raw SVGs into `clipart-src/<category>/` and runs
    it. For each file it: SVGO-optimises (strips **all** metadata/cruft, trims
    precision, keeps viewBox so art stays scalable); renders a tiny WebP
    **thumbnail** for the picker; and picks the placement asset — the cleaned

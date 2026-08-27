@@ -247,9 +247,7 @@ describe("Batch orders (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .expect(200);
 
-      const row = batchOrderListRowSchema.parse(
-        (response.body as { items: unknown[] }).items[0],
-      );
+      const row = batchOrderListRowSchema.parse((response.body as { items: unknown[] }).items[0]);
       expect(row.cardCount).toBe(1);
       expect(row.cardStatusCounts).toEqual({ approved: 1 });
       expect(row.sendSchedule.toCome).toBe(1);
@@ -313,9 +311,7 @@ describe("Batch orders (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .expect(200);
 
-      const row = batchOrderListRowSchema.parse(
-        (response.body as { items: unknown[] }).items[0],
-      );
+      const row = batchOrderListRowSchema.parse((response.body as { items: unknown[] }).items[0]);
       expect(row.sendSchedule.dateCount).toBe(1);
       expect(row.sendSchedule.earliest).not.toBeNull();
       expect(row.sendSchedule.isSpread).toBe(false);

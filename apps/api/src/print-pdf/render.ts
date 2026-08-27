@@ -95,7 +95,10 @@ function pageForFace(document: DesignDocument, face: DesignPage["name"]): Design
  * Render a whole print run to a single multi-page PDF (one page per face) and
  * resolve to its bytes.
  */
-export async function renderRunPdf(faces: PrintFaceInput[], options: RenderRunOptions = {}): Promise<Buffer> {
+export async function renderRunPdf(
+  faces: PrintFaceInput[],
+  options: RenderRunOptions = {},
+): Promise<Buffer> {
   const size = options.size ?? DEFAULT_CARD_SIZE;
   const withCropMarks = options.cropMarks ?? true;
   const geometry = faceGeometry(size, options.bleedMm);
@@ -120,7 +123,7 @@ export async function renderRunPdf(faces: PrintFaceInput[], options: RenderRunOp
 
   for (const entry of faces) {
     doc.addPage({ size: [geometry.pageWidthPt, geometry.pageHeightPt], margin: 0 });
-     
+
     await renderFace(doc, entry, geometry, size, options.imageResolver);
     if (withCropMarks) drawCropMarks(doc, geometry);
   }
@@ -175,7 +178,10 @@ async function renderFace(
   if (page?.background) {
     if (page.background.type === "color") {
       const bg = parseColor(page.background.color);
-      doc.rect(0, 0, geometry.pageWidthPt, geometry.pageHeightPt).fillColor(bg.color, bg.opacity).fill();
+      doc
+        .rect(0, 0, geometry.pageWidthPt, geometry.pageHeightPt)
+        .fillColor(bg.color, bg.opacity)
+        .fill();
     } else if (imageResolver) {
       await drawImageBackground(doc, page.background.assetUrl, geometry, imageResolver);
     }
@@ -190,7 +196,6 @@ async function renderFace(
   doc.rect(0, 0, CARD_WIDTH, CARD_HEIGHT).clip();
 
   for (const element of elements) {
-     
     await drawElement(doc, element, entry.qrUrl, imageResolver);
   }
 
@@ -241,7 +246,10 @@ async function drawElement(
  * a missing-glyph box, matching the browser. Pure-Latin text is one run in the
  * primary font, byte-identical to before. Wrap/align measure the *mixed* width
  * so lines still break and centre where the editor puts them. */
-function drawText(doc: PDFKit.PDFDocument, element: Extract<DesignElement, { kind: "text" }>): void {
+function drawText(
+  doc: PDFKit.PDFDocument,
+  element: Extract<DesignElement, { kind: "text" }>,
+): void {
   const primary = resolveFace(element.fontFamily, Boolean(element.bold), Boolean(element.italic));
   // Primary first, then the ordered fallbacks — index 0 is the element's font.
   const faces: FontFace[] = [primary, ...fallbackFaces()];
@@ -304,7 +312,10 @@ function drawText(doc: PDFKit.PDFDocument, element: Extract<DesignElement, { kin
       doc.fillColor(color.color, color.opacity);
       doc.text(run.text, 0, 0, { baseline: "alphabetic", lineBreak: false });
       if (isPrimary && face.synthesizeBold) {
-        doc.text(run.text, element.fontSize * BOLD_OFFSET, 0, { baseline: "alphabetic", lineBreak: false });
+        doc.text(run.text, element.fontSize * BOLD_OFFSET, 0, {
+          baseline: "alphabetic",
+          lineBreak: false,
+        });
       }
       doc.restore();
       penX += runWidths[runIndex]!;

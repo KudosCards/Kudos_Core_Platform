@@ -34,11 +34,7 @@ export class StorageController {
     @CurrentMembership() membership: CurrentMembershipContext,
     @Body() dto: CreateVideoUploadDto,
   ): Promise<SignedUpload> {
-    return this.storageService.createSignedUpload(
-      MESSAGE_VIDEOS_BUCKET,
-      membership.accountId,
-      dto,
-    );
+    return this.storageService.createSignedUpload(MESSAGE_VIDEOS_BUCKET, membership.accountId, dto);
   }
 
   @Post("support-attachments")

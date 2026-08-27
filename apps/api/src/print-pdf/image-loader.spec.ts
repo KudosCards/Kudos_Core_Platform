@@ -1,25 +1,41 @@
 import sharp from "sharp";
 import type { DesignDocument } from "@kudos/shared-types";
-import { absoluteUrl, createImageResolver, decodeImage, hostOf, isHostAllowed, type FetchLike } from "./image-loader";
+import {
+  absoluteUrl,
+  createImageResolver,
+  decodeImage,
+  hostOf,
+  isHostAllowed,
+  type FetchLike,
+} from "./image-loader";
 import { renderRunPdf } from "./render";
 
 /** A tiny solid-colour raster in the requested format. */
 async function raster(format: "png" | "webp" | "gif"): Promise<Buffer> {
-  const img = sharp({ create: { width: 8, height: 6, channels: 4, background: { r: 200, g: 30, b: 90, alpha: 1 } } });
+  const img = sharp({
+    create: { width: 8, height: 6, channels: 4, background: { r: 200, g: 30, b: 90, alpha: 1 } },
+  });
   if (format === "png") return img.png().toBuffer();
   if (format === "webp") return img.webp().toBuffer();
   return img.gif().toBuffer();
 }
 
-const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="#f00"/></svg>';
+const SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="#f00"/></svg>';
 
 /** A copy of a Buffer's bytes as a standalone ArrayBuffer. */
 function toArrayBuffer(buffer: Buffer): ArrayBuffer {
-  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+  return buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength,
+  ) as ArrayBuffer;
 }
 
 /** A fetch stub that always serves `buffer` with `contentType`, counting calls. */
-function stubFetch(buffer: Buffer, contentType: string): { impl: FetchLike; readonly calls: number } {
+function stubFetch(
+  buffer: Buffer,
+  contentType: string,
+): { impl: FetchLike; readonly calls: number } {
   let calls = 0;
   const impl: FetchLike = () => {
     calls += 1;
@@ -43,7 +59,9 @@ describe("absoluteUrl", () => {
     expect(absoluteUrl("https://cdn/x.png")).toBe("https://cdn/x.png");
   });
   it("resolves a root-relative asset against the web base URL", () => {
-    expect(absoluteUrl("/stickers/gift.svg", "https://app.kudos.co.uk")).toBe("https://app.kudos.co.uk/stickers/gift.svg");
+    expect(absoluteUrl("/stickers/gift.svg", "https://app.kudos.co.uk")).toBe(
+      "https://app.kudos.co.uk/stickers/gift.svg",
+    );
   });
   it("returns null for a root-relative asset with no base URL", () => {
     expect(absoluteUrl("/stickers/gift.svg")).toBeNull();
@@ -77,7 +95,11 @@ describe("decodeImage", () => {
   });
 
   it("returns null for undecodable bytes", async () => {
-    const resolved = await decodeImage(Buffer.from("not an image"), "application/octet-stream", "https://x/a.bin");
+    const resolved = await decodeImage(
+      Buffer.from("not an image"),
+      "application/octet-stream",
+      "https://x/a.bin",
+    );
     expect(resolved).toBeNull();
   });
 });
@@ -95,21 +117,32 @@ describe("createImageResolver", () => {
 
   it("resolves to null on a non-OK response without throwing", async () => {
     const fetchImpl: FetchLike = () =>
-      Promise.resolve({ ok: false, status: 404, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)) });
+      Promise.resolve({
+        ok: false,
+        status: 404,
+        headers: { get: () => null },
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+      });
     const resolve = createImageResolver({ fetchImpl });
     await expect(resolve("https://x/missing.png")).resolves.toBeNull();
   });
 
   it("rejects an asset over the byte cap", async () => {
     const png = await raster("png");
-    const resolve = createImageResolver({ fetchImpl: stubFetch(png, "image/png").impl, maxBytes: 4 });
+    const resolve = createImageResolver({
+      fetchImpl: stubFetch(png, "image/png").impl,
+      maxBytes: 4,
+    });
     await expect(resolve("https://x/a.png")).resolves.toBeNull();
   });
 
   it("rejects a host outside the allowlist without fetching (SSRF guard)", async () => {
     const png = await raster("png");
     const fetch = stubFetch(png, "image/png");
-    const resolve = createImageResolver({ fetchImpl: fetch.impl, allowedHosts: ["storage.kudos.co.uk"] });
+    const resolve = createImageResolver({
+      fetchImpl: fetch.impl,
+      allowedHosts: ["storage.kudos.co.uk"],
+    });
     await expect(resolve("http://169.254.169.254/latest/meta-data/")).resolves.toBeNull();
     expect(fetch.calls).toBe(0); // never dialled out
   });
@@ -117,7 +150,10 @@ describe("createImageResolver", () => {
   it("allows a host on the allowlist", async () => {
     const png = await raster("png");
     const fetch = stubFetch(png, "image/png");
-    const resolve = createImageResolver({ fetchImpl: fetch.impl, allowedHosts: ["storage.kudos.co.uk"] });
+    const resolve = createImageResolver({
+      fetchImpl: fetch.impl,
+      allowedHosts: ["storage.kudos.co.uk"],
+    });
     await expect(resolve("https://storage.kudos.co.uk/a.png")).resolves.not.toBeNull();
     expect(fetch.calls).toBe(1);
   });
@@ -128,7 +164,9 @@ describe("createImageResolver", () => {
       Promise.resolve({
         ok: true,
         status: 200,
-        headers: { get: (name) => (name.toLowerCase() === "content-length" ? "999999999" : "image/png") },
+        headers: {
+          get: (name) => (name.toLowerCase() === "content-length" ? "999999999" : "image/png"),
+        },
         arrayBuffer: () => {
           bufferRead = true;
           return Promise.resolve(new ArrayBuffer(8));
@@ -146,7 +184,9 @@ describe("isHostAllowed / hostOf", () => {
   });
   it("matches host case-insensitively and exactly (no subdomain widening)", () => {
     expect(isHostAllowed("https://Storage.Kudos.co.uk/a", ["storage.kudos.co.uk"])).toBe(true);
-    expect(isHostAllowed("https://evil.storage.kudos.co.uk/a", ["storage.kudos.co.uk"])).toBe(false);
+    expect(isHostAllowed("https://evil.storage.kudos.co.uk/a", ["storage.kudos.co.uk"])).toBe(
+      false,
+    );
     expect(isHostAllowed("https://other/a", ["storage.kudos.co.uk"])).toBe(false);
   });
   it("blocks everything for an empty allowlist", () => {
@@ -166,7 +206,16 @@ describe("renderRunPdf with images", () => {
         name: "front",
         background: { type: "image", assetUrl: "https://x/bg.png" },
         elements: [
-          { kind: "image", id: "i", assetUrl: "https://x/photo.png", x: 40, y: 40, width: 200, height: 150, rotation: 0 },
+          {
+            kind: "image",
+            id: "i",
+            assetUrl: "https://x/photo.png",
+            x: 40,
+            y: 40,
+            width: 200,
+            height: 150,
+            rotation: 0,
+          },
         ],
       },
     ],
@@ -175,7 +224,9 @@ describe("renderRunPdf with images", () => {
   it("draws image element + background when a resolver is supplied", async () => {
     const png = await raster("png");
     const resolve = createImageResolver({ fetchImpl: stubFetch(png, "image/png").impl });
-    const withImg = await renderRunPdf([{ document: withImages, face: "front" }], { imageResolver: resolve });
+    const withImg = await renderRunPdf([{ document: withImages, face: "front" }], {
+      imageResolver: resolve,
+    });
     const withoutImg = await renderRunPdf([{ document: withImages, face: "front" }]);
     expect(withImg.subarray(0, 5).toString("latin1")).toBe("%PDF-");
     // The embedded image bytes make the PDF materially larger than the skip path.

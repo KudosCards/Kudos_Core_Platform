@@ -13,8 +13,8 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "format": "prettier --write \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore",
-    "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,cjs,md,json,css,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,cjs,md,json,css,yml,yaml}\"",
     "adr:index": "node scripts/build-adr-index.mjs",
     "adr:index:check": "node scripts/build-adr-index.mjs --check",
     "prepare": "husky"
@@ -27,10 +27,7 @@
     "typescript": "^5.6.3"
   },
   "lint-staged": {
-    "*.{ts,tsx}": [
-      "eslint --fix"
-    ],
-    "*.{ts,tsx,md,json}": [
+    "*.{ts,tsx,js,mjs,cjs,md,json,css,yml,yaml}": [
       "prettier --write"
     ]
   },

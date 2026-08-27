@@ -39,7 +39,7 @@ These are goodwill gestures; an unbounded field's characteristic failure is a
 slipped decimal.
 
 **A reason is required and audited.** This moves money on a customer's account
-with *no payment behind it*. Who did it and why is the record that makes it
+with _no payment behind it_. Who did it and why is the record that makes it
 defensible, so the audit write is not fire-and-forget.
 
 **Idempotent on a client-supplied `requestId`**, like the top-up path. A
@@ -60,7 +60,7 @@ and the customer can never be looking at different numbers.
 
 ## Alternatives considered
 
-**Keep issuing discount codes.** They discount a *future* purchase, need
+**Keep issuing discount codes.** They discount a _future_ purchase, need
 distribution and tracking, and give no attributable record of who granted what.
 A wallet credit lands immediately, appears on the customer's own balance, and —
 because the wallet is what makes hands-off automation possible (ADR 0013) —

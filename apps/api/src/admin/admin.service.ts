@@ -250,8 +250,7 @@ export class AdminService {
     ]);
 
     // Accounts breakdown.
-    const organisations =
-      accountsByType.find((g) => g.type === "organisation")?._count ?? 0;
+    const organisations = accountsByType.find((g) => g.type === "organisation")?._count ?? 0;
     const individuals = accountsByType.find((g) => g.type === "individual")?._count ?? 0;
     const byPlan = new Map<string, number>();
     for (const group of accountsByPlan) {

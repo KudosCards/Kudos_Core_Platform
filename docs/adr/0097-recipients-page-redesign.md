@@ -10,7 +10,7 @@ The recipients page is the app's CRM-style contacts screen, but its layout burie
 the actual contacts: a large "Add a recipient" form card and an "Import from CSV"
 card sat side-by-side at the top, followed by a CRM callout and a full "Lists"
 management card — so on a normal screen the contact table started halfway down,
-out of sight. For a page whose primary job is *browsing and acting on contacts*,
+out of sight. For a page whose primary job is _browsing and acting on contacts_,
 the list should be the focus, not the data-entry widgets.
 
 ## Decision

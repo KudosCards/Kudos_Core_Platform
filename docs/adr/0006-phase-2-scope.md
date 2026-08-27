@@ -11,7 +11,7 @@ and `OrderRecipient` scaffolded (Phase 0), but several things were left genuinel
 
 1. `OccasionStatus` and `OrderRecipientStatus` are near-parallel state machines
    (`pending_approval → approved → queued → printed → posted → delivered`). It's not specified
-   whether "approving an occasion" *is* the checkout step (creating a priced, paid `BatchOrder`),
+   whether "approving an occasion" _is_ the checkout step (creating a priced, paid `BatchOrder`),
    or a separate, earlier gate.
 2. Nothing creates `Occasion` rows yet — the scheduling mechanism (when, how often, how far
    ahead) was never designed.

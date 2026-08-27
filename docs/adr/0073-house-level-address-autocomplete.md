@@ -13,6 +13,7 @@ licensed. The seam was written provider-agnostically so a keyed provider could
 drop in later. The owner asked to wire one up.
 
 Provider choice (see the session's cost discussion):
+
 - **getAddress.io** — ruled out: it **shut down 4 Feb 2026** after a Royal Mail
   IP claim over its PAF usage.
 - **Ideal Postcodes** — chosen: properly PAF-licensed (plus OS UPRN/geocodes),

@@ -11,7 +11,7 @@ exercised — every API import from `@kudos/shared-types` was `import type`, era
 time, so the package's `"main": "./src/index.ts"` (raw, unbuilt TypeScript source) never had to
 survive a real Node `require()` at runtime.
 
-Phase 2's `saved-designs.service.ts` is the first place the API needs a shared-types *value*, not
+Phase 2's `saved-designs.service.ts` is the first place the API needs a shared-types _value_, not
 just a type: `designDocumentSchema`, to validate a design document's complex nested/discriminated-
 union JSON shape (something `class-validator` can't express cleanly, and the exact kind of
 validation `packages/shared-types` exists to centralise — see the reuse-angle finding in the
@@ -54,7 +54,7 @@ relying on that graph alone would have left production silently broken).
   consumer, not just the ones with their own TypeScript-aware bundler.
 - `dist/` is gitignored, generated on install/build like `apps/api/dist` and `apps/web/.next`
   already are.
-- This was a latent production bug — the *currently deployed* Railway API would have crashed on
+- This was a latent production bug — the _currently deployed_ Railway API would have crashed on
   boot the moment any code path required a shared-types value at runtime. Merging this fix is
   what makes Phase 2's `saved-designs` endpoints deployable at all, not an optional cleanup.
 - Confirmed by actually running the compiled server locally (`node apps/api/dist/main.js`) against

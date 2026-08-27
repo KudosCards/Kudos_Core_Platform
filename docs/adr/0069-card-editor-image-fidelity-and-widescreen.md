@@ -21,6 +21,7 @@ Two card-designer complaints from the user-feedback batch:
 ## Decision
 
 **Preserve aspect ratio, don't fabricate one.**
+
 - On insert, the editor reads the file's natural pixel dimensions in the browser
   (`readImageSize`) and scales them to fit within a 200-unit box while keeping
   the ratio (`fitWithinBox`). The placed element already looks right — no

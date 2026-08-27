@@ -37,7 +37,9 @@ export function RepliesPanel({ pageId }: { pageId: string }) {
       {replies === null ? (
         <div className="h-16 animate-pulse rounded-lg bg-foreground/5" />
       ) : replies.length === 0 ? (
-        <p className="text-sm text-muted">No replies yet. They&apos;ll appear here when someone writes back.</p>
+        <p className="text-sm text-muted">
+          No replies yet. They&apos;ll appear here when someone writes back.
+        </p>
       ) : (
         <ul className="flex flex-col gap-3">
           {replies.map((reply) => (
@@ -55,7 +57,9 @@ export function RepliesPanel({ pageId }: { pageId: string }) {
               </div>
               <p className="whitespace-pre-wrap text-sm text-foreground/80">{reply.body}</p>
               {reply.senderName && reply.fromRecipientName && (
-                <span className="text-xs text-muted">via {reply.fromRecipientName}&apos;s card</span>
+                <span className="text-xs text-muted">
+                  via {reply.fromRecipientName}&apos;s card
+                </span>
               )}
             </li>
           ))}

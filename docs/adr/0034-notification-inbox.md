@@ -8,7 +8,7 @@ Date: 2026-07-23
 ADR 0030 gave the notification centre a **computed** feed: live "action needed" items derived from
 current account state (approvals waiting, occasions coming up, orders to pay, invites pending). It's
 always accurate and has no read/unread — but by design it forgets. It can't tell a user that
-*something happened*: an order got paid, an auto-send fired overnight, a colleague joined. Those are
+_something happened_: an order got paid, an auto-send fired overnight, a colleague joined. Those are
 point-in-time events a user wants a durable, read/unread record of. This ADR adds that as a
 **persisted inbox** alongside — not replacing — the computed feed.
 
@@ -43,18 +43,20 @@ redelivers webhooks; crons can re-run), so this keeps "one real event → one in
 accepts an optional transaction client so a producer can enlist the write in its own transaction.
 
 Wired producers (the highest-value events for a first cut):
+
 - **`order_paid`** — the Stripe `checkout.session.completed` handler, on first fulfilment only
   (best-effort, after the payment/fulfilment transaction has committed — a notification failure must
   never make the webhook error and trigger a re-fulfil).
 - **`auto_send`** — after the auto-send cron sends a card. An action no human triggered is exactly
   what an inbox is for.
 - **`invite_accepted`** — inside the accept transaction, fired **before** the joiner's membership is
-  created so the fan-out reaches the *existing* team, not the person who just joined.
+  created so the fan-out reaches the _existing_ team, not the person who just joined.
 
 ### API
 
 All under the existing `/notifications` controller (MembershipGuard), scoped to the acting member —
 which meant adding `userId` to `CurrentMembershipContext` (the guard already loads the membership):
+
 - `GET /notifications/inbox` — paginated, newest first, with `unreadCount`.
 - `GET /notifications/inbox/unread-count` — cheap badge endpoint, loaded on every page.
 - `POST /notifications/inbox/:id/read` and `POST /notifications/inbox/read-all` — both scoped to

@@ -18,7 +18,14 @@ export interface ParsedColor {
 function expandHex(hex: string): string {
   // #rgb → #rrggbb, #rgba → #rrggbbaa
   if (hex.length === 4 || hex.length === 5) {
-    return "#" + hex.slice(1).split("").map((c) => c + c).join("");
+    return (
+      "#" +
+      hex
+        .slice(1)
+        .split("")
+        .map((c) => c + c)
+        .join("")
+    );
   }
   return hex;
 }
@@ -41,7 +48,10 @@ export function parseColor(input: string): ParsedColor {
     const parts = rgbMatch[1]!.split(",").map((p) => p.trim());
     const [r, g, b] = parts;
     const a = parts[3];
-    const toHex = (n: string) => clampByte(Math.round(parseFloat(n))).toString(16).padStart(2, "0");
+    const toHex = (n: string) =>
+      clampByte(Math.round(parseFloat(n)))
+        .toString(16)
+        .padStart(2, "0");
     if (r !== undefined && g !== undefined && b !== undefined) {
       const opacity = a !== undefined ? clamp01(parseFloat(a)) : 1;
       return { color: `#${toHex(r)}${toHex(g)}${toHex(b)}`, opacity };

@@ -16,12 +16,12 @@ before the page even renders:
 2. **`(app)/layout.tsx`** — fired **two** blocking API calls: `/accounts/me`
    **and** `/accounts/me/summary`. The summary runs **~10 parallel Postgres
    count/aggregate queries**, but the shell only renders **three** of them (the
-   approvals badge, the basket count, the wallet chip). So visiting *any* page
+   approvals badge, the basket count, the wallet chip). So visiting _any_ page
    ran the full home-screen aggregation just for three sidebar numbers.
 3. The page's own fetches.
 
 All server fetches are `cache: "no-store"` and travel Netlify → Railway →
-Supabase. Hosting is region-aligned (all UK), so cross-region latency is *not*
+Supabase. Hosting is region-aligned (all UK), so cross-region latency is _not_
 the cause — the cost is redundant work + round-trips on every navigation, plus
 Railway cold-starts (tracked separately).
 
@@ -55,7 +55,7 @@ Keeping them uncached-but-cheap (change 1) is the correct trade.
 to `/send`, `/settings`, `/team`, `/orders/[id]`, `/recipients/[id]` (the
 higher-traffic pages that lacked one). The App Router now paints the shell +
 a skeleton immediately on navigation while the server component fetches, so
-navigation *feels* instant. Most list pages already had these.
+navigation _feels_ instant. Most list pages already had these.
 
 ## Consequences
 

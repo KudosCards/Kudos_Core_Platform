@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-ADR 0088 added native vector *shapes*. The second half of the "shapes +
+ADR 0088 added native vector _shapes_. The second half of the "shapes +
 stickers" work is a **sticker library** — pre-made decorative graphics
 (balloon, gift, cake, party hat, confetti, flower, crown, rainbow) a member can
 drop onto a card. Unlike the geometric shapes, these are richer illustrations.
@@ -44,7 +44,7 @@ no new element kind, no upload pipeline, no third-party requests.
   them like any image (move, scale, rotate, restack).
 - No new element kind and no new renderer path — stickers ride the image element,
   so both the editor and the read-only preview already draw them.
-- No breaking change: the `assetUrl` rule only *widened*. Because sticker paths
+- No breaking change: the `assetUrl` rule only _widened_. Because sticker paths
   aren't in the `design-assets` bucket, the orphaned-asset reaper (which only
   matches `design-assets/<path>`) correctly ignores them — they're static app
   assets, never reaped.

@@ -1,9 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import {
-  enterpriseEnquiryAckSchema,
-  enterpriseEnquirySchema,
-} from "@kudos/shared-types";
+import { enterpriseEnquiryAckSchema, enterpriseEnquirySchema } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { PrismaService } from "../src/prisma/prisma.service";
@@ -30,7 +27,9 @@ describe("Enterprise enquiries (e2e)", () => {
 
   async function opsToken(): Promise<string> {
     const userId = randomUUID();
-    await prisma.platformAdmin.create({ data: { userId, email: `ops-${userId}@kudoscards.co.uk` } });
+    await prisma.platformAdmin.create({
+      data: { userId, email: `ops-${userId}@kudoscards.co.uk` },
+    });
     return mintToken(userId);
   }
 

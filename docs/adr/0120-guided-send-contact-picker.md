@@ -14,7 +14,7 @@ already has a CRM full of contacts (with addresses on file), that meant:
 - re-typing an address that's already stored, and
 - a **duplicate contact** created on every send to someone already in the book.
 
-There was no way to send to an *existing* contact from this screen, even though
+There was no way to send to an _existing_ contact from this screen, even though
 `GET /recipients?search=` (name match, returns the stored address) already
 exists and the checkout/bulk-send flows already reuse stored contacts.
 
@@ -27,7 +27,7 @@ three ways to resolve "who is this for":
    lets the buyer pick a stored contact; its address pre-fills the (still
    editable) form. The request sends `recipientId`, and `quickSend` **reuses**
    that recipient — no new row, so no duplicate and no recipient-cap hit. The
-   form's address is used for *this order line* only; the stored contact is not
+   form's address is used for _this order line_ only; the stored contact is not
    mutated (editing an existing contact stays a deliberate, separate action).
 
 2. **New contact, saved** (default) — no `recipientId`; `saveToContacts` defaults
@@ -37,7 +37,7 @@ three ways to resolve "who is this for":
 
 3. **New contact, one-off** — `saveToContacts: false` creates the recipient via
    a new `RecipientsService.createOneOff`: `status: "archived"`, `source:
-   "one_off"`. It satisfies the order's recipient FK but stays out of the
+"one_off"`. It satisfies the order's recipient FK but stays out of the
    contacts list and — being non-`active` — out of the plan's recipient cap
    (which counts only active contacts). No dedupe/cap check, no eager birthday
    occasion: it's a send target, not a managed contact.

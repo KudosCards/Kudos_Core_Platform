@@ -66,8 +66,26 @@ describe("merge tokens", () => {
         {
           name: "front",
           elements: [
-            { kind: "text", id: "t1", text: "Happy birthday {name}!", x: 20, y: 20, fontFamily: "Inter", fontSize: 24, color: "#000" },
-            { kind: "image", id: "i1", assetUrl: "https://cdn.example.com/a.png", x: 0, y: 0, width: 450, height: 600, rotation: 0 },
+            {
+              kind: "text",
+              id: "t1",
+              text: "Happy birthday {name}!",
+              x: 20,
+              y: 20,
+              fontFamily: "Inter",
+              fontSize: 24,
+              color: "#000",
+            },
+            {
+              kind: "image",
+              id: "i1",
+              assetUrl: "https://cdn.example.com/a.png",
+              x: 0,
+              y: 0,
+              width: 450,
+              height: 600,
+              rotation: 0,
+            },
           ],
         },
         { name: "inside-left", elements: [] },
@@ -85,9 +103,7 @@ describe("merge tokens", () => {
 
     it("hasMergeTokens detects personalisable designs", () => {
       expect(hasMergeTokens(doc)).toBe(true);
-      expect(
-        hasMergeTokens({ version: 1, pages: [{ name: "front", elements: [] }] }),
-      ).toBe(false);
+      expect(hasMergeTokens({ version: 1, pages: [{ name: "front", elements: [] }] })).toBe(false);
     });
   });
 
@@ -142,9 +158,7 @@ describe("merge tokens", () => {
     });
 
     it("fixBracketTokens rewrites recognised mistakes and leaves others alone", () => {
-      expect(fixBracketTokens("To [insert name] — see [note 4]")).toBe(
-        "To {name} — see [note 4]",
-      );
+      expect(fixBracketTokens("To [insert name] — see [note 4]")).toBe("To {name} — see [note 4]");
     });
 
     it("finds and fixes bracket mistakes across a whole design's text", () => {
@@ -154,14 +168,41 @@ describe("merge tokens", () => {
           {
             name: "front",
             elements: [
-              { kind: "text", id: "t1", text: "Dear [name],", x: 0, y: 0, fontFamily: "Inter", fontSize: 24, color: "#000" },
-              { kind: "image", id: "i1", assetUrl: "https://cdn.example.com/a.png", x: 0, y: 0, width: 1, height: 1, rotation: 0 },
+              {
+                kind: "text",
+                id: "t1",
+                text: "Dear [name],",
+                x: 0,
+                y: 0,
+                fontFamily: "Inter",
+                fontSize: 24,
+                color: "#000",
+              },
+              {
+                kind: "image",
+                id: "i1",
+                assetUrl: "https://cdn.example.com/a.png",
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+                rotation: 0,
+              },
             ],
           },
           {
             name: "inside-left",
             elements: [
-              { kind: "text", id: "t2", text: "From [the occasion]", x: 0, y: 0, fontFamily: "Inter", fontSize: 24, color: "#000" },
+              {
+                kind: "text",
+                id: "t2",
+                text: "From [the occasion]",
+                x: 0,
+                y: 0,
+                fontFamily: "Inter",
+                fontSize: 24,
+                color: "#000",
+              },
             ],
           },
         ],

@@ -1,12 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import {
-  IsBoolean,
-  IsOptional,
-  IsString,
-  IsUrl,
-  Length,
-  ValidateIf,
-} from "class-validator";
+import { IsBoolean, IsOptional, IsString, IsUrl, Length, ValidateIf } from "class-validator";
 import { MESSAGE_PAGE_LIMITS } from "@kudos/shared-types";
 
 /**

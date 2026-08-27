@@ -23,7 +23,12 @@ type ShapeElement = Extract<DesignElement, { kind: "shape" }>;
  * Paint the current path with the shape's fill/stroke. Both, either, or neither
  * (an unfilled, unstroked box is invisible in Konva — we just discard the path).
  */
-function paint(doc: PDFKit.PDFDocument, fill?: string, stroke?: string, strokeWidth?: number): void {
+function paint(
+  doc: PDFKit.PDFDocument,
+  fill?: string,
+  stroke?: string,
+  strokeWidth?: number,
+): void {
   const hasFill = typeof fill === "string" && fill.length > 0;
   const width = strokeWidth ?? 0;
   const hasStroke = typeof stroke === "string" && stroke.length > 0 && width > 0;
@@ -62,7 +67,11 @@ export function drawShape(doc: PDFKit.PDFDocument, element: ShapeElement): void 
       break;
 
     case "triangle":
-      doc.moveTo(w / 2, 0).lineTo(w, h).lineTo(0, h).closePath();
+      doc
+        .moveTo(w / 2, 0)
+        .lineTo(w, h)
+        .lineTo(0, h)
+        .closePath();
       paint(doc, fill, stroke, strokeWidth);
       break;
 
@@ -100,7 +109,10 @@ export function drawShape(doc: PDFKit.PDFDocument, element: ShapeElement): void 
       doc.strokeColor(s.color, s.opacity);
       doc.lineWidth(strokeWidth ?? 4);
       doc.lineCap("round");
-      doc.moveTo(0, h / 2).lineTo(w, h / 2).stroke();
+      doc
+        .moveTo(0, h / 2)
+        .lineTo(w, h / 2)
+        .stroke();
       break;
     }
   }

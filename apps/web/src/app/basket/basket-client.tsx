@@ -161,7 +161,9 @@ export function BasketClient() {
         <h2 className="text-lg font-bold text-slate-900">Order summary</h2>
         <div className="grid gap-2 text-sm text-slate-600">
           <div className="flex justify-between">
-            <span>Card subtotal ({items.length} {items.length === 1 ? "card" : "cards"}, ex VAT)</span>
+            <span>
+              Card subtotal ({items.length} {items.length === 1 ? "card" : "cards"}, ex VAT)
+            </span>
             <span>{formatGBP(breakdown.cardSubtotalMinor)}</span>
           </div>
           <div className="flex justify-between">
@@ -204,7 +206,9 @@ export function BasketClient() {
             />
             <span>
               <span className="font-medium">Send now</span>
-              <span className="block text-xs text-slate-400">Posted as soon as it&apos;s printed.</span>
+              <span className="block text-xs text-slate-400">
+                Posted as soon as it&apos;s printed.
+              </span>
             </span>
           </label>
           <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 has-[:checked]:border-slate-400 has-[:checked]:bg-slate-50">
@@ -227,7 +231,9 @@ export function BasketClient() {
                     value={deliverBy}
                     min={isoDay(scheduleWindow.earliest)}
                     max={isoDay(scheduleWindow.latest)}
-                    onChange={(e) => setDeliverBy(e.target.value || isoDay(scheduleWindow.earliest))}
+                    onChange={(e) =>
+                      setDeliverBy(e.target.value || isoDay(scheduleWindow.earliest))
+                    }
                     className="w-fit rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-900"
                   />
                   <span className="text-xs text-slate-400">
@@ -250,7 +256,9 @@ export function BasketClient() {
         </fieldset>
 
         {error && (
-          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600">{error}</p>
+          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600">
+            {error}
+          </p>
         )}
 
         <button

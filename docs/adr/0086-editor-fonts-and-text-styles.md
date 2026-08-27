@@ -15,7 +15,7 @@ Two constraints shaped the design:
 
 - **Persistence durability.** A design stores `text.fontFamily` as a string and
   is re-opened/re-rendered indefinitely. `next/font` (which we already use for
-  the app UI) build-*hashes* a font's CSS family name, so that name must never be
+  the app UI) build-_hashes_ a font's CSS family name, so that name must never be
   persisted — it can change across builds/Next upgrades and would silently break
   saved designs.
 - **Canvas font loading.** Konva draws text to a `<canvas>`, which does not

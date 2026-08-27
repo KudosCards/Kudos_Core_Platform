@@ -109,7 +109,10 @@ export class SubscriptionsService {
    * re-seed), falling back to the seeded PlanEntitlement.stripePriceId. Returns
    * null when neither is set — checkout then reports "not configured". See
    * docs/adr/0036-payment-go-live.md. */
-  private resolvePlanPriceId(planId: "pro" | "centre", seededPriceId: string | null): string | null {
+  private resolvePlanPriceId(
+    planId: "pro" | "centre",
+    seededPriceId: string | null,
+  ): string | null {
     const envKey = planId === "pro" ? "STRIPE_PRICE_ID_PRO" : "STRIPE_PRICE_ID_CENTRE";
     return this.config.get(envKey, { infer: true }) ?? seededPriceId ?? null;
   }

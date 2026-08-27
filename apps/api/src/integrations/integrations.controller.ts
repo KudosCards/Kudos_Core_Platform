@@ -124,9 +124,7 @@ export class IntegrationsController {
   @ApiBearerAuth()
   @UseGuards(MembershipGuard)
   @Get("api-keys")
-  async listKeys(
-    @CurrentMembership() membership: CurrentMembershipContext,
-  ): Promise<ApiKeyView[]> {
+  async listKeys(@CurrentMembership() membership: CurrentMembershipContext): Promise<ApiKeyView[]> {
     const keys = await this.apiKeys.list(membership.accountId);
     return keys.map(toApiKeyView);
   }

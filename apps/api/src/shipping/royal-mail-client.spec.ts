@@ -58,9 +58,7 @@ describe("HttpRoyalMailClient.getTrackingStatus", () => {
     expect(result.status).toBe("delivered");
     expect(result.deliveredAt?.toISOString()).toBe("2026-08-05T09:14:00.000Z");
     // Tracking number is path-encoded onto the tracking resource under the same base.
-    expect(lastUrl()).toBe(
-      "https://api.parcel.royalmail.com/api/v4/shipments/RM123%20GB/tracking",
-    );
+    expect(lastUrl()).toBe("https://api.parcel.royalmail.com/api/v4/shipments/RM123%20GB/tracking");
   });
 
   it("reads the latest event when there's no top-level summary", async () => {

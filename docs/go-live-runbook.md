@@ -26,17 +26,17 @@ Legend: 🧑 = you (dashboard/manual), 🤖 = already handled in code.
 Two **public-read** buckets are used (uploads go direct from the browser via signed URLs; the
 public read is what lets a saved design / message video render later):
 
-| Bucket | Used by | Enforced limits |
-|---|---|---|
-| `design-assets` | card designer image uploads (Phase 2) + Airtable artwork copies | `allowedMimeTypes`: image/png, image/jpeg, image/webp, image/gif · `fileSizeLimit`: 10 MB |
-| `message-videos` | message-page video uploads (Phase 4) | `allowedMimeTypes`: video/mp4, video/quicktime, video/webm · `fileSizeLimit`: 50 MB |
+| Bucket           | Used by                                                         | Enforced limits                                                                           |
+| ---------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `design-assets`  | card designer image uploads (Phase 2) + Airtable artwork copies | `allowedMimeTypes`: image/png, image/jpeg, image/webp, image/gif · `fileSizeLimit`: 10 MB |
+| `message-videos` | message-page video uploads (Phase 4)                            | `allowedMimeTypes`: video/mp4, video/quicktime, video/webm · `fileSizeLimit`: 50 MB       |
 
 > **Now automatic.** On every production boot the API creates both buckets (public) with exactly
 > the limits above and re-applies them if a bucket already exists — see
 > `BUCKET_CONFIGS` / `StorageService.onApplicationBootstrap` in `storage.service.ts`. This matters
-> because the API validates the *claimed* content-type in its DTOs, but the installed Supabase SDK
+> because the API validates the _claimed_ content-type in its DTOs, but the installed Supabase SDK
 > can't constrain what's actually PUT to a signed URL — the bucket's `allowedMimeTypes`/
-> `fileSizeLimit` are the real enforcement (see ADR 0009). Nothing to create by hand; if you *do*
+> `fileSizeLimit` are the real enforcement (see ADR 0009). Nothing to create by hand; if you _do_
 > pre-create them in the dashboard, just name them exactly `design-assets` / `message-videos` and
 > the boot step will bring their limits into line. Requires `SUPABASE_URL` +
 > `SUPABASE_SERVICE_ROLE_KEY` (already set for the app).
@@ -49,7 +49,7 @@ public read is what lets a saved design / message video render later):
   endpoint, so it keeps working automatically if Supabase rotates its signing key (ADR 0005).
 - **Site URL (needed for signup confirmation, ADR 0080).** In Authentication → URL Configuration
   → **Site URL**, set the live web app origin — the **custom domain** (e.g.
-  `https://kudos-cards.co.uk`), *not* the `*.netlify.app` URL. This is the fallback base Supabase
+  `https://kudos-cards.co.uk`), _not_ the `*.netlify.app` URL. This is the fallback base Supabase
   uses for the signup-confirmation email. If it's left as the Netlify URL, confirmation links go
   to the wrong origin and the new account never gets created (the pending-account stash lives on
   the domain the user registered on). Also set the web env `NEXT_PUBLIC_SITE_URL` to the same
@@ -68,12 +68,12 @@ public read is what lets a saved design / message video render later):
 
 - `DATABASE_URL` = the **pooled** connection (app runtime). **Must include `?pgbouncer=true`** — and,
   because the API runs long-lived on Railway, a modest cap like `&connection_limit=10`. Use the
-  Supabase *Transaction* pooler string (port **6543**).
+  Supabase _Transaction_ pooler string (port **6543**).
 - `DIRECT_URL` = the **direct** connection (port **5432**), used for migrations only.
 
 > ⚠️ **This is the #1 cause of intermittent "a server error occurred" pages in production.** Without
 > `?pgbouncer=true`, Prisma issues prepared statements that Supabase's transaction-mode pooler can't
-> reuse, so *random* authenticated requests fail with `prepared statement "s0" already exists` /
+> reuse, so _random_ authenticated requests fail with `prepared statement "s0" already exists` /
 > `... does not exist` — the errors look transient and hit whatever page you happen to load (e.g.
 > `/recipients`), and never reproduce against a plain local Postgres. Example:
 > `postgresql://…@…pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=10`
@@ -86,12 +86,12 @@ public read is what lets a saved design / message video render later):
 
 Create two **recurring monthly** Prices and copy their `price_...` ids:
 
-| Plan | Price | Notes |
-|---|---|---|
-| Pro | £9.97 / month, incl. VAT | → seed `plan_entitlements.stripe_price_id` for `pro` |
-| Centre | £19.97 / month, incl. VAT | → seed for `centre` |
+| Plan   | Price                     | Notes                                                |
+| ------ | ------------------------- | ---------------------------------------------------- |
+| Pro    | £9.97 / month, incl. VAT  | → seed `plan_entitlements.stripe_price_id` for `pro` |
+| Centre | £19.97 / month, incl. VAT | → seed for `centre`                                  |
 
-**Fully automated (recommended): let the script create the Prices *and* wire them in.**
+**Fully automated (recommended): let the script create the Prices _and_ wire them in.**
 Run it where the credentials already live (so no secret is shared) — on Railway:
 `railway run pnpm --filter @kudos/api run setup:stripe-plans`. It creates the Pro/Centre
 Products + monthly Prices (£9.97 / £19.97, GBP) in whichever mode `STRIPE_SECRET_KEY` belongs to
@@ -102,7 +102,7 @@ Or wire them by hand. **Env-driven (test-mode vs live is just a var swap):**
 set `STRIPE_PRICE_ID_PRO` and `STRIPE_PRICE_ID_CENTRE` in Railway (step 3) and run the seed —
 `pnpm --filter @kudos/api exec prisma db seed`. The seed reads those vars and writes each plan's
 `stripe_price_id`; leaving a var unset preserves whatever is already stored (so a reseed never wipes
-a live price). *Quick alternative:* `UPDATE plan_entitlements SET stripe_price_id = 'price_...'
+a live price). _Quick alternative:_ `UPDATE plan_entitlements SET stripe_price_id = 'price_...'
 WHERE plan_id = 'pro';` (and `centre`). Until this is done, `POST /subscriptions/checkout` correctly
 returns a clean 409 ("not yet configured") — no crash, just no upgrades.
 
@@ -127,7 +127,7 @@ returns a clean 409 ("not yet configured") — no crash, just no upgrades.
 Card orders, guest one-off purchases **and wallet top-ups** now ask Stripe to generate
 a proper **VAT invoice** per purchase (`invoice_creation` on the Checkout Session),
 exactly like subscriber invoices — so Stripe is the single source of truth for the
-company/VAT details on every receipt. (A wallet-paid *order* has no charge of its own —
+company/VAT details on every receipt. (A wallet-paid _order_ has no charge of its own —
 its VAT receipt is the **top-up** invoice, shown on `/wallet`; see ADR 0103.) Nothing to
 switch on in code, but confirm on the Stripe account:
 
@@ -137,7 +137,7 @@ switch on in code, but confirm on the Stripe account:
 - `invoice.paid` is enabled on the webhook endpoint (step 2b). On that event we store the
   invoice's hosted URL + **PDF** on the order; the buyer downloads it from the order page
   ("VAT receipt → Download PDF").
-- *(Optional)* Turn on **Settings → Customer emails → "Successful payments / invoices"** so
+- _(Optional)_ Turn on **Settings → Customer emails → "Successful payments / invoices"** so
   Stripe also emails the receipt/invoice — this is how **guest** buyers (no account, no order
   page) receive theirs.
 - Subscribers are unchanged: they still download their VAT invoices from the Stripe
@@ -147,53 +147,53 @@ switch on in code, but confirm on the Stripe account:
 
 ## 3. Railway (API) env vars 🧑
 
-| Var | Value |
-|---|---|
-| `NODE_ENV` | `production` |
-| `TRUST_PROXY_HOPS` | number of proxy hops in front of the API, so per-IP rate limiting keys on the real client, not the edge proxy. **`1` for Railway's edge** (the default); `2` if a CDN/WAF sits in front; `0` to disable. **Never `true`.** Verify `req.ip` resolves the real client IP on staging before trusting it (ADR 0133) |
-| `DATABASE_URL` | Supabase pooled connection |
-| `DIRECT_URL` | Supabase direct connection |
-| `SUPABASE_URL` | project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | service role key |
-| `STRIPE_SECRET_KEY` | **test key first** (`sk_test_...`), see step 5 |
-| `STRIPE_WEBHOOK_SECRET` | signing secret from 2b |
-| `STRIPE_PRICE_ID_PRO` | Pro plan's Stripe `price_...` id (test-mode first) — read by the seed, step 2a |
-| `STRIPE_PRICE_ID_CENTRE` | Centre plan's Stripe `price_...` id (test-mode first) — read by the seed, step 2a |
-| `WEB_APP_URL` | the live web app origin — the **custom domain** (e.g. `https://kudos-cards.co.uk`), used for CORS, Stripe redirects, and the auth-email links. **Must be a valid `http(s)://` URL** — a scheme typo now fails the boot loudly (ADR 0081) |
-| `CORS_ALLOWED_ORIGINS` | *(optional)* comma-separated extra browser origins allowed to call the API beyond `WEB_APP_URL` (e.g. `https://www.kudos-cards.co.uk`). The allow-list is `[WEB_APP_URL, …these]`, so one wrong value can't lock the whole app out (ADR 0081) |
-| `CORS_ALLOWED_ORIGIN_SUFFIXES` | *(optional)* comma-separated origin suffixes to allow, for dynamic hosts like Netlify deploy previews (e.g. `--kudos-cards.netlify.app`) |
-| `AIRTABLE_API_KEY` | read-only Airtable PAT (`data.records:read` on the cards base) — step 4b |
-| `AIRTABLE_BASE_ID` | the cards base id (`app…`) — step 4b |
-| `AIRTABLE_CARDS_TABLE` | *(optional; defaults to `Card List`)* |
-| `PLATFORM_ADMIN_USER_IDS` | *(optional, step 4)* |
-| `CLICK_AND_DROP_API_KEY` | *(optional, step 4c-i)* Click & Drop API authorization key — enables auto-import of paid cards into the Click & Drop dashboard queue. Unset = off. |
-| `CLICK_AND_DROP_SERVICE_CODE_FIRST` / `_SECOND` | *(optional, step 4c-i)* Click & Drop service codes per postage class; unset = operator picks in the dashboard. |
-| `ROYAL_MAIL_API_KEY` | *(optional, step 4c-ii)* Shipping API v4 key — enables the in-Kudos "Dispatch (Royal Mail)" action. Unset = manual dispatch. |
-| `ROYAL_MAIL_SERVICE_CODE_FIRST` / `_SECOND` | *(optional, step 4c-ii)* Shipping API service-code overrides (defaults `TPN01`/`TPS01`) — confirm against your account. |
-| `ARRIVAL_NOTIFICATIONS_ENABLED` | *(optional, step 4d)* `true`/`1` enables the daily estimated-arrival email for untracked stamped post (marks cards delivered-estimated + emails the buyer). Off by default. |
-| `ARRIVAL_FIRST_CLASS_WORKING_DAYS` / `_SECOND_CLASS_WORKING_DAYS` | *(optional, step 4d)* Expected transit in working days (defaults 1 / 3). |
-| `ARRIVAL_MAX_POSTED_AGE_DAYS` | *(optional, step 4d)* Recency window bounding the arrival sweep (default 14) — stops a historical backlog being emailed/completed at once. |
-| `BREVO_ARRIVAL_TEMPLATE_ID` | *(optional, step 4d)* Brevo template for the "should have arrived" email; unset = branded HTML fallback. |
-| `SENTRY_DSN` | Sentry project DSN — enables API error monitoring (now wired). Leave unset to disable. |
+| Var                                                               | Value                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                                                        | `production`                                                                                                                                                                                                                                                                                                    |
+| `TRUST_PROXY_HOPS`                                                | number of proxy hops in front of the API, so per-IP rate limiting keys on the real client, not the edge proxy. **`1` for Railway's edge** (the default); `2` if a CDN/WAF sits in front; `0` to disable. **Never `true`.** Verify `req.ip` resolves the real client IP on staging before trusting it (ADR 0133) |
+| `DATABASE_URL`                                                    | Supabase pooled connection                                                                                                                                                                                                                                                                                      |
+| `DIRECT_URL`                                                      | Supabase direct connection                                                                                                                                                                                                                                                                                      |
+| `SUPABASE_URL`                                                    | project URL                                                                                                                                                                                                                                                                                                     |
+| `SUPABASE_SERVICE_ROLE_KEY`                                       | service role key                                                                                                                                                                                                                                                                                                |
+| `STRIPE_SECRET_KEY`                                               | **test key first** (`sk_test_...`), see step 5                                                                                                                                                                                                                                                                  |
+| `STRIPE_WEBHOOK_SECRET`                                           | signing secret from 2b                                                                                                                                                                                                                                                                                          |
+| `STRIPE_PRICE_ID_PRO`                                             | Pro plan's Stripe `price_...` id (test-mode first) — read by the seed, step 2a                                                                                                                                                                                                                                  |
+| `STRIPE_PRICE_ID_CENTRE`                                          | Centre plan's Stripe `price_...` id (test-mode first) — read by the seed, step 2a                                                                                                                                                                                                                               |
+| `WEB_APP_URL`                                                     | the live web app origin — the **custom domain** (e.g. `https://kudos-cards.co.uk`), used for CORS, Stripe redirects, and the auth-email links. **Must be a valid `http(s)://` URL** — a scheme typo now fails the boot loudly (ADR 0081)                                                                        |
+| `CORS_ALLOWED_ORIGINS`                                            | _(optional)_ comma-separated extra browser origins allowed to call the API beyond `WEB_APP_URL` (e.g. `https://www.kudos-cards.co.uk`). The allow-list is `[WEB_APP_URL, …these]`, so one wrong value can't lock the whole app out (ADR 0081)                                                                   |
+| `CORS_ALLOWED_ORIGIN_SUFFIXES`                                    | _(optional)_ comma-separated origin suffixes to allow, for dynamic hosts like Netlify deploy previews (e.g. `--kudos-cards.netlify.app`)                                                                                                                                                                        |
+| `AIRTABLE_API_KEY`                                                | read-only Airtable PAT (`data.records:read` on the cards base) — step 4b                                                                                                                                                                                                                                        |
+| `AIRTABLE_BASE_ID`                                                | the cards base id (`app…`) — step 4b                                                                                                                                                                                                                                                                            |
+| `AIRTABLE_CARDS_TABLE`                                            | _(optional; defaults to `Card List`)_                                                                                                                                                                                                                                                                           |
+| `PLATFORM_ADMIN_USER_IDS`                                         | _(optional, step 4)_                                                                                                                                                                                                                                                                                            |
+| `CLICK_AND_DROP_API_KEY`                                          | _(optional, step 4c-i)_ Click & Drop API authorization key — enables auto-import of paid cards into the Click & Drop dashboard queue. Unset = off.                                                                                                                                                              |
+| `CLICK_AND_DROP_SERVICE_CODE_FIRST` / `_SECOND`                   | _(optional, step 4c-i)_ Click & Drop service codes per postage class; unset = operator picks in the dashboard.                                                                                                                                                                                                  |
+| `ROYAL_MAIL_API_KEY`                                              | _(optional, step 4c-ii)_ Shipping API v4 key — enables the in-Kudos "Dispatch (Royal Mail)" action. Unset = manual dispatch.                                                                                                                                                                                    |
+| `ROYAL_MAIL_SERVICE_CODE_FIRST` / `_SECOND`                       | _(optional, step 4c-ii)_ Shipping API service-code overrides (defaults `TPN01`/`TPS01`) — confirm against your account.                                                                                                                                                                                         |
+| `ARRIVAL_NOTIFICATIONS_ENABLED`                                   | _(optional, step 4d)_ `true`/`1` enables the daily estimated-arrival email for untracked stamped post (marks cards delivered-estimated + emails the buyer). Off by default.                                                                                                                                     |
+| `ARRIVAL_FIRST_CLASS_WORKING_DAYS` / `_SECOND_CLASS_WORKING_DAYS` | _(optional, step 4d)_ Expected transit in working days (defaults 1 / 3).                                                                                                                                                                                                                                        |
+| `ARRIVAL_MAX_POSTED_AGE_DAYS`                                     | _(optional, step 4d)_ Recency window bounding the arrival sweep (default 14) — stops a historical backlog being emailed/completed at once.                                                                                                                                                                      |
+| `BREVO_ARRIVAL_TEMPLATE_ID`                                       | _(optional, step 4d)_ Brevo template for the "should have arrived" email; unset = branded HTML fallback.                                                                                                                                                                                                        |
+| `SENTRY_DSN`                                                      | Sentry project DSN — enables API error monitoring (now wired). Leave unset to disable.                                                                                                                                                                                                                          |
 
 **Netlify (web) env vars** — same `NEXT_PUBLIC_*` as today, plus optionally:
 
-| Var | Value |
-|---|---|
-| `NEXT_PUBLIC_SITE_URL` | the live web app origin — the **custom domain** (e.g. `https://kudos-cards.co.uk`). Makes the signup-confirmation redirect deterministic; must match the Supabase Site URL / Redirect allow-list (step 1b, ADR 0080). |
-| `NEXT_PUBLIC_SENTRY_DSN` | Sentry DSN for the web (browser + SSR errors, e.g. a failed page fetch). Leave unset to disable. |
-| `SENTRY_AUTH_TOKEN` | *(optional)* Sentry auth token — only needed to upload source maps for readable stack traces; the build succeeds without it. |
+| Var                      | Value                                                                                                                                                                                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SITE_URL`   | the live web app origin — the **custom domain** (e.g. `https://kudos-cards.co.uk`). Makes the signup-confirmation redirect deterministic; must match the Supabase Site URL / Redirect allow-list (step 1b, ADR 0080). |
+| `NEXT_PUBLIC_SENTRY_DSN` | Sentry DSN for the web (browser + SSR errors, e.g. a failed page fetch). Leave unset to disable.                                                                                                                      |
+| `SENTRY_AUTH_TOKEN`      | _(optional)_ Sentry auth token — only needed to upload source maps for readable stack traces; the build succeeds without it.                                                                                          |
 
 ### Health checks — point Railway at liveness, not the database 🧑
 
 The API exposes two probes:
 
-- **`GET /health`** — *liveness*. Returns `{ "status": "ok" }` if the process is up. It has **no
+- **`GET /health`** — _liveness_. Returns `{ "status": "ok" }` if the process is up. It has **no
   external dependencies** (no database ping). **Set Railway's healthcheck path to `/health`.**
-- **`GET /health/ready`** — *readiness*. Pings the database; returns Terminus health JSON. Use it for
+- **`GET /health/ready`** — _readiness_. Pings the database; returns Terminus health JSON. Use it for
   monitoring / uptime checks and manual smoke tests — **not** as the deploy gate.
 
-Why: a deploy healthcheck that pings the DB turns a *transient* database blip (e.g. a provider
+Why: a deploy healthcheck that pings the DB turns a _transient_ database blip (e.g. a provider
 "outbound connectivity" incident) into a **failed deploy** — the app is fine, it just briefly can't
 reach Postgres, so a healthy new version can't roll out and running instances risk being killed.
 Gating on liveness decouples "is the app up?" from "is the DB reachable right now?". If a deploy is
@@ -226,7 +226,7 @@ the three seeded placeholders.
 1. In Airtable, create a **Personal access token** (Builder hub → Personal access tokens) with
    scope `data.records:read`, scoped to **only** the cards base. Copy the `pat…` value.
 2. Set `AIRTABLE_API_KEY` (the token), `AIRTABLE_BASE_ID` (the `app…` id from the base URL), and
-   `AIRTABLE_CARDS_TABLE` (the **table id** `tbl…` from the base's *grid* URL — not an
+   `AIRTABLE_CARDS_TABLE` (the **table id** `tbl…` from the base's _grid_ URL — not an
    interface-page name, and no quotes) in Railway (step 3). Redeploy.
 3. As an ops admin, open **/catalog** in the web app and click **Refresh catalog from Airtable**
    (or wait for the nightly 4am sync). Only cards with `Status = Active` import; retired cards are
@@ -262,7 +262,7 @@ dashboard** queue, where you batch, buy postage, print labels and dispatch as no
   `Click & Drop import failed for job …`); adjust the payload/service codes to match.
 
 **(ii) Shipping API v4 direct dispatch** (ADR 0072) — an operator clicks **Dispatch (Royal Mail)** on
-a *printed* card in `/fulfillment` and the platform creates the shipment server-side (buys postage,
+a _printed_ card in `/fulfillment` and the platform creates the shipment server-side (buys postage,
 stores tracking + label, emails the buyer the tracking link). No Click & Drop dashboard involved.
 
 - Set `ROYAL_MAIL_API_KEY` in Railway. Optionally `ROYAL_MAIL_API_BASE_URL` (defaults to the live
@@ -270,7 +270,7 @@ stores tracking + label, emails the buyer the tracking link). No Click & Drop da
   override them **without a redeploy** via `ROYAL_MAIL_SERVICE_CODE_FIRST` /
   `ROYAL_MAIL_SERVICE_CODE_SECOND` once you've confirmed your account's real codes.
 - The "Dispatch (Royal Mail)" action appears only when the key is set (`GET
-  /fulfillment/shipping-status`); until then ops mark cards posted manually.
+/fulfillment/shipping-status`); until then ops mark cards posted manually.
 - **First live check:** on a printed card, click Dispatch and confirm a shipment is created with a
   real tracking number + label. A wrong service code is the most likely first failure — the error
   (status + Royal Mail's message) surfaces to the operator; fix it via the env override above.
@@ -278,7 +278,7 @@ stores tracking + label, emails the buyer the tracking link). No Click & Drop da
   tracking of every `posted` card and auto-advances the delivered ones to `delivered` (stamping the
   carrier's delivery time and rolling the order up to `completed`) — no operator click needed. Manual
   "Mark delivered" stays available as the fallback. Force a sweep to verify wiring with `POST
-  /fulfillment/poll-deliveries` (returns `{ checked, delivered, failed }`). No extra credential — it
+/fulfillment/poll-deliveries` (returns `{ checked, delivered, failed }`). No extra credential — it
   reuses `ROYAL_MAIL_API_KEY` and the base URL. Confirm the tracking resource path/fields against your
   account in the sandbox, same as the dispatch call.
 
@@ -288,7 +288,7 @@ Standard letter post on stamps isn't tracked, so the delivery poll (4c) has no e
 stamped mail, enable the **estimated-arrival** email instead: a daily 09:00 UTC sweep estimates each
 `posted` card's arrival from its posting date + the postage class's transit (working days, UK
 holiday-aware), and once that's passed marks the card **delivered (estimated)** — rolling the order up
-to `completed` — and emails the buyer an honest *"your card should have arrived"* note (never "was
+to `completed` — and emails the buyer an honest _"your card should have arrived"_ note (never "was
 delivered").
 
 - **Opt-in:** set `ARRIVAL_NOTIFICATIONS_ENABLED=true` in Railway. It's off by default because it both
@@ -298,7 +298,7 @@ delivered").
   enabling it can't email/complete a historical `posted` backlog in one go. Optional Brevo template
   `BREVO_ARRIVAL_TEMPLATE_ID`, else the branded HTML fallback.
 - **First check:** post a test card, backdate isn't needed live — enable, then force a run with `POST
-  /fulfillment/notify-arrivals` (returns `{ checked, notified }`) once a card is past its estimated
+/fulfillment/notify-arrivals` (returns `{ checked, notified }`) once a card is past its estimated
   arrival, and confirm it flips to delivered + the buyer receives the "should have arrived" email.
 - This is independent of Royal Mail's API — it needs **no** `ROYAL_MAIL_API_KEY`. If you later move to a
   tracked service, the poll in 4c takes over with real delivery events.
@@ -360,7 +360,7 @@ Do a full dry run on **Stripe test mode** before touching real cards:
     (PITR)** so you can restore to any moment (not just the nightly snapshot) — worth it once real
     orders and payments are flowing, since a bad migration or accidental delete is otherwise only
     recoverable to the last nightly backup. Note the retention window (7 days default; extendable).
-  - **GDPR retention** is a *policy* decision, not just a backup one: agree how long a delivered
+  - **GDPR retention** is a _policy_ decision, not just a backup one: agree how long a delivered
     order's recipient address is kept and whether recipients are purged after a period of
     inactivity. The audit trail (`audit_logs`) already records every access to a recipient's PII;
     pair it with a documented retention period. A data-subject **erasure** request today means

@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-How the three membership plans were *presented* had drifted badly across the
+How the three membership plans were _presented_ had drifted badly across the
 site. Each surface hard-coded its own plan list:
 
 - **Landing page** (`page.tsx`): Free / Pro / Centre, with feature bullets that
@@ -51,13 +51,13 @@ every surface read from it.
    the app-shell plan chip, and the ops/admin plan labels + subscriber filter.
 
 5. **A guard test** (`billing/plans.spec.ts`) asserts `planCardPriceMinor(plan)
-   === computeCardPriceMinor(plan.cardDiscountPercent)` for every plan, tying the
+=== computeCardPriceMinor(plan.cardDiscountPercent)` for every plan, tying the
    marketing price to the price the API charges so the two can't silently
    diverge, plus that the names stay Free / Pro / Centre.
 
-The enforced *limits* still live in the DB (`PlanEntitlement`, seeded in
+The enforced _limits_ still live in the DB (`PlanEntitlement`, seeded in
 `prisma/seed.ts`) — that remains the source of truth for what the API allows.
-The catalog is the *display* layer, kept in step with that seed and cross-checked
+The catalog is the _display_ layer, kept in step with that seed and cross-checked
 for pricing by the guard test.
 
 ## Consequences

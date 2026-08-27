@@ -36,7 +36,7 @@ should not be reachable.
 persisted document already passes through — plus the template-copy path, which
 bypasses `parseDocument` when a catalog template is copied verbatim.
 
-The guardrail is at the *save*, not at checkout, for two reasons.
+The guardrail is at the _save_, not at checkout, for two reasons.
 
 1. **It closes every downstream route at once.** Orders are created from three
    independent places, and only one of them is `BatchOrdersService.create()`:
@@ -55,7 +55,7 @@ anyone has made. The composer now says these two different things differently: a
 blocking message for elements, a plain note for a background.
 
 **Judged at `DEFAULT_CARD_SIZE` (A6), deliberately.** The reserved 30 mm converts
-to *more* design units on the smaller card — 128.5 on A6 against 90.6 on A5 — so
+to _more_ design units on the smaller card — 128.5 on A6 against 90.6 on A5 — so
 the band starts at y=505.5 on A6 and only y=543.4 on A5. A6 is the stricter of
 the two, so a design that clears it clears every size we print, and an admin
 changing the house print size can never retroactively invalidate designs that
@@ -69,7 +69,7 @@ sitting in customers' libraries. So every interactive path re-checks before
 taking money. There are **three**, and a first pass covered only two: `quickSend`
 and `bulkSend` each hold a single design and check it where they load it, while
 `create()` — the Checkout page, turning approved occasions into an order — holds
-one design *per occasion* and checks them together, before the occasions are
+one design _per occasion_ and checks them together, before the occasions are
 consumed so a refusal cannot strand them in `queued`. Its message names the
 offending design, because a Checkout can span several. The composer also blocks
 the pay button with a link to the design. A customer who hits it moves the item and
@@ -88,7 +88,7 @@ which only a renderer knows. That under-reporting is what makes it free of false
 positives, and the absence of false positives is what earns it the right to block
 rather than warn — a check that wrongly refuses a good design costs a customer
 their send, which is worse than the thing it prevents. The editor measures
-rendered nodes and does catch the wrapped case; making the editor *prevent*
+rendered nodes and does catch the wrapped case; making the editor _prevent_
 placement outright is the remaining piece and is not done here.
 
 Verified by removing each layer and watching the tests fail: dropping the

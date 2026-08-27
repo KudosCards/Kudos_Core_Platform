@@ -31,13 +31,18 @@ describe("Delivery poll (e2e)", () => {
       Promise.resolve({ trackingNumber: `RM${Date.now() % 1_000_000}GB`, labelUrl: null }),
     );
     // Default: nothing delivered. Individual tests override per tracking number.
-    getTrackingStatus = jest.fn(
-      (): Promise<TrackingStatusResult> =>
-        Promise.resolve({ status: "in_transit", deliveredAt: null, rawStatus: "In transit" }),
+    getTrackingStatus = jest.fn((): Promise<TrackingStatusResult> =>
+      Promise.resolve({ status: "in_transit", deliveredAt: null, rawStatus: "In transit" }),
     );
     app = await createTestApp([
-      { provide: EMAIL_CLIENT, useValue: { sendTransactional: jest.fn().mockResolvedValue(undefined) } },
-      { provide: ROYAL_MAIL_CLIENT, useValue: { enabled: true, createShipment, getTrackingStatus } },
+      {
+        provide: EMAIL_CLIENT,
+        useValue: { sendTransactional: jest.fn().mockResolvedValue(undefined) },
+      },
+      {
+        provide: ROYAL_MAIL_CLIENT,
+        useValue: { enabled: true, createShipment, getTrackingStatus },
+      },
     ]);
     prisma = app.get(PrismaService);
     const config = app.get(ConfigService<EnvConfig, true>);
@@ -145,12 +150,18 @@ describe("Delivery poll (e2e)", () => {
         object: "event",
         type: "checkout.session.completed",
         data: {
-          object: { id: `cs_test_${randomUUID()}`, payment_status: "paid", metadata: { batchOrderId } },
+          object: {
+            id: `cs_test_${randomUUID()}`,
+            payment_status: "paid",
+            metadata: { batchOrderId },
+          },
         },
       }),
     ).expect(201);
 
-    const orderRecipient = await prisma.orderRecipient.findFirstOrThrow({ where: { batchOrderId } });
+    const orderRecipient = await prisma.orderRecipient.findFirstOrThrow({
+      where: { batchOrderId },
+    });
     const job = await prisma.fulfillmentJob.findFirstOrThrow({
       where: { orderRecipientId: orderRecipient.id },
     });

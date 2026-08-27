@@ -16,7 +16,7 @@ that left the person who paid with less visibility than staff:
    `recipientId` but no name), so a buyer who sent 50 cards saw 50 rows of
    postcodes with no way to tell whose card was whose.
 2. **No tracking on the page.** The dispatch email carries a Royal Mail "track it"
-   link, but the order page a buyer *returns to* didn't — the stored
+   link, but the order page a buyer _returns to_ didn't — the stored
    `trackingReference` was never surfaced there.
 3. **No link to the digital message page.** The QR-linked message page
    (`/r/:slug`, ADR 0047) existed but the order never connected to it.
@@ -31,7 +31,7 @@ that left the person who paid with less visibility than staff:
 (`recipientFirstName`, `recipientLastName`, `jobStatus`, `trackingReference`,
 `messagePageSlug`). Contract in `@kudos/shared-types` as `batchOrderDetailSchema`.
 
-**The orders *list* stays lean.** The heavier include is used only by `findOne`;
+**The orders _list_ stays lean.** The heavier include is used only by `findOne`;
 the list still uses `ORDER_RECIPIENTS_INCLUDE` (it only reads
 `orderRecipients.length`), so we don't fan out relations across every list row.
 

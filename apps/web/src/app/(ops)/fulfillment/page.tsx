@@ -82,7 +82,9 @@ export default async function FulfillmentPage({
 
   // On a day drill-in with no chosen status, no tab is "active" — the queue
   // shows every open card for the day. Otherwise the queue defaults to pending.
-  const clientStatus: FulfillmentStatus | null = dueOn ? explicitStatus : explicitStatus ?? "pending";
+  const clientStatus: FulfillmentStatus | null = dueOn
+    ? explicitStatus
+    : (explicitStatus ?? "pending");
 
   return (
     <FulfillmentClient

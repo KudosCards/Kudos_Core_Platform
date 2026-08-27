@@ -5,14 +5,14 @@ Date: 2026-07-22
 
 ## Context
 
-The public card library (ADR 0017) gets a visitor to *design* their first card, but the journey
+The public card library (ADR 0017) gets a visitor to _design_ their first card, but the journey
 then stopped at the editor. To turn a signup into a paying customer they still had to discover the
 fragmented send path themselves: create a recipient, create an occasion, approve it, add it to a
 batch order, then check out — five back-office pages. Moonpig's equivalent is one screen: fill in
 who it's for, pay, done.
 
 We want that: straight from the editor, a **"Send this card"** flow that carries a freshly-designed
-card all the way to a *sent* first order. The first win is deliberately **one card to one
+card all the way to a _sent_ first order. The first win is deliberately **one card to one
 recipient** (the fast dopamine hit), then a nudge to import the whole list so the calendar
 automation takes over.
 
@@ -23,12 +23,13 @@ steps rather than inventing a parallel checkout:
 
 `POST /batch-orders/quick-send` (body: saved design id + recipient name/address + postage class,
 optional occasion type) does, in order:
+
 1. Verifies the saved design belongs to the account.
 2. Creates the recipient via `RecipientsService.create` — so the guided path is still audited and
    still honours the plan's recipient cap.
 3. Creates a one-off occasion **already `approved`** with the design attached (`source:
-   one_off_campaign`, `dispatchOption: asap`, `occasionType` default `bespoke_campaign`). The guided
-   flow *is* the human decision the manual approve step represents, so there's nothing left to
+one_off_campaign`, `dispatchOption: asap`, `occasionType` default `bespoke_campaign`). The guided
+   flow _is_ the human decision the manual approve step represents, so there's nothing left to
    approve.
 4. Hands off to the same `BatchOrdersService.create` the manual checkout uses, which prices the card
    (VAT-inclusive £1.50 + postage, minus any plan discount) and does the atomic `approved → queued`

@@ -68,7 +68,9 @@ describe("validateEnv", () => {
   });
 
   it("falls back to the default EMAIL_FROM_NAME on a blank value", () => {
-    expect(validateEnv({ ...validConfig, EMAIL_FROM_NAME: "" }).EMAIL_FROM_NAME).toBe("Kudos Cards");
+    expect(validateEnv({ ...validConfig, EMAIL_FROM_NAME: "" }).EMAIL_FROM_NAME).toBe(
+      "Kudos Cards",
+    );
   });
 
   it("degrades a non-numeric Brevo template id to unset rather than crashing boot", () => {

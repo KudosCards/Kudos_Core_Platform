@@ -200,9 +200,7 @@ describe("Guest checkout (e2e)", () => {
   });
 
   /** A guest checkout; returns the created account's id + secret claim token. */
-  async function guestCheckout(
-    email: string,
-  ): Promise<{ accountId: string; claimToken: string }> {
+  async function guestCheckout(email: string): Promise<{ accountId: string; claimToken: string }> {
     const response = await request(app.getHttpServer())
       .post("/guest/checkout")
       .send(guestBody({ buyerEmail: email }))
@@ -218,9 +216,7 @@ describe("Guest checkout (e2e)", () => {
     const { accountId, claimToken } = await guestCheckout(email);
 
     // Public prefill returns the buyer's email.
-    const info = await request(app.getHttpServer())
-      .get(`/guest/claim/${claimToken}`)
-      .expect(200);
+    const info = await request(app.getHttpServer()).get(`/guest/claim/${claimToken}`).expect(200);
     expect((info.body as { email: string }).email).toBe(email);
 
     // The buyer signs up (same email) and claims.

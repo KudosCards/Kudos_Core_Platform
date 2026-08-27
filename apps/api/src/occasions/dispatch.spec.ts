@@ -211,7 +211,9 @@ describe("deliverByWindow (scheduled sends)", () => {
     const { earliest } = deliverByWindow("second_class", from);
     expect(isoDay(earliest)).toBe("2026-08-14");
     // And computing the post-by date back from that earliest is today.
-    expect(isoDay(computeDispatchDate(earliest, POSTAGE_LEAD_DAYS.second_class))).toBe("2026-08-07");
+    expect(isoDay(computeDispatchDate(earliest, POSTAGE_LEAD_DAYS.second_class))).toBe(
+      "2026-08-07",
+    );
   });
 
   it("latest is the horizon out from today", () => {

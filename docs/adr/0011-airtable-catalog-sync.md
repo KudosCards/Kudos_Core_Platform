@@ -15,7 +15,7 @@ nothing meaningful to test the ordering flow with, and the platform can't go liv
 Two decisions were confirmed with the user before building:
 
 1. **Pick, then edit on canvas.** The Airtable artwork is not a finished, locked product — it
-   becomes the *background* of an editable `DesignDocument`, so the existing Konva editor stays
+   becomes the _background_ of an editable `DesignDocument`, so the existing Konva editor stays
    central and a centre can still personalise a card before ordering.
 2. **Live sync, Airtable as source of truth.** The team keeps managing products in Airtable; the
    platform pulls from it, rather than the catalog being re-keyed by hand in a second place.
@@ -67,7 +67,7 @@ any `SavedDesign` a customer already derived from it keeps its foreign key. Deac
 blank the whole catalog.
 
 **Canva Link is deferred.** The editable Canva URL is the print team's high-res source, not
-customer-facing content, so it is deliberately *not* synced into the customer catalog yet. It plugs
+customer-facing content, so it is deliberately _not_ synced into the customer catalog yet. It plugs
 into the ops/fulfillment side later without touching this model.
 
 ## Alternatives considered
@@ -87,7 +87,7 @@ into the ops/fulfillment side later without touching this model.
 
 Bringing the first real catalog online surfaced several operator-facing failure
 modes. Each was fixed to fail loudly and, where possible, self-heal — an ops
-tool that can't tell you *why* it failed, or needs precise manual setup, isn't
+tool that can't tell you _why_ it failed, or needs precise manual setup, isn't
 finished:
 
 - **Real Airtable errors surface, not a generic 500.** A failed fetch is
@@ -96,11 +96,11 @@ finished:
   access, 404 → base/table not found, 422 → table-name mismatch, 429 → rate
   limited). On a 403/404 it uses the `schema.bases:read` scope to **list the
   base's actual tables** in the error, so a wrong `AIRTABLE_CARDS_TABLE` names
-  the fix itself. (The default table name was taken from an Airtable *interface
-  page* — "Card List" — not the underlying table; the table id `tbl…` is the
+  the fix itself. (The default table name was taken from an Airtable _interface
+  page_ — "Card List" — not the underlying table; the table id `tbl…` is the
   robust value to configure.)
 - **The storage bucket is self-created.** The sync calls `createBucket(design-
-  assets, public)` with the same client the uploads use, so a missing,
+assets, public)` with the same client the uploads use, so a missing,
   mis-named, or wrong-project bucket can't turn every artwork copy into "Bucket
   not found". Idempotent; ensures the bucket is public so thumbnails render.
 - **Artwork is copied concurrently.** A few hundred sequential download+upload

@@ -13,8 +13,8 @@ one-click CRM connectors (Brevo / HubSpot / Zapier), so a non-technical owner â€
 the majority â€” was met with API keys and a raw `curl` snippet as if they were a
 primary path.
 
-The same feedback flagged the **copy button**: it *"copies a curl command when
-the user expected a URL."* The endpoint's copy button used the default label
+The same feedback flagged the **copy button**: it _"copies a curl command when
+the user expected a URL."_ The endpoint's copy button used the default label
 (`"Copy"`) while the example's was labelled `"Copy curl"`, so it wasn't obvious
 which button copied the plain endpoint URL versus the whole curl command.
 

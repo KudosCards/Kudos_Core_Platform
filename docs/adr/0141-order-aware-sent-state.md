@@ -6,9 +6,9 @@ Accepted — implemented. From early customer feedback (Wave 1).
 
 ## Context
 
-A customer reported: *"After clicking send, and not paying, the calendar view
-shows the card as sent"* and *"my card is 'in fulfilment' but not paid for — is
-there a stopper?"*
+A customer reported: _"After clicking send, and not paying, the calendar view
+shows the card as sent"_ and _"my card is 'in fulfilment' but not paid for — is
+there a stopper?"_
 
 Investigation established two things:
 
@@ -20,7 +20,7 @@ Investigation established two things:
 
 2. **The display keyed "sent" off occasion status alone, which is ambiguous.** An
    occasion is moved to `queued` at **checkout** (`BatchOrdersService.create`),
-   *before* payment, and stays `queued` all the way through settlement
+   _before_ payment, and stays `queued` all the way through settlement
    (settlement never re-touches occasion status). So `queued` covers both
    "paid, in fulfilment" and "clicked Send but never paid". The calendar treated
    every `queued` occasion as **Sent**.
@@ -50,10 +50,10 @@ Make "sent" **order-aware**, from a single shared predicate.
 
 Deliberately **not** changed: the occasion stays `queued` on an abandoned/draft
 order. That is correct — it's reserved for the resumable order, and settlement
-never re-queues it, so reverting it would break the *paid* "sent" display. The
+never re-queues it, so reverting it would break the _paid_ "sent" display. The
 honesty comes entirely from reading the order's payment status at display time,
 which is robust across every state (in-flight `pending_payment`, expired-to
--`draft`, or genuinely paid).
+\-`draft`, or genuinely paid).
 
 A related subtlety was untangled: `events.service` had reused its `SENT_STATUSES`
 set for a second, different purpose — blocking deletion of an event whose members

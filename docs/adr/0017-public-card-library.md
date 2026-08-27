@@ -13,7 +13,7 @@ adapted to Kudos' B2B recognition context.
 
 The chosen shape (a deliberate "half Moonpig"): let anyone browse the card library and open a card,
 then make **"Personalise this card"** the moment we ask them to sign up. Personalisation itself
-happens *after* signup — so there is **no guest editor and no anonymous data**, which keeps the
+happens _after_ signup — so there is **no guest editor and no anonymous data**, which keeps the
 build and the security surface small.
 
 ## Decision
@@ -45,7 +45,7 @@ build and the security surface small.
 
 ## Alternatives considered
 
-- **Full Moonpig (guest editor):** let visitors personalise *before* signing up, persisting an
+- **Full Moonpig (guest editor):** let visitors personalise _before_ signing up, persisting an
   anonymous design. Rejected for now — it needs guest/anonymous state, a merge-on-signup step, and a
   bigger abuse surface, for a marginal gain over "sign up at the personalise click." Can revisit.
 - **Carrying the card purely via a query param** through every hop. Rejected as the primary
@@ -57,9 +57,9 @@ build and the security surface small.
 - New public surface: the catalog is now internet-reachable unauthenticated. It's read-only,
   active-only, non-sensitive marketing content — acceptable and intended. Worth remembering if
   future fields are ever added to `CardDesign`.
-- **Email-confirmation caveat (config, not code):** for the *seamless* version (sign up → straight
+- **Email-confirmation caveat (config, not code):** for the _seamless_ version (sign up → straight
   into the editor), Supabase email confirmation should be off, or its confirmation redirect should
   return to `/start`. With confirmation on, the flow still completes — the user confirms, logs in,
   and `login` forwards them to `/start` because the pending card is still in localStorage.
 - This is the front door only (browse → personalise → sign up → editor). Carrying the journey all
-  the way to a *sent* first order (recipient + checkout in one guided flow) is the natural next step.
+  the way to a _sent_ first order (recipient + checkout in one guided flow) is the natural next step.

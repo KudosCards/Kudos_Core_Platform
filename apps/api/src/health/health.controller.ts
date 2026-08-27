@@ -92,8 +92,6 @@ export class HealthController {
   @Get("ready")
   @HealthCheck()
   async ready(): Promise<HealthCheckResult> {
-    return this.health.check([
-      () => this.prismaIndicator.pingCheck("database", this.prisma),
-    ]);
+    return this.health.check([() => this.prismaIndicator.pingCheck("database", this.prisma)]);
   }
 }

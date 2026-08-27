@@ -17,7 +17,7 @@ responsive cards (`flex-col … sm:flex-row`); and every admin data table is
 wrapped in `overflow-x-auto`, so a wide table scrolls inside its own bordered box
 rather than breaking the layout.
 
-That contained scroll is *safe* but poor UX on a phone: a 720–900px table means
+That contained scroll is _safe_ but poor UX on a phone: a 720–900px table means
 sideways-swiping a row and losing the column headers. The four operator **list**
 tables are the ones worth improving:
 

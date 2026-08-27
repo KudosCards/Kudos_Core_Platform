@@ -292,7 +292,10 @@ export const TERMS: LegalDoc = {
       n: 12,
       heading: "Postage and Delivery",
       blocks: [
-        { kind: "p", text: "Kudos Cards may use Royal Mail or other postal and delivery providers." },
+        {
+          kind: "p",
+          text: "Kudos Cards may use Royal Mail or other postal and delivery providers.",
+        },
         {
           kind: "p",
           text: "Delivery estimates are estimates rather than guarantees unless we expressly state otherwise.",
@@ -305,7 +308,10 @@ export const TERMS: LegalDoc = {
           kind: "p",
           text: "Kudos Cards is not responsible for delays caused by postal operators, incorrect addresses supplied by customers, industrial action, severe weather or other circumstances outside our reasonable control.",
         },
-        { kind: "p", text: "Nothing in this clause limits rights which cannot legally be excluded." },
+        {
+          kind: "p",
+          text: "Nothing in this clause limits rights which cannot legally be excluded.",
+        },
       ],
     },
     {
@@ -313,8 +319,14 @@ export const TERMS: LegalDoc = {
       heading: "Subscriptions",
       blocks: [
         { kind: "p", text: "Some features may require a paid subscription." },
-        { kind: "p", text: "Available plans, prices and included features will be displayed before purchase." },
-        { kind: "p", text: "Depending upon the plan selected, subscriptions may include different:" },
+        {
+          kind: "p",
+          text: "Available plans, prices and included features will be displayed before purchase.",
+        },
+        {
+          kind: "p",
+          text: "Depending upon the plan selected, subscriptions may include different:",
+        },
         {
           kind: "ul",
           items: [
@@ -391,7 +403,10 @@ export const TERMS: LegalDoc = {
           kind: "p",
           text: "Where appropriate, we may offer a replacement, reprint, refund or another suitable remedy.",
         },
-        { kind: "p", text: "Nothing in these Terms removes rights that cannot lawfully be excluded." },
+        {
+          kind: "p",
+          text: "Nothing in these Terms removes rights that cannot lawfully be excluded.",
+        },
       ],
     },
     {
@@ -459,7 +474,10 @@ export const TERMS: LegalDoc = {
           kind: "p",
           text: "The Kudos Cards platform, software, branding, website content and associated intellectual property belong to Kudos Cards Ltd or its licensors unless stated otherwise.",
         },
-        { kind: "p", text: "These Terms do not transfer ownership of our intellectual property to you." },
+        {
+          kind: "p",
+          text: "These Terms do not transfer ownership of our intellectual property to you.",
+        },
         { kind: "p", text: "You retain ownership of content that you upload to the platform." },
         {
           kind: "p",
@@ -531,7 +549,10 @@ export const TERMS: LegalDoc = {
           kind: "p",
           text: "We may update these Terms where necessary to reflect changes to the platform, our services, the law or our business practices.",
         },
-        { kind: "p", text: "The latest version will be made available through our website or platform." },
+        {
+          kind: "p",
+          text: "The latest version will be made available through our website or platform.",
+        },
         {
           kind: "p",
           text: "Where a change materially affects an ongoing paid subscription, we will take reasonable steps to bring it to your attention.",

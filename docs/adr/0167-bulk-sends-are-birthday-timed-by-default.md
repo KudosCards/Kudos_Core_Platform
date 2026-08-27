@@ -42,7 +42,7 @@ function usesOccasionDates(dto: BulkSendDto): boolean {
 
 - No `deliverBy`, no flag → birthday-timed. The common case, and the one that was
   wrong.
-- `deliverBy` given → one shared date. Choosing a delivery date *is* saying "one
+- `deliverBy` given → one shared date. Choosing a delivery date _is_ saying "one
   date for everyone".
 - `useOccasionDates: false` → one shared date. The explicit campaign opt-out.
 - `useOccasionDates: true` **plus** `deliverBy` → still a 400. Two different
@@ -51,7 +51,7 @@ function usesOccasionDates(dto: BulkSendDto): boolean {
 ### The reconciliation collision
 
 The composer's "mark these occasions as handled" toggle (ADR 0107) let a sender
-opt out, meaning *send this card as well as their birthday card*. Turning it off
+opt out, meaning _send this card as well as their birthday card_. Turning it off
 sent no `reconcile` list — a payload byte-identical to a hand-picked send. Under
 the new default the server would have found the birthday anyway and consumed it:
 precisely what the sender had said not to do.
@@ -60,12 +60,12 @@ The composer therefore now sends `useOccasionDates: false` when, and only when,
 there were matches to opt out of. A send with no matches at all is the
 hand-picked case and takes the default. The two intents stay distinct:
 
-| Send | `reconcile` | `useOccasionDates` | Result |
-| --- | --- | --- | --- |
-| From a segment, toggle on | matches | — | Birthday-timed, occasion consumed |
-| From a segment, toggle off | — | `false` | One shared date, birthday untouched |
-| Hand-picked / list / `?recipients=` | — | — | Birthday-timed (the fix) |
-| Any send with a delivery date | — | — | One shared date |
+| Send                                | `reconcile` | `useOccasionDates` | Result                              |
+| ----------------------------------- | ----------- | ------------------ | ----------------------------------- |
+| From a segment, toggle on           | matches     | —                  | Birthday-timed, occasion consumed   |
+| From a segment, toggle off          | —           | `false`            | One shared date, birthday untouched |
+| Hand-picked / list / `?recipients=` | —           | —                  | Birthday-timed (the fix)            |
+| Any send with a delivery date       | —           | —                  | One shared date                     |
 
 ## Alternatives considered
 
@@ -94,14 +94,13 @@ card?" is a guess, and a wrong guess here misdates real post.
   the server might spread the send across the year. Resolved by the amendment
   below.
 
-
 ## Amendment — the composer asks, instead of the server assuming
 
 Shipping the default without touching the composer left "Send now" meaning two
 incompatible things. A birthday send and a same-day campaign are both "now" to
 the sender, and only one of them should post today — so the picker was promising
 "Posted today, as soon as it's printed" on sends the server was about to spread
-across ten months. Worse, a hand-picked *campaign* send had no way to ask for one
+across ten months. Worse, a hand-picked _campaign_ send had no way to ask for one
 shared date at all: the explicit `useOccasionDates: false` was only sent when the
 sender opted out of reconciliation, which requires a segment.
 
@@ -117,11 +116,11 @@ and date span match what the send actually does, and fails if they drift.
 **The picker offers three options**, the first only when the selection has dated
 occasions to time to:
 
-| Option | Sends | Shown |
-| --- | --- | --- |
-| Time each card to its own occasion | *(nothing — the default)* | `count > 0` |
-| Send now — one date for everyone | `useOccasionDates: false` | always |
-| Schedule delivery | `deliverBy` | always |
+| Option                             | Sends                     | Shown       |
+| ---------------------------------- | ------------------------- | ----------- |
+| Time each card to its own occasion | _(nothing — the default)_ | `count > 0` |
+| Send now — one date for everyone   | `useOccasionDates: false` | always      |
+| Schedule delivery                  | `deliverBy`               | always      |
 
 with real numbers rather than a description of the mechanism: "38 of 76 cards
 post ahead of that person's own occasion, spread from 2 Sep to 19 Jul. The other
@@ -139,5 +138,5 @@ shared-types it can be unit-tested; the web app has no test runner.
 
 One deliberate subtlety: until preflight resolves, the instruction is
 `undefined` rather than `false`. Taking "one date for everyone" literally before
-the sender has been shown that some cards *would* have been spread would quietly
+the sender has been shown that some cards _would_ have been spread would quietly
 reinstate the bug this ADR exists to fix.

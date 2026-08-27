@@ -16,8 +16,12 @@ export default async function AdminSubscribersPage({
 }: {
   searchParams: Promise<{ search?: string; plan?: string; health?: string; page?: string }>;
 }) {
-  const { search: searchParam, plan: planParam, health: healthParam, page: pageParam } =
-    await searchParams;
+  const {
+    search: searchParam,
+    plan: planParam,
+    health: healthParam,
+    page: pageParam,
+  } = await searchParams;
   const search = searchParam?.trim() ?? "";
   const plan = planParam && planParam !== "all" ? planParam : undefined;
   const health = VALID_HEALTH.includes(healthParam as (typeof VALID_HEALTH)[number])

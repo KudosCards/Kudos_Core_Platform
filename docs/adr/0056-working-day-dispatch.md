@@ -25,7 +25,7 @@ arriving on time — the core promise.
 
 - **Dispatch dates are computed in working days.** `computeDispatchDate(occasionDate, leadDays)` now
   counts `leadDays` **working days** back from the occasion, skipping Saturdays, Sundays, and UK bank
-  holidays. Because it only decrements on working days, the returned date is *itself* always a
+  holidays. Because it only decrements on working days, the returned date is _itself_ always a
   working day — a card is never scheduled to post on a day nothing ships. The lead numbers are
   unchanged in value (`5` default, `3`/`5` per class) but are now working days, so the real calendar
   lead is longer, which is the point.
@@ -66,7 +66,7 @@ arriving on time — the core promise.
 
 - Cards now dispatch on real shipping days with an honest lead, and December sends go out earlier
   automatically — the on-time promise holds through weekends, bank holidays, and the Christmas rush.
-- The change is behavioural for every dispatch date already in the pipeline as *newly computed*
+- The change is behavioural for every dispatch date already in the pipeline as _newly computed_
   (existing stored `dispatchDate`s are untouched until an occasion is re-dated or re-approved).
 - The First-Class nudge is advisory, never forced: the sender stays in control of cost vs. speed.
 - `UK_BANK_HOLIDAYS` carries a maintenance obligation — extend it before 2028 lapses. Left as a

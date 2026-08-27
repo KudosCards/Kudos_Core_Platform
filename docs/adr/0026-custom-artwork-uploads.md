@@ -11,7 +11,7 @@ User feedback on the card design shop asked for two related things:
    member's own saved designs underneath it. But once someone has built and saved designs, those
    are what they return for — the catalog is a starting point, not the destination.
 2. **Let subscribers upload their own artwork.** Tuition centres frequently have their own branded
-   card artwork (a designer-made front, a seasonal illustration) and want to send *that* as a card,
+   card artwork (a designer-made front, a seasonal illustration) and want to send _that_ as a card,
    not only personalise one of our catalog templates. This is a paid-tier value-add, not a
    free-plan feature.
 

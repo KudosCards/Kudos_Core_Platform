@@ -7,7 +7,7 @@ Date: 2026-07-28
 
 The old system had a concept the rebuild was missing and the business flagged as important: a
 **shared event** — a single card sent to a whole cohort of contacts on the same date (End of Year,
-Results Day, SATs week, a Christmas send). Until now the calendar only had *occasions*: birthdays
+Results Day, SATs week, a Christmas send). Until now the calendar only had _occasions_: birthdays
 (auto-scheduled, one per recipient) and hand-added per-recipient events, plus org-wide one-off
 campaign occasions with no attached contacts. There was no way to say "these 30 leavers all get this
 card on 17 July" and manage them as one thing. Bulk-send (ADR 0052) could post one design to many
@@ -50,7 +50,7 @@ contacts as a single order, but it left nothing named and persistent on the cale
   no Event row).** Rejected — the lighter option from the plan. It can't render as one calendar entry,
   can't be edited/sent/deleted as a unit, and re-scatters the exact clutter the feature exists to fix.
 - **Reusing bulk-send directly for the cohort send.** Rejected as the primary model because bulk-send
-  creates *new* one-off occasions; an event's members already exist, so ordering must consume them,
+  creates _new_ one-off occasions; an event's members already exist, so ordering must consume them,
   not duplicate them. We still reuse bulk-send's address-gathering and the shared `create` money path.
 
 ## Consequences

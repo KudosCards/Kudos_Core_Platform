@@ -11,7 +11,8 @@ same bad address being used again, and no path for the customer to recover the c
 structured RTS workflow that turns an operational failure into a premium service-recovery moment.
 
 Confirmed with the user:
-- **Kudos Promise: one fully-free recovery per returned card** — Kudos absorbs the reprint *and*
+
+- **Kudos Promise: one fully-free recovery per returned card** — Kudos absorbs the reprint _and_
   postage. A second recovery for the same card needs a fresh paid order.
 - **Flagged contacts:** automatic/scheduled sends pause hard until the case is resolved; manual
   checkout warns but is not blocked (surfaced on the contact record and list today).
@@ -43,7 +44,7 @@ inbox item — neither can fail the return.
 On the contact record: an alert per open case, then the Update-Address step, then the one free
 recovery — **resend to the corrected address** (`POST /returns/:id/resend`) or **hand-deliver to the
 business** (`POST /returns/:id/send-to-business`), or **archive**. The free recovery creates a **£0**
-`BatchOrder` and runs it through the *same* `settleFulfillment` step every paid order uses (queue the
+`BatchOrder` and runs it through the _same_ `settleFulfillment` step every paid order uses (queue the
 line, create the fulfillment job, mint the QR page) — no payment, no wallet debit. The case's
 `freeRecoveryUsed` is claimed with a status-guarded `updateMany` so a double-click can't mint two free
 cards.

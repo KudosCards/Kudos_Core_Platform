@@ -9,13 +9,13 @@ Continuation of the performance roadmap (`docs/performance-backlog.md`), Phase 5
 (API/DB depth). The admin dashboard already got composite indexes (ADR 0014-era
 work); the customer-facing per-account list endpoints had not. Each fetches
 `where account_id [+ filter] order by <date>` and paginates, but the existing
-indexes only covered the *filter*, not the *sort*:
+indexes only covered the _filter_, not the _sort_:
 
-| Endpoint | Query | Existing index | Gap |
-| --- | --- | --- | --- |
-| Orders (`/batch-orders`) | `where account_id order by created_at desc` | `[account_id, status]` | no `[account_id, created_at]` → sort |
-| Recipients (`/recipients`) | `where account_id order by created_at desc` | `[account_id, status]` | no `[account_id, created_at]` → sort |
-| Calendar (`/occasions`) | `where account_id and occasion_date between … order by occasion_date` | `[account_id, status]`, `[dispatch_date]` | no `[account_id, occasion_date]` → sort |
+| Endpoint                   | Query                                                                 | Existing index                            | Gap                                     |
+| -------------------------- | --------------------------------------------------------------------- | ----------------------------------------- | --------------------------------------- |
+| Orders (`/batch-orders`)   | `where account_id order by created_at desc`                           | `[account_id, status]`                    | no `[account_id, created_at]` → sort    |
+| Recipients (`/recipients`) | `where account_id order by created_at desc`                           | `[account_id, status]`                    | no `[account_id, created_at]` → sort    |
+| Calendar (`/occasions`)    | `where account_id and occasion_date between … order by occasion_date` | `[account_id, status]`, `[dispatch_date]` | no `[account_id, occasion_date]` → sort |
 
 So Postgres filtered by account then sorted the whole matching set on every page
 load — fine on small tenants, a growing cost as an account accumulates orders /
@@ -51,9 +51,9 @@ Full API suite (73 unit + 232 e2e) green against the migrated schema.
   on `[account_id, status]`. The pending queue is small, so its sort is cheap; a
   three-column `[account_id, status, occasion_date]` index wasn't worth the write
   cost. Revisit if profiling (Phase 0's `Server-Timing`) says otherwise.
-- **Cold starts / keep-warm was *not* done in code.** A self-ping cron inside the
+- **Cold starts / keep-warm was _not_ done in code.** A self-ping cron inside the
   API can't keep a slept Railway service warm (the cron sleeps with it). If cold
-  starts prove painful, the fix is an *external* uptime pinger hitting the
+  starts prove painful, the fix is an _external_ uptime pinger hitting the
   existing `/health` endpoint — infrastructure, not application code.
 - **N+1s:** the list endpoints use Prisma `include`, which issues one batched
   follow-up query (not per-row), so there's no N+1 to fix here (consistent with

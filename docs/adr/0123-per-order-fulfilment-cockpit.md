@@ -45,7 +45,7 @@ has cards to act on:
 - **Dispatch all (N)** — bulk `POST /fulfillment/jobs/dispatch` over the printed
   cards (shipping on).
 - **Mark all posted (N)** / **Mark all delivered (N)** — `POST
-  /fulfillment/jobs/bulk-transition`.
+/fulfillment/jobs/bulk-transition`.
 - **Check deliveries** — `POST /fulfillment/poll-deliveries` (ADR 0121), to pull
   tracking now instead of waiting for the hourly sweep.
 

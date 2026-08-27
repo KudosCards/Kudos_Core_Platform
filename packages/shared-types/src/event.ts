@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { occasionOrderLinkSchema } from "./occasion";
-import { dispatchOptionSchema, occasionStatusSchema, occasionTypeSchema, postageClassSchema } from "./enums";
+import {
+  dispatchOptionSchema,
+  occasionStatusSchema,
+  occasionTypeSchema,
+  postageClassSchema,
+} from "./enums";
 
 /**
  * A shared event: one card design sent to a curated cohort of contacts on the

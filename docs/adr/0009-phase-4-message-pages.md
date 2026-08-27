@@ -12,6 +12,7 @@ Phase 0 (`id`, `slug` unique, `orderRecipientId` unique 1:1, nullable `message`/
 `viewCount`, `createdAt`) but has never had any API built against it.
 
 A pre-implementation review (see the Phase 0-3 review PR) confirmed:
+
 - `packages/shared-types`'s `messagePageSchema` and `fulfillmentJobSchema` are both already
   accurate against the real Prisma models — safe to build on directly, unlike several other
   schemas in that package that needed fixing first.
@@ -33,7 +34,7 @@ from the moment it enters production, independent of whether the message content
 authored yet (an unauthored page just renders "no message yet").
 
 **Personalisation is a separate, optional, always-editable step**: the tuition centre authors
-message/emoji/video *after* checkout, not during it — there's no existing capture point in
+message/emoji/video _after_ checkout, not during it — there's no existing capture point in
 checkout and forcing one in would couple two independently-changeable flows. A new page lists the
 `OrderRecipient`s from a paid `BatchOrder` (or all of an account's message pages) with editable
 content. Nothing currently marks a `FulfillmentJob` "printed", so there's no real deadline to
@@ -91,7 +92,7 @@ Supabase dashboard, not something this codebase can enforce itself.
 
 ## Addendum (2026-07-20): the QR code + video linking
 
-Phase 4 shipped the message-page *target* (`/r/<slug>`) and noted a card would carry a QR code to
+Phase 4 shipped the message-page _target_ (`/r/<slug>`) and noted a card would carry a QR code to
 it — but never generated the QR or gave the subscriber a way to attach a video from the designer.
 This addendum closes that loop.
 

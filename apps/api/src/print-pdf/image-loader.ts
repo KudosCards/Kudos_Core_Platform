@@ -83,10 +83,15 @@ export function createImageResolver(options: ImageResolverOptions = {}): ImageRe
   };
 }
 
-async function loadImage(assetUrl: string, options: ImageResolverOptions): Promise<ResolvedImage | null> {
+async function loadImage(
+  assetUrl: string,
+  options: ImageResolverOptions,
+): Promise<ResolvedImage | null> {
   const url = absoluteUrl(assetUrl, options.webBaseUrl);
   if (!url) {
-    options.onWarn?.(`print image skipped (${assetUrl}): no web base URL for a root-relative asset`);
+    options.onWarn?.(
+      `print image skipped (${assetUrl}): no web base URL for a root-relative asset`,
+    );
     return null;
   }
   if (!isHostAllowed(url, options.allowedHosts)) {
@@ -148,7 +153,7 @@ export async function fetchAssetBytes(
   url: string,
   options: ImageResolverOptions,
 ): Promise<{ buffer: Buffer; contentType: string | null } | null> {
-  const fetchImpl = options.fetchImpl ?? (globalThis.fetch);
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   if (!fetchImpl) return null;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
   const controller = new AbortController();

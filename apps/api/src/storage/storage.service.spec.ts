@@ -27,11 +27,9 @@ describe("StorageService", () => {
         }),
       getPublicUrl:
         overrides?.getPublicUrl ??
-        jest
-          .fn()
-          .mockReturnValue({
-            data: { publicUrl: "https://example.supabase.co/public/some/path.png" },
-          }),
+        jest.fn().mockReturnValue({
+          data: { publicUrl: "https://example.supabase.co/public/some/path.png" },
+        }),
     });
     return { client: { storage: { from } } as unknown as SupabaseClient, from };
   }
@@ -96,7 +94,9 @@ describe("StorageService", () => {
     };
 
     it("creates the bucket public with its mime/size limits", async () => {
-      const createBucket = jest.fn().mockResolvedValue({ data: { name: config.name }, error: null });
+      const createBucket = jest
+        .fn()
+        .mockResolvedValue({ data: { name: config.name }, error: null });
       const updateBucket = jest.fn();
       const client = { storage: { createBucket, updateBucket } } as unknown as SupabaseClient;
 

@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsInt, IsPositive, IsString, IsUrl, MaxLength, MinLength, IsOptional } from "class-validator";
+import {
+  IsInt,
+  IsPositive,
+  IsString,
+  IsUrl,
+  MaxLength,
+  MinLength,
+  IsOptional,
+} from "class-validator";
 
 /**
  * Records a just-completed designer upload into the account's reusable-asset

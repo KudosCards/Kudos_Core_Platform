@@ -11,7 +11,17 @@ function docWithText(text: string, fontFamily = "Montserrat"): DesignDocument {
       {
         name: "front",
         elements: [
-          { kind: "text", id: "t", text, x: 30, y: 40, width: 380, fontFamily, fontSize: 40, color: "#111111" },
+          {
+            kind: "text",
+            id: "t",
+            text,
+            x: 30,
+            y: 40,
+            width: 380,
+            fontFamily,
+            fontSize: 40,
+            color: "#111111",
+          },
         ],
       },
     ],
@@ -20,7 +30,9 @@ function docWithText(text: string, fontFamily = "Montserrat"): DesignDocument {
 
 /** The PostScript names of the fonts pdfkit embedded (subset tag stripped). */
 function embeddedFonts(pdf: Buffer): Set<string> {
-  const names = [...pdf.toString("latin1").matchAll(/[A-Z]{6}\+([A-Za-z0-9]+)-/g)].map((m) => m[1]!);
+  const names = [...pdf.toString("latin1").matchAll(/[A-Z]{6}\+([A-Za-z0-9]+)-/g)].map(
+    (m) => m[1]!,
+  );
   return new Set(names);
 }
 

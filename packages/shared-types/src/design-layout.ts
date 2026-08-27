@@ -252,10 +252,8 @@ export function clampElementPosition(
   size: { width?: number; height?: number },
   card: { width: number; height: number } = { width: CARD_WIDTH, height: CARD_HEIGHT },
 ): Point {
-  const maxX =
-    size.width !== undefined ? card.width - size.width : card.width - MIN_VISIBLE;
-  const maxY =
-    size.height !== undefined ? card.height - size.height : card.height - MIN_VISIBLE;
+  const maxX = size.width !== undefined ? card.width - size.width : card.width - MIN_VISIBLE;
+  const maxY = size.height !== undefined ? card.height - size.height : card.height - MIN_VISIBLE;
   return {
     x: clamp(pos.x, 0, maxX),
     y: clamp(pos.y, 0, maxY),

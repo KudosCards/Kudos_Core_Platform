@@ -71,7 +71,10 @@ function mmPerUnit(size: CardSize): number {
 }
 
 /** The printed size of an image *element* (its design-unit box → millimetres). */
-export function elementPrintedSizeMm(box: { width: number; height: number }, size: CardSize): PrintedSizeMm {
+export function elementPrintedSizeMm(
+  box: { width: number; height: number },
+  size: CardSize,
+): PrintedSizeMm {
   const perUnit = mmPerUnit(size);
   return { widthMm: box.width * perUnit, heightMm: box.height * perUnit };
 }
@@ -103,11 +106,18 @@ function isVectorAsset(assetUrl: string): boolean {
  * (SVG) assets are excluded. Pure — the caller measures each asset's natural
  * pixel size and applies {@link imagePrintDpi} / {@link isLowPrintDpi}.
  */
-export function collectPrintImageTargets(document: DesignDocument, size: CardSize): PrintImageTarget[] {
+export function collectPrintImageTargets(
+  document: DesignDocument,
+  size: CardSize,
+): PrintImageTarget[] {
   const targets: PrintImageTarget[] = [];
   for (const page of document.pages) {
     if (page.background?.type === "image" && !isVectorAsset(page.background.assetUrl)) {
-      targets.push({ assetUrl: page.background.assetUrl, where: "background", printed: backgroundPrintedSizeMm(size) });
+      targets.push({
+        assetUrl: page.background.assetUrl,
+        where: "background",
+        printed: backgroundPrintedSizeMm(size),
+      });
     }
     for (const element of page.elements) {
       if (element.kind === "image" && !isVectorAsset(element.assetUrl)) {

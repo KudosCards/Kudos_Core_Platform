@@ -63,7 +63,7 @@ pointer, and access is still gated by the verified-email match at sign-in.
 
 - **At least one super admin always remains** — demoting or revoking the last one is a 409.
 - Management mutations are **super-admin only** at the API (`SuperAdminGuard`), not just hidden in the
-  UI; an ops operator can *view* the team but every mutation is refused server-side.
+  UI; an ops operator can _view_ the team but every mutation is refused server-side.
 - `POST /admin/access` is the only ops route not behind `PlatformAdminGuard` (it's how a first-time
   operator becomes one); it still requires a valid Supabase JWT and only provisions on an exact
   verified-email allow-list match.

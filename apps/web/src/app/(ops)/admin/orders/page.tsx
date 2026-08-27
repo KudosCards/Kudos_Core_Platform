@@ -38,7 +38,9 @@ export default async function AdminOrdersPage({
   if (status) params.set("status", status);
   if (search) params.set("search", search);
 
-  const result = await serverApiFetch<Paginated<AdminOrderRow>>(`/admin/orders?${params.toString()}`);
+  const result = await serverApiFetch<Paginated<AdminOrderRow>>(
+    `/admin/orders?${params.toString()}`,
+  );
 
   return (
     <AdminOrdersClient

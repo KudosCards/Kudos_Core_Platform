@@ -137,7 +137,11 @@ describe("Click & Drop import (e2e)", () => {
         object: "event",
         type: "checkout.session.completed",
         data: {
-          object: { id: `cs_test_${randomUUID()}`, payment_status: "paid", metadata: { batchOrderId } },
+          object: {
+            id: `cs_test_${randomUUID()}`,
+            payment_status: "paid",
+            metadata: { batchOrderId },
+          },
         },
       }),
     ).expect(201);

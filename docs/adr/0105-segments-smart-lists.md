@@ -17,8 +17,9 @@ always-current view.
 ADR 0104 already made renewal/anniversary first-class recurring occasions, so the
 dated substrate the interesting segments need now exists. This slice adds the
 **segment** concept on top: a saved, live-resolving filter that produces a count
-+ preview. Sending _from_ a segment (filter → bulk personalise → pay → send) is a
-deliberately separate later slice — this one only defines and resolves segments.
+
+- preview. Sending _from_ a segment (filter → bulk personalise → pay → send) is a
+  deliberately separate later slice — this one only defines and resolves segments.
 
 ## Decision
 

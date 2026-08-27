@@ -36,7 +36,8 @@ const CARD_WEIGHT_GRAMS = 100;
 const apiKey = process.env.ROYAL_MAIL_API_KEY;
 const baseUrl = process.env.ROYAL_MAIL_API_BASE_URL;
 const forceLive = process.argv.includes("--force-live");
-const postageClass = process.env.RM_POSTAGE_CLASS === "first_class" ? "first_class" : "second_class";
+const postageClass =
+  process.env.RM_POSTAGE_CLASS === "first_class" ? "first_class" : "second_class";
 
 function fail(message) {
   console.error(`\n✗ ${message}`);
@@ -45,7 +46,9 @@ function fail(message) {
 
 if (!apiKey) fail("Set ROYAL_MAIL_API_KEY to your Royal Mail SANDBOX key.");
 if (!baseUrl) {
-  fail("Set ROYAL_MAIL_API_BASE_URL to the Royal Mail sandbox base URL (from your RM onboarding docs).");
+  fail(
+    "Set ROYAL_MAIL_API_BASE_URL to the Royal Mail sandbox base URL (from your RM onboarding docs).",
+  );
 }
 if (baseUrl.replace(/\/$/, "") === LIVE_HOST && !forceLive) {
   fail(
@@ -77,15 +80,23 @@ const requestBody = {
 
 const url = `${baseUrl.replace(/\/$/, "")}/api/v4/shipments`;
 if (isLive) {
-  console.log("⚠  LIVE mode — this will buy ONE real postage label. Void it in Click & Drop after.\n");
+  console.log(
+    "⚠  LIVE mode — this will buy ONE real postage label. Void it in Click & Drop after.\n",
+  );
 }
 console.log(`→ POST ${url}`);
-console.log(`→ serviceCode ${requestBody.serviceCode} (${postageClass}), ${CARD_WEIGHT_GRAMS}g largeLetter`);
+console.log(
+  `→ serviceCode ${requestBody.serviceCode} (${postageClass}), ${CARD_WEIGHT_GRAMS}g largeLetter`,
+);
 console.log(`→ request body:\n${JSON.stringify(requestBody, null, 2)}\n`);
 
 const response = await fetch(url, {
   method: "POST",
-  headers: { Authorization: apiKey, "Content-Type": "application/json", Accept: "application/json" },
+  headers: {
+    Authorization: apiKey,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  },
   body: JSON.stringify(requestBody),
 });
 
@@ -120,7 +131,9 @@ if (!trackingNumber) {
 }
 
 console.log(`✓ Success — tracking number: ${trackingNumber}`);
-console.log(`✓ Label URL: ${labelUrl ?? "(none returned — check the label field name in the body above)"}`);
+console.log(
+  `✓ Label URL: ${labelUrl ?? "(none returned — check the label field name in the body above)"}`,
+);
 console.log(
   "\nIf the tracking number and label look right for your account, the live integration is verified\n" +
     "and safe to rely on. If either field name differed, tell me what the sandbox returned and I'll\n" +

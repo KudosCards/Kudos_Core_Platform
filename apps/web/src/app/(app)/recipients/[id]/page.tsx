@@ -11,11 +11,7 @@ interface Paginated<T> {
   perPage: number;
 }
 
-export default async function RecipientDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function RecipientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   // The recipient, its events, and RTS cases don't depend on each other (all

@@ -71,7 +71,9 @@ describe("Occasion reconciliation (e2e)", () => {
   }
 
   /** A mailable contact with a birthday → creates its natural birthday occasion. */
-  async function addContactWithBirthday(token: string): Promise<{ recipientId: string; occasionId: string }> {
+  async function addContactWithBirthday(
+    token: string,
+  ): Promise<{ recipientId: string; occasionId: string }> {
     const res = await request(app.getHttpServer())
       .post("/recipients")
       .set("Authorization", `Bearer ${token}`)
@@ -155,9 +157,12 @@ describe("Occasion reconciliation (e2e)", () => {
     const savedDesignId = await createSavedDesign(token);
     const { recipientId, occasionId } = await addContactWithBirthday(token);
 
-    const batchOrderId = await bulkSend(token, savedDesignId, [recipientId], [
-      { recipientId, occasionId },
-    ]);
+    const batchOrderId = await bulkSend(
+      token,
+      savedDesignId,
+      [recipientId],
+      [{ recipientId, occasionId }],
+    );
 
     // The natural occasion itself becomes the send record: reserved (queued)
     // into the draft, carrying the design, still a birthday — not a separate
@@ -197,10 +202,15 @@ describe("Occasion reconciliation (e2e)", () => {
 
     // Send only to `inSend`, but ask to reconcile both (as if `trimmed` was
     // removed from the composer after seeding). Only `inSend`'s is reused.
-    const batchOrderId = await bulkSend(token, savedDesignId, [inSend.recipientId], [
-      { recipientId: inSend.recipientId, occasionId: inSend.occasionId },
-      { recipientId: trimmed.recipientId, occasionId: trimmed.occasionId },
-    ]);
+    const batchOrderId = await bulkSend(
+      token,
+      savedDesignId,
+      [inSend.recipientId],
+      [
+        { recipientId: inSend.recipientId, occasionId: inSend.occasionId },
+        { recipientId: trimmed.recipientId, occasionId: trimmed.occasionId },
+      ],
+    );
     await settle(batchOrderId).expect(201);
 
     expect(await occasionStatus(inSend.occasionId)).toBe("queued");
@@ -218,9 +228,12 @@ describe("Occasion reconciliation (e2e)", () => {
     // Reconcile is still requested, but a queued (in-flight) occasion isn't
     // sendable, so it's ignored: the send falls back to a fresh one-off and the
     // birthday is left exactly as it was.
-    const batchOrderId = await bulkSend(token, savedDesignId, [recipientId], [
-      { recipientId, occasionId },
-    ]);
+    const batchOrderId = await bulkSend(
+      token,
+      savedDesignId,
+      [recipientId],
+      [{ recipientId, occasionId }],
+    );
     await settle(batchOrderId).expect(201);
 
     expect(await occasionStatus(occasionId)).toBe("queued");
@@ -235,9 +248,12 @@ describe("Occasion reconciliation (e2e)", () => {
     const savedDesignId = await createSavedDesign(token);
     const { recipientId, occasionId } = await addContactWithBirthday(token);
 
-    const batchOrderId = await bulkSend(token, savedDesignId, [recipientId], [
-      { recipientId, occasionId },
-    ]);
+    const batchOrderId = await bulkSend(
+      token,
+      savedDesignId,
+      [recipientId],
+      [{ recipientId, occasionId }],
+    );
     await settle(batchOrderId).expect(201);
     await settle(batchOrderId).expect(201); // redelivery — no error, no change
 

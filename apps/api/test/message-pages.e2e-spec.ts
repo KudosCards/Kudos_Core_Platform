@@ -41,7 +41,9 @@ describe("Message Pages library (e2e)", () => {
   });
 
   /** A new account is on the free plan; upgrade to unlock message-page authoring. */
-  async function signUp(plan: "free" | "pro" = "pro"): Promise<{ token: string; accountId: string }> {
+  async function signUp(
+    plan: "free" | "pro" = "pro",
+  ): Promise<{ token: string; accountId: string }> {
     const token = await mintToken(randomUUID());
     const response = await request(app.getHttpServer())
       .post("/accounts")
@@ -263,7 +265,11 @@ describe("Message Pages library (e2e)", () => {
       .expect(200);
     const replies = z.array(messagePageReplySchema).parse(repliesResponse.body);
     expect(replies).toHaveLength(1);
-    expect(replies[0]).toMatchObject({ senderName: "Jo", body: "Loved it, thank you!", readAt: null });
+    expect(replies[0]).toMatchObject({
+      senderName: "Jo",
+      body: "Loved it, thank you!",
+      readAt: null,
+    });
 
     await request(app.getHttpServer())
       .post(`/message-pages/${page.id}/replies/read`)
@@ -357,7 +363,12 @@ describe("Message Pages library (e2e)", () => {
     const created = await request(app.getHttpServer())
       .post("/message-pages")
       .set("Authorization", `Bearer ${token}`)
-      .send({ title: "Party", allowReplies: true, ctaLabel: "RSVP", ctaUrl: "https://example.com/x" })
+      .send({
+        title: "Party",
+        allowReplies: true,
+        ctaLabel: "RSVP",
+        ctaUrl: "https://example.com/x",
+      })
       .expect(201);
     const page = messagePageDetailSchema.parse(created.body);
     const slug = page.primarySlug!;
@@ -423,7 +434,12 @@ describe("Message Pages library (e2e)", () => {
     const created = await request(app.getHttpServer())
       .post("/message-pages")
       .set("Authorization", `Bearer ${token}`)
-      .send({ title: "Track me", allowReplies: true, ctaLabel: "Go", ctaUrl: "https://example.com/y" })
+      .send({
+        title: "Track me",
+        allowReplies: true,
+        ctaLabel: "Go",
+        ctaUrl: "https://example.com/y",
+      })
       .expect(201);
     const page = messagePageDetailSchema.parse(created.body);
     const slug = page.primarySlug!;
@@ -469,7 +485,11 @@ describe("Message Pages library (e2e)", () => {
 
     // One event well past the 90-day default window, one from yesterday.
     await prisma.messagePageEvent.create({
-      data: { ...base, type: "viewed", createdAt: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000) },
+      data: {
+        ...base,
+        type: "viewed",
+        createdAt: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000),
+      },
     });
     const recent = await prisma.messagePageEvent.create({
       data: { ...base, type: "viewed", createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },

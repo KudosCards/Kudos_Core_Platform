@@ -1,14 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { OccasionType, PostageClass } from "@prisma/client";
-import {
-  IsBoolean,
-  IsEnum,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Length,
-  Matches,
-} from "class-validator";
+import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID, Length, Matches } from "class-validator";
 import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
 import { BlankToUndefined } from "../../common/transforms";
 

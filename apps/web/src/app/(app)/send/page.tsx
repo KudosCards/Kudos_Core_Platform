@@ -60,7 +60,9 @@ export default async function SendPage({
       `/recipients?page=1&perPage=${PICKER_PER_PAGE}&status=active`,
     ),
     segmentParam
-      ? serverApiFetch<SegmentMembers>(`/segments/members?segment=${encodeURIComponent(segmentParam)}`)
+      ? serverApiFetch<SegmentMembers>(
+          `/segments/members?segment=${encodeURIComponent(segmentParam)}`,
+        )
       : Promise.resolve(null),
     // The account's message pages, offered when the chosen design has a QR (ADR 0132).
     serverApiFetch<MessagePageSummary[]>("/message-pages"),
