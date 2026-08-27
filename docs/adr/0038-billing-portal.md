@@ -19,7 +19,7 @@ manual "activate the portal" step in the Stripe Dashboard.
 
 ### Provision the portal configuration from the running app
 
-The portal needs a **configuration** (which features to show). Relying on the account's *default*
+The portal needs a **configuration** (which features to show). Relying on the account's _default_
 configuration means someone has to click "Save" in the Dashboard once, or the very first
 `billingPortal.sessions.create` fails with "no configuration provided." Instead
 `BillingPortalService.ensurePortalConfigurationId()` **creates a configuration over the API** on

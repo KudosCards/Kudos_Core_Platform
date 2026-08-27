@@ -113,7 +113,9 @@ const CARD_WEIGHT_GRAMS = 100;
  * whatever tracking response shape the account returns. Empty/absent is
  * `unknown`.
  */
-export function normaliseTrackingStatus(rawStatus: string | null | undefined): RoyalMailDeliveryStatus {
+export function normaliseTrackingStatus(
+  rawStatus: string | null | undefined,
+): RoyalMailDeliveryStatus {
   if (!rawStatus) return "unknown";
   return /delivered/i.test(rawStatus) ? "delivered" : "in_transit";
 }

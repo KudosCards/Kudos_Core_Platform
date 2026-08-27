@@ -10,7 +10,7 @@ The Events section on a recipient's profile listed every occasion in one flat,
 date-ascending list, with a permanently-expanded "add event" form pinned to the
 bottom. Two problems: past and future dates were interleaved with no visual
 distinction, so the dates that still need action didn't stand out; and there was
-no sense of *when* an upcoming event is — you had to read the date and do the
+no sense of _when_ an upcoming event is — you had to read the date and do the
 mental arithmetic. The always-open add form also added noise to a section whose
 job is mostly reading and acting on existing dates.
 

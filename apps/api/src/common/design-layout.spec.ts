@@ -62,9 +62,7 @@ describe("design layout guard rails", () => {
 
   describe("isOutsideSafeArea", () => {
     it("is false for a box comfortably inside the safe frame", () => {
-      expect(
-        isOutsideSafeArea({ x: 50, y: 50, width: 100, height: 100 }),
-      ).toBe(false);
+      expect(isOutsideSafeArea({ x: 50, y: 50, width: 100, height: 100 })).toBe(false);
     });
 
     it("is true when the box runs past the bottom safe margin", () => {
@@ -158,8 +156,20 @@ describe("design layout guard rails", () => {
   describe("cardSnapLines", () => {
     it("exposes edges, safe margins, and centre on each axis", () => {
       const lines = cardSnapLines();
-      expect(lines.x).toEqual([0, CARD_SAFE_MARGIN, CARD_WIDTH / 2, CARD_WIDTH - CARD_SAFE_MARGIN, CARD_WIDTH]);
-      expect(lines.y).toEqual([0, CARD_SAFE_MARGIN, CARD_HEIGHT / 2, CARD_HEIGHT - CARD_SAFE_MARGIN, CARD_HEIGHT]);
+      expect(lines.x).toEqual([
+        0,
+        CARD_SAFE_MARGIN,
+        CARD_WIDTH / 2,
+        CARD_WIDTH - CARD_SAFE_MARGIN,
+        CARD_WIDTH,
+      ]);
+      expect(lines.y).toEqual([
+        0,
+        CARD_SAFE_MARGIN,
+        CARD_HEIGHT / 2,
+        CARD_HEIGHT - CARD_SAFE_MARGIN,
+        CARD_HEIGHT,
+      ]);
     });
   });
 
@@ -464,9 +474,7 @@ describe("design layout guard rails", () => {
       expect(() =>
         designElementSchema.parse({ ...baseImage, assetUrl: "https://cdn.example.com/x.png" }),
       ).not.toThrow();
-      expect(() =>
-        designElementSchema.parse({ ...baseImage, assetUrl: "not-a-url" }),
-      ).toThrow();
+      expect(() => designElementSchema.parse({ ...baseImage, assetUrl: "not-a-url" })).toThrow();
     });
   });
 

@@ -27,12 +27,12 @@ aggregated across every surface, behind `GET /admin/customers/:id` (PlatformAdmi
 at `/admin/subscribers/[id]`.
 
 - **`AdminCustomerService.getCustomer(accountId)`** fans out a set of parallel Prisma queries (this is
-  a single-account *detail* view, so a fan of ~24 reads is fine — unlike the list, which must stay
+  a single-account _detail_ view, so a fan of ~24 reads is fine — unlike the list, which must stay
   cheap per row). It returns: profile + subscription/billing, team + seat usage, contacts (by status
   and by source, plus lists and address-hold count), occasions (scheduled/auto-send/upcoming),
   integrations (CRM connections + API keys), wallet balance, saved designs, message-page views,
   order history + status breakdown, and returns.
-- **Derived engagement.** A `lastActivityAt` computed across *all* signals (orders, contact edits,
+- **Derived engagement.** A `lastActivityAt` computed across _all_ signals (orders, contact edits,
   CRM sync, API-key use), not just paid orders; the existing `health` pill; and a new **engagement
   level** — `activated` (has ordered and has contacts), `onboarding` (has contacts / an integration /
   scheduled sends but hasn't ordered), or `dormant` (signed up, did nothing). The five underlying

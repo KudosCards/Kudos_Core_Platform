@@ -8,16 +8,17 @@ Date: 2026-07-22
 Today every path into Kudos requires creating an account before you can buy anything: browsing the
 public card library is open, but clicking **"Personalise this card"** forces signup
 (ADR 0017/0018). That's the right amount of friction for a tuition centre setting up automated
-birthday cards for 100 students — but it's too much for a visitor who just wants to send *one*
+birthday cards for 100 students — but it's too much for a visitor who just wants to send _one_
 card, once. We're leaving one-off sales on the table.
 
 The decision (confirmed with the owner) is to **reduce friction for one-off purchases the way
 Moonpig does**: a visitor can buy and send a single personalised card **without an account**, and
-is *offered* — never forced — the chance to create one afterwards. Signing up is reserved for the
+is _offered_ — never forced — the chance to create one afterwards. Signing up is reserved for the
 value that genuinely needs an identity: saving birthdays to a calendar, reminder notifications, and
 automation.
 
 Confirmed product decisions:
+
 - **Pricing: £1.50 flat for everyone**, including one-off guests (VAT + postage inclusive, as
   today). Business plan discounts still apply to plan holders; guests have no plan, so they pay the
   full £1.50.
@@ -26,11 +27,11 @@ Confirmed product decisions:
 
 ## The three journeys
 
-| Journey | Account? | What it's for | What they get |
-|---|---|---|---|
-| **Guest one-off** | None (optional after) | "Send Grandma a card, now." | Personalise one card, we print & post it. Email receipt. Post-purchase nudge to save the contact. |
-| **Personal** (`AccountType.individual`) | Sign up | A consumer tracking their own people | Saved contacts + birthday calendar, reminder notifications, optional auto-send. |
-| **Business** (`AccountType.organisation`) | Sign up | Tuition centres, clubs, employers | Everything planned — bulk CSV/CRM import, team memberships, plans, API keys, auto-send at scale. |
+| Journey                                   | Account?              | What it's for                        | What they get                                                                                     |
+| ----------------------------------------- | --------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| **Guest one-off**                         | None (optional after) | "Send Grandma a card, now."          | Personalise one card, we print & post it. Email receipt. Post-purchase nudge to save the contact. |
+| **Personal** (`AccountType.individual`)   | Sign up               | A consumer tracking their own people | Saved contacts + birthday calendar, reminder notifications, optional auto-send.                   |
+| **Business** (`AccountType.organisation`) | Sign up               | Tuition centres, clubs, employers    | Everything planned — bulk CSV/CRM import, team memberships, plans, API keys, auto-send at scale.  |
 
 The schema already anticipates this: `AccountType` is `individual | organisation`, and auth is a
 separate `Membership` table — **an `Account` with zero memberships is, by definition, a guest** (an
@@ -50,13 +51,14 @@ same chain with three differences:
 3. It **captures the buyer's email** (for the receipt and the later account-claim link).
 
 ### Guest flow, step by step
+
 1. **Browse** `/cards` → **`/cards/[id]`** (already public).
 2. **"Personalise & send"** (replaces the signup-gated CTA for guests): recipient's first name,
    the inside message, optional photo / QR video link, on the chosen design.
 3. **Delivery**: recipient's postal name + address (`OrderRecipient` already stores this inline),
    plus the **buyer's email** (+ optional buyer name).
 4. **Pay**: Stripe Checkout, one card, **£1.50 flat**. Stripe collects/[pre-fills] the email.
-5. **Webhook → fulfilment**: the *existing* `checkout.session.completed` handler transitions the
+5. **Webhook → fulfilment**: the _existing_ `checkout.session.completed` handler transitions the
    order to paid, creates the `FulfillmentJob` and the `MessagePage` — **no webhook changes**.
 6. **Confirmation**: "Your card is on its way. Never miss their birthday again — create a free
    account and we'll remind you next year (and can send it for you)." → **claim** (below).
@@ -68,13 +70,14 @@ you, her birthday's on your calendar." That's the conversion hook, for free.
 ## Account claiming (guest → personal account)
 
 After payment (or later, from the emailed receipt), the guest can **claim** their guest account:
+
 - They set a password / use a magic link via Supabase Auth for the **email captured at checkout**.
 - On success we attach a `Membership(userId, guestAccountId, role: owner)` — the guest account is
   now a full personal account, with the purchased card and saved contact already in it.
 
 **Security:** claiming must prove the buyer owns that email — we don't let anyone attach themselves
 to an unclaimed account. The claim link carries a **signed, single-use token** tied to the Stripe
-session/order; the API verifies the token *and* that Supabase confirmed the email before attaching
+session/order; the API verifies the token _and_ that Supabase confirmed the email before attaching
 the membership. (Detail to finalise — see open questions.)
 
 **Email collision:** if the checkout email already belongs to an existing account, we **don't**
@@ -84,15 +87,16 @@ onto their existing account. Full account-merge is out of scope for v1.
 ## Personal-account features that justify signup
 
 - **Saved contacts + birthday calendar** — already built; individuals reuse it.
-- **Reminder notifications** — *new capability* (see below).
+- **Reminder notifications** — _new capability_ (see below).
 - **Automation / auto-send** — already built (approve once, we send every year via the
   wallet/auto-send path); individuals reuse it.
 
 ## Reminder notifications (new, and the one real infra gap)
 
 This is the headline reason a consumer signs up, and **we have no transactional email sender wired
-today** — Brevo is integrated only as a contact *source*, not for sending. So this needs a
+today** — Brevo is integrated only as a contact _source_, not for sending. So this needs a
 transactional email provider and a small sending service:
+
 - A **daily cron** finds occasions a configurable lead time out for opted-in accounts and sends a
   reminder email ("Grandma's birthday is in 7 days — approve her card, or we'll auto-send it").
 - Reuses the existing occasion/lead-time machinery; adds an email-send step and a per-account
@@ -115,7 +119,7 @@ flow doesn't depend on it.
 - The guest **personalise → delivery → checkout** web routes must be **public** (extend the
   existing public-path allowlist that already covers `/cards`).
 - The guest-order + guest-checkout **API** endpoints are `@Public()` but **create-only and
-  self-scoping**: they *always* mint a new guest account server-side and **never accept a
+  self-scoping**: they _always_ mint a new guest account server-side and **never accept a
   client-supplied `accountId`** — a public endpoint must not be able to touch an existing account.
 - **Payment before fulfilment** (unchanged) means no free cards even on a public endpoint.
 - **Rate-limit** the public endpoints (guest-order creation) to prevent abuse/spam accounts.
@@ -146,7 +150,7 @@ flow doesn't depend on it.
 1. **Transactional email provider: Brevo.** We reuse the existing Brevo account/integration — Brevo
    already ships as a dependency for CRM contact sync, so reminders (and any guest receipt beyond
    Stripe's) go through Brevo's transactional email API. No new vendor. Isolated to the reminders
-   phase; the sending client is mockable in tests the same way the Brevo *source* client already is.
+   phase; the sending client is mockable in tests the same way the Brevo _source_ client already is.
 2. **Content moderation: hands-off.** No ops hold/approve step on guest-supplied photos/messages;
    we rely on Stripe payment + terms of service. (The fulfilment queue already supports a hold
    state, so a moderation step can be added later if abuse materialises — but it is out of scope
@@ -157,7 +161,7 @@ flow doesn't depend on it.
    guest flow.
 4. **Claim-link security: signed single-use token tied to the Stripe session.** Approved. The claim
    link carries a signed, single-use token bound to the Stripe checkout session / order; the API
-   verifies the token *and* Supabase's email confirmation before attaching a membership.
+   verifies the token _and_ Supabase's email confirmation before attaching a membership.
 
 ## Implementation notes
 
@@ -165,7 +169,7 @@ flow doesn't depend on it.
 `contactEmail`, `claimToken` (`@unique`), and `claimTokenExpiresAt`.
 
 - **Claim token: a stored, unique, nullable column** (`Account.claimToken`) rather than a purely
-  signed/stateless token. Chosen because a stored token gives *true* single-use and revocation for
+  signed/stateless token. Chosen because a stored token gives _true_ single-use and revocation for
   free — the claim flow (Phase 4) nulls the column on use/expiry, so a spent or revoked link simply
   finds no matching row, with no separate blocklist to maintain. `claimTokenExpiresAt` bounds its
   lifetime.
@@ -268,7 +272,7 @@ account is for.
   revisited once consumer traffic is understood.
 - **`/get-started`** is now account-type-aware. A personal account leads with **"Add your first
   birthday"** — a single name-and-date add form, with spreadsheet import demoted to a
-  *"Got a lot of people?"* disclosure and no CRM callout — rather than the business bulk-import hero.
+  _"Got a lot of people?"_ disclosure and no CRM callout — rather than the business bulk-import hero.
   Business accounts are unchanged.
 - Claimed guest accounts (already `individual`) now land in this lighter, consumer-appropriate
   onboarding automatically.
@@ -315,7 +319,7 @@ layout so the whole product speaks the same visual language.
 - Tests assert both transactional emails carry the brand shell (footer + accent), so a future
   refactor can't silently un-brand them.
 
-**Order confirmation for account holders — landed.** Previously only *guests* were emailed after a
+**Order confirmation for account holders — landed.** Previously only _guests_ were emailed after a
 paid order (the claim receipt); a signed-in account holder got nothing. The post-fulfilment send now
 branches on whether the account is still a guest:
 
@@ -354,7 +358,7 @@ with no account.
 - New `POST /guest/cart-checkout` (`@Public()`, same 10/min per-IP throttle as the single-card
   checkout — one call still mints one account + one Checkout Session whatever the basket size). Body:
   `{ buyerEmail, items: [{ cardDesignId, document?, recipient…, shipping…, postageClass?,
-  occasionType? }] }`, 1–20 items.
+occasionType? }] }`, 1–20 items.
 - Reuses the **same money path**: a new `BatchOrdersService.quickSendMany` builds one draft
   `BatchOrder` across every card (each becomes an approved one-off occasion), sharing a private
   `buildQuickSendLine` helper with the single-card `quickSend` so the two can't drift. Pricing, the
@@ -385,7 +389,7 @@ basket experience.
 - **Client cart** (`lib/cart.ts`) — a localStorage store exposed via `useSyncExternalStore`
   (`useCart` / `useCartCount`), cross-tab synced, capped at `CART_MAX_ITEMS` (20). Each item is a
   template card + one recipient + address.
-- **Add to basket** — the guest card flow (`/cards/[id]/send`) now *adds to the basket* instead of
+- **Add to basket** — the guest card flow (`/cards/[id]/send`) now _adds to the basket_ instead of
   checking out immediately; the buyer's email moves to the basket. **`/basket`** lists the cards
   (thumbnail, recipient, address, remove), shows the order summary, and pays for all of them in one
   go via `POST /guest/cart-checkout` → Stripe. `/basket` is a public path in the middleware.

@@ -99,8 +99,8 @@ auth emails on our branded Brevo path rather than Supabase's default templates.
 
 The original design emailed Supabase's ready-made **`action_link`** (a one-time
 `GET …/auth/v1/verify?token=…&redirect_to=…`) and let the browser client pick up
-the session from the redirect. In production this dead-ended at *"This link is
-invalid or has expired / already been used"* for two compounding reasons:
+the session from the redirect. In production this dead-ended at _"This link is
+invalid or has expired / already been used"_ for two compounding reasons:
 
 1. **PKCE mismatch.** The web browser client is `@supabase/ssr`
    `createBrowserClient`, which defaults to the **PKCE** flow. A service-role

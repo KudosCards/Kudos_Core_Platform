@@ -5,7 +5,11 @@ import type { App } from "supertest/types";
 import request from "supertest";
 import { z } from "zod";
 import { PrismaService } from "../src/prisma/prisma.service";
-import { BREVO_CLIENT, type BrevoClient, type BrevoContact } from "../src/integrations/brevo/brevo-client";
+import {
+  BREVO_CLIENT,
+  type BrevoClient,
+  type BrevoContact,
+} from "../src/integrations/brevo/brevo-client";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
@@ -42,13 +46,19 @@ const connectionViewSchema = z.object({
 let mockContacts: BrevoContact[] = [];
 const brevoMock: BrevoClient = {
   verifyKey: (apiKey) =>
-    apiKey.includes("bad") ? Promise.reject(new UnauthorizedException("bad key")) : Promise.resolve(),
+    apiKey.includes("bad")
+      ? Promise.reject(new UnauthorizedException("bad key"))
+      : Promise.resolve(),
   fetchContacts: () => Promise.resolve(mockContacts),
 };
 
 function defaultContacts(): BrevoContact[] {
   return [
-    { id: 1, email: "ada@example.com", attributes: { FIRSTNAME: "Ada", LASTNAME: "Lovelace", DOB: "2015-06-01" } },
+    {
+      id: 1,
+      email: "ada@example.com",
+      attributes: { FIRSTNAME: "Ada", LASTNAME: "Lovelace", DOB: "2015-06-01" },
+    },
     { id: 2, email: "alan@example.com", attributes: { FIRSTNAME: "Alan", LASTNAME: "Turing" } },
     // No LASTNAME → not addressable → mapper skips it before ingest.
     { id: 3, email: "x@example.com", attributes: { FIRSTNAME: "NoLast" } },
@@ -93,7 +103,10 @@ describe("CRM connections — Brevo (e2e)", () => {
     const { token, accountId } = await signUp();
 
     const res = await connect(token).expect(201);
-    expect(connectionViewSchema.parse(res.body)).toMatchObject({ provider: "brevo", syncEnabled: true });
+    expect(connectionViewSchema.parse(res.body)).toMatchObject({
+      provider: "brevo",
+      syncEnabled: true,
+    });
 
     const stored = await prisma.crmConnection.findFirstOrThrow({ where: { accountId } });
     expect(stored.authType).toBe("api_key");

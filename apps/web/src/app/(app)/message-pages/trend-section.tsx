@@ -52,7 +52,9 @@ export function TrendSection({ path }: { path: string }) {
               onClick={() => setDays(range)}
               aria-pressed={days === range}
               className={`rounded-md px-2 py-0.5 text-xs font-medium tabular-nums transition-colors ${
-                days === range ? "bg-accent-soft text-accent" : "text-muted hover:bg-foreground/[0.04]"
+                days === range
+                  ? "bg-accent-soft text-accent"
+                  : "text-muted hover:bg-foreground/[0.04]"
               }`}
             >
               {range}d

@@ -1,8 +1,4 @@
-import {
-  DEFAULT_HUBSPOT_MAPPING,
-  hubspotProperties,
-  mapHubSpotContact,
-} from "./hubspot.mapper";
+import { DEFAULT_HUBSPOT_MAPPING, hubspotProperties, mapHubSpotContact } from "./hubspot.mapper";
 import type { HubSpotContact } from "./hubspot-client";
 
 function contact(properties: Record<string, unknown>): HubSpotContact {
@@ -60,10 +56,11 @@ describe("mapHubSpotContact", () => {
   });
 
   it("honours a custom mapping over the defaults", () => {
-    const result = mapHubSpotContact(
-      contact({ fname: "Ada", lname: "Lovelace" }),
-      { ...DEFAULT_HUBSPOT_MAPPING, firstName: "fname", lastName: "lname" },
-    );
+    const result = mapHubSpotContact(contact({ fname: "Ada", lname: "Lovelace" }), {
+      ...DEFAULT_HUBSPOT_MAPPING,
+      firstName: "fname",
+      lastName: "lname",
+    });
     expect(result).toMatchObject({ firstName: "Ada", lastName: "Lovelace" });
   });
 });

@@ -165,8 +165,9 @@ export function linkedMessagePageId(document: DesignDocument | null | undefined)
  */
 export function hasQrElement(document: DesignDocument | null | undefined): boolean {
   if (!document || !Array.isArray(document.pages)) return false;
-  return document.pages.some((page) =>
-    Array.isArray(page.elements) && page.elements.some((element) => element.kind === "qr"),
+  return document.pages.some(
+    (page) =>
+      Array.isArray(page.elements) && page.elements.some((element) => element.kind === "qr"),
   );
 }
 

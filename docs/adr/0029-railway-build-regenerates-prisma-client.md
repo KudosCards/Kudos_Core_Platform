@@ -30,7 +30,7 @@ So the code is correct against Railway's pinned toolchain. That leaves two envir
 
 Cause (2) is the same class of latent bug ADR 0007 fixed for `shared-types`: **Railway's Build
 Command bypasses the mechanism the correctness depends on.** There, `pnpm --filter @kudos/api build`
-bypassed Turbo's `dependsOn: ["^build"]`; here it relies on the *install* step's `postinstall`
+bypassed Turbo's `dependsOn: ["^build"]`; here it relies on the _install_ step's `postinstall`
 having regenerated the Prisma client, which a cached install layer can skip.
 
 ## Decision

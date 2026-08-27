@@ -1,10 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import {
-  createEnterpriseEnquirySchema,
-  type EnterpriseEnquiryAck,
-} from "@kudos/shared-types";
+import { createEnterpriseEnquirySchema, type EnterpriseEnquiryAck } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { publicApiPost } from "@/lib/api.public";
 
@@ -101,7 +98,11 @@ export function EnterpriseContactForm() {
         <span className="font-medium text-slate-700">
           How many contacts? <span className="font-normal text-slate-400">(optional)</span>
         </span>
-        <input name="teamSize" placeholder="e.g. 800 students across 3 sites" className={fieldClass} />
+        <input
+          name="teamSize"
+          placeholder="e.g. 800 students across 3 sites"
+          className={fieldClass}
+        />
       </label>
       <label className="flex flex-col gap-1 text-sm">
         <span className="font-medium text-slate-700">What are you looking for?</span>

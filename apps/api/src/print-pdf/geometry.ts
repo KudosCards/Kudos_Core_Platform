@@ -12,7 +12,12 @@
  * distortion). Everything here is pure and unit-tested — no pdfkit, no I/O.
  */
 
-import { CARD_HEIGHT, CARD_WIDTH, CARD_SIZE_DIMENSIONS_MM, type CardSize } from "@kudos/shared-types";
+import {
+  CARD_HEIGHT,
+  CARD_WIDTH,
+  CARD_SIZE_DIMENSIONS_MM,
+  type CardSize,
+} from "@kudos/shared-types";
 
 /** PDF user-space units per millimetre (PDF points are 1/72 inch; 1in = 25.4mm). */
 export const PT_PER_MM = 72 / 25.4;

@@ -3,10 +3,11 @@
 ## Status
 
 Accepted — Phase 0 implemented; Phase 1 implemented (pure-Node vector PDF engine
-+ image pipeline); Phase 2 implemented (ops download endpoint + super-admin
-"Download print-ready PDF" button + source-image resolution pre-flight warning,
-plus a design-time editor low-resolution warning); Phase 3 implemented
-(emoji/symbol glyph fallback in the PDF text engine).
+
+- image pipeline); Phase 2 implemented (ops download endpoint + super-admin
+  "Download print-ready PDF" button + source-image resolution pre-flight warning,
+  plus a design-time editor low-resolution warning); Phase 3 implemented
+  (emoji/symbol glyph fallback in the PDF text engine).
 
 ## Context
 
@@ -68,7 +69,7 @@ read from source (not guessed):
 
 - **Vector text in the exact font.** The 9 self-hosted editor fonts are embedded
   as vendored TTFs (`scripts/vendor_print_fonts.py`); real static Regular/Bold/
-  Italic/BoldItalic weights are instantiated from the upstream *variable* Google
+  Italic/BoldItalic weights are instantiated from the upstream _variable_ Google
   fonts with fontTools' instancer — never faux weights. `Georgia` maps to Gelasio
   (a metric-compatible embedded substitute); the three system stacks (Helvetica,
   Times New Roman, Courier New) map to PDF's built-in standard families. Faces
@@ -104,14 +105,14 @@ centre-crop to cover the full bleed page.
 **Known limitations (tracked):** a glyph the embedded font lacks (emoji, unusual
 symbols in text) renders as a missing-glyph box rather than falling back to a
 system font as the browser would — acceptable for Latin names/messages, a
-candidate for a later symbol-fallback pass. *(Resolved in Phase 3.)*
+candidate for a later symbol-fallback pass. _(Resolved in Phase 3.)_
 
 ### Phase 2 — download path (implemented) + source guardrails (planned)
 
 **Download path (implemented).** An ops-only `POST /fulfillment/print-run/pdf`
 (`PrintRunPdfService`) renders a selected run to one multi-page PDF via the
 engine and streams it as a download. It reuses `FulfillmentService.printRun` for
-the *audited* read (one `fulfillment_print_run` record per card, exactly like the
+the _audited_ read (one `fulfillment_print_run` record per card, exactly like the
 JSON path), merges each recipient's tokens into their design, builds the QR link
 from `WEB_APP_URL`, and constructs the `ImageResolver` with that base URL so
 bundled stickers resolve. The super-admin fulfilment print overlay now offers
@@ -144,11 +145,11 @@ image — the point where a soft image can actually be fixed. Green tick at ≥ 
 dpi, amber note in 200–300, red warning below. Non-blocking, recomputes as the
 element is resized, SVGs skipped.
 
-**Source resolution, resolved and deferred.** Catalog originals are *already*
+**Source resolution, resolved and deferred.** Catalog originals are _already_
 stored at full resolution: the Airtable source copies each attachment's original
 `url` (not a thumbnail) byte-for-byte into our storage, so the "catalog stores
 the attachment as-is" note above is benign. A **hard minimum on customer uploads**
-was considered and deliberately *not* built — uploads already surface the low-DPI
+was considered and deliberately _not_ built — uploads already surface the low-DPI
 warning at both design time and ops pre-flight, and a hard gate would reject
 legitimate small logos/stickers for little gain.
 
@@ -156,7 +157,7 @@ legitimate small logos/stickers for little gain.
 
 The text engine embeds one font per element, so a glyph that font lacks (an
 emoji, a dingbat) printed as a `.notdef` "tofu" box — the one place print did
-*not* match the editor, which falls back to a system font. Phase 3 reproduces
+_not_ match the editor, which falls back to a system font. Phase 3 reproduces
 that fallback deterministically:
 
 - **Vendored fallback faces** (`scripts/vendor_print_fonts.py`, Phase 3): Noto
@@ -169,7 +170,7 @@ that fallback deterministically:
   `hasGlyphForCodePoint`; WinAnsi for the built-in standard fonts). ZWJ and
   variation selectors stay with their base so emoji sequences hold together; a
   glyph no font has still prints in the primary (best-effort, as before). Runs
-  are drawn each in their own font, and wrap/alignment measure the *mixed* width
+  are drawn each in their own font, and wrap/alignment measure the _mixed_ width
   so lines break and centre exactly where the editor puts them. Pure-Latin text
   is a single primary-font run — byte-identical to Phase 1.
 - **Monochrome emoji:** a pdfkit PDF can't carry colour-emoji (COLR/CBDT) tables,

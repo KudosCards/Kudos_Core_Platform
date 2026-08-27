@@ -30,19 +30,19 @@ The **core rebuild is complete and live** — the full customer journey works en
 glossy landing page through contacts, calendar, personalisation, ordering, wallet/auto-send
 payment, fulfilment, and order history. What's left is backlog and enhancement, not critical path.
 
-| Journey step | Status |
-|---|---|
-| Marketing homepage (sell membership, how-it-works) | ✅ Built |
-| Register / log in | ✅ Built (email + password) |
-| Upload CSV of contacts / manage contacts | ✅ Built |
-| Contacts → a **calendar** of moments | ✅ Built (month / week / list) |
-| Milestone moments per contact, choose occasion | ✅ Built |
-| Personalise cards (catalog + editor + `{name}`) | ✅ Built |
-| Bulk multi-card order, per-recipient addresses | ✅ Built |
-| Pay | ✅ Card **or wallet** (top-up-and-spend balance) |
-| Orders → Kudos HQ → print & post | ✅ Built (ops queue) |
-| Automation / auto-send | ✅ Approve-then-auto (order + wallet charge + timed dispatch) |
-| Subscription tiers | ✅ Built (Stripe) |
+| Journey step                                       | Status                                                        |
+| -------------------------------------------------- | ------------------------------------------------------------- |
+| Marketing homepage (sell membership, how-it-works) | ✅ Built                                                      |
+| Register / log in                                  | ✅ Built (email + password)                                   |
+| Upload CSV of contacts / manage contacts           | ✅ Built                                                      |
+| Contacts → a **calendar** of moments               | ✅ Built (month / week / list)                                |
+| Milestone moments per contact, choose occasion     | ✅ Built                                                      |
+| Personalise cards (catalog + editor + `{name}`)    | ✅ Built                                                      |
+| Bulk multi-card order, per-recipient addresses     | ✅ Built                                                      |
+| Pay                                                | ✅ Card **or wallet** (top-up-and-spend balance)              |
+| Orders → Kudos HQ → print & post                   | ✅ Built (ops queue)                                          |
+| Automation / auto-send                             | ✅ Approve-then-auto (order + wallet charge + timed dispatch) |
+| Subscription tiers                                 | ✅ Built (Stripe)                                             |
 
 Two capabilities exceed the old platform: **QR-linked digital message pages** and a proper
 internal **fulfilment ops queue**.
@@ -84,12 +84,14 @@ internal **fulfilment ops queue**.
 ## Remaining work (proposed phases)
 
 ### Phase 6 — Pricing correction (money-path) — ✅ done
+
 Postage is now a **per-card** charge on top of the VAT-inclusive card price (£1.80 first / £0.91
 second class, VAT-exempt). `OrderRecipient.postageMinor`, `BatchOrder.postageMinor`, and
 `totalMinor = subtotal + postage` (what Stripe charges) are all correct; checkout shows the stamp
 cost per class. See ADR 0008 (pricing correction).
 
 ### Phase 7 — Calendar UI — ✅ done
+
 `/calendar` in the customer app: Month / Week / List views of each contact's moments,
 colour-coded by occasion type, with a **dispatch-dates toggle**, a **type filter**, and a
 **"Create an order"** path into checkout. Occasions link to Approvals (pending) or Checkout
@@ -97,6 +99,7 @@ colour-coded by occasion type, with a **dispatch-dates toggle**, a **type filter
 grid, no new dependency.
 
 ### Phase 8 — Wallet — ✅ done
+
 Account **wallet** (`/wallet`): current balance, top-up via Stripe (presets £10/£25/£50 + custom,
 credited on verified webhook, idempotent), a ledger of recent activity, and **wallet-as-payment**
 at checkout (Pay by card _or_ Pay with wallet, on a fresh selection or an unfinished draft).
@@ -107,6 +110,7 @@ order fulfils identically to a card-paid one. See ADR 0012. This is also the fun
 makes Phase 9 automation friction-free.
 
 ### Phase 9 — Auto-send automation — ✅ done
+
 The "as automated as we can make it" promise, end-to-end — **approve-then-auto**: a human still
 approves each card in the Approvals queue (design + go-ahead), and from there a daily cron
 auto-creates the order from the recipient's stored address, **pays it from the wallet**, and
@@ -118,6 +122,7 @@ paths as manual checkout. Ops-only `POST /auto-send/run` manual trigger. See ADR
 auto-approval (default design, zero human touch) is a documented future tier.
 
 ### Phase 10 — Account & orders experience — ✅ done
+
 Customer **order history** at `/orders`: every batch with status pill (not checked out / awaiting
 payment / paid / in production / completed / cancelled), a per-order **detail view** (cards,
 shipping city+postcode, per-line status, totals, payment method) and **pay-pending** actions on
@@ -131,17 +136,19 @@ recipient records (addresses drive both checkout and auto-send), so no separate 
 built.
 
 ### Phase 11 — Marketing homepage & public site — ✅ done (homepage)
+
 Glossy public landing at `/` with the real brand logo: hero, used-by, problem, three steps,
 card showcase, benefits, reviews + stats, Free/Pro/Centre plans (correct per-card + postage
 pricing), CTAs into **sign up / log in**. Still open: wiring plan CTAs into Stripe subscription
 checkout directly, a public card shop, and the "free sample card / 90-second demo" features.
 
 ### Later / backlog
+
 - **Cookie consent for Google Analytics — next up.** GA4 (`G-9P27FHKPXY`) ships on the marketing
   site (#323), production context only. There is no cookie banner, and analytics cookies are
   non-essential under PECR, so consent is required before they are set. The privacy policy
-  already promises this: *"Where consent is required for non-essential cookies, we will request
-  it through appropriate cookie controls."* Right now the site does the thing the policy says it
+  already promises this: _"Where consent is required for non-essential cookies, we will request
+  it through appropriate cookie controls."_ Right now the site does the thing the policy says it
   won't do without asking. Three ways forward, to be decided:
   1. **Cookie banner with Consent Mode v2 — the proper fix.** GA loads with consent denied by
      default and upgrades on accept. A day's work, maybe less.
@@ -183,7 +190,7 @@ checkout directly, a public card shop, and the "free sample card / 90-second dem
   self-heals within the 1h ISR window once the API catches up.
 - **`keep-api-warm.yml` names `api.kudoscards.co.uk`** as its setup example, but the web domain
   is hyphenated (`kudos-cards.co.uk`). One of the two is wrong; the API's real hostname needs
-  confirming before it's corrected. (The *email* domain genuinely is the unhyphenated one, so
+  confirming before it's corrected. (The _email_ domain genuinely is the unhyphenated one, so
   this isn't simply a typo.)
 - **Decide whether "we don't sell your data" is a commitment we make.** It was deliberately cut
   from the FAQ: it's a policy statement the privacy policy doesn't currently make, and the FAQ

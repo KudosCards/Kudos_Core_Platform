@@ -218,7 +218,10 @@ describe("Segments (e2e)", () => {
       await request(app.getHttpServer())
         .post("/segments")
         .set("Authorization", `Bearer ${token}`)
-        .send({ name: "My birthdays", definition: preset(overview, "birthdays-this-month").definition })
+        .send({
+          name: "My birthdays",
+          definition: preset(overview, "birthdays-this-month").definition,
+        })
         .expect(201)
     ).body as SegmentSummary;
 

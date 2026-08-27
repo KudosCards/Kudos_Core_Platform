@@ -38,7 +38,8 @@ export class GuestCartItemDto {
   cardDesignId!: string;
 
   @ApiPropertyOptional({
-    description: "DesignDocument JSON (see @kudos/shared-types). Omit to use the template unedited.",
+    description:
+      "DesignDocument JSON (see @kudos/shared-types). Omit to use the template unedited.",
   })
   @IsOptional()
   @IsObject()

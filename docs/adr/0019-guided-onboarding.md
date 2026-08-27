@@ -26,7 +26,7 @@ subscribers.**
      account has contacts the step shows done, with a live count and a pointer to the calendar.
   2. **See your birthday calendar** — the payoff; every imported DOB is already scheduled.
   3. **Design & send a card** — into the public `/cards` library / send flow.
-- **Every new sign-up lands on `/get-started`** (register + onboarding), *unless* they arrived via
+- **Every new sign-up lands on `/get-started`** (register + onboarding), _unless_ they arrived via
   "Personalise this card" (they finish in the editor via `/start`, ADR 0017). The empty-state
   dashboard also links back to it.
 - **Plan choice carries through.** Picking Pro/Centre on the marketing plans section goes to
@@ -36,7 +36,7 @@ subscribers.**
   links into `/get-started`.
 
 **Value before payment.** Activating a paid plan is offered but never blocks contact upload — a new
-subscriber can import their list, see the calendar light up, and *then* pay. Getting to the "aha"
+subscriber can import their list, see the calendar light up, and _then_ pay. Getting to the "aha"
 first is the point.
 
 ## Alternatives considered

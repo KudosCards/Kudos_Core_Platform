@@ -1,10 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma, type ReturnCaseStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
@@ -169,7 +163,9 @@ export class ReturnsService {
       if (job.orderRecipient.returnCase) {
         throw new ConflictException("This card is already marked returned");
       }
-      if (!RETURNABLE_JOB_STATUSES.includes(job.status as (typeof RETURNABLE_JOB_STATUSES)[number])) {
+      if (
+        !RETURNABLE_JOB_STATUSES.includes(job.status as (typeof RETURNABLE_JOB_STATUSES)[number])
+      ) {
         throw new ConflictException(
           `Only a posted or delivered card can be marked returned (this one is "${job.status}")`,
         );
@@ -415,7 +411,13 @@ export class ReturnsService {
       }
       await this.clearFlagIfLastOpenCase(tx, found.recipientId, id);
       await this.audit.record(
-        { accountId, actorUserId, action: "return_archived", targetType: "ReturnCase", targetId: id },
+        {
+          accountId,
+          actorUserId,
+          action: "return_archived",
+          targetType: "ReturnCase",
+          targetId: id,
+        },
         tx,
       );
     });
@@ -480,7 +482,13 @@ export class ReturnsService {
     actorUserId: string,
     found: CaseWithGraph,
     resolution: "resend_recipient" | "send_business",
-    address: { line1: string; line2: string | null; city: string; postcode: string; country: string },
+    address: {
+      line1: string;
+      line2: string | null;
+      city: string;
+      postcode: string;
+      country: string;
+    },
   ): Promise<ReturnCaseView> {
     if (found.freeRecoveryUsed) {
       throw new ConflictException(
@@ -726,7 +734,8 @@ export class ReturnsService {
     resolution: "resend_recipient" | "send_business",
   ): Promise<void> {
     const name = `${found.recipient.firstName} ${found.recipient.lastName}`;
-    const where = resolution === "send_business" ? "your business address" : "the corrected address";
+    const where =
+      resolution === "send_business" ? "your business address" : "the corrected address";
     try {
       await this.inbox.notifyAccount(accountId, {
         kind: "card_returned",

@@ -40,7 +40,11 @@ function buildStorage(objects: { path: string; createdAt: string | null }[]): {
     // Inside a folder: the files directly under `${prefix}/`.
     const inside = objects
       .filter((o) => o.path.startsWith(`${prefix}/`))
-      .map((o) => ({ name: o.path.slice(prefix.length + 1), id: "file-id", created_at: o.createdAt }));
+      .map((o) => ({
+        name: o.path.slice(prefix.length + 1),
+        id: "file-id",
+        created_at: o.createdAt,
+      }));
     return { data: inside, error: null };
   }
 
@@ -59,10 +63,7 @@ function buildStorage(objects: { path: string; createdAt: string | null }[]): {
   return { client, removed };
 }
 
-function buildConfig(values: {
-  enabled: boolean;
-  graceDays: number;
-}): ConfigService<never, true> {
+function buildConfig(values: { enabled: boolean; graceDays: number }): ConfigService<never, true> {
   return {
     // Mirrors the env: a plain string flag ("true"/undefined) the service reads live.
     get: (key: string) =>
@@ -85,7 +86,8 @@ function buildPrisma(seed: {
 const ACCOUNT = "acc-1";
 const OLD = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 const RECENT = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
-const publicUrl = (path: string) => `https://x.supabase.co/storage/v1/object/public/design-assets/${path}`;
+const publicUrl = (path: string) =>
+  `https://x.supabase.co/storage/v1/object/public/design-assets/${path}`;
 
 describe("StorageReaperService", () => {
   it("deletes an unreferenced object that's past the grace window", async () => {

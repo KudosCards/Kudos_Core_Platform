@@ -23,7 +23,7 @@ Two coupled changes:
 
 The card-order and wallet-top-up sessions now **omit `payment_method_types`** (previously `["card"]`). On a Stripe-hosted Checkout Session, omitting it is what enables Dashboard-managed automatic payment methods — Stripe presents whatever is enabled in the Dashboard (card plus the **Apple Pay / Google Pay / Link** wallets today), and new methods can be turned on from the Dashboard with no code change. (`automatic_payment_methods` is a PaymentIntent parameter, not a Checkout Session one; the Checkout equivalent is simply not pinning the list. The subscription session already relied on this.)
 
-### 2. Only settle a *paid* session
+### 2. Only settle a _paid_ session
 
 `WebhooksService` now:
 
@@ -37,5 +37,5 @@ Together these make it safe to offer any Dashboard-enabled method without ever f
 
 - Apple Pay / Google Pay / Link are now first-class at checkout (subject to the buyer's browser — Apple Pay still needs Safari on Apple hardware).
 - Fulfilment and wallet credit are now strictly gated on confirmed payment, closing a fulfil-before-paid gap that would have opened if a delayed method were ever enabled.
-- **Operational note (not code):** confirm **Apple Pay is enabled** in the *live* Stripe Dashboard (Settings → Payments → Payment methods) and that the reporting tester used **Safari on a Mac** with a Wallet card. This is where the original report most likely originates.
+- **Operational note (not code):** confirm **Apple Pay is enabled** in the _live_ Stripe Dashboard (Settings → Payments → Payment methods) and that the reporting tester used **Safari on a Mac** with a Wallet card. This is where the original report most likely originates.
 - Tests: webhook e2e now covers completed-but-unpaid (no fulfilment), `async_payment_succeeded` (fulfils), and `async_payment_failed` (releases to draft); wallet e2e covers unpaid-top-up (no credit). The shared test event builders default `payment_status: "paid"` for settle events so existing card fixtures are unchanged.

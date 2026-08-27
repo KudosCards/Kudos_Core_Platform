@@ -1,9 +1,5 @@
 import { notFound } from "next/navigation";
-import type {
-  MessagePageSummary,
-  PlanEntitlement,
-  SavedDesign,
-} from "@kudos/shared-types";
+import type { MessagePageSummary, PlanEntitlement, SavedDesign } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { serverApiFetch } from "@/lib/api.server";
 import { DesignEditorClient } from "./design-editor-client";

@@ -75,7 +75,11 @@ html {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  font-family:
+    var(--font-sans),
+    system-ui,
+    -apple-system,
+    sans-serif;
   /* Long unbroken strings (emails, URLs, claim tokens) break instead of forcing
      a horizontal scrollbar on narrow screens. */
   overflow-wrap: break-word;

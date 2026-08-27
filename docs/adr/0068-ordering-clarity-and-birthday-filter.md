@@ -14,7 +14,7 @@ someone to buy a card":
    settled, which read as slow and janky.
 2. **Too many ways to "order", none clearly the front door.** The prominent
    header CTA said "Create an order" and dropped the user on the **Checkout**
-   screen, which only lists occasions already *approved* on the calendar. A new
+   screen, which only lists occasions already _approved_ on the calendar. A new
    subscriber with nothing approved hit a dead end ("Nothing is approved and
    ready yet"). Meanwhile the genuinely quick path — pick contacts, pick a
    design, pay — lived under the easy-to-miss "Bulk send" label. The per-order

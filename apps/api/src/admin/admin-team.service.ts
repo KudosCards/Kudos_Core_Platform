@@ -81,7 +81,9 @@ export class AdminTeamService {
     }
     const invite = await this.prisma.platformAdminInvite.findUnique({ where: { email } });
     if (!invite) {
-      this.logger.warn(`Operator access refused for ${email}: no matching invite on the allow-list`);
+      this.logger.warn(
+        `Operator access refused for ${email}: no matching invite on the allow-list`,
+      );
       throw new ForbiddenException("This account isn't a Kudos operator");
     }
 
@@ -157,7 +159,9 @@ export class AdminTeamService {
   /** Allow-list an email as an operator (super admin only). */
   async invite(currentUserId: string, email: string, role: PlatformAdminRole): Promise<void> {
     const normalised = email.trim().toLowerCase();
-    const alreadyAdmin = await this.prisma.platformAdmin.findFirst({ where: { email: normalised } });
+    const alreadyAdmin = await this.prisma.platformAdmin.findFirst({
+      where: { email: normalised },
+    });
     if (alreadyAdmin) {
       throw new ConflictException("That email is already an operator");
     }
@@ -187,7 +191,9 @@ export class AdminTeamService {
   }
 
   async removeInvite(email: string): Promise<void> {
-    await this.prisma.platformAdminInvite.deleteMany({ where: { email: email.trim().toLowerCase() } });
+    await this.prisma.platformAdminInvite.deleteMany({
+      where: { email: email.trim().toLowerCase() },
+    });
   }
 
   /** Re-send the invite email for a still-pending operator (in case the first

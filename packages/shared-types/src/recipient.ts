@@ -37,10 +37,7 @@ export const recipientSchema = z.object({
   addressLine1: z.string().max(200).nullable(),
   addressLine2: z.string().max(200).nullable(),
   addressCity: z.string().max(120).nullable(),
-  addressPostcode: z
-    .string()
-    .regex(ukPostcodeRegex, "Must be a valid UK postcode")
-    .nullable(),
+  addressPostcode: z.string().regex(ukPostcodeRegex, "Must be a valid UK postcode").nullable(),
   addressCountry: z.string().nullable(),
   tags: z.array(z.string()).default([]),
   /** Arbitrary key→value fields usable as {key} merge tokens on a card. */

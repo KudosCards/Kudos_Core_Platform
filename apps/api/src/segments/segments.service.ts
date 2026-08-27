@@ -57,7 +57,11 @@ const OCCASION_TYPE_LABELS: Record<OccasionType, string> = {
   bespoke_campaign: "Bespoke campaign",
 };
 
-const dayMonth = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+const dayMonth = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
 
 function startOfUtcDay(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -77,7 +81,10 @@ function windowRange(window: SegmentWindow, today: Date): { from: Date; to: Date
     to.setUTCDate(to.getUTCDate() + window.days);
     return { from: start, to };
   }
-  return { from: new Date(`${window.from}T00:00:00.000Z`), to: new Date(`${window.to}T00:00:00.000Z`) };
+  return {
+    from: new Date(`${window.from}T00:00:00.000Z`),
+    to: new Date(`${window.to}T00:00:00.000Z`),
+  };
 }
 
 @Injectable()
@@ -330,10 +337,7 @@ export class SegmentsService {
         data: { accountId, name: input.name, definition: input.definition },
       });
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         throw new BadRequestException("You already have a segment with that name");
       }
       throw error;

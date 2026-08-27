@@ -124,7 +124,11 @@ describe("Integrations (e2e)", () => {
       .expect(200);
 
     const identity = z
-      .object({ accountId: z.string().uuid(), accountName: z.string(), plan: z.string().nullable() })
+      .object({
+        accountId: z.string().uuid(),
+        accountName: z.string(),
+        plan: z.string().nullable(),
+      })
       .parse(res.body);
     expect(identity.accountId).toBe(accountId);
     expect(identity.accountName).toMatch(/^Test Centre /);

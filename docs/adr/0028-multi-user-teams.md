@@ -12,7 +12,7 @@ with their own login and a role.
 
 The data model was already most of the way there: `Membership(accountId, userId, role)` with a
 `MembershipRole` enum (`owner | admin | staff`) and a `MembershipGuard` that resolves the caller's
-membership. What was missing was a way to *create* additional memberships safely, and a UI for it.
+membership. What was missing was a way to _create_ additional memberships safely, and a UI for it.
 
 ## Decision
 
@@ -31,6 +31,7 @@ replaces the prior row with a fresh token. The **token is a secret** — like th
 it's never returned by the API; it travels only in the invite email (a branded `EMAIL_CLIENT` send).
 
 Endpoints:
+
 - `GET /team` — members, pending invites, `teamSeatsEnabled`, and the viewer's role. Any member may
   view.
 - `POST /team/invites` `{ email, role }` — owner/admin only, gated; sends the invite email.
@@ -51,7 +52,7 @@ Endpoints:
 ### Membership email
 
 `Membership.email` (nullable) is now captured at creation — from the signing-up user for the owner,
-from the invite for invited members — so the team UI can show *who* each member is (there's no local
+from the invite for invited members — so the team UI can show _who_ each member is (there's no local
 user table; identity lives in Supabase). Backfilled best-effort for existing owners from
 `Account.contactEmail`.
 
@@ -63,7 +64,7 @@ user table; identity lives in Supabase). Backfilled best-effort for existing own
 - **One-user-one-account (retained)**: accepting fails with a clear 409 if the user already belongs
   to an account — the same invariant `signup` and the guest-claim flow already enforce. This avoids
   silently landing a multi-membership user on the wrong account, since `MembershipGuard` resolves
-  the *oldest* membership and there is no account switcher yet.
+  the _oldest_ membership and there is no account switcher yet.
 
 ### Web
 

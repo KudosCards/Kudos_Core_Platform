@@ -71,7 +71,9 @@ describe("reservedFooterViolation", () => {
     // is the designed behaviour, not a fault. Blocking on it would block very
     // nearly every back design anyone has made.
     expect(reservedFooterViolation(back([], { type: "color", color: "#ff0000" }))).toBeNull();
-    expect(reservedFooterViolation(back([], { type: "image", assetUrl: "https://x/y.png" }))).toBeNull();
+    expect(
+      reservedFooterViolation(back([], { type: "image", assetUrl: "https://x/y.png" })),
+    ).toBeNull();
   });
 
   it("still blocks an offending element when a background is also present", () => {

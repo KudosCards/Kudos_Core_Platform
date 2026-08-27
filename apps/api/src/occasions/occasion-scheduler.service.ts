@@ -127,7 +127,14 @@ export class OccasionSchedulerService {
     for (;;) {
       const keyDates = await this.prisma.recipientKeyDate.findMany({
         where: { recipient: { status: "active" } },
-        select: { id: true, accountId: true, recipientId: true, type: true, date: true, label: true },
+        select: {
+          id: true,
+          accountId: true,
+          recipientId: true,
+          type: true,
+          date: true,
+          label: true,
+        },
         orderBy: { id: "asc" },
         take: SCHEDULER_PAGE_SIZE,
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),

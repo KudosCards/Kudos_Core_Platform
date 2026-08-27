@@ -8,7 +8,7 @@ Accepted
 
 A customer imported 20 contacts from a CSV and **every row was skipped** — the
 import silently failed. The row parser (`csv-row.util.ts`) hard-**rejected the
-entire contact** whenever an *optional* field was present but mis-formatted:
+entire contact** whenever an _optional_ field was present but mis-formatted:
 
 - **Date of birth** required strict `dd/mm/yyyy`. Any other format — ISO
   `1990-05-01`, `1/5/1990`, `1 May 1990` — threw and killed the row.
@@ -19,7 +19,7 @@ Because a CSV column shares one format across all rows, a single wrong-format
 column (most commonly the birthday, exported as ISO by most tools) rejected the
 whole file at once. This contradicted the module's own stated design —
 "import-and-flag, a bulk source is never silently dropped" — which had only ever
-been applied to the *address* fields, not DOB/postcode/email.
+been applied to the _address_ fields, not DOB/postcode/email.
 
 Compounding it, the web importer's summary showed only a **count** ("skipped
 20") and never the per-row reasons the API already returned, so the failure was
@@ -32,7 +32,7 @@ silently skipping — ruled out in code review.)
 ## Decision
 
 Apply the import-and-flag rule consistently: only first/last name are truly
-required; a present-but-malformed *optional* field is dropped with a warning and
+required; a present-but-malformed _optional_ field is dropped with a warning and
 the contact still imports.
 
 1. **`parseRecipientRow` returns `{ parsed, warnings }`** instead of throwing on
@@ -48,7 +48,7 @@ the contact still imports.
 3. **`ImportSummary` gains `warnings: { row, message }[]`** alongside `rejected`,
    threaded through the service and audit metadata.
 4. **The web importer surfaces the detail** — expandable lists of the rejected
-   reasons *and* the warnings, not just counts — so nothing is silent.
+   reasons _and_ the warnings, not just counts — so nothing is silent.
 
 ## Consequences
 

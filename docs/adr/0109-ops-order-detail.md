@@ -11,7 +11,7 @@ queue). The ops orders list (`/admin/orders`) had three problems that made an
 order impossible to work as a unit:
 
 1. **The "Fulfillment" column was fake.** It rendered `fulfillmentLabel(order.status)`
-   — a word derived from the *order* lifecycle status ("Pending" / "In progress"
+   — a word derived from the _order_ lifecycle status ("Pending" / "In progress"
    / "Delivered"), not real card progress. An operator could not see "340 of
    2,000 posted".
 2. **The list silently capped at 100.** The page fetched `?perPage=100` once and

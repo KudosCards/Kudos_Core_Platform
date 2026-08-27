@@ -85,7 +85,7 @@ pick one.
 - Because A5 and A6 share a proportion, a design needs no per-size variants — the
   same document prints at both.
 - The customer-facing size copy is unchanged (still the default size); if we ever
-  let customers *choose* a size, that is a separate change.
+  let customers _choose_ a size, that is a separate change.
 
 ## Alternatives considered
 

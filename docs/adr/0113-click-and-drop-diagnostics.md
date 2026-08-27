@@ -33,8 +33,8 @@ body truncated. The no-op client (no key) returns `status: 0` and a
   raw verdict inline (`HTTP 401 · raw auth · <endpoint>` + body), so a non-dev
   operator can confirm a key in seconds.
 
-The status is the diagnosis: **401/403** → wrong or blank key (a *subscription*
-key from developer.royalmail.net is not a Click & Drop *API* key); a `duplicate`
+The status is the diagnosis: **401/403** → wrong or blank key (a _subscription_
+key from developer.royalmail.net is not a Click & Drop _API_ key); a `duplicate`
 message in a `failedOrders` body → a card already exists at Royal Mail but its id
 wasn't recorded; **400** → a request-body field mismatch; **2xx** → the credential
 works.

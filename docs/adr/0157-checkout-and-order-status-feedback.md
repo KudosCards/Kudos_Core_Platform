@@ -20,7 +20,7 @@ Four pieces of user feedback on the ordering journey:
 ## Decisions
 
 **1. Order header reflects card progress.** A `BatchOrder` stays `fulfilling`
-("In production") until *every* card is `delivered`, so a `posted` card left the
+("In production") until _every_ card is `delivered`, so a `posted` card left the
 header contradicting the line. `orderHeaderStatus()` (lib/orders.ts) now refines
 the `fulfilling` header to **"On its way"** when every non-cancelled card is
 `posted`/`delivered`. Display-only; the underlying status model is unchanged

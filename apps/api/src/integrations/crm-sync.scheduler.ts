@@ -19,7 +19,11 @@ export class CrmSyncScheduler {
     const connections = await this.crmConnections.listEnabled();
     for (const connection of connections) {
       try {
-        await this.crmConnections.sync(connection.accountId, "system:crm-sync", connection.provider);
+        await this.crmConnections.sync(
+          connection.accountId,
+          "system:crm-sync",
+          connection.provider,
+        );
       } catch (error) {
         this.logger.warn(
           `Scheduled CRM sync failed for ${connection.accountId}/${connection.provider}: ${

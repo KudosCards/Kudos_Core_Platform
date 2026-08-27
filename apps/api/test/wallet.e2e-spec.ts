@@ -198,7 +198,9 @@ describe("Wallet (e2e)", () => {
       checkoutUrl: expect.stringMatching(/^https:\/\/checkout\.stripe\.test\/pay\/cs_test_/),
     });
 
-    const [sessionArgs] = checkoutSessionsCreate.mock.calls[0] as [Stripe.Checkout.SessionCreateParams];
+    const [sessionArgs] = checkoutSessionsCreate.mock.calls[0] as [
+      Stripe.Checkout.SessionCreateParams,
+    ];
     expect(sessionArgs.mode).toBe("payment");
     expect(sessionArgs.metadata).toMatchObject({
       type: "wallet_topup",

@@ -24,7 +24,21 @@ function validDocument(text: string): DesignDocument {
   return {
     version: 1,
     pages: [
-      { name: "front", elements: [{ kind: "text", id: "t", text, x: 10, y: 10, fontFamily: "Montserrat", fontSize: 20, color: "#111111" }] },
+      {
+        name: "front",
+        elements: [
+          {
+            kind: "text",
+            id: "t",
+            text,
+            x: 10,
+            y: 10,
+            fontFamily: "Montserrat",
+            fontSize: 20,
+            color: "#111111",
+          },
+        ],
+      },
       { name: "inside-right", elements: [] },
     ],
   };

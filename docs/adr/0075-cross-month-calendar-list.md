@@ -31,7 +31,7 @@ month at a time; the period label shows the span (e.g. "Jul – Sep 2026").
 **Server seed widened to the union, so neither view flashes.** `page.tsx` now
 seeds from the month grid's start through the **list window's** end — the union
 that covers both first-paint possibilities (month grid on desktop, list window on
-mobile). Because occasions *and* events are both seeded across that union,
+mobile). Because occasions _and_ events are both seeded across that union,
 whichever view the client settles on after hydration already has its data, with
 no on-mount fetch. The `ListView` filter drops the few trailing days of the
 previous month that the month grid's Monday-aligned start pulls in, so they don't

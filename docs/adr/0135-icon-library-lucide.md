@@ -15,7 +15,7 @@ library in the project.
 
 ## Decision
 
-Adopt **lucide-react** as the icon library and replace the *functional* UI
+Adopt **lucide-react** as the icon library and replace the _functional_ UI
 emoji with it. lucide is the common modern default for React/Next/Tailwind:
 tree-shakeable (only imported icons ship), MIT, no runtime/external requests
 (icons are inline SVG components), and sized/coloured via `className`
@@ -25,11 +25,11 @@ tree-shakeable (only imported icons ship), MIT, no runtime/external requests
 
 - **Replaced — emoji acting as an icon** for an action, status, nav item, or
   category: print/dispatch/calendar/pin/plug/search/target/truck, the
-  first-class "nudge" (⚡→`Zap`), birthday *type* markers (🎂→`Cake`), the
+  first-class "nudge" (⚡→`Zap`), birthday _type_ markers (🎂→`Cake`), the
   pre-send checklist icons (📮📍✍🔁), file-type glyphs (🎬🖼), and the
   RTS success state (✅👍). Rendered `aria-hidden` — the adjacent text label
   carries the meaning.
-- **Left as-is — content, not chrome:** the message-page emoji *palette* and a
+- **Left as-is — content, not chrome:** the message-page emoji _palette_ and a
   page's chosen emoji (user-selected content), the public message-page/reply
   💌 decoration, celebratory 🎉 in sentences ("you're all caught up", success
   pages), the card-designer ♥ shape glyph, and the marketing 🟢 bullet.

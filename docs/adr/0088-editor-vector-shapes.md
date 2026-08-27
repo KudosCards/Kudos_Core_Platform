@@ -32,7 +32,7 @@ Add a new `shape` element kind rendered with native Konva primitives.
    selectable/draggable even for hollow shapes.
 
 3. **Group-based node = uniform box model.** In the editor the shape lives in a
-   Group that *is* the draggable/transformable node (id + `name="element"`, so
+   Group that _is_ the draggable/transformable node (id + `name="element"`, so
    snapping and the Transformer already pick it up). A resize bakes the Group's
    scale into `width`/`height` (like an image), keeping the shape crisp instead
    of a stretched bitmap. Drag-snapping, layer ordering, duplicate, and the

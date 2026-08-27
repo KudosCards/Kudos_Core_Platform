@@ -26,11 +26,12 @@ The marketing landing and public card library keep their own inline logo usages 
 those looks); this component is for the app chrome.
 
 **Mobile polish.** Fixes to the spots a phone-width review flagged:
+
 - Design editor: the header (title + Save + Send) now wraps; the fixed-size print canvas scrolls
   inside its own box instead of breaking the page; the properties panel goes full-width on mobile.
 - Recipients: the add-recipient field grid stacks to one column on the narrowest screens.
 
-The mobile *shell* was already sound (slide-in drawer nav, scrollable tables, responsive grids from
+The mobile _shell_ was already sound (slide-in drawer nav, scrollable tables, responsive grids from
 earlier passes), so this was targeted tidying, not a redesign.
 
 ## Alternatives considered

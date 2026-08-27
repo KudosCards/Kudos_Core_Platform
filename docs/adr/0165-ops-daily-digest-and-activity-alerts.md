@@ -39,7 +39,7 @@ business summary quietly missing orders is worse than no summary.
 
 Every payment path (Stripe webhook, wallet debit, auto-send, returns reprint) calls
 `settleFulfillment` **inside the same transaction that flips the order to `paid`**, and that
-creates the order's `FulfillmentJob` rows. So a job's `createdAt` *is* the payment moment, and
+creates the order's `FulfillmentJob` rows. So a job's `createdAt` _is_ the payment moment, and
 the digest keys off it.
 
 A real `paidAt` column would be cleaner, and would also fix the admin overview's revenue
@@ -62,7 +62,7 @@ string on the wire (ADR 0116), so neither needed a schema or client change.
 
 **Called after the originating transaction commits, never inside it.** Two reasons, and the
 second is the one that bites: a notification must never fail a payment, and a `try`/`catch`
-*inside* a Postgres transaction does not save you — once a statement errors the whole
+_inside_ a Postgres transaction does not save you — once a statement errors the whole
 transaction is aborted, so "best-effort inside the tx" takes the payment down with it.
 
 There is no single post-commit hook for "an order was paid" — `settleFulfillment` is the shared
@@ -80,7 +80,7 @@ is how `dispatch_reminder` already behaves. Only genuine escalation is role-rest
 **07:30 Europe/London**, reporting the **previous full London day**. Both halves are
 deliberate. Every other cron in the API is UTC-relative, which is right for scheduling — a
 posting deadline shouldn't move because the clocks did — but this one is a person's morning,
-and a digest that arrives at 08:30 for half the year is a digest nobody set. The *window* is
+and a digest that arrives at 08:30 for half the year is a digest nobody set. The _window_ is
 London too, because "yesterday" in a report means the reader's yesterday: an order placed at
 00:30 BST belongs to that day, not the one before. `london-day.ts` derives both from `Intl`,
 which already knows the DST history, and steps back a millisecond rather than 24 hours so the
@@ -113,8 +113,7 @@ Pressing twice therefore sends twice.
 ## The dispatch reminder's send hour moved with it
 
 Found while investigating why the first digest never arrived: the reminder settings panel had
-**two clocks on it**. The same-day posting cut-off was already judged in `Europe/London` (ADR
-0160) and labelled "15:00 UK", while the send hour was `sendHourUtc`, judged with
+**two clocks on it**. The same-day posting cut-off was already judged in `Europe/London` (ADR 0160) and labelled "15:00 UK", while the send hour was `sendHourUtc`, judged with
 `getUTCHours()` and labelled "07:00 UTC" — so an operator who set "7" got their email at 08:00
 for the seven months of BST.
 
@@ -129,7 +128,7 @@ else here: two implementations of the same idea drift.
 ## Consequences
 
 - Kudos HQ hears about orders and sign-ups as they happen, and gets one morning summary.
-- An operator added *after* a day's digest has fired sees no entry for that day — inherent to
+- An operator added _after_ a day's digest has fired sees no entry for that day — inherent to
   the "first run wins" guard, and the reason the e2e creates its operator up front.
 - The digest is only as good as `PlatformAdmin.email`: a super admin with none gets no email
   (they still get the bell entry). The service logs a warning when nobody has one.

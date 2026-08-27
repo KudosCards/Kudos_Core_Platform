@@ -23,7 +23,10 @@ export class CreateEventDto {
   @MaxLength(120)
   title!: string;
 
-  @ApiProperty({ enum: OccasionType, description: "Broad category driving the card range + colour" })
+  @ApiProperty({
+    enum: OccasionType,
+    description: "Broad category driving the card range + colour",
+  })
   @IsEnum(OccasionType)
   type!: OccasionType;
 

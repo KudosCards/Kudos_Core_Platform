@@ -14,9 +14,7 @@ describe("Reminders (e2e)", () => {
 
   beforeAll(async () => {
     sendTransactional = jest.fn().mockResolvedValue(undefined);
-    app = await createTestApp([
-      { provide: EMAIL_CLIENT, useValue: { sendTransactional } },
-    ]);
+    app = await createTestApp([{ provide: EMAIL_CLIENT, useValue: { sendTransactional } }]);
     reminders = app.get(RemindersService);
   });
 

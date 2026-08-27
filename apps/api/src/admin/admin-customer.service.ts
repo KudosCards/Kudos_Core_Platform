@@ -178,7 +178,11 @@ export class AdminCustomerService {
         where: { accountId, dispatchOption: "auto_send", status: { not: OccasionStatus.skipped } },
       }),
       this.prisma.occasion.findMany({
-        where: { accountId, status: OccasionStatus.scheduled, occasionDate: { gte: startOfToday() } },
+        where: {
+          accountId,
+          status: OccasionStatus.scheduled,
+          occasionDate: { gte: startOfToday() },
+        },
         orderBy: { occasionDate: "asc" },
         take: 5,
         select: { title: true, type: true, occasionDate: true, dispatchDate: true },

@@ -11,7 +11,7 @@ delivery / delivered" email. Phase 1 (ADR 0121) built a Royal Mail **tracking**
 poll for exactly this. But Kudos posts cards on **ordinary stamps**, and Royal
 Mail does **not track** standard letter post: no tracking number, no "out for
 delivery" scan, no delivery scan. So there is no carrier event to react to — the
-tracking poll is inert for stamped mail, and a *real* delivery email is
+tracking poll is inert for stamped mail, and a _real_ delivery email is
 impossible. Anything we send about delivery is necessarily an **estimate**.
 
 Two consequences beyond the email itself: (1) we must never assert "Royal Mail
@@ -23,7 +23,7 @@ forever and their orders would never reach `completed`.
 
 Replace the (unusable-for-stamps) tracking-based email with an **estimated
 arrival** email driven by the posting date, and treat that estimate as the
-delivery point — because to Kudos, on untracked post, "should have arrived" *is*
+delivery point — because to Kudos, on untracked post, "should have arrived" _is_
 the delivery confirmation.
 
 ### 1. Estimate from posted date + postage-class transit
@@ -32,8 +32,9 @@ A daily sweep (`FulfillmentService.notifyEstimatedArrivals`) looks at `posted`
 cards and computes each one's estimated arrival as `postedAt + transit working
 days`, using the existing UK-holiday-aware working-day engine (`addWorkingDays`).
 Transit per class comes from config — `ARRIVAL_FIRST_CLASS_WORKING_DAYS` (default
-1) / `ARRIVAL_SECOND_CLASS_WORKING_DAYS` (default 3), Royal Mail's own aims —
-tunable without a code change.
+
+1. / `ARRIVAL_SECOND_CLASS_WORKING_DAYS` (default 3), Royal Mail's own aims —
+   tunable without a code change.
 
 ### 2. Mark delivered (estimated) + email, once
 
@@ -84,7 +85,7 @@ fallback.
   can't verify is misleading.
 - **Email at posting time ("expect it by X").** Rejected as redundant: the
   existing "posted" dispatch email (ADR 0025) already tells the buyer it's on its
-  way. The value is a note *around arrival*, which this delivers.
+  way. The value is a note _around arrival_, which this delivers.
 - **A new `arrivalNotifiedAt` column for idempotency.** Rejected: advancing to
   `delivered` already makes the card unselectable next sweep, so a dedicated
   marker would be redundant state.

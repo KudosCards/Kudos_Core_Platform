@@ -3,10 +3,7 @@ import type { MembershipRole } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 export type NotificationKind =
-  | "pending_approval"
-  | "upcoming_occasion"
-  | "unpaid_order"
-  | "pending_invite";
+  "pending_approval" | "upcoming_occasion" | "unpaid_order" | "pending_invite";
 
 export interface NotificationItem {
   id: string;

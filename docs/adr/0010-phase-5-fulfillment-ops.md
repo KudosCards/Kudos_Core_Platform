@@ -24,9 +24,10 @@ that internal actor is identified and authorised.
 **Platform-admin identity: a dedicated `PlatformAdmin` table**, not a Supabase `app_metadata`
 claim and not a reused "internal account" membership. Rationale (confirmed as the intended "best
 outcome"):
+
 - The ops allowlist is version-controlled, DB-resident state — auditable and seedable from the
   repo, rather than living in the Supabase dashboard where it can't be reviewed in a PR.
-- It keeps the two actor types cleanly orthogonal. Ops staff are *not* members of a tuition
+- It keeps the two actor types cleanly orthogonal. Ops staff are _not_ members of a tuition
   centre; overloading `Membership`/`Account` to represent them would muddle "member of a customer
   org" with "operator of the platform" — a conflation that tends to leak into authorization bugs.
 - A user can independently be both a platform admin and a tuition-centre member (e.g. a Kudos
@@ -39,13 +40,14 @@ in real environments. This avoids hard-coding a real person's id in the repo whi
 allowlist reproducible.
 
 **Web separation mirrors the auth separation**: the ops UI lives in its own `(ops)` route group
-with a layout gated on platform-admin status, *not* the `(app)` group's account-membership +
+with a layout gated on platform-admin status, _not_ the `(app)` group's account-membership +
 onboarding gate. An ops-only user (no tuition-centre membership) would otherwise be bounced to
 onboarding. This keeps the customer app and the internal ops app cleanly separated in one codebase.
 
 **State machine & propagation.** `FulfillmentJob`:
 `pending → in_progress → printed → posted → delivered`, plus `→ failed` from any active state. Each
 transition is an atomic, status-guarded `updateMany` (the established pattern) and propagates:
+
 - `printed`/`posted`/`delivered` set the matching `*At` timestamp and move the linked
   `OrderRecipient` and its `Occasion` to the same status (`OrderRecipient` has no `in_progress`
   state — that's an ops-internal "being worked on" phase with no customer-facing equivalent).
@@ -59,15 +61,15 @@ deferred, because a queue that only advances one card at a time doesn't match ho
 actually done.
 
 **Data minimisation on the queue, not just accountability.** The recipients are children; the
-addresses are their homes. GDPR wants the *least* data exposed, not merely a log of who saw
-everything. So the queue *list* deliberately withholds the street address (`shippingAddressLine1/2`)
+addresses are their homes. GDPR wants the _least_ data exposed, not merely a log of who saw
+everything. So the queue _list_ deliberately withholds the street address (`shippingAddressLine1/2`)
 — it carries only name, occasion, design, postage, and city + postcode, which is enough to triage
 and plan a print run. The full address is revealed only through two audited paths: a single card's
 detail view, and a **`POST /fulfillment/export`** print-run endpoint that returns full dispatch
 addresses and writes one audit row per card in the same transaction as the read (so the trail
 can't be dodged by reading without recording). This reduces the blast radius of a curious or
 compromised ops account — no single screen exposes every child's home address — and makes the audit
-trail *precise* (per-card access at a known time) rather than noisy (per-account list-view rows).
+trail _precise_ (per-card access at a known time) rather than noisy (per-account list-view rows).
 The ops UI turns an export straight into a CSV for mail-merged address labels, so the
 triage-then-pull-labels workflow stays fast.
 
@@ -81,7 +83,7 @@ triage-then-pull-labels workflow stays fast.
 - **Supabase `app_metadata` role claim** — rejected: moves the security-critical allowlist out of
   the repo into dashboard-managed metadata, harder to audit, seed, and test.
 - **Designated "Kudos internal" account + membership** — rejected: conceptually muddles customer
-  membership with platform operation; the guard would be checking "is a member of *this specific*
+  membership with platform operation; the guard would be checking "is a member of _this specific_
   account", a brittle special-case.
 - **A print-vendor API integration now** — deferred: the schema is already provider-agnostic
   (`trackingReference`, timestamps). v1 is a manual internal queue; a real print API plugs into the
@@ -99,7 +101,7 @@ triage-then-pull-labels workflow stays fast.
 
 ## Addendum (2026-07-20): the super-admin dashboard
 
-Phase 5 built the ops *fulfillment* surface (print/post queue). This adds a *business* view on the
+Phase 5 built the ops _fulfillment_ surface (print/post queue). This adds a _business_ view on the
 same gated `(ops)` shell — where Kudos Cards tracks the platform as a whole.
 
 - **API `/admin`** (new module), every route behind `PlatformAdminGuard` — the same cross-account
@@ -118,7 +120,7 @@ same gated `(ops)` shell — where Kudos Cards tracks the platform as a whole.
   the ops sidebar under a new "Overview" group. Routes live under `/admin/*` to avoid colliding with
   the customer app's `(app)/orders`.
 
-Read-only by design: this phase is *visibility*, not administration — no impersonation, plan
+Read-only by design: this phase is _visibility_, not administration — no impersonation, plan
 overrides, or refunds. Those are a deliberate later step behind their own audit trail.
 
 Verified: e2e covers gating (401 no token, 403 non-admin) and that a paid order flows into the
@@ -129,7 +131,7 @@ overview totals, the cross-account orders list, and the per-account subscriber a
 Three targeted fixes after the dashboard felt slow to load:
 
 - **Instant paint.** The `(ops)` route group had no `loading.tsx` (unlike `(app)`), so every ops
-  page — including the dashboard — showed the *previous* page frozen until the server component
+  page — including the dashboard — showed the _previous_ page frozen until the server component
   finished fetching. Added a generic `(ops)/loading.tsx` (table silhouette) plus a KPI-card
   skeleton for `/admin` and table skeletons for `/admin/orders` and `/admin/subscribers`, so a
   navigation paints immediately and streams the data in.

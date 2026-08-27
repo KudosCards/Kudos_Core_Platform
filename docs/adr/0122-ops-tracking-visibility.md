@@ -42,8 +42,7 @@ already being sent but hadn't declared.
   card's delivered date and progress without leaving the queue.
 - Zero API/schema change and no new fetch — purely surfacing existing row data,
   so no added load.
-- The delivery date shown is the carrier's own (stamped by the delivery poll, ADR
-  0121) when auto-registered, or the operator's mark-time when done manually.
+- The delivery date shown is the carrier's own (stamped by the delivery poll, ADR 0121) when auto-registered, or the operator's mark-time when done manually.
 - Deeper per-order tracking (a full timeline on `/admin/orders/[id]`) is left to
   the Phase 3 per-order cockpit; this ADR covers the cross-account queue surface.
 

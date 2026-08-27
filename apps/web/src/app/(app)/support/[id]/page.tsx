@@ -9,11 +9,7 @@ import { SupportThreadClient } from "./support-thread-client";
  * "mark resolved / close" action. Fetched server-side; the interactive thread
  * is a client component. See docs/adr/0066-support-ticketing.md.
  */
-export default async function SupportTicketPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function SupportTicketPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const ticket = await serverApiFetch<SupportTicketDetail>(`/support/${id}`);
   if (!ticket) {

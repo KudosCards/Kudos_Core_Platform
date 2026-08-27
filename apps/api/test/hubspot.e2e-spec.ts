@@ -80,7 +80,10 @@ function defaultHubSpotContacts(): HubSpotContact[] {
         zip: "SW1A 1AA",
       },
     },
-    { id: "102", properties: { firstname: "Katherine", lastname: "Johnson", email: "kj@example.com" } },
+    {
+      id: "102",
+      properties: { firstname: "Katherine", lastname: "Johnson", email: "kj@example.com" },
+    },
     // No lastname → not addressable → mapper skips it before ingest.
     { id: "103", properties: { firstname: "NoLast" } },
   ];

@@ -7,7 +7,7 @@ Date: 2026-07-15
 
 The Phase 1 auth guard verified Supabase-issued JWTs against a static `SUPABASE_JWT_SECRET`
 (HS256, shared-secret signing). Once a real Supabase project was connected, its JWT Keys settings
-showed the *current* signing key is asymmetric (ECC P-256), with the old HS256 secret only
+showed the _current_ signing key is asymmetric (ECC P-256), with the old HS256 secret only
 present as a "previous key" from an already-completed rotation. A shared-secret guard cannot
 verify an asymmetric-signed token at all — every real login would have been rejected with a 401.
 

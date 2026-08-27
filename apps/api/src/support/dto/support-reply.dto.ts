@@ -1,4 +1,11 @@
-import { ArrayMaxSize, IsArray, IsOptional, IsString, Length, ValidateNested } from "class-validator";
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsOptional,
+  IsString,
+  Length,
+  ValidateNested,
+} from "class-validator";
 import { Type } from "class-transformer";
 import { SUPPORT_MAX_ATTACHMENTS } from "@kudos/shared-types";
 import { SupportAttachmentInputDto } from "./support-attachment.dto";

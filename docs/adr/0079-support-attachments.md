@@ -9,7 +9,7 @@ Accepted
 The support form (ADR 0066) took a subject, category, and a single free-text
 message. In practice that means a lot of "can you send a screenshot?" /
 "which page were you on?" round-trips before support can even start — slow for
-the customer and expensive for us. We want customers to be able to *show* the
+the customer and expensive for us. We want customers to be able to _show_ the
 problem and explain it clearly the first time.
 
 ## Decision
@@ -24,12 +24,12 @@ web video formats, 50 MB each, up to 5 per message. `POST /uploads/support-
 attachments` mints a signed upload; the client PUTs the bytes, then submits the
 resulting file references with the message. A new `SupportTicketMessageAttachment`
 row hangs off each message; the thread renders image thumbnails (click to open)
-and inline video players on both the customer and ops views. Screen *recording*
+and inline video players on both the customer and ops views. Screen _recording_
 is upload-a-file (record with a phone or a tool like Loom) rather than an in-app
 recorder — simplest, works everywhere, ships now.
 
-**2. Guided prompts.** The single message box becomes three fields — *What
-happened?* (required), *What were you trying to do?* and *What did you expect?*
+**2. Guided prompts.** The single message box becomes three fields — _What
+happened?_ (required), _What were you trying to do?_ and _What did you expect?_
 (both optional) — composed into one structured message body. Same API contract
 (still a `message` string), better signal.
 
@@ -40,7 +40,7 @@ Never blocks submission (all fields optional, capture wrapped defensively), and
 never shown to the customer.
 
 Scope: attachments are **customer-side** for now (raising + replying); ops can
-*view* them but sending an attachment back is a deliberate later follow-up — the
+_view_ them but sending an attachment back is a deliberate later follow-up — the
 time saving is in the customer explaining better up front. All existing
 validation, notification, and thread-state logic is untouched; attachments and
 diagnostics are additive and every field is optional, so the plain

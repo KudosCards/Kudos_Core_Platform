@@ -55,10 +55,7 @@ const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm
  * runtime. `serverApiFetch<T>` is an unchecked cast, so nothing caught it.
  * Deriving means the next payload change fails typecheck instead.
  */
-export type UnfinishedBatchOrder = Pick<
-  BatchOrderListRow,
-  "id" | "totalMinor" | "cardCount"
-> & {
+export type UnfinishedBatchOrder = Pick<BatchOrderListRow, "id" | "totalMinor" | "cardCount"> & {
   status: "draft" | "pending_payment";
 };
 

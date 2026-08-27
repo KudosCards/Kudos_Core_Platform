@@ -9,7 +9,7 @@ Accepted — implemented.
 Four independent production issues, batched into one change:
 
 1. **"Send now" ignores the day's last post.** Dispatch is purely date-based:
-   a "Send now" order always dated its post-by (`dispatchDate`) to *today*,
+   a "Send now" order always dated its post-by (`dispatchDate`) to _today_,
    regardless of the clock. An order placed after Royal Mail's daily collection
    (or on a weekend/bank holiday) still read as "due today" in the ops queue for
    a collection that had already gone — so it looked overdue the moment it landed.
@@ -18,7 +18,7 @@ Four independent production issues, batched into one change:
    segment (e.g. "upcoming birthdays") reused each natural occasion as its send
    record (ADR 0119) but overwrote every reused occasion's `dispatchDate` with a
    single batch-wide value — today for "Send now". So a birthday segment posted
-   *every* card today instead of timing each to its own birthday.
+   _every_ card today instead of timing each to its own birthday.
 
 3. **Royal Mail format hard-coded to Large Letter.** Both the Click & Drop and
    Shipping API clients imported every order as `largeLetter`, buying a more

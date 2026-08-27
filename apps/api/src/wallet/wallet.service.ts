@@ -164,9 +164,11 @@ export class WalletService {
   /** The top-up's Stripe VAT invoice (id + hosted URL + PDF), or an empty object
    * when there's no invoice or the lookup fails. Best-effort — the caller stores
    * whatever comes back and never fails the credit over a receipt. */
-  private async fetchTopupReceipt(
-    session: Stripe.Checkout.Session,
-  ): Promise<{ stripeInvoiceId?: string; receiptUrl?: string | null; receiptPdfUrl?: string | null }> {
+  private async fetchTopupReceipt(session: Stripe.Checkout.Session): Promise<{
+    stripeInvoiceId?: string;
+    receiptUrl?: string | null;
+    receiptPdfUrl?: string | null;
+  }> {
     const invoiceId = typeof session.invoice === "string" ? session.invoice : session.invoice?.id;
     if (!invoiceId) {
       return {};
@@ -191,7 +193,11 @@ export class WalletService {
    * overdraw and a paid order always has its fulfillment jobs. No Stripe call —
    * the funds are already on the platform.
    */
-  async payOrder(accountId: string, actorUserId: string, batchOrderId: string): Promise<BatchOrder> {
+  async payOrder(
+    accountId: string,
+    actorUserId: string,
+    batchOrderId: string,
+  ): Promise<BatchOrder> {
     const order = await runSerializable(this.prisma, async (tx) => {
       await this.debitAndSettleOrder(tx, accountId, batchOrderId);
       return tx.batchOrder.findUniqueOrThrow({

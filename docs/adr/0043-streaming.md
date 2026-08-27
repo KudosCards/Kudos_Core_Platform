@@ -32,7 +32,7 @@ data-dependent region behind its own `<Suspense>` boundary:
   list (blocking on `/batch-orders`) streams in.
 
 The existing per-route `loading.tsx` files stay as the outer navigation fallback;
-the new inner boundaries add *partial* rendering so static chrome is real content
+the new inner boundaries add _partial_ rendering so static chrome is real content
 immediately rather than an all-or-nothing page skeleton.
 
 ## Why only these two pages

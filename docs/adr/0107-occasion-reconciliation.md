@@ -26,7 +26,7 @@ A segment send **supersedes** the recipient's matched natural occasion, and that
 occasion is consumed only when the order is paid.
 
 1. **A `supersedesOccasionId` self-link on `Occasion`** (nullable, `onDelete:
-   SetNull`). On the campaign occasion created for a bulk-send line it points at
+SetNull`). On the campaign occasion created for a bulk-send line it points at
    the natural occasion this send stands in for; the reverse relation
    `supersededBy` lets surfaces show "handled by a bulk send". One additive
    migration, no backfill.

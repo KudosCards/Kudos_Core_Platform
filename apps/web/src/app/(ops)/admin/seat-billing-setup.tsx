@@ -45,9 +45,7 @@ export function SeatBillingSetup() {
     setError(null);
     clientApiFetch<SeatPriceStatus>("/admin/billing/seat-price", { method: "POST" })
       .then((s) => setStatus(s))
-      .catch((e) =>
-        setError(e instanceof ApiError ? e.message : "Could not set up seat billing"),
-      )
+      .catch((e) => setError(e instanceof ApiError ? e.message : "Could not set up seat billing"))
       .finally(() => setBusy(false));
   }
 
@@ -56,7 +54,9 @@ export function SeatBillingSetup() {
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-5">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-xs font-medium tracking-wide text-muted uppercase">Seat billing (£5/mo add-on)</h2>
+        <h2 className="text-xs font-medium tracking-wide text-muted uppercase">
+          Seat billing (£5/mo add-on)
+        </h2>
         {status && (
           <span
             className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -77,7 +77,9 @@ export function SeatBillingSetup() {
           <p className="text-muted">
             Extra Centre seats are billable — {SOURCE_LABEL[status.source]}.
           </p>
-          <code className="w-fit rounded bg-foreground/[0.05] px-2 py-1 text-xs">{status.priceId}</code>
+          <code className="w-fit rounded bg-foreground/[0.05] px-2 py-1 text-xs">
+            {status.priceId}
+          </code>
         </div>
       ) : (
         <div className="flex flex-col gap-3">

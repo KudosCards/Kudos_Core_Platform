@@ -253,8 +253,9 @@ export class MessagesService {
       })),
       ...pending
         .map((recipient) => ({ recipient, pageId: effectivePageId(recipient) }))
-        .filter((entry): entry is { recipient: (typeof pending)[number]; pageId: string } =>
-          entry.pageId !== null,
+        .filter(
+          (entry): entry is { recipient: (typeof pending)[number]; pageId: string } =>
+            entry.pageId !== null,
         )
         .map((entry) => ({
           slug: generateSlug(),
@@ -441,7 +442,9 @@ export class MessagesService {
         entityId: reply.id,
       });
     } catch (error) {
-      this.logger.error(`Reply inbox notify failed for page ${link.messagePage.id}: ${reasonOf(error)}`);
+      this.logger.error(
+        `Reply inbox notify failed for page ${link.messagePage.id}: ${reasonOf(error)}`,
+      );
     }
     await this.notifyReplyEmail(
       link.messagePage.accountId,

@@ -164,7 +164,7 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   not a CMS.** The content turned out to be structures with a repeated shape (question/answer
   pairs; headline + pains + proof + CTA), which is what `lib/legal/*.ts` already does for a
   far more sensitive document. The decisive argument was Phase 3's: marketing copy that
-  quotes a number is a *copy* of that number, and Phase 3 caught two price claims that
+  quotes a number is a _copy_ of that number, and Phase 3 caught two price claims that
   contradicted checkout. In a TS module the number interpolates from `CARD_PRICE_MINOR`,
   `POSTAGE_MINOR` or `PLAN_CATALOG`; in MDX or a CMS it's hand-typed and nothing checks it.
   The cost — a developer for every copy change — is accepted and revisitable.
@@ -172,7 +172,7 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
   **`/faq` — done.** Fourteen answers, every number derived from a constant, every claim
   traceable to a plan entitlement, a pricing constant or an ADR. FAQPage JSON-LD is generated
   from the same strings the page renders, so marked-up and visible text cannot diverge. Note
-  what this markup does *not* buy: since 2023 Google shows FAQ rich results only for
+  what this markup does _not_ buy: since 2023 Google shows FAQ rich results only for
   government and health sites, so the value is machine-readable content, not SERP real estate.
 
   Two claims were cut in review rather than published. "We don't sell your data" is a policy
@@ -201,7 +201,7 @@ Alt text on the marketing images is descriptive. `lang="en"` is set. The
 
   The obvious version of this page — a generic "what to write in a birthday card" — is written
   by every card retailer online and would pull consumer traffic with no use for a platform that
-  posts cards for a tuition centre. So the guides answer the question *this* product's visitors
+  posts cards for a tuition centre. So the guides answer the question _this_ product's visitors
   have: what do you write to a customer, a student, a donor, a club member, where the tone
   going wrong is a business problem. Every example is written for that setting, and uses the
   real `{firstName}` merge token, which is also the thing that makes the wording sendable
@@ -254,7 +254,7 @@ and every one of them has already been got wrong at least once in this repo:
 3. **One `<h1>`**, and a `<title>` that isn't a duplicate of another page's.
 4. **`alternates.canonical`**, or the page competes with its own query-string variants.
 5. **`openGraph: openGraphFor({...})`**, not a bare `openGraph` object — Next merges metadata
-   *shallowly*, so a page-level `openGraph` silently replaces the parent's `siteName`,
+   _shallowly_, so a page-level `openGraph` silently replaces the parent's `siteName`,
    `locale` and `type` rather than extending them.
 6. **A meta description.** Even on a `noindex` page: people share URLs, and a link preview
    with nothing under the title reads as broken.

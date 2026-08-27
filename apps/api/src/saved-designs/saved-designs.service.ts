@@ -39,8 +39,7 @@ export class SavedDesignsService {
       // one way to get an unprintable design into the library.
       const document = dto.document
         ? this.parseDocument(dto.document)
-        : (this.assertPrintable(template.document as Record<string, unknown>),
-          template.document);
+        : (this.assertPrintable(template.document as Record<string, unknown>), template.document);
       return this.prisma.savedDesign.create({
         data: {
           accountId,
@@ -175,7 +174,9 @@ export class SavedDesignsService {
    */
   private assertPrintable(document: Record<string, unknown>): void {
     const violation = reservedFooterViolation(
-      document as unknown as { pages: { name: string; background?: unknown; elements: unknown[] }[] },
+      document as unknown as {
+        pages: { name: string; background?: unknown; elements: unknown[] }[];
+      },
     );
     if (violation) {
       throw new BadRequestException(violation.message);

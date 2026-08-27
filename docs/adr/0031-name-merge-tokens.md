@@ -5,7 +5,7 @@ Date: 2026-07-23
 
 ## Context
 
-The card designer has always *documented* that a text element "may contain merge tokens such as
+The card designer has always _documented_ that a text element "may contain merge tokens such as
 `Dear {name},`" and that they'd be "substituted per recipient at render time" (see `card.ts`), but
 **no substitution was ever implemented**. So a bulk send of one design to a whole list produced the
 same card for everyone — and if a design actually contained `{name}`, it would have printed the

@@ -10,11 +10,11 @@ with each recipient's name and address populated automatically."
 
 The platform already had two order paths:
 
-- **Manual batch order** (`POST /batch-orders`) — check out a set of *already-approved occasions*.
+- **Manual batch order** (`POST /batch-orders`) — check out a set of _already-approved occasions_.
   Powerful, but it assumes you've been through the calendar/approvals workflow first.
 - **Quick send** (`POST /batch-orders/quick-send`, and `quickSendMany` behind the guest basket) —
-  design a card and type in *one new recipient's* details. Great for a one-off to someone not yet
-  in your contacts, but it *creates* a recipient from typed-in fields every time.
+  design a card and type in _one new recipient's_ details. Great for a one-off to someone not yet
+  in your contacts, but it _creates_ a recipient from typed-in fields every time.
 
 Neither fits the common tuition-centre job: "send this one card to these thirty pupils I already
 have on file." Doing it today meant thirty trips through quick send, re-keying an address that's
@@ -31,7 +31,7 @@ Body: `{ savedDesignId, recipientIds: string[], postageClass, occasionType? }`.
 
 `BatchOrdersService.bulkSend`:
 
-1. **Cap check up front.** Reject if `recipientIds.length > batchOrderMaxSize` *before* creating
+1. **Cap check up front.** Reject if `recipientIds.length > batchOrderMaxSize` _before_ creating
    anything, so an over-cap request never leaves orphaned occasions behind. (`create()` re-checks
    it as the real guard — this early check is purely to fail clean.)
 2. Validate the design belongs to the account.
@@ -39,7 +39,7 @@ Body: `{ savedDesignId, recipientIds: string[], postageClass, occasionType? }`.
    deleted one) — we fail rather than silently drop contacts the sender expected to reach.
 4. **Require a mailable address.** A card can only be posted to a contact with a complete, valid UK
    address (line 1 + city + a postcode matching the shared regex). Any without one → **400** that
-   *names them*, so the sender knows exactly who to fix rather than getting a vague rejection.
+   _names them_, so the sender knows exactly who to fix rather than getting a vague rejection.
 5. For each contact, create an `approved` one-off occasion carrying the design (source
    `one_off_campaign`, dispatch `asap`), then hand the lines to the existing `create()` — so the
    money path (pricing, the atomic approved→queued transition, the per-order cap) is **identical**
@@ -51,7 +51,7 @@ occasions, then create() one order" so they can't drift.
 
 ### Web — `/send`
 
-A new **"Bulk send"** page (added to the sidebar under *Send cards*). Entry point: the Recipients
+A new **"Bulk send"** page (added to the sidebar under _Send cards_). Entry point: the Recipients
 page's existing multi-select now shows a **"Send a card →"** action whenever contacts are ticked,
 linking to `/send?recipients=<ids>`. The page:
 
@@ -71,6 +71,6 @@ Reaching `/send` with no contacts selected shows a friendly pointer back to Reci
   whole point of the feature. Keeping a contact's address current now directly benefits sending.
 - Contacts without an address are surfaced, not silently skipped — the sender stays in control of
   who actually receives a card.
-- Auto-personalising the card *face* with each recipient's name (the `{name}` merge token, still
-  unimplemented) remains out of scope here; this ADR covers auto-*addressing*. That merge-render
+- Auto-personalising the card _face_ with each recipient's name (the `{name}` merge token, still
+  unimplemented) remains out of scope here; this ADR covers auto-_addressing_. That merge-render
   work is tracked separately.

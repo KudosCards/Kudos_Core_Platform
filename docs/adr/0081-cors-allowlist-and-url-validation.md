@@ -11,7 +11,7 @@ talk to the API — admin login, password reset, everything failed. Two compound
 weaknesses turned a one-character typo into a total outage:
 
 1. **Single-origin CORS.** The API allowed exactly one browser origin:
-   `config.get("WEB_APP_URL")`. Any mismatch blocks *every* browser→API call at
+   `config.get("WEB_APP_URL")`. Any mismatch blocks _every_ browser→API call at
    once — there's no graceful degradation.
 2. **Loose URL validation.** `WEB_APP_URL` was set to `ttps://kudos-cards.co.uk`
    (missing the `h`). `z.string().url()` accepted it, because `new URL("ttps://…")`
@@ -31,9 +31,10 @@ envs like `DATABASE_URL` use non-http schemes and are left on `url()`.)
 
 **2. Configurable CORS allow-list.** CORS `origin` is now built from a list —
 `WEB_APP_URL` plus two new optional envs:
+
 - `CORS_ALLOWED_ORIGINS`: comma-separated extra exact origins (e.g. the `www`
   host, a staging domain).
-- `CORS_ALLOWED_ORIGIN_SUFFIXES`: comma-separated origin *suffixes* for dynamic
+- `CORS_ALLOWED_ORIGIN_SUFFIXES`: comma-separated origin _suffixes_ for dynamic
   hosts like Netlify deploy previews (e.g. `--kudos-cards.netlify.app`).
 
 A small pure module (`config/cors.ts`) does the matching: exact match

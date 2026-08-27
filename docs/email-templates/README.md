@@ -30,14 +30,14 @@ already uses for its own transactional email:
    **Custom SMTP**.
 2. Fill in:
 
-   | Field        | Value                                                          |
-   | ------------ | -------------------------------------------------------------- |
-   | Sender email | `noreply@kudoscards.co.uk`  (see the domain note below)        |
-   | Sender name  | `Kudos Cards`                                                  |
-   | Host         | `smtp-relay.brevo.com`                                         |
-   | Port         | `587`                                                          |
-   | Username     | your Brevo **SMTP login** (see gotcha #1)                      |
-   | Password     | a Brevo **SMTP key** (Brevo → SMTP & API → SMTP → generate)    |
+   | Field        | Value                                                       |
+   | ------------ | ----------------------------------------------------------- |
+   | Sender email | `noreply@kudoscards.co.uk` (see the domain note below)      |
+   | Sender name  | `Kudos Cards`                                               |
+   | Host         | `smtp-relay.brevo.com`                                      |
+   | Port         | `587`                                                       |
+   | Username     | your Brevo **SMTP login** (see gotcha #1)                   |
+   | Password     | a Brevo **SMTP key** (Brevo → SMTP & API → SMTP → generate) |
 
 3. Raise the auth rate limits if needed (the default sender is heavily throttled).
 
@@ -48,10 +48,10 @@ Without this, a perfectly branded template still arrives from a stranger.
 This trips people up. The two hosts look almost identical but do different jobs,
 and using the wrong one for the sender makes Brevo reject the mail:
 
-| Purpose                          | Domain                            | Why                                                         |
-| -------------------------------- | --------------------------------- | ---------------------------------------------------------- |
-| **Sending** (SMTP `MAIL FROM`)   | `kudoscards.co.uk` — **no hyphen** | that's where the verified Brevo senders + SPF/DKIM live    |
-| **Logo & links inside the email** | `kudos-cards.co.uk` — **hyphen**  | that's the live app host that serves `/marketing/logo.png` |
+| Purpose                           | Domain                             | Why                                                        |
+| --------------------------------- | ---------------------------------- | ---------------------------------------------------------- |
+| **Sending** (SMTP `MAIL FROM`)    | `kudoscards.co.uk` — **no hyphen** | that's where the verified Brevo senders + SPF/DKIM live    |
+| **Logo & links inside the email** | `kudos-cards.co.uk` — **hyphen**   | that's the live app host that serves `/marketing/logo.png` |
 
 So an auth email is **sent from** the no-hyphen domain but **shows a logo from**
 the hyphen domain. That is intentional — they are genuinely different domains.

@@ -13,7 +13,7 @@ Reviewing the editor for phones, the layout was already sound: the canvas scales
 to fit the viewport (no horizontal scroll), the side panel wraps full-width below
 the canvas via `flex-wrap`, Konva owns touch gestures (`touch-none`) so dragging
 is reliable, and every node has an `onTap` handler. The gaps were all about
-*target size for a finger*:
+_target size for a finger_:
 
 - **Transformer handles were 10px.** The resize/rotate anchors on the selected
   element — sized for a mouse — are nearly impossible to grab with a fingertip.

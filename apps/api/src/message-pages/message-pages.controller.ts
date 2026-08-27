@@ -50,9 +50,7 @@ export class MessagePagesController {
   }
 
   @Get()
-  list(
-    @CurrentMembership() membership: CurrentMembershipContext,
-  ): Promise<MessagePageSummary[]> {
+  list(@CurrentMembership() membership: CurrentMembershipContext): Promise<MessagePageSummary[]> {
     return this.messagePages.list(membership.accountId);
   }
 

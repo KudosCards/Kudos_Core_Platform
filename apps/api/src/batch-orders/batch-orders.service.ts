@@ -1490,7 +1490,12 @@ export class BatchOrdersService {
             include: {
               recipient: { select: { firstName: true, lastName: true } },
               occasion: {
-                select: { id: true, dispatchDate: true, postageClass: true, supersedesOccasionId: true },
+                select: {
+                  id: true,
+                  dispatchDate: true,
+                  postageClass: true,
+                  supersedesOccasionId: true,
+                },
               },
               fulfillmentJob: { select: { id: true, status: true } },
             },
@@ -1794,10 +1799,7 @@ export class BatchOrdersService {
 
   /** Balance = sum of all ledger amounts, the same definition WalletService
    *  uses. Order-independent, so it can't drift from the ledger. */
-  private async walletBalance(
-    tx: Prisma.TransactionClient,
-    accountId: string,
-  ): Promise<number> {
+  private async walletBalance(tx: Prisma.TransactionClient, accountId: string): Promise<number> {
     const { _sum } = await tx.walletLedgerEntry.aggregate({
       where: { accountId },
       _sum: { amountMinor: true },

@@ -9,7 +9,7 @@ Accepted — implemented.
 The "When should this go?" choice (**Send now** vs **Schedule delivery**) was
 pre-selected on **Send now** on every checkout surface. Because it's a real
 dispatch decision — send immediately vs hold and time to a date — a pre-ticked
-default is easy to leave untouched by accident: a customer who *meant* to
+default is easy to leave untouched by accident: a customer who _meant_ to
 schedule can pay and have cards go out straight away. User feedback asked for the
 field to start unselected and be mandatory, so the choice is always deliberate.
 
@@ -29,7 +29,7 @@ across every checkout surface.
     (`"now" | "scheduled" | null`) with the same disabled-until-chosen button and
     hint.
 
-We chose *disable-the-button-until-chosen + inline hint* over letting the click
+We chose _disable-the-button-until-chosen + inline hint_ over letting the click
 through and then erroring, so the requirement is visible up front (and it covers
 the large-run "Review & confirm" path uniformly, since that gate is entered via
 the same `canPay`). The submit handlers keep an explicit guard as a backstop.

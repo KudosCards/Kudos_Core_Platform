@@ -56,7 +56,14 @@ const EMBEDDED_PREFIX: Record<string, string> = {
 };
 
 /** Families that ship a real italic (and bold-italic) file. Others synthesise italic. */
-const HAS_ITALIC = new Set(["Montserrat", "Poppins", "Nunito", "Playfair Display", "Lora", "Georgia"]);
+const HAS_ITALIC = new Set([
+  "Montserrat",
+  "Poppins",
+  "Nunito",
+  "Playfair Display",
+  "Lora",
+  "Georgia",
+]);
 /** Families that ship a real bold file. Others (single-weight display faces) synthesise bold. */
 const HAS_BOLD = new Set([
   "Montserrat",
@@ -70,7 +77,10 @@ const HAS_BOLD = new Set([
 ]);
 
 /** PDF built-in standard families for the non-embedded system stacks. */
-const BUILTIN: Record<string, { regular: string; bold: string; italic: string; boldItalic: string }> = {
+const BUILTIN: Record<
+  string,
+  { regular: string; bold: string; italic: string; boldItalic: string }
+> = {
   Helvetica: {
     regular: "Helvetica",
     bold: "Helvetica-Bold",
@@ -127,7 +137,8 @@ export function fallbackFaces(): FontFace[] {
 function embeddedFace(prefix: string, family: string, bold: boolean, italic: boolean): FontFace {
   const realItalic = italic && HAS_ITALIC.has(family);
   const realBold = bold && HAS_BOLD.has(family);
-  const variant = realBold && realItalic ? "BoldItalic" : realBold ? "Bold" : realItalic ? "Italic" : "Regular";
+  const variant =
+    realBold && realItalic ? "BoldItalic" : realBold ? "Bold" : realItalic ? "Italic" : "Regular";
   const file = join(FONTS_DIR, `${prefix}-${variant}.ttf`);
   return {
     id: `${prefix}-${variant}`,
@@ -139,7 +150,8 @@ function embeddedFace(prefix: string, family: string, bold: boolean, italic: boo
 
 function builtinFace(family: string, bold: boolean, italic: boolean): FontFace {
   const set = BUILTIN[family] ?? BUILTIN[FALLBACK_FAMILY]!;
-  const name = bold && italic ? set.boldItalic : bold ? set.bold : italic ? set.italic : set.regular;
+  const name =
+    bold && italic ? set.boldItalic : bold ? set.bold : italic ? set.italic : set.regular;
   return { id: name, builtin: name, synthesizeBold: false, synthesizeItalic: false };
 }
 

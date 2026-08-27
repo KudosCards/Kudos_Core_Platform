@@ -46,7 +46,7 @@ Enterprise.
   Enterprise for anything above it, instead of an open-ended tier.
 - Existing Centre accounts are subject to the new cap once the seed re-runs.
   Anyone already **over** 2,000 active contacts is not modified — the cap only
-  blocks *adding beyond* it (active count + additions must fit), so they keep
+  blocks _adding beyond_ it (active count + additions must fit), so they keep
   their contacts and simply can't grow the list until under the cap; ops can move
   such an account to Enterprise. In practice the beta has no account near 2,000.
 - The stale "self-serve plans top out at unlimited contacts" framing in ADR 0101

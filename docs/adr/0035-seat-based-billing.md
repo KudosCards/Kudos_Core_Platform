@@ -58,7 +58,7 @@ banner on the invite form (with the submit button disabled) pointing at the mete
 - **Metered overage** (invite always works, bill auto-bumps) — rejected by the user for the
   budget-conscious school audience; bill shock is the failure mode to avoid.
 - **A `NotificationRead`-style separate seat-purchase record** — unnecessary; the Stripe subscription
-  item *is* the billing record, and `Account.extraSeats` is the cheap local mirror.
+  item _is_ the billing record, and `Account.extraSeats` is the cheap local mirror.
 - **Per-seat pricing with no included allowance** — would have been a price rise for existing Centre
   teams already using >1 seat; the "3 included + £5 extra" model leaves current small teams unchanged.
 

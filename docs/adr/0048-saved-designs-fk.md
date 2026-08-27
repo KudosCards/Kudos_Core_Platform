@@ -9,7 +9,7 @@ The Phase 5 index work (ADR 0046) surfaced a pre-existing schema/migration drift
 
 - `SavedDesign.cardDesign` is an **optional** relation (`cardDesignId String?`), and
   Prisma's default on-delete for an optional relation is `SetNull`. The schema
-  never declared an explicit `onDelete`, so it *implied* `SetNull`.
+  never declared an explicit `onDelete`, so it _implied_ `SetNull`.
 - But the `init` migration created the FK as `ON DELETE RESTRICT`.
 
 So the database (`RESTRICT`) disagreed with what the schema implied (`SetNull`).
@@ -43,7 +43,7 @@ side by side and neither drifts again.
 
 - Deleting a `CardDesign` now nulls `saved_designs.card_design_id` for any saved
   design based on it, instead of being blocked. In practice catalog templates are
-  *deactivated* (`isActive=false`), not hard-deleted, so this rarely triggers —
+  _deactivated_ (`isActive=false`), not hard-deleted, so this rarely triggers —
   but the intended, non-destructive behaviour is now what the DB actually does.
 - Verified: the migration is FK-only; the constraint reports `SET NULL`
   (`pg_constraint.confdeltype = 'n'`); a from-scratch `migrate deploy` + seed +

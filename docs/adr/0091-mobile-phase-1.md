@@ -36,17 +36,17 @@ overlay/modal audits, and marketing-page polish are deferred to a later phase.
    narrow, so no change was needed there.
 
 2. **Explicit viewport export** in the root layout: `width: "device-width",
-   initialScale: 1`. Pinch-zoom is deliberately left enabled (no
+initialScale: 1`. Pinch-zoom is deliberately left enabled (no
    `maximumScale`/`userScalable` cap) so low-vision users can still zoom.
 
 3. **44px buttons on touch screens, centralised.** A single `@media (max-width:
-   640px)` rule sets `min-height: 2.75rem` on `.btn-accent`/`.btn-secondary`, so
+640px)` rule sets `min-height: 2.75rem` on `.btn-accent`/`.btn-secondary`, so
    every primary/secondary button — pagination, actions, filters — meets the
    target without editing each call site, and desktop keeps its compact padding.
    The recipient cards' own tap targets (row checkbox, Edit/Archive) use
    `min-h-11`/`min-w-11` directly.
 
-Filter *chips* (the source/status pills, the "needs address" and archived
+Filter _chips_ (the source/status pills, the "needs address" and archived
 toggles) were left at their current size: they already satisfy the AA
 minimum-target-with-spacing exception, and inflating every pill to 44px would
 coarsen the layout for little accessibility gain.

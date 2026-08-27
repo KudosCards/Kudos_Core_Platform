@@ -174,7 +174,10 @@ export const MESSAGE_PAGE_TIMESERIES = { minDays: 1, maxDays: 365, defaultDays: 
 export function resolveTimeSeriesDays(raw: unknown): number {
   const n = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isFinite(n)) return MESSAGE_PAGE_TIMESERIES.defaultDays;
-  return Math.min(MESSAGE_PAGE_TIMESERIES.maxDays, Math.max(MESSAGE_PAGE_TIMESERIES.minDays, Math.floor(n)));
+  return Math.min(
+    MESSAGE_PAGE_TIMESERIES.maxDays,
+    Math.max(MESSAGE_PAGE_TIMESERIES.minDays, Math.floor(n)),
+  );
 }
 
 /** A reply as shown on the dashboard — the message plus which card/recipient it

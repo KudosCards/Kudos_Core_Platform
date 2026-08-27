@@ -19,14 +19,14 @@ Two pieces of pre-launch user feedback turned out to be live bugs:
    Sending via the birthday segment (remove all but one contact, pay, send)
    created a `bespoke_campaign` occasion dated **today**. Two root causes:
    - the bulk-send never carried the matched natural (birthday) occasion's
-     `type`/`occasionDate` — it only *superseded* it (ADR 0107), so the send
+     `type`/`occasionDate` — it only _superseded_ it (ADR 0107), so the send
      record was a bespoke event dated today, not the birthday itself. The
      calendar showed a bespoke campaign on the send day instead of a birthday on
      the birthday;
    - the send occasion's `occasionDate` was `now`, and `computeDispatchDate(now)`
      returns ~5 working days in the **past**, so its fulfilment `dueDate` landed
      last week and the ops queue flagged it overdue — for a card being produced
-     today. This affected *every* immediate one-off send (bulk and guided), not
+     today. This affected _every_ immediate one-off send (bulk and guided), not
      just birthdays.
 
 ## Decision
@@ -43,14 +43,14 @@ Two pieces of pre-launch user feedback turned out to be live bugs:
    the chosen design, flips it to an `asap` send, and checks it out through the
    same `create()` path as any other line. Crucially it keeps the occasion's own
    `type` **and** `occasionDate`, so the card's calendar event sits on the
-   *actual birthday*, keeps its birthday classification, and no duplicate
+   _actual birthday_, keeps its birthday classification, and no duplicate
    occasion is created — which also sidesteps the unique
    `(recipientId, type, occasionDate)` index that previously blocked dating a new
    send occasion to the birthday. Because an `asap` send is **paid and produced
    now**, its `dispatchDate` is set to **today** (not back-computed from the
    occasion date), so the ops queue reads it as due now, never overdue.
 
-   Recipients *not* reconciled against a natural occasion (an ordinary bulk send
+   Recipients _not_ reconciled against a natural occasion (an ordinary bulk send
    to contacts) still get a fresh `one_off_campaign` occasion, dated at the send
    moment and dispatched today. The same "dispatch today" rule is applied to the
    guided single send (`quickSend`), which had the identical back-dating bug.
@@ -65,12 +65,12 @@ Two pieces of pre-launch user feedback turned out to be live bugs:
   address re-entry, and a birthday card sent via the segment stays a birthday,
   sits on the recipient's real birthday in the calendar, and isn't wrongly
   flagged overdue.
-- Reconciling a segment send now *consumes* the natural occasion directly
+- Reconciling a segment send now _consumes_ the natural occasion directly
   (it moves `scheduled`/`pending_approval`/`approved` → `queued` with the design
   attached) instead of leaving it to be skipped at settlement — so the calendar
   shows one occasion on the right date, not a bespoke duplicate plus a skipped
   natural one.
-- `computeDispatchDate` is now used only for genuinely *scheduled* occasions
+- `computeDispatchDate` is now used only for genuinely _scheduled_ occasions
   (the auto/birthday scheduler), where back-computing from a future date is
   correct. Immediate one-off sends date their dispatch to the day they're made.
 - The occasion `recipient` shape now optionally carries the address; endpoints

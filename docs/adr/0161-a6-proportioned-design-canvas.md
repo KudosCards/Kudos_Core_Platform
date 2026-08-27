@@ -10,14 +10,14 @@ Customers reported that a card looked different once printed: everything they
 laid out in the editor appeared **shifted down** on the printed PDF, with a band
 of blank space injected above the content.
 
-The cause was an aspect-ratio mismatch between where cards are *authored* and how
-they are *printed*, not distortion:
+The cause was an aspect-ratio mismatch between where cards are _authored_ and how
+they are _printed_, not distortion:
 
 - The design canvas was authored at **450 × 600** design units — a **3:4**
   proportion (`CARD_HEIGHT / CARD_WIDTH = 1.333`). Content is top-anchored and
   fills the editor frame.
 - We print on **ISO A6** paper, **105 × 148 mm** — a **1:√2** proportion
-  (≈1.409), which is *taller* than 3:4.
+  (≈1.409), which is _taller_ than 3:4.
 - `fittedCardMm()` fits the 3:4 artwork onto the A6 page by width (keeping a 5 mm
   print safe margin), then the print overlay **vertically centres** the fitted
   card in the full A6 page. Because the 3:4 card is shorter than A6, this centring

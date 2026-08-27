@@ -42,15 +42,15 @@ The rule lives once, in `@kudos/shared-types` `card-format.ts`:
 - `BACK_RESERVED_FOOTER_MM = 30` — the physical measurement.
 - `backReservedFooterUnits(size)` — that measurement in design units, **derived
   per size** rather than hardcoded. The authoring canvas is one fixed 450 × 634
-  space *fitted* onto whatever card is printed, so a fixed unit count is a fixed
-  *fraction* of the card: 128.5 units is 30 mm on A6 but 42.5 mm on A5.
+  space _fitted_ onto whatever card is printed, so a fixed unit count is a fixed
+  _fraction_ of the card: 128.5 units is 30 mm on A6 but 42.5 mm on A5.
 - `backReservedFooterTop(size)` — the y coordinate content must stay above.
 - `isInBackReservedFooter(box, size)` — the overlap predicate.
 
 Every surface derives from those, so they cannot disagree with each other:
 
 - **Print engine** (`apps/api/src/print-pdf/render.ts`) clips the back face to
-  the band. Applied at *page* level, before the white base and the background,
+  the band. Applied at _page_ level, before the white base and the background,
   because a background bleeds to the page edge — clipping only the design space
   would let a full-bleed image on the back print straight over the logo.
 - **Browser print overlay and every read-only preview** share
@@ -128,7 +128,7 @@ to move.
 ## Amendment — telling the customer, not just enforcing it
 
 The print engine guarantees the strip. That is not the same as a customer
-understanding it, and an audit of what they are actually *told* found the
+understanding it, and an audit of what they are actually _told_ found the
 guidance thinner than the enforcement:
 
 - **The editor's overlap warning never fired for a page background.** It read
@@ -145,12 +145,12 @@ guidance thinner than the enforcement:
 
 All four now say it:
 
-| Surface | What it says |
-| --- | --- |
-| Editor, back tab | A standing neutral note, before anything is placed |
-| Editor, when affected | Amber — worded differently for a background (nothing to move) than for a stray element |
-| Customer's card preview | A line under the back face explaining the blank strip |
-| Pre-send check | A design-level warning, the last gate before payment |
+| Surface                 | What it says                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------- |
+| Editor, back tab        | A standing neutral note, before anything is placed                                     |
+| Editor, when affected   | Amber — worded differently for a background (nothing to move) than for a stray element |
+| Customer's card preview | A line under the back face explaining the blank strip                                  |
+| Pre-send check          | A design-level warning, the last gate before payment                                   |
 
 The pre-send warning is design-level rather than a per-recipient bucket: the
 artwork is identical on every card in the run, so a bucket would list all 76

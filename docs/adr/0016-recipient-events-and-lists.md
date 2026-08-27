@@ -11,7 +11,7 @@ integrations (ADR 0015):
 1. **Birthdays weren't reaching the calendar.** A recipient's date of birth was on file, but the
    only thing that ever turned it into an `Occasion` was the nightly birthday scheduler — and that
    cron only materialised occasions for birthdays inside a 21-day lookahead window. So a recipient
-   added in July with a December birthday produced *nothing* on the calendar until December. To the
+   added in July with a December birthday produced _nothing_ on the calendar until December. To the
    subscriber it looked like the CRM data simply hadn't landed. This was the reported bug.
 
 2. **No way to record other dates worth a card.** A birthday is one moment; a teacher also wants to
@@ -25,7 +25,7 @@ integrations (ADR 0015):
 ### 1. Birthdays become a calendar event the moment a recipient is added
 
 The `Occasion` model already had a `scheduled` status that nothing used. It's exactly the right
-tool: a *calendar marker that isn't yet an actionable card*. We now:
+tool: a _calendar marker that isn't yet an actionable card_. We now:
 
 - **Eagerly create a `scheduled` birthday occasion** for the recipient's next birthday whenever a
   recipient with a DOB is added — through every path: manual create, CSV import, and CRM ingest
@@ -33,7 +33,7 @@ tool: a *calendar marker that isn't yet an actionable card*. We now:
   `buildScheduledBirthdayOccasion`, keeps the row shape identical everywhere, and every insert uses
   `skipDuplicates` against the existing `occasion_idempotency_key (recipientId, type, occasionDate)`
   so it's idempotent no matter how many code paths run.
-- **Keep the approvals queue clean.** A `scheduled` occasion is on the calendar but *not* in the
+- **Keep the approvals queue clean.** A `scheduled` occasion is on the calendar but _not_ in the
   approvals queue (which filters to `pending_approval`). The nightly scheduler's job changes from
   "create pending_approval occasions in the window" to two idempotent steps: (a) ensure every active
   recipient with a DOB has a `scheduled` birthday occasion, and (b) **promote** the ones that have

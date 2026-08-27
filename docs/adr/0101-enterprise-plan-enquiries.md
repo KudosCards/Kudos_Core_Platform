@@ -18,7 +18,7 @@ Add an **Enterprise** tier presented as "Contact us", with the enquiry captured,
 emailed to ops, and worked from the admin portal.
 
 1. **Enterprise is display-only + lead capture, not a self-serve plan.** It has
-   no Stripe price, no card discount and no checkout. It's modelled *outside*
+   no Stripe price, no card discount and no checkout. It's modelled _outside_
    `PLAN_CATALOG` as a separate `ENTERPRISE_PLAN` constant, so the checkout,
    billing-upgrade and price-guard code keep iterating only the three real plans.
    `planDisplayName` still resolves `"enterprise"` (ops can set an account to it
@@ -37,7 +37,7 @@ emailed to ops, and worked from the admin portal.
    (5/min), validated by `CreateEnterpriseEnquiryDto` mirroring the shared
    `createEnterpriseEnquirySchema`. It returns only an acknowledgement (id +
    status), never the stored row. The ops side (`GET`/`PATCH
-   /admin/enterprise-enquiries`) sits behind `PlatformAdminGuard`.
+/admin/enterprise-enquiries`) sits behind `PlatformAdminGuard`.
 
 4. **A dedicated `/enterprise` page** (the placement the user chose) — a public,
    marketing-styled page reachable from the Enterprise option on both pricing

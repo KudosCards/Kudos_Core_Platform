@@ -12,7 +12,7 @@ implementation (ADRs 0009-era, `messages` module) is real and working but
 deliberately minimal, and one structural choice now blocks the direction we want:
 
 - **`MessagePage` is 1:1 with an `OrderRecipient`** (`orderRecipientId @unique`),
-  auto-created for every card at payment time. A page therefore *is* a property
+  auto-created for every card at payment time. A page therefore _is_ a property
   of a single card line. That makes **reusable pages impossible** (a club can't
   create one "birthday message from the manager" page and put it on 200 cards)
   and means a page **can't be authored independently of an order**.
@@ -21,7 +21,7 @@ deliberately minimal, and one structural choice now blocks the direction we want
   `<video>` tag — which **cannot render a YouTube/Vimeo embed**.
 
 The owner shared the current (separate, WordPress) version we're improving on. It
-is a **standalone page builder**: create a page with title / video (upload *or*
+is a **standalone page builder**: create a page with title / video (upload _or_
 paste YouTube/Vimeo/Loom/Google Drive) / rich-text message / CTA button / emoji
 icon / "allow replies" toggle, and it hands back a QR + URL you then attach to a
 card **by hand**. Its dashboard lists pages with view + reply counts, inline
@@ -29,14 +29,14 @@ replies, and Preview/Edit/Delete. That confirms the target feature set — and i
 core weakness: it's a silo, disconnected from card creation, with only
 page-level (not per-card) analytics.
 
-Goal: rebuild it **superior** — same rich authoring, but (1) reusable *and*
+Goal: rebuild it **superior** — same rich authoring, but (1) reusable _and_
 bespoke pages, (2) per-card analytics even on a shared page, (3) auto-personalised
 greetings from the linked contact, and (4) folded into the normal card
 send flow rather than a separate silo — without over-engineering the first pass.
 
 ## Decision
 
-### 1. Separate the *content* from the *QR identity*
+### 1. Separate the _content_ from the _QR identity_
 
 Split the single table into two ideas:
 
@@ -56,7 +56,7 @@ link auto-personalises from the contact and tracks that card's scans separately.
 This is the whole unlock over both v1 and the WordPress version.
 
 **`MessagePageReply`** (Phase 2): `messagePageLinkId`, `senderName`, `body`
-(plain text, capped), `createdAt`, `readAt` — tied to the *link* so the sender
+(plain text, capped), `createdAt`, `readAt` — tied to the _link_ so the sender
 knows which recipient replied.
 
 **`MessagePageEvent`** (Phase 3 only): append-only funnel timeline. Not built in

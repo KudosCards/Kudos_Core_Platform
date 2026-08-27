@@ -53,7 +53,7 @@ simply incorrect.
 
 If the Stripe charge were sized at checkout and the wallet debited when the
 payment settled, two concurrent checkouts would each size their charge against
-the *same* balance and the second debit would overdraw it. The balance could also
+the _same_ balance and the second debit would overdraw it. The balance could also
 move between the two moments, leaving an order genuinely underpaid.
 
 So the draw is debited **inside the same Serializable transaction that claims the
@@ -69,13 +69,13 @@ Because the money leaves before the payment completes, each way a payment can
 fail to complete has to give it back. There are five, and missing any one of them
 quietly costs a customer their balance:
 
-| Path | Release |
-| --- | --- |
-| Stripe session creation throws | Compensating release, then the order returns to `draft` |
-| `checkout.session.expired` webhook | Release, then back to `draft` |
-| `checkout.session.async_payment_failed` webhook | Release, then back to `draft` — a bank debit that never clears |
-| Buyer cancels an unpaid order | Release before the order is released |
-| Buyer resumes an abandoned checkout | **Not** released — the existing reservation is re-used, or the wallet would be debited twice for one order |
+| Path                                            | Release                                                                                                    |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Stripe session creation throws                  | Compensating release, then the order returns to `draft`                                                    |
+| `checkout.session.expired` webhook              | Release, then back to `draft`                                                                              |
+| `checkout.session.async_payment_failed` webhook | Release, then back to `draft` — a bank debit that never clears                                             |
+| Buyer cancels an unpaid order                   | Release before the order is released                                                                       |
+| Buyer resumes an abandoned checkout             | **Not** released — the existing reservation is re-used, or the wallet would be debited twice for one order |
 
 (`payment_intent.payment_failed` is deliberately absent: Stripe's hosted page
 lets the buyer retry on the same live session, so the order stays

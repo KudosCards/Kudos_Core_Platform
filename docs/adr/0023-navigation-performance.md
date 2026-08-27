@@ -11,11 +11,11 @@ next page appeared. A diagnosis of the request path found three compounding caus
 1. **A network round-trip on every navigation.** The Netlify edge middleware
    (`lib/supabase/proxy.ts`) called `supabase.auth.getUser()` on every request. `getUser()` calls
    Supabase's Auth server (`/auth/v1/user`) over the network to validate the token — a blocking
-   hop before the page could even start rendering, paid on *every* navigation (the middleware
+   hop before the page could even start rendering, paid on _every_ navigation (the middleware
    matcher runs on all non-asset requests, including client-side RSC navigations).
 2. **Missing loading states.** Eight app routes (`approvals`, `wallet`, `billing`, `integrations`,
    `batch-orders`, `messages`, `start`, `get-started`) had no `loading.tsx`, so a click left the
-   *previous* page frozen on screen until the new page's server fetch resolved — indistinguishable
+   _previous_ page frozen on screen until the new page's server fetch resolved — indistinguishable
    from a hang.
 3. **A cold client router cache.** With default `staleTimes`, re-visiting a page a few seconds
    later re-hit the server every time instead of using the already-fetched result.
@@ -31,9 +31,10 @@ refreshing (using the refresh token) — on the common path (valid token) it is 
 removes the per-navigation Auth-server round-trip.
 
 This is safe because the middleware is a **UX redirect gate, not the security boundary**:
+
 - The NestJS API cryptographically verifies every JWT against Supabase's JWKS on every call.
 - The authenticated layout's `GET /accounts/me` returns 401 for a bad/expired token, and the layout
-  redirects to `/login` — *before* rendering any data.
+  redirects to `/login` — _before_ rendering any data.
 
 So a stale or forged cookie that slips past the edge gate renders nothing; it is rejected one hop
 later with no data fetched or exposed. The edge check only saves a wasted render for the common

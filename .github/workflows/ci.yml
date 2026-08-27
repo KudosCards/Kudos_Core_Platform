@@ -69,6 +69,14 @@ jobs:
       - name: Check the ADR index is current
         run: pnpm adr:index:check
 
+      # Prettier had never actually run: `lint-staged` was configured but
+      # `.husky/pre-commit` did not exist, and husky's dispatcher exits 0 when
+      # it is missing — silently. 248 files had drifted. The hook is back, and
+      # this is the backstop for anyone who commits with `--no-verify` or from
+      # a checkout where `pnpm install` never ran the `prepare` script.
+      - name: Check formatting
+        run: pnpm format:check
+
       - name: Apply database migrations
         run: pnpm --filter @kudos/api exec prisma migrate deploy
 

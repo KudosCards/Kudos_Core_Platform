@@ -66,7 +66,10 @@ export const PRIVACY: LegalDoc = {
           ],
         },
         { kind: "h3", text: "When Kudos Cards is the processor" },
-        { kind: "p", text: "Our customers may upload personal information about other people, such as their:" },
+        {
+          kind: "p",
+          text: "Our customers may upload personal information about other people, such as their:",
+        },
         {
           kind: "ul",
           items: [
@@ -117,8 +120,14 @@ export const PRIVACY: LegalDoc = {
           ],
         },
         { kind: "h3", text: "Recipient and contact information" },
-        { kind: "p", text: "Customers can add information about contacts individually or through bulk imports." },
-        { kind: "p", text: "Depending upon the information supplied by the customer, this may include:" },
+        {
+          kind: "p",
+          text: "Customers can add information about contacts individually or through bulk imports.",
+        },
+        {
+          kind: "p",
+          text: "Depending upon the information supplied by the customer, this may include:",
+        },
         {
           kind: "ul",
           items: [
@@ -254,7 +263,10 @@ export const PRIVACY: LegalDoc = {
           kind: "p",
           text: "We process this information to provide services to the customer and in accordance with the customer's instructions.",
         },
-        { kind: "p", text: "Kudos Cards does not obtain ownership of a customer's contact database." },
+        {
+          kind: "p",
+          text: "Kudos Cards does not obtain ownership of a customer's contact database.",
+        },
       ],
     },
     {
@@ -344,7 +356,10 @@ export const PRIVACY: LegalDoc = {
           kind: "p",
           text: "Kudos Cards processes such information on the customer's instructions for the purpose of providing the requested service.",
         },
-        { kind: "p", text: "Customers should avoid uploading unnecessary information about children." },
+        {
+          kind: "p",
+          text: "Customers should avoid uploading unnecessary information about children.",
+        },
       ],
     },
     {
@@ -373,7 +388,10 @@ export const PRIVACY: LegalDoc = {
             "professional services.",
           ],
         },
-        { kind: "p", text: "We only provide information reasonably necessary for the relevant service." },
+        {
+          kind: "p",
+          text: "We only provide information reasonably necessary for the relevant service.",
+        },
         {
           kind: "p",
           text: "We may also disclose information where required by law, regulation, court order or another lawful authority.",
@@ -388,7 +406,10 @@ export const PRIVACY: LegalDoc = {
           kind: "p",
           text: "Recipient names, addresses, card content and other necessary order information may be provided to printing, fulfilment or postal providers where required to produce and deliver cards.",
         },
-        { kind: "p", text: "Only information required to fulfil the relevant order should be provided." },
+        {
+          kind: "p",
+          text: "Only information required to fulfil the relevant order should be provided.",
+        },
       ],
     },
     {
@@ -502,7 +523,10 @@ export const PRIVACY: LegalDoc = {
       n: 17,
       heading: "Personal Data Breaches",
       blocks: [
-        { kind: "p", text: "We maintain procedures for responding to suspected personal-data breaches." },
+        {
+          kind: "p",
+          text: "We maintain procedures for responding to suspected personal-data breaches.",
+        },
         {
           kind: "p",
           text: "Where Kudos Cards acts as a processor and becomes aware of a personal-data breach affecting customer-controlled information, we will notify the relevant customer without undue delay in accordance with our legal and contractual obligations.",
@@ -513,7 +537,10 @@ export const PRIVACY: LegalDoc = {
       n: 18,
       heading: "Your Data Protection Rights",
       blocks: [
-        { kind: "p", text: "Depending upon the circumstances, individuals may have rights including:" },
+        {
+          kind: "p",
+          text: "Depending upon the circumstances, individuals may have rights including:",
+        },
         {
           kind: "ul",
           items: [
@@ -525,7 +552,10 @@ export const PRIVACY: LegalDoc = {
             "data portability.",
           ],
         },
-        { kind: "p", text: "These rights are subject to applicable legal conditions and exemptions." },
+        {
+          kind: "p",
+          text: "These rights are subject to applicable legal conditions and exemptions.",
+        },
         { kind: "h3", text: "If you are a Kudos Cards customer or user" },
         { kind: "p", text: "You can contact us using the details below." },
         { kind: "h3", text: "If your information was uploaded by one of our customers" },

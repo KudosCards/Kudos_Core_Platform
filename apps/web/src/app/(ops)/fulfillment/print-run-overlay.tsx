@@ -92,7 +92,10 @@ interface PrintFace {
 /** The unique raster images across a run, each mapped to the most demanding
  * (largest) printed size it appears at — so each source is checked once against
  * its worst case. */
-function mostDemandingImageTargets(cards: PrintRunCard[], size: CardSize): Map<string, PrintedSizeMm> {
+function mostDemandingImageTargets(
+  cards: PrintRunCard[],
+  size: CardSize,
+): Map<string, PrintedSizeMm> {
   const map = new Map<string, PrintedSizeMm>();
   for (const card of cards) {
     for (const target of collectPrintImageTargets(card.document, size)) {
@@ -173,7 +176,9 @@ export function PrintRunOverlay({
         `kudos-print-run-${cards.length}-card${cards.length === 1 ? "" : "s"}-${size}.pdf`,
       );
     } catch (error) {
-      setDownloadError(error instanceof Error ? error.message : "Could not generate the PDF. Please try again.");
+      setDownloadError(
+        error instanceof Error ? error.message : "Could not generate the PDF. Please try again.",
+      );
     } finally {
       setDownloading(false);
     }
@@ -291,8 +296,8 @@ export function PrintRunOverlay({
         {lowResCount !== null && lowResCount > 0 && (
           <p className="order-last basis-full text-sm text-amber-700" role="status">
             ⚠ {lowResCount} image{lowResCount === 1 ? "" : "s"} in this run{" "}
-            {lowResCount === 1 ? "is" : "are"} low-resolution for {size} print (below ~200 dpi) and may
-            look soft — consider a higher-resolution source.
+            {lowResCount === 1 ? "is" : "are"} low-resolution for {size} print (below ~200 dpi) and
+            may look soft — consider a higher-resolution source.
           </p>
         )}
         <div className="flex items-center gap-3">

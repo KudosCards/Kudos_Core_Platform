@@ -77,7 +77,13 @@ describe("Returns / RTS (e2e)", () => {
         })
       : null;
     const order = await prisma.batchOrder.create({
-      data: { accountId, status: "fulfilling", subtotalMinor: 250, postageMinor: 91, totalMinor: 341 },
+      data: {
+        accountId,
+        status: "fulfilling",
+        subtotalMinor: 250,
+        postageMinor: 91,
+        totalMinor: 341,
+      },
     });
     const orderRecipient = await prisma.orderRecipient.create({
       data: {
@@ -111,7 +117,11 @@ describe("Returns / RTS (e2e)", () => {
       .set("Authorization", `Bearer ${ops}`)
       .send({ fulfillmentJobId: jobId, reason: "moved" })
       .expect(201);
-    expect(res.body).toMatchObject({ status: "awaiting_address", reason: "moved", freeRecoveryUsed: false });
+    expect(res.body).toMatchObject({
+      status: "awaiting_address",
+      reason: "moved",
+      freeRecoveryUsed: false,
+    });
 
     const recipient = await prisma.recipient.findUniqueOrThrow({ where: { id: recipientId } });
     expect(recipient.addressVerificationRequired).toBe(true);
@@ -208,7 +218,9 @@ describe("Returns / RTS (e2e)", () => {
     const ops = await opsToken();
     const { token, accountId } = await signUp();
     // Occasion 30 days ago → beyond the 7-day window.
-    const { jobId } = await postedCard(accountId, { occasionDate: new Date(Date.now() - 30 * DAY) });
+    const { jobId } = await postedCard(accountId, {
+      occasionDate: new Date(Date.now() - 30 * DAY),
+    });
     const marked = await request(app.getHttpServer())
       .post("/admin/returns")
       .set("Authorization", `Bearer ${ops}`)

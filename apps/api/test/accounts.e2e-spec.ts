@@ -195,7 +195,11 @@ describe("Accounts (e2e)", () => {
     await request(app.getHttpServer())
       .post("/occasions")
       .set("Authorization", `Bearer ${token}`)
-      .send({ type: "achievement", occasionDate: new Date().toISOString().slice(0, 10), recipientId })
+      .send({
+        type: "achievement",
+        occasionDate: new Date().toISOString().slice(0, 10),
+        recipientId,
+      })
       .expect(201);
 
     const after = await request(app.getHttpServer())

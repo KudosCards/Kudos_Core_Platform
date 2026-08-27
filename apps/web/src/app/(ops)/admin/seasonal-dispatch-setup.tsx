@@ -10,10 +10,7 @@ interface RulesResponse {
   default: SeasonalDispatchRule[];
 }
 
-const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function blankRule(): SeasonalDispatchRule {
   return {
@@ -66,7 +63,9 @@ export function SeasonalDispatchSetup() {
   function update(id: string, patch: Partial<SeasonalDispatchRule>) {
     setSaved(false);
     setRows((current) =>
-      (current ?? []).map((row) => (row.id === id ? { ...row, rule: { ...row.rule, ...patch } } : row)),
+      (current ?? []).map((row) =>
+        row.id === id ? { ...row, rule: { ...row.rule, ...patch } } : row,
+      ),
     );
   }
 
@@ -96,8 +95,9 @@ export function SeasonalDispatchSetup() {
         {saved && <span className="text-xs font-medium text-emerald-700">Saved</span>}
       </div>
       <p className="text-sm text-muted">
-        Occasions dated inside a window get extra working-day lead (so cards go out earlier during the
-        post rush), and can nudge senders toward First Class. Applied straight away — no redeploy.
+        Occasions dated inside a window get extra working-day lead (so cards go out earlier during
+        the post rush), and can nudge senders toward First Class. Applied straight away — no
+        redeploy.
       </p>
 
       {error && <p className="text-sm font-medium text-danger">{error}</p>}
@@ -137,10 +137,7 @@ export function SeasonalDispatchSetup() {
                         />
                       </td>
                       <td className="py-2 pr-3">
-                        <MonthDay
-                          value={rule.from}
-                          onChange={(from) => update(id, { from })}
-                        />
+                        <MonthDay value={rule.from} onChange={(from) => update(id, { from })} />
                       </td>
                       <td className="py-2 pr-3">
                         <MonthDay value={rule.to} onChange={(to) => update(id, { to })} />
@@ -168,7 +165,9 @@ export function SeasonalDispatchSetup() {
                       <td className="py-2 text-right">
                         <button
                           type="button"
-                          onClick={() => setRows((current) => (current ?? []).filter((r) => r.id !== id))}
+                          onClick={() =>
+                            setRows((current) => (current ?? []).filter((r) => r.id !== id))
+                          }
                           className="text-xs text-muted hover:text-accent"
                         >
                           Remove

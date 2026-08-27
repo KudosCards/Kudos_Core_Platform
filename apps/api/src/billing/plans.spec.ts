@@ -1,9 +1,4 @@
-import {
-  PLAN_CATALOG,
-  planCardPriceMinor,
-  planDisplayName,
-  getPlan,
-} from "@kudos/shared-types";
+import { PLAN_CATALOG, planCardPriceMinor, planDisplayName, getPlan } from "@kudos/shared-types";
 import { computeCardPriceMinor } from "./billing.constants";
 
 /**

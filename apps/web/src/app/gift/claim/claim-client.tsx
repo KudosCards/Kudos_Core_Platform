@@ -56,7 +56,9 @@ export function ClaimClient({ token, email }: { token: string; email: string }) 
       });
     } catch (claimError) {
       setSubmitting(false);
-      setError(claimError instanceof ApiError ? claimError.message : "Could not claim your account");
+      setError(
+        claimError instanceof ApiError ? claimError.message : "Could not claim your account",
+      );
       return;
     }
 

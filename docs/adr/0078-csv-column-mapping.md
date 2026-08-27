@@ -34,7 +34,7 @@ the customer confirms/adjusts, then imports. No renaming required.
 - `POST /recipients/import` gains an optional `mapping` multipart field (a JSON
   string, validated with `csvColumnMappingSchema`). When present, each parsed row
   is re-keyed from the file's own column names to our canonical field keys
-  (`remapRow`) *before* the existing row parser runs. **Backward compatible**:
+  (`remapRow`) _before_ the existing row parser runs. **Backward compatible**:
   with no mapping, the file must use our canonical headers exactly as before, so
   the API contract and every existing caller keep working.
 - Auto-detection (`suggestMapping`) normalises headers (lowercase, strip

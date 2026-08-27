@@ -14,11 +14,11 @@ Nothing in the ops console could change it. Every reference to `planId` under
 `apps/api/src/admin/` was a read — grouping for KPIs, filtering the subscriber
 list, displaying the plan on a customer. `planId` had exactly three writers:
 
-| Writer | What it does |
-| --- | --- |
-| `accounts.service.ts` | signup → `"free"` |
-| `guest-orders.service.ts` | guest purchase → `"free"` |
-| `webhooks.service.ts` | Stripe subscription event → the subscribed plan |
+| Writer                    | What it does                                    |
+| ------------------------- | ----------------------------------------------- |
+| `accounts.service.ts`     | signup → `"free"`                               |
+| `guest-orders.service.ts` | guest purchase → `"free"`                       |
+| `webhooks.service.ts`     | Stripe subscription event → the subscribed plan |
 
 So a plan could only be changed by taking a payment. That is right for customers
 and wrong for two real cases: our own internal and test accounts, which need paid
@@ -33,7 +33,7 @@ unaudited, easy to get wrong, and — as below — silently reversible.
 only, a reason required, audited as `plan_set_by_admin` with the from/to plans.
 
 **It refuses any account with a live Stripe subscription.** This is the decision
-that makes the rest safe. `webhooks.service.ts` rewrites `planId` on *every*
+that makes the rest safe. `webhooks.service.ts` rewrites `planId` on _every_
 subscription event, so an override on a subscribed account would be reverted the
 next time Stripe said anything about it — silently, possibly weeks later, with
 the entitlements vanishing under someone who is paying. An override that can be

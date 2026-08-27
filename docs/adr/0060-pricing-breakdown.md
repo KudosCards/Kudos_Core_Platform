@@ -30,19 +30,19 @@ was a chance to remove that drift, not add a fourth copy of it.
 card ever only costs one thing:
 
 - `CARD_PRICE_MINOR` (250), `POSTAGE_MINOR` (`{ first_class: 180, second_class:
-  91 }`), and `VAT_RATE_PERCENT` (20) are the single source of truth. The API's
+91 }`), and `VAT_RATE_PERCENT` (20) are the single source of truth. The API's
   `billing.constants` now re-exports `CARD_PRICE_MINOR`/`POSTAGE_MINOR` from
   here instead of defining its own, and `apps/web/src/lib/cart.ts` derives
   `CARD_PRICE_PENCE` from it (fixing the stale £1.50).
 - `computePricingBreakdown({ cardCount, cardSubtotalInclVatMinor, postageMinor,
-  fullCardPriceMinor? })` returns a `PricingBreakdown` whose lines **reconcile
+fullCardPriceMinor? })` returns a `PricingBreakdown` whose lines **reconcile
   exactly to the penny**:
   `cardSubtotalMinor − discountMinor + vatMinor + postageMinor === totalMinor`.
   - `cardSubtotalMinor` is the ex-VAT value at **full** (pre-discount) price, so
     the discount line has something to reduce.
   - `discountMinor` is the ex-VAT gap between full price and what's actually
     charged (0 on the free plan).
-  - `vatMinor` is the VAT portion of the *charged* inclusive price
+  - `vatMinor` is the VAT portion of the _charged_ inclusive price
     (`charged − round(charged / 1.2)`), so a discount lowers the VAT too.
   - `totalMinor` is always `cardSubtotalInclVatMinor + postageMinor` — VAT is
     decomposed out of the cards, never added.

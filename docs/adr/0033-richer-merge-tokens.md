@@ -22,7 +22,7 @@ bare `{ firstName, lastName }`:
 interface MergeContext {
   firstName: string;
   lastName: string;
-  occasion?: string | null;      // resolves {occasion}
+  occasion?: string | null; // resolves {occasion}
   occasionDate?: Date | string | null; // resolves {occasionDate} / {date}
   customFields?: Record<string, string> | null; // each key resolves {key}
 }
@@ -32,6 +32,7 @@ interface MergeContext {
 (the whole `Recipient` shape included) still compiles unchanged — the new fields are all optional.
 
 Resolution rules (`tokenValue`):
+
 - Built-ins win over custom fields, so a stray custom field named `firstName` can't shadow the name.
 - `{occasionDate}`/`{date}` render as a short, locale-stable `"25 Jul 2026"` (en-GB, UTC) — UTC so a
   date-only occasion doesn't slip a day across timezones.
@@ -49,7 +50,7 @@ context that isn't known at design time.
 - **Name** — everywhere a card is rendered (send previews, ops preview, print run).
 - **Occasion / occasionDate** — anywhere the card is tied to an occasion: the ops single-card
   preview and the bulk print run both now select `occasion { type, title, occasionDate }` and build
-  the label (**a custom `title` wins, else the type title-cased**). The customer-side bulk *send*
+  the label (**a custom `title` wins, else the type title-cased**). The customer-side bulk _send_
   preview doesn't attach an occasion yet, so those tokens stay literal there — by design.
 - **Custom fields** — read live off `Recipient.customFields` wherever the recipient is loaded.
 

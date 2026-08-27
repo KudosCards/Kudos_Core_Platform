@@ -7,15 +7,15 @@ current codebase.
 
 ## Findings (what's actually driving latency)
 
-| # | Finding | Where | Impact |
-|---|---------|-------|--------|
-| 1 | No response compression on the API (`helmet` + CORS set, but no `compression()`). `perPage=100` JSON lists ship uncompressed. | `apps/api` `configure-app.ts` | High, trivial |
-| 2 | Auth+API waterfall: the `(app)` layout awaits `account` + `summary`, and only then does the page start its own fetch. Every authed page = two sequential server phases. | `(app)/layout.tsx` | High |
-| 3 | Session re-resolved on every call, no dedup — each `serverApiFetch` recreates the Supabase server client + `getSession()`. No React `cache()`. | `api.server.ts` | Medium |
-| 4 | No streaming/Suspense — pages block on all data before sending HTML. 18 `loading.tsx` help nav, but each route still waits on its slowest fetch. | all pages | High (perceived) |
-| 5 | Over-fetching — 6 pages load `perPage=100`, 4 load `perPage=50` up front. | various | Medium |
-| 6 | Images unoptimized — `next/image` used but no `images.remotePatterns` in `next.config`, so remote Supabase/Airtable card art isn't served through the optimizer. | `/cards`, designer | Medium (public) |
-| 7 | `cache: "no-store"` on every fetch — correct for per-user data, needlessly dynamic for public catalog data. | `api.ts` | Medium (public) |
+| #   | Finding                                                                                                                                                                 | Where                         | Impact           |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------- |
+| 1   | No response compression on the API (`helmet` + CORS set, but no `compression()`). `perPage=100` JSON lists ship uncompressed.                                           | `apps/api` `configure-app.ts` | High, trivial    |
+| 2   | Auth+API waterfall: the `(app)` layout awaits `account` + `summary`, and only then does the page start its own fetch. Every authed page = two sequential server phases. | `(app)/layout.tsx`            | High             |
+| 3   | Session re-resolved on every call, no dedup — each `serverApiFetch` recreates the Supabase server client + `getSession()`. No React `cache()`.                          | `api.server.ts`               | Medium           |
+| 4   | No streaming/Suspense — pages block on all data before sending HTML. 18 `loading.tsx` help nav, but each route still waits on its slowest fetch.                        | all pages                     | High (perceived) |
+| 5   | Over-fetching — 6 pages load `perPage=100`, 4 load `perPage=50` up front.                                                                                               | various                       | Medium           |
+| 6   | Images unoptimized — `next/image` used but no `images.remotePatterns` in `next.config`, so remote Supabase/Airtable card art isn't served through the optimizer.        | `/cards`, designer            | Medium (public)  |
+| 7   | `cache: "no-store"` on every fetch — correct for per-user data, needlessly dynamic for public catalog data.                                                             | `api.ts`                      | Medium (public)  |
 
 Already good (leave alone): router `staleTimes` tuned (30s), Konva dynamically imported,
 pgbouncer pooling documented, no heavy date/animation libs.
@@ -50,7 +50,7 @@ pgbouncer pooling documented, no heavy date/animation libs.
   (`/cards/[id]`, `/cards/[id]/send`) + a shared blur placeholder on all five thumbnails.
 - **Phase 5 — API/DB depth. ✅ Done (ADR 0046).** Added composite indexes for the hot
   per-account list queries — `batch_orders [account_id, created_at]`, `recipients
-  [account_id, created_at]`, `occasions [account_id, occasion_date]` — each eliminating a
+[account_id, created_at]`, `occasions [account_id, occasion_date]` — each eliminating a
   sort (proven via EXPLAIN). No N+1s to fix (lists use batched `include`). Keep-warm left
   as an external `/health` pinger (a code cron can't wake a slept Railway service). The
   pre-existing `saved_designs` FK drift flagged here was since reconciled to `SetNull`
@@ -59,8 +59,8 @@ pgbouncer pooling documented, no heavy date/animation libs.
   (`@next/bundle-analyzer` is webpack-only). Heavy client components already code-split —
   every `react-konva` consumer is behind `next/dynamic({ssr:false})`, so the 304KB Konva
   chunk is lazy-only. Nothing else heavy is eager (rest of first-load is React/Next runtime
-  + Supabase auth). Added `pnpm analyze:bundle` as a Turbopack-compatible size report +
-  code-split regression guard. No JS to defer.
+  - Supabase auth). Added `pnpm analyze:bundle` as a Turbopack-compatible size report +
+    code-split regression guard. No JS to defer.
 
 Expected outcome: Phases 0–2 alone should meaningfully cut TTFB and time-to-first-paint on
 every authed page; 3–4 target public/marketing speed; 5–6 are depth.
@@ -73,7 +73,7 @@ every authed page; 3–4 target public/marketing speed; 5–6 are depth.
   weekend gaps) means a real user — often the first of the day, or a prospect signing in —
   is the one who eats it. Public `/cards` is CDN/ISR so it's unaffected; the authed app and
   API calls are what a cold start slows.
-  - Fix is **infrastructure, not code**: an *external* uptime pinger (UptimeRobot /
+  - Fix is **infrastructure, not code**: an _external_ uptime pinger (UptimeRobot /
     BetterStack / a Railway or GitHub scheduled job / a Cloudflare worker) hitting the
     existing `/health` URL every few minutes. A code-level `@Cron` can't do it — if the
     service is asleep, its own cron is asleep too. Bonus: the pinger doubles as uptime

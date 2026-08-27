@@ -30,10 +30,14 @@ legible and are wrapped in a horizontal scroller (`min-w-[560px]`), so on a 390p
 sideways scrolling. The list view is the mobile-native way to read upcoming occasions, so the
 calendar now defaults to it on narrow screens.
 
-Implementation detail worth recording: the view is *derived*, not set in an effect.
+Implementation detail worth recording: the view is _derived_, not set in an effect.
 
 ```ts
-const isNarrow = useSyncExternalStore(subscribeToMediaQuery, () => mql.matches, () => false);
+const isNarrow = useSyncExternalStore(
+  subscribeToMediaQuery,
+  () => mql.matches,
+  () => false,
+);
 const [viewOverride, setView] = useState<CalendarView | null>(null);
 const view = viewOverride ?? (isNarrow ? "list" : "month");
 ```

@@ -24,6 +24,7 @@ reminder-emails opt-out, which previously only lived on Billing). The sub-pages 
 so nothing breaks and there are no redirects; the hub is pure consolidation.
 
 Result — a leaner sidebar:
+
 - **Overview**: Dashboard
 - **Send cards**: Bulk send, Calendar, Approvals, Checkout, Orders
 - **Grow relationships**: Recipients, Designs, Messages

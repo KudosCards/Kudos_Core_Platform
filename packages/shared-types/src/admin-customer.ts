@@ -105,9 +105,7 @@ export const customer360Schema = z.object({
   occasions: z.object({
     scheduled: z.number(),
     autoSend: z.number(),
-    upcoming: z.array(
-      z.object({ label: z.string(), date: z.coerce.date().nullable() }),
-    ),
+    upcoming: z.array(z.object({ label: z.string(), date: z.coerce.date().nullable() })),
   }),
 
   integrations: z.object({

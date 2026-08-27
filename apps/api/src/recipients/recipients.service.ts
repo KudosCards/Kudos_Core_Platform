@@ -5,7 +5,13 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma, type KeyDateType, type PlanEntitlement, type Recipient, type RecipientKeyDate } from "@prisma/client";
+import {
+  Prisma,
+  type KeyDateType,
+  type PlanEntitlement,
+  type Recipient,
+  type RecipientKeyDate,
+} from "@prisma/client";
 import { parse } from "csv-parse/sync";
 import { PrismaService } from "../prisma/prisma.service";
 import { runSerializable } from "../common/run-serializable";
@@ -19,10 +25,7 @@ import type { ListRecipientsQueryDto } from "./dto/list-recipients-query.dto";
 import { parseRecipientRow, type ParsedRecipientRow } from "./csv-row.util";
 import { suggestMapping, remapRow } from "./csv-mapping.util";
 import type { CsvColumnMapping, CsvImportPreview } from "@kudos/shared-types";
-import {
-  buildScheduledBirthdayOccasion,
-  startOfUtcDay,
-} from "../occasions/birthday-occasion.util";
+import { buildScheduledBirthdayOccasion, startOfUtcDay } from "../occasions/birthday-occasion.util";
 import { buildScheduledKeyDateOccasion } from "../occasions/key-date-occasion.util";
 import { keyDateTypeSchema } from "@kudos/shared-types";
 import type { UpsertKeyDateDto } from "./dto/upsert-key-date.dto";
@@ -490,8 +493,12 @@ export class RecipientsService {
     // This pass only resolves update-vs-new-candidate; the cap decision is
     // deferred to the transaction below so it can't race a concurrent create()
     // or importCsv() the way a plain pre-read count() would.
-    const pendingByKey = new Map<string, { rowNumber: number; recipient: Prisma.RecipientCreateManyInput }>();
-    const candidateNewRows: { rowNumber: number; recipient: Prisma.RecipientCreateManyInput }[] = [];
+    const pendingByKey = new Map<
+      string,
+      { rowNumber: number; recipient: Prisma.RecipientCreateManyInput }
+    >();
+    const candidateNewRows: { rowNumber: number; recipient: Prisma.RecipientCreateManyInput }[] =
+      [];
     const toUpdate: { id: string; email: string | null }[] = [];
 
     for (const { rowNumber, parsed } of parsedRows) {

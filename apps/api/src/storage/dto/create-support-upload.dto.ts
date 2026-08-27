@@ -12,8 +12,7 @@ export class CreateSupportUploadDto {
   @ApiProperty({ description: "Must be an accepted image/* or video/* MIME type" })
   @IsString()
   @Matches(/^(image\/(png|jpe?g|webp|gif)|video\/(mp4|quicktime|webm))$/, {
-    message:
-      "contentType must be an image (png, jpeg, webp, gif) or video (mp4, quicktime, webm)",
+    message: "contentType must be an image (png, jpeg, webp, gif) or video (mp4, quicktime, webm)",
   })
   contentType!: string;
 }

@@ -31,7 +31,10 @@ export interface TeamMember {
 }
 
 /** An invite without its secret token — the token is only ever emailed. */
-export type SafeInvite = Pick<Invite, "id" | "email" | "role" | "status" | "expiresAt" | "createdAt">;
+export type SafeInvite = Pick<
+  Invite,
+  "id" | "email" | "role" | "status" | "expiresAt" | "createdAt"
+>;
 
 /** The account's seat position for the team panel's usage meter. */
 export interface TeamSeats {
@@ -82,7 +85,11 @@ export class TeamService {
 
   /** The team panel: members, pending invites, and whether the plan allows
    * inviting more (so the UI can gate the form). Any member may view it. */
-  async getTeam(accountId: string, viewerUserId: string, viewerRole: MembershipRole): Promise<TeamView> {
+  async getTeam(
+    accountId: string,
+    viewerUserId: string,
+    viewerRole: MembershipRole,
+  ): Promise<TeamView> {
     const [memberships, invites, entitlement, account] = await Promise.all([
       this.prisma.membership.findMany({ where: { accountId }, orderBy: { createdAt: "asc" } }),
       this.prisma.invite.findMany({
@@ -214,7 +221,11 @@ export class TeamService {
     return account.extraSeats;
   }
 
-  async revokeInvite(accountId: string, actorRole: MembershipRole, inviteId: string): Promise<void> {
+  async revokeInvite(
+    accountId: string,
+    actorRole: MembershipRole,
+    inviteId: string,
+  ): Promise<void> {
     if (!canManage(actorRole)) {
       throw new ForbiddenException("Only an owner or admin can manage invites");
     }

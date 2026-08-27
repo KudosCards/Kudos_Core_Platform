@@ -37,7 +37,7 @@ memory**:
   active-status subscriptions.
 - **At-risk** — a single `$queryRaw` that returns **only the at-risk accounts**
   (no active subscription, and `COALESCE(MAX(paid order in window), signup) ≤
-  now − 30d`), ordered most-idle first. The one query that returns rows returns
+now − 30d`), ordered most-idle first. The one query that returns rows returns
   a small set, not the whole account table.
 
 Raw SQL is used only where Prisma's typed API can't express the shape

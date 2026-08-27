@@ -152,8 +152,10 @@ describe("Admin — set plan (e2e)", () => {
     const accountId = await account("centre");
     await prisma.account.update({ where: { id: accountId }, data: { extraSeats: 4 } });
 
-    await setPlan(token, accountId, { planId: "centre", reason: "Re-applying the same plan" })
-      .expect(201);
+    await setPlan(token, accountId, {
+      planId: "centre",
+      reason: "Re-applying the same plan",
+    }).expect(201);
 
     const stored = await prisma.account.findUniqueOrThrow({ where: { id: accountId } });
     expect(stored.extraSeats).toBe(4);

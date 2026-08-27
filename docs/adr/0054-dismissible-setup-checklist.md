@@ -35,7 +35,7 @@ Expand** and **Dismiss** buttons.
 ### Why localStorage, not an account setting
 
 An account is shared by multiple teammates. A server-side "dismissed" flag would
-hide the guide for *everyone* on the account the moment one person dismissed it.
+hide the guide for _everyone_ on the account the moment one person dismissed it.
 Dismissal is a personal "I've seen this" preference, so it belongs per browser.
 No API or schema change is needed. The key is versioned (`kudos.setupChecklist.v1`)
 so the steps can change later without a stale dismissal carrying over.

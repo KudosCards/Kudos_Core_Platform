@@ -124,9 +124,7 @@ export class MessagePagesService {
   /** A CTA is all-or-nothing: a button needs both a label and an https link. */
   private assertCtaCoherent(label: string | null, url: string | null): void {
     if (Boolean(label) !== Boolean(url)) {
-      throw new BadRequestException(
-        "A call-to-action needs both a button label and an https link",
-      );
+      throw new BadRequestException("A call-to-action needs both a button label and an https link");
     }
   }
 
@@ -386,7 +384,10 @@ export class MessagePagesService {
 
   /** Daily engagement summed across the account's pages over the last `days`. */
   async accountTimeseries(accountId: string, days: number): Promise<MessagePageTimeSeries> {
-    return this.dailySeries(this.windowWithinRetention(days), Prisma.sql`account_id = ${accountId}`);
+    return this.dailySeries(
+      this.windowWithinRetention(days),
+      Prisma.sql`account_id = ${accountId}`,
+    );
   }
 
   /**
@@ -429,9 +430,7 @@ export class MessagePagesService {
    * replied` are DISTINCT cards at each stage; the `total*` are raw event sums.
    * See docs/adr/0136-message-page-analytics.md.
    */
-  private async funnelFor(
-    linkWhere: Prisma.MessagePageLinkWhereInput,
-  ): Promise<MessagePageFunnel> {
+  private async funnelFor(linkWhere: Prisma.MessagePageLinkWhereInput): Promise<MessagePageFunnel> {
     const [agg, viewed, clicked, totalReplies, replied] = await Promise.all([
       this.prisma.messagePageLink.aggregate({
         where: linkWhere,

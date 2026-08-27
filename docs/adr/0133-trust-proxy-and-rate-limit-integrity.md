@@ -16,7 +16,7 @@ throttler's default tracker keys on the request IP.
 Two problems made those limits far weaker than they looked:
 
 1. **The IP was the proxy's, not the client's.** `NestFactory.create` builds the
-   Express app with no `trust proxy` setting, so `req.ip` is the *socket* peer.
+   Express app with no `trust proxy` setting, so `req.ip` is the _socket_ peer.
    In production the socket peer is our hosting edge proxy (Railway), not the
    real caller. So **every anonymous request carried the same proxy IP and
    shared one global rate-limit bucket** — the per-user limits were effectively a
@@ -24,9 +24,9 @@ Two problems made those limits far weaker than they looked:
    everyone, and a distributed abuser was never bucketed per-source at all.
 
 2. **Config drift in how throttling was registered.** `ThrottlerModule.forRoot`
-   was called in *two* feature modules (`MessagesModule` limit 30,
+   was called in _two_ feature modules (`MessagesModule` limit 30,
    `GuestModule` limit 10). `ThrottlerModule` registers globally, so there were
-   two competing global registrations, and three *other* controllers
+   two competing global registrations, and three _other_ controllers
    (`returns-public`, `invites`, `enterprise-public`) used
    `@UseGuards(ThrottlerGuard)` while their own modules imported the throttler
    from neither — they worked only as a side effect of whichever feature module
@@ -41,7 +41,7 @@ Two problems made those limits far weaker than they looked:
 
 Crucially it is an **exact hop count, never `true`**. `trust proxy = true`
 tells Express to believe a fully client-supplied `X-Forwarded-For`, which lets
-any caller spoof their IP and trivially dodge the limit — *worse* than trusting
+any caller spoof their IP and trivially dodge the limit — _worse_ than trusting
 nothing. A hop count `N` trusts only the `N` proxies nearest the server and
 reads the client IP from the correct position. Railway's edge is a single hop,
 so the default is `1`; a CDN/WAF in front of the API would make it `2`.

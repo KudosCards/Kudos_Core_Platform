@@ -1111,7 +1111,8 @@ export class FulfillmentService {
       },
       html: renderBrandedEmail({
         webAppUrl,
-        preheader: count === 1 ? "Your card should have arrived." : "Your cards should have arrived.",
+        preheader:
+          count === 1 ? "Your card should have arrived." : "Your cards should have arrived.",
         heading:
           count === 1 ? "Your card should have arrived 💌" : "Your cards should have arrived 💌",
         bodyHtml: `

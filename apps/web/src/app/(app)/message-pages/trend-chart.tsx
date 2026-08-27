@@ -60,7 +60,9 @@ export function TrendChart({ series }: { series: MessagePageTimeSeries }) {
   const x = (i: number) => M.left + (n === 1 ? PLOT_W / 2 : (i / (n - 1)) * PLOT_W);
   const y = (v: number) => M.top + (1 - v / maxY) * PLOT_H;
   const path = (key: (typeof SERIES)[number]["key"]) =>
-    points.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(p[key]).toFixed(1)}`).join(" ");
+    points
+      .map((p, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(p[key]).toFixed(1)}`)
+      .join(" ");
 
   const hovered = hover === null ? null : points[hover];
   const firstPoint = points[0];
@@ -76,7 +78,9 @@ export function TrendChart({ series }: { series: MessagePageTimeSeries }) {
           aria-labelledby={titleId}
           preserveAspectRatio="none"
         >
-          <title id={titleId}>Daily views, clicks and replies over the last {series.days} days</title>
+          <title id={titleId}>
+            Daily views, clicks and replies over the last {series.days} days
+          </title>
           {/* Recessive baseline + top gridline. */}
           <line
             x1={M.left}
@@ -149,7 +153,10 @@ export function TrendChart({ series }: { series: MessagePageTimeSeries }) {
             <p className="font-medium tabular-nums">{shortDate(hovered.date)}</p>
             {SERIES.map((s) => (
               <p key={s.key} className="flex items-center gap-1.5 tabular-nums text-muted">
-                <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ backgroundColor: s.color }}
+                />
                 {hovered[s.key]} {s.label.toLowerCase()}
               </p>
             ))}
@@ -162,7 +169,10 @@ export function TrendChart({ series }: { series: MessagePageTimeSeries }) {
         <span className="flex items-center gap-3">
           {SERIES.map((s) => (
             <span key={s.key} className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ backgroundColor: s.color }}
+              />
               {s.label}
             </span>
           ))}

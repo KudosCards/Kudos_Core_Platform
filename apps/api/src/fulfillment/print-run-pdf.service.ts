@@ -39,7 +39,11 @@ export class PrintRunPdfService {
     private readonly config: ConfigService<EnvConfig, true>,
   ) {}
 
-  async render(actorUserId: string, dto: ExportAddressesDto, size: CardSize = DEFAULT_CARD_SIZE): Promise<RenderedPrintRun> {
+  async render(
+    actorUserId: string,
+    dto: ExportAddressesDto,
+    size: CardSize = DEFAULT_CARD_SIZE,
+  ): Promise<RenderedPrintRun> {
     // Audited read — records a fulfillment_print_run per card, same as the web path.
     const cards = await this.fulfillment.printRun(actorUserId, dto);
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });

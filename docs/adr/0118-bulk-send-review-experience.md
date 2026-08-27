@@ -55,8 +55,8 @@ with the business:
   (each a total `count` plus a bounded `sample` for drill-in) and the exact,
   VAT-decomposed price for the whole selection — read-only, creating nothing.
   Buckets **overlap by design**: one recipient can carry several problems at once
-  (e.g. no address *and* an unresolved `{teacher}`), and each is reported so a fix
-  never surprises the buyer with the next issue. `ready` is the count with *no*
+  (e.g. no address _and_ an unresolved `{teacher}`), and each is reported so a fix
+  never surprises the buyer with the next issue. `ready` is the count with _no_
   problem — so the buckets don't sum to `total - ready`; the web frames it as
   "N cards need attention" with a per-issue breakdown that may repeat a card.
   The `price` covers only the **mailable** cards (those with a valid address),
@@ -86,7 +86,7 @@ with the business:
 P1a shipped items 1–2 of the review: the `face` prop and the flip lightbox,
 wired into the `/send` composer (each preview tile opens the whole card + its
 address). P1b adds the full **"Review every card"** overlay — a searchable grid
-of a card for *every* recipient in the run, each showing the name + address it
+of a card for _every_ recipient in the run, each showing the name + address it
 posts to and opening the flip lightbox on click, virtualized (`LazyCardTile`
 mounts a face's Konva canvas only while near the viewport) so a run of thousands
 stays responsive. "Review all N cards" is promoted to a primary action at/above
@@ -109,7 +109,7 @@ contact data HTML-escaped, and offered from the order-summary column and the
 review overlay (both the plain look-through and the confirm gate).
 
 P3c completes P3 with the **post-payment per-card record** on the order detail.
-The buyer's order detail already carries the shipping-address *snapshot* per line
+The buyer's order detail already carries the shipping-address _snapshot_ per line
 (the exact address posted to, frozen at order time), so it now shows the full
 posting address per card and offers a **"Download proof sheet"** — an order-receipt
 variant of the same printable document, listing every card with its recipient,

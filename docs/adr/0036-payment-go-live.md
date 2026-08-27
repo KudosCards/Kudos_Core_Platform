@@ -8,7 +8,7 @@ Date: 2026-07-23
 All the payment code exists and is production-grade (Stripe Checkout for plans,
 card orders and wallet top-ups; race-safe transitions; signature-verified,
 idempotent webhooks). But **no money can be taken yet** for the recurring
-products, because the Stripe *Price* objects the subscription and seat checkouts
+products, because the Stripe _Price_ objects the subscription and seat checkouts
 reference don't exist, and their ids aren't wired in.
 
 Two friction points blocked go-live:
@@ -39,11 +39,11 @@ other Stripe config already lives.
 create-stripe-prices`) creates — idempotently, via a stable `lookup_key` per
 price — the three recurring GBP, VAT-inclusive Prices and prints the env lines:
 
-| Env var | Product | Amount |
-|---|---|---|
-| `STRIPE_PRICE_ID_PRO` | Kudos Cards — Pro | £9.97/mo |
-| `STRIPE_PRICE_ID_CENTRE` | Kudos Cards — Centre | £19.97/mo |
-| `STRIPE_CENTRE_SEAT_PRICE_ID` | Kudos Cards — Centre extra seat | £5.00/mo |
+| Env var                       | Product                         | Amount    |
+| ----------------------------- | ------------------------------- | --------- |
+| `STRIPE_PRICE_ID_PRO`         | Kudos Cards — Pro               | £9.97/mo  |
+| `STRIPE_PRICE_ID_CENTRE`      | Kudos Cards — Centre            | £19.97/mo |
+| `STRIPE_CENTRE_SEAT_PRICE_ID` | Kudos Cards — Centre extra seat | £5.00/mo  |
 
 Run it wherever the Stripe secret key is available (e.g. `railway run …`, which
 injects the live key). Re-running reuses existing Prices — safe to run twice.

@@ -8,7 +8,7 @@ Accepted
 
 Cards are personalised per recipient with curly-brace merge tokens (`{firstName}`,
 `{occasion}`, …), resolved by `applyMergeTokens` at send/print time (see 0031,
-0033). The card editor only *documented* the tokens — a paragraph of help text
+0033). The card editor only _documented_ the tokens — a paragraph of help text
 above the text box listing `{name}`, `{firstName}`, `{lastName}`, and so on — and
 left the designer to type the exact token by hand. That's undiscoverable and
 error-prone: a typo (`{firstname }`, `{Frist Name}`) prints literally, and 0053

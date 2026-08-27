@@ -17,7 +17,7 @@ Phase 5 of the user-feedback batch, three items:
   grid with category filter chips. The owner wanted it to feel like a shop:
   category **carousels**, **search**, occasion/category **filter**, and a
   clearer **"personalise"** call to action.
-- A **calendar** follow-up from Phase 3: the list view gave no sense of *when*
+- A **calendar** follow-up from Phase 3: the list view gave no sense of _when_
   the shown occasions fall relative to now.
 
 ## Decision
@@ -39,6 +39,7 @@ service). Recording is best-effort on the web side: if the `POST /design-assets`
 fails, the image is already on the card, so the upload isn't lost.
 
 **Shop browsing (#10).** `cards-gallery-client` now offers:
+
 - **Carousel mode** when browsing everything with no search — one horizontal,
   snap-scrolling row per `CardDesign.category`, each with a "See all N →" that
   drills into that category. This is the "shop shelf" feel.

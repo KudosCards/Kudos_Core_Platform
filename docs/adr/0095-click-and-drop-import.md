@@ -14,12 +14,12 @@ They didn't, and the Click & Drop channel showed "Not connected".
 Investigation found two Royal Mail products in play, pointed at different things:
 
 - **Shipping API v4** (`/api/v4/shipments`) — what the platform already
-  integrated with (ADR 0072). It creates a *finished shipment* server-side (buys
+  integrated with (ADR 0072). It creates a _finished shipment_ server-side (buys
   postage, returns tracking + label) and **bypasses the Click & Drop dashboard**.
   It's a manual ops step ("Dispatch via Royal Mail" on a printed card) and was
   never enabled (`ROYAL_MAIL_API_KEY` unset).
 - **Click & Drop Orders API** (`/api/v1/orders`) — the channel the operator set
-  up, with its own authorization key. Orders are *imported* into the dashboard
+  up, with its own authorization key. Orders are _imported_ into the dashboard
   queue. Its "Not connected" status is normal for a push-import channel (it just
   waits for orders to be POSTed to it); nothing in the platform was POSTing.
 

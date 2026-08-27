@@ -17,7 +17,7 @@ clear once the pages were specified.
 Two facts settled it.
 
 **The content is not prose.** An FAQ is a list of question/answer pairs. An audience page is
-a headline, a set of pains, a proof point and a CTA. These are *structures* with a repeated
+a headline, a set of pains, a proof point and a CTA. These are _structures_ with a repeated
 shape, rendered by one template, not documents whose author chooses their own headings. MDX
 is good at the second thing and adds nothing to the first — it would let every page invent
 its own layout, which is how a content section stops looking like one site.

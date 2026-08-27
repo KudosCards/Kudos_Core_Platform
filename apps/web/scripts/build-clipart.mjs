@@ -59,14 +59,20 @@ const LABEL_OVERRIDES = {
 
 function humaniseLabel(stem) {
   if (LABEL_OVERRIDES[stem]) return LABEL_OVERRIDES[stem];
-  const words = stem.replace(/^happy_birthday_/, "").replace(/^birthday_/, "").replace(/_/g, " ").trim();
+  const words = stem
+    .replace(/^happy_birthday_/, "")
+    .replace(/^birthday_/, "")
+    .replace(/_/g, " ")
+    .trim();
   const label = words || stem.replace(/_/g, " ");
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 /** Intrinsic width/height from a viewBox, else the width/height attributes. */
 function readIntrinsicSize(svg) {
-  const vb = svg.match(/viewBox\s*=\s*["']\s*([\d.eE+-]+)[ ,]+([\d.eE+-]+)[ ,]+([\d.eE+-]+)[ ,]+([\d.eE+-]+)/);
+  const vb = svg.match(
+    /viewBox\s*=\s*["']\s*([\d.eE+-]+)[ ,]+([\d.eE+-]+)[ ,]+([\d.eE+-]+)[ ,]+([\d.eE+-]+)/,
+  );
   if (vb) {
     const w = Number(vb[3]);
     const h = Number(vb[4]);
@@ -111,7 +117,10 @@ async function main() {
     const srcDir = path.join(SRC_ROOT, category);
     const outDir = path.join(OUT_ROOT, category);
     fs.mkdirSync(outDir, { recursive: true });
-    const files = fs.readdirSync(srcDir).filter((f) => f.toLowerCase().endsWith(".svg")).sort();
+    const files = fs
+      .readdirSync(srcDir)
+      .filter((f) => f.toLowerCase().endsWith(".svg"))
+      .sort();
 
     for (const file of files) {
       const stem = file.replace(/\.svg$/i, "");

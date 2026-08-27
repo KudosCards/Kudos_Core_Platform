@@ -6,9 +6,9 @@ Accepted
 
 ## Context
 
-ADR 0133 fixed *how* per-IP rate limits key their client (real client IP, not
+ADR 0133 fixed _how_ per-IP rate limits key their client (real client IP, not
 the proxy). This ADR is the follow-up **coverage audit**: with the keying
-correct, which anonymous (`@Public()`) endpoints still had *no* rate limit at
+correct, which anonymous (`@Public()`) endpoints still had _no_ rate limit at
 all? A global `JwtAuthGuard` protects everything else, so `@Public()` routes are
 the entire anonymous attack surface.
 
@@ -38,8 +38,8 @@ routes.
   **5/min per IP** — ample for a real mistyped attempt, far below abuse.
 - **`integrations/me` and `integrations/contacts`:** throttle keyed on the
   **API key**, not the IP, via a small `ApiKeyThrottlerGuard extends
-  ThrottlerGuard` that overrides `getTracker` to use `request.apiKey.keyId`
-  (falling back to IP). Registered *after* `ApiKeyGuard` so the key is resolved
+ThrottlerGuard` that overrides `getTracker` to use `request.apiKey.keyId`
+  (falling back to IP). Registered _after_ `ApiKeyGuard` so the key is resolved
   first. Per-key rather than per-IP because legitimate inbound callers (e.g.
   Zapier) share a small pool of source IPs across many customers — an IP-keyed
   limit would let one account throttle unrelated ones. Limits: `/me` 60/min,

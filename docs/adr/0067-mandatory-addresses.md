@@ -31,6 +31,7 @@ and reused by the list filter, the dashboard count, and (via `isMailable`) the
 web badge, so server and client never disagree.
 
 **Capture the full address, everywhere it's entered:**
+
 - CSV import now parses `addressLine1`, `addressLine2`, `addressCity` alongside
   `postcode` (still permissive — a row without them imports and is flagged). The
   sample template + column hints were updated.
@@ -45,6 +46,7 @@ the lookup is written behind a stable return shape: dropping in a keyed provider
 later adds a "select address" step with no other change.
 
 **Surface the gap so it gets chased:**
+
 - a per-row "⚠️ Needs address" badge and a "Needs address" filter on the
   recipients list (`?missingAddress=true`, backed by the list filter);
 - a "N contacts need an address" nudge on the dashboard
@@ -77,10 +79,11 @@ the system already **hard-stops sending** to an addressless contact
 them out), so send time is the right and only place to enforce mailability.
 
 Changes:
+
 - `CreateRecipientDto` address fields (line 1, city, postcode) are now
   **optional**; a postcode, if given, must still be a valid UK one. A new
   `BlankToNull()` transform maps blank submissions to `null` so a manual **edit**
-  can also *clear* an address, not just add one. The manual-add path now matches
+  can also _clear_ an address, not just add one. The manual-add path now matches
   the import-and-flag behaviour of CSV/CRM.
 - Web: the Add-Contact form's `AddressFields` is `required={false}` with a note
   that the address can be added later; the recipient-edit form always sends the

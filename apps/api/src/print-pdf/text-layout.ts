@@ -98,7 +98,11 @@ function breakLongWord(word: string, maxWidth: number, measure: (s: string) => n
 
 /** Horizontal offset (added to the box's left x) that aligns a line of width
  * `lineWidth` within a box of width `boxWidth`. Matches Konva's per-line align. */
-export function alignOffset(align: "left" | "center" | "right", boxWidth: number, lineWidth: number): number {
+export function alignOffset(
+  align: "left" | "center" | "right",
+  boxWidth: number,
+  lineWidth: number,
+): number {
   if (align === "right") return boxWidth - lineWidth;
   if (align === "center") return (boxWidth - lineWidth) / 2;
   return 0;
@@ -117,7 +121,11 @@ export interface BaselineMetrics {
  * of the em (e.g. pdfkit's `ascender/1000`, `-descender/1000`). The alphabetic
  * baseline of line `n` is `firstBaseline + n·lineHeightPx`. Pure.
  */
-export function baselineMetrics(fontSize: number, ascentEm: number, descentEm: number): BaselineMetrics {
+export function baselineMetrics(
+  fontSize: number,
+  ascentEm: number,
+  descentEm: number,
+): BaselineMetrics {
   const lineHeightPx = LINE_HEIGHT * fontSize;
   const ascent = ascentEm * fontSize;
   const descent = descentEm * fontSize;

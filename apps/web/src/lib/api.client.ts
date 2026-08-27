@@ -41,7 +41,9 @@ export async function clientApiDownload(
   const response = await fetch(`${env.NEXT_PUBLIC_API_URL}${path}`, {
     ...init,
     headers: {
-      ...(init.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+      ...(init.body && !(init.body instanceof FormData)
+        ? { "Content-Type": "application/json" }
+        : {}),
       ...init.headers,
       Authorization: `Bearer ${accessToken}`,
     },
@@ -51,14 +53,18 @@ export async function clientApiDownload(
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
     const message =
-      body && typeof body === "object" && "message" in body && typeof (body as { message: unknown }).message === "string"
+      body &&
+      typeof body === "object" &&
+      "message" in body &&
+      typeof (body as { message: unknown }).message === "string"
         ? (body as { message: string }).message
         : `Download failed with ${response.status}`;
     throw new ApiError(message, response.status, body);
   }
 
   const blob = await response.blob();
-  const filename = filenameFromDisposition(response.headers.get("content-disposition")) ?? fallbackFilename;
+  const filename =
+    filenameFromDisposition(response.headers.get("content-disposition")) ?? fallbackFilename;
   const url = URL.createObjectURL(blob);
   try {
     const anchor = document.createElement("a");

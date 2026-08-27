@@ -11,9 +11,16 @@ import { mintToken } from "./util/test-jwks";
 
 const teamSchema = z.object({
   members: z.array(
-    z.object({ userId: z.string(), email: z.string().nullable(), role: z.string(), isYou: z.boolean() }),
+    z.object({
+      userId: z.string(),
+      email: z.string().nullable(),
+      role: z.string(),
+      isYou: z.boolean(),
+    }),
   ),
-  invites: z.array(z.object({ id: z.string().uuid(), email: z.string(), role: z.string(), status: z.string() })),
+  invites: z.array(
+    z.object({ id: z.string().uuid(), email: z.string(), role: z.string(), status: z.string() }),
+  ),
   teamSeatsEnabled: z.boolean(),
   seats: z.object({
     included: z.number(),
@@ -79,7 +86,11 @@ describe("Team / invites (e2e)", () => {
       .expect(200);
     const team = teamSchema.parse(response.body);
     expect(team.members).toHaveLength(1);
-    expect(team.members[0]).toMatchObject({ role: "owner", email: "founder@centre.test", isYou: true });
+    expect(team.members[0]).toMatchObject({
+      role: "owner",
+      email: "founder@centre.test",
+      isYou: true,
+    });
     expect(team.yourRole).toBe("owner");
   });
 
@@ -130,9 +141,20 @@ describe("Team / invites (e2e)", () => {
   it("reports seat usage in the team view", async () => {
     const owner = await signUpOwner({ centre: true });
     const team = teamSchema.parse(
-      (await request(app.getHttpServer()).get("/team").set("Authorization", `Bearer ${owner.token}`).expect(200)).body,
+      (
+        await request(app.getHttpServer())
+          .get("/team")
+          .set("Authorization", `Bearer ${owner.token}`)
+          .expect(200)
+      ).body,
     );
-    expect(team.seats).toMatchObject({ included: 3, extra: 0, limit: 3, used: 1, seatPriceMinor: 500 });
+    expect(team.seats).toMatchObject({
+      included: 3,
+      extra: 0,
+      limit: 3,
+      used: 1,
+      seatPriceMinor: 500,
+    });
   });
 
   it("invites, emails a link, and lets the invitee accept and join", async () => {
@@ -145,7 +167,11 @@ describe("Team / invites (e2e)", () => {
       .expect(201);
     // The response never leaks the secret token.
     expect(inviteResponse.body).not.toHaveProperty("token");
-    expect(inviteResponse.body).toMatchObject({ email: "staff@centre.test", role: "staff", status: "pending" });
+    expect(inviteResponse.body).toMatchObject({
+      email: "staff@centre.test",
+      role: "staff",
+      status: "pending",
+    });
 
     // An email with the accept link was sent to the (lowercased) invitee.
     expect(sendTransactional).toHaveBeenCalledTimes(1);
@@ -156,7 +182,12 @@ describe("Team / invites (e2e)", () => {
 
     // Public preview works for the token holder.
     const preview = await request(app.getHttpServer()).get(`/invites/${token}`).expect(200);
-    expect(preview.body).toMatchObject({ email: "staff@centre.test", role: "staff", status: "pending", expired: false });
+    expect(preview.body).toMatchObject({
+      email: "staff@centre.test",
+      role: "staff",
+      status: "pending",
+      expired: false,
+    });
 
     // The invitee signs in with the matching email and accepts.
     const staffUserId = randomUUID();
@@ -168,10 +199,19 @@ describe("Team / invites (e2e)", () => {
 
     // They're now a staff member of the owner's account.
     const membership = await prisma.membership.findFirstOrThrow({ where: { userId: staffUserId } });
-    expect(membership).toMatchObject({ accountId: owner.accountId, role: "staff", email: "staff@centre.test" });
+    expect(membership).toMatchObject({
+      accountId: owner.accountId,
+      role: "staff",
+      email: "staff@centre.test",
+    });
     // Invite is marked accepted; team now shows two members and no pending invites.
     const team = teamSchema.parse(
-      (await request(app.getHttpServer()).get("/team").set("Authorization", `Bearer ${owner.token}`).expect(200)).body,
+      (
+        await request(app.getHttpServer())
+          .get("/team")
+          .set("Authorization", `Bearer ${owner.token}`)
+          .expect(200)
+      ).body,
     );
     expect(team.members).toHaveLength(2);
     expect(team.invites).toHaveLength(0);
@@ -227,7 +267,12 @@ describe("Team / invites (e2e)", () => {
     // Add a staff member directly.
     const staffUserId = randomUUID();
     await prisma.membership.create({
-      data: { accountId: owner.accountId, userId: staffUserId, role: "staff", email: "s@centre.test" },
+      data: {
+        accountId: owner.accountId,
+        userId: staffUserId,
+        role: "staff",
+        email: "s@centre.test",
+      },
     });
     const staffToken = await mintToken(staffUserId, "s@centre.test");
     await request(app.getHttpServer())
@@ -241,7 +286,12 @@ describe("Team / invites (e2e)", () => {
     const owner = await signUpOwner({ centre: true });
     const staffUserId = randomUUID();
     await prisma.membership.create({
-      data: { accountId: owner.accountId, userId: staffUserId, role: "staff", email: "member@centre.test" },
+      data: {
+        accountId: owner.accountId,
+        userId: staffUserId,
+        role: "staff",
+        email: "member@centre.test",
+      },
     });
 
     // Promote to admin.

@@ -25,9 +25,7 @@ describe("suggestMapping", () => {
   });
 
   it("matches our own canonical headers exactly", () => {
-    expect(
-      suggestMapping(["firstName", "lastName", "dateOfBirth", "postcode", "email"]),
-    ).toEqual({
+    expect(suggestMapping(["firstName", "lastName", "dateOfBirth", "postcode", "email"])).toEqual({
       firstName: "firstName",
       lastName: "lastName",
       dateOfBirth: "dateOfBirth",

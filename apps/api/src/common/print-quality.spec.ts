@@ -24,7 +24,9 @@ describe("effectivePrintDpi", () => {
 
 describe("imagePrintDpi", () => {
   it("reports the limiting (lower) axis", () => {
-    expect(imagePrintDpi({ width: 600, height: 100 }, { widthMm: 25.4, heightMm: 25.4 })).toBeCloseTo(100, 5);
+    expect(
+      imagePrintDpi({ width: 600, height: 100 }, { widthMm: 25.4, heightMm: 25.4 }),
+    ).toBeCloseTo(100, 5);
   });
 });
 
@@ -65,9 +67,36 @@ describe("collectPrintImageTargets", () => {
         name: "front",
         background: { type: "image", assetUrl: "https://x/bg.jpg" },
         elements: [
-          { kind: "image", id: "a", assetUrl: "https://x/photo.png", x: 10, y: 10, width: 200, height: 150, rotation: 0 },
-          { kind: "image", id: "b", assetUrl: "/stickers/star.svg", x: 10, y: 10, width: 60, height: 60, rotation: 0 },
-          { kind: "text", id: "t", text: "hi", x: 0, y: 0, fontFamily: "Montserrat", fontSize: 20, color: "#000" },
+          {
+            kind: "image",
+            id: "a",
+            assetUrl: "https://x/photo.png",
+            x: 10,
+            y: 10,
+            width: 200,
+            height: 150,
+            rotation: 0,
+          },
+          {
+            kind: "image",
+            id: "b",
+            assetUrl: "/stickers/star.svg",
+            x: 10,
+            y: 10,
+            width: 60,
+            height: 60,
+            rotation: 0,
+          },
+          {
+            kind: "text",
+            id: "t",
+            text: "hi",
+            x: 0,
+            y: 0,
+            fontFamily: "Montserrat",
+            fontSize: 20,
+            color: "#000",
+          },
         ],
       },
       { name: "back", elements: [] },
@@ -77,7 +106,10 @@ describe("collectPrintImageTargets", () => {
   it("collects raster backgrounds + image elements with their printed sizes, skipping SVG + non-images", () => {
     const targets = collectPrintImageTargets(document, "A6");
     expect(targets).toHaveLength(2); // bg + png photo; SVG sticker and text excluded
-    expect(targets.find((t) => t.where === "background")?.printed).toEqual({ widthMm: 105, heightMm: 148 });
+    expect(targets.find((t) => t.where === "background")?.printed).toEqual({
+      widthMm: 105,
+      heightMm: 148,
+    });
     const photo = targets.find((t) => t.assetUrl === "https://x/photo.png");
     expect(photo?.printed.widthMm).toBeCloseTo((200 * 105) / 450, 4);
   });

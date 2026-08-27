@@ -12,7 +12,7 @@ whatever order elements were added — fixed, with no bring-forward / send-back.
 
 Crucially, the stacking order is **already** represented: the canvas and every
 preview draw `page.elements` in array order, so a later element renders on top.
-Layer ordering is therefore purely *reordering that array* — no new field, no
+Layer ordering is therefore purely _reordering that array_ — no new field, no
 z-index property, no migration.
 
 ## Decision
@@ -35,7 +35,7 @@ page's array.
    matching the Figma/Moonpig convention, wired into the existing editor keydown
    handler (still ignored while typing in a field).
 
-3. **No schema / renderer change.** Because array order already *is* z-order,
+3. **No schema / renderer change.** Because array order already _is_ z-order,
    nothing about the stored `DesignDocument` changes and the read-only preview
    needs no update — it already draws in array order. The Transformer and drag
    snapping keep working across a reorder: the Transformer effect already

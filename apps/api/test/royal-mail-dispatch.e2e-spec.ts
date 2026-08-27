@@ -140,12 +140,18 @@ describe("Royal Mail dispatch (e2e)", () => {
         object: "event",
         type: "checkout.session.completed",
         data: {
-          object: { id: `cs_test_${randomUUID()}`, payment_status: "paid", metadata: { batchOrderId } },
+          object: {
+            id: `cs_test_${randomUUID()}`,
+            payment_status: "paid",
+            metadata: { batchOrderId },
+          },
         },
       }),
     ).expect(201);
 
-    const orderRecipient = await prisma.orderRecipient.findFirstOrThrow({ where: { batchOrderId } });
+    const orderRecipient = await prisma.orderRecipient.findFirstOrThrow({
+      where: { batchOrderId },
+    });
     const job = await prisma.fulfillmentJob.findFirstOrThrow({
       where: { orderRecipientId: orderRecipient.id },
     });
@@ -279,11 +285,17 @@ describe("Royal Mail dispatch (e2e)", () => {
         object: "event",
         type: "checkout.session.completed",
         data: {
-          object: { id: `cs_test_${randomUUID()}`, payment_status: "paid", metadata: { batchOrderId } },
+          object: {
+            id: `cs_test_${randomUUID()}`,
+            payment_status: "paid",
+            metadata: { batchOrderId },
+          },
         },
       }),
     ).expect(201);
-    const orderRecipient = await prisma.orderRecipient.findFirstOrThrow({ where: { batchOrderId } });
+    const orderRecipient = await prisma.orderRecipient.findFirstOrThrow({
+      where: { batchOrderId },
+    });
     const job = await prisma.fulfillmentJob.findFirstOrThrow({
       where: { orderRecipientId: orderRecipient.id },
     });
