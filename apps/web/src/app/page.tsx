@@ -216,9 +216,6 @@ export default function HomePage() {
       <section className="bg-gradient-to-b from-sky-50 to-white">
         <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 py-16 md:grid-cols-2 md:py-24">
           <div className="flex flex-col gap-6">
-            <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-100">
-              🟢 Trusted by businesses, tuition centres, schools &amp; clubs across the UK
-            </span>
             <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
               Send one card, or automate thousands
             </h1>
