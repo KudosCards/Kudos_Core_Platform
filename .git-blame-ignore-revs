@@ -1,0 +1,12 @@
+# Commits that changed formatting only, and should be skipped when reading
+# `git blame`. GitHub honours this file automatically; locally, run once:
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Only add a commit here if it made no semantic change whatsoever.
+
+# Format the repo, and make Prettier actually run (#351).
+# Prettier had never run automatically — lint-staged was configured but
+# .husky/pre-commit was never committed, and husky's dispatcher exits 0 on a
+# missing hook. 248 files had drifted; this reformatted them in one go.
+c41c96fe59b8f3295d70461464b858f2c5f2a8e9
