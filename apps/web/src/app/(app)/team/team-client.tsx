@@ -177,7 +177,7 @@ export function TeamClient({ initialTeam }: { initialTeam: Team }) {
           {/* Usage bar */}
           <div className="h-2 w-full overflow-hidden rounded-full bg-foreground/[0.06]">
             <div
-              className={`h-full rounded-full ${atLimit ? "bg-accent" : "bg-success-soft0"}`}
+              className={`h-full rounded-full ${atLimit ? "bg-accent" : "bg-success"}`}
               style={{ width: `${Math.min(100, Math.round((seats.used / seats.limit) * 100))}%` }}
             />
           </div>

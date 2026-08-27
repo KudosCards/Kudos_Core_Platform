@@ -10,6 +10,7 @@ import {
   deliverByWindow,
   describeSendSchedule,
   isoDay,
+  orderScheduleIsLive,
   royalMailTrackingUrl,
   startOfUtcDay,
   summariseSendSchedule,
@@ -57,7 +58,7 @@ export function OrderDetailClient({
   // Today counts as scheduled: a card going out this morning is still news, and
   // having the banner vanish on the day is exactly the disappearing act above.
   const isScheduled =
-    (order.status === "paid" || order.status === "fulfilling") &&
+    orderScheduleIsLive(order.status) &&
     schedule.toCome > 0 &&
     schedule.earliest !== null &&
     startOfUtcDay(schedule.earliest).getTime() >= today.getTime();

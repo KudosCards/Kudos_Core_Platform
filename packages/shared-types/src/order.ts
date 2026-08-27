@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ukPostcodeRegex } from "./recipient";
-import type { OrderRecipientStatus } from "./enums";
+import type { BatchOrderStatus, OrderRecipientStatus } from "./enums";
 import {
   batchOrderStatusSchema,
   dispatchOptionSchema,
@@ -289,7 +289,8 @@ export function summariseSendSchedule(
       undated += 1;
       continue;
     }
-    const date = line.dispatchDate instanceof Date ? line.dispatchDate : new Date(line.dispatchDate);
+    const date =
+      line.dispatchDate instanceof Date ? line.dispatchDate : new Date(line.dispatchDate);
     // An unparseable date is worse than no date: reporting `Invalid Date` to a
     // customer is worse than saying nothing, so it falls in with the undated.
     if (Number.isNaN(date.getTime())) {
@@ -328,15 +329,50 @@ export interface SendScheduleCopy {
   detail: string | null;
 }
 
+/**
+ * Whether an order's send schedule is worth telling anyone about.
+ *
+ * Only an order that has been paid for is going anywhere — but an occasion
+ * carries its dispatch date from the moment it is *approved*, which is before
+ * checkout. So an abandoned draft has a perfectly good set of post dates hanging
+ * off it, and a screen that renders the schedule unconditionally announces
+ * "Scheduled — we'll post these on 4 September" next to a "Not checked out"
+ * pill. That contradiction is the same class of confusing signpost this readout
+ * was written to remove.
+ *
+ * A predicate here rather than the condition written out at each call site: the
+ * orders list, the order page and the ops order page all show this sentence, and
+ * those screens have drifted apart once already.
+ */
+export function orderScheduleIsLive(status: BatchOrderStatus): boolean {
+  return status === "paid" || status === "fulfilling";
+}
+
 export function describeSendSchedule(
   schedule: OrderSendScheduleSummary,
   formatDate: (date: Date) => string,
 ): SendScheduleCopy | null {
   if (schedule.toCome === 0 || schedule.earliest === null) return null;
 
+  // How many of the cards still to come actually carry a date. When some don't,
+  // the lead has to say so rather than speak for all of them: "we'll post these
+  // on 4 September" immediately above "1 of these has no occasion on file and
+  // goes as soon as it's printed" is the readout contradicting itself in
+  // consecutive sentences, which is the very thing this copy exists to stop.
+  // `dated` is at least 1 here — a schedule with no dates returned null above.
+  const dated = schedule.toCome - schedule.undated;
+  const subject =
+    schedule.undated === 0
+      ? schedule.toCome === 1
+        ? "it"
+        : "these"
+      : dated === 1
+        ? "one of these"
+        : `${dated} of these`;
+
   const lead = schedule.isSpread
-    ? `we'll post these on ${schedule.dateCount} dates, from ${formatDate(schedule.earliest)} to ${formatDate(schedule.latest!)}.`
-    : `we'll post ${schedule.toCome === 1 ? "it" : "these"} on ${formatDate(schedule.earliest)}.`;
+    ? `we'll post ${subject} on ${schedule.dateCount} dates, from ${formatDate(schedule.earliest)} to ${formatDate(schedule.latest!)}.`
+    : `we'll post ${subject} on ${formatDate(schedule.earliest)}.`;
 
   const parts: string[] = [];
   if (schedule.isSpread) {
@@ -399,12 +435,10 @@ export function tallyCardStatuses(
  * adminOrderLineSchema.) The list now carries a count, a status tally and a
  * schedule summary: everything it renders, and nothing it doesn't.
  */
-export const batchOrderListRowSchema = batchOrderSchema
-  .omit({ orderRecipients: true })
-  .extend({
-    cardCount: z.number().int().nonnegative(),
-    cardStatusCounts: orderCardStatusCountsSchema,
-    /** When this order's remaining cards post. See summariseSendSchedule. */
-    sendSchedule: orderSendScheduleSummarySchema,
-  });
+export const batchOrderListRowSchema = batchOrderSchema.omit({ orderRecipients: true }).extend({
+  cardCount: z.number().int().nonnegative(),
+  cardStatusCounts: orderCardStatusCountsSchema,
+  /** When this order's remaining cards post. See summariseSendSchedule. */
+  sendSchedule: orderSendScheduleSummarySchema,
+});
 export type BatchOrderListRow = z.infer<typeof batchOrderListRowSchema>;

@@ -1,4 +1,9 @@
-import { describeSendSchedule, summariseSendSchedule, tallyCardStatuses } from "@kudos/shared-types";
+import {
+  describeSendSchedule,
+  orderScheduleIsLive,
+  summariseSendSchedule,
+  tallyCardStatuses,
+} from "@kudos/shared-types";
 
 /**
  * The order page's send readout.
@@ -198,6 +203,43 @@ describe("describeSendSchedule", () => {
     expect(copy?.detail).not.toContain("have no occasion");
   });
 
+  it("does not claim the undated cards post on the dated one's day", () => {
+    // The lead used to speak for every card still to come: "we'll post these on
+    // 4 Sep 2026", directly above a detail line saying one of them has no
+    // occasion on file and goes as soon as it's printed. Two sentences, and they
+    // contradicted each other.
+    const copy = describe_([card("queued", d("2026-09-04")), card("queued", null)]);
+    expect(copy?.lead).toBe("we'll post one of these on 4 Sep 2026.");
+  });
+
+  it("counts the dated cards in the lead when several share a date", () => {
+    const copy = describe_([
+      card("queued", d("2026-09-04")),
+      card("queued", d("2026-09-04")),
+      card("queued", null),
+    ]);
+    expect(copy?.lead).toBe("we'll post 2 of these on 4 Sep 2026.");
+    expect(copy?.detail).toContain("1 of these has no occasion on file");
+  });
+
+  it("scopes the lead to the dated cards on a spread order too", () => {
+    const copy = describe_([
+      card("queued", d("2026-09-04")),
+      card("queued", d("2026-10-15")),
+      card("queued", null),
+    ]);
+    expect(copy?.lead).toBe("we'll post 2 of these on 2 dates, from 4 Sep 2026 to 15 Oct 2026.");
+  });
+
+  it("still says 'it' and 'these' when every card has a date", () => {
+    // The undated wording must not leak into the ordinary case, which is most
+    // orders.
+    expect(describe_([card("queued", d("2026-09-04"))])?.lead).toBe("we'll post it on 4 Sep 2026.");
+    expect(
+      describe_([card("queued", d("2026-09-04")), card("queued", d("2026-09-04"))])?.lead,
+    ).toBe("we'll post these on 4 Sep 2026.");
+  });
+
   it("reports cards already posted instead of pretending the order hasn't started", () => {
     const copy = describe_([
       card("posted", d("2026-09-04")),
@@ -262,5 +304,35 @@ describe("tallyCardStatuses", () => {
     const many = Array.from({ length: 76 }, () => ({ status: "queued" as const }));
     expect(Object.keys(tallyCardStatuses(many))).toHaveLength(1);
     expect(tallyCardStatuses(many)).toEqual({ queued: 76 });
+  });
+});
+
+/**
+ * Which orders may say "Scheduled" at all.
+ *
+ * An occasion carries its dispatch date from the moment it is approved, which is
+ * before checkout — so a draft order that was never paid for still has a full
+ * set of post dates hanging off it. Three screens render this sentence, and
+ * without a gate the orders list showed "Scheduled — we'll post it on 4
+ * September" directly beside that order's own "Not checked out" pill.
+ */
+describe("orderScheduleIsLive", () => {
+  it("is true only for an order that has been paid for", () => {
+    expect(orderScheduleIsLive("paid")).toBe(true);
+    expect(orderScheduleIsLive("fulfilling")).toBe(true);
+  });
+
+  it("is false for an order that has not been paid for", () => {
+    // The bug this exists to prevent: these orders have dispatch dates.
+    expect(orderScheduleIsLive("draft")).toBe(false);
+    expect(orderScheduleIsLive("pending_payment")).toBe(false);
+  });
+
+  it("is false for an order that is over, one way or the other", () => {
+    // `completed` has nothing left to come, so the copy would be null anyway —
+    // but a refund-cancel leaves any already-printed job dated behind it, and
+    // that must not read as still going out.
+    expect(orderScheduleIsLive("cancelled")).toBe(false);
+    expect(orderScheduleIsLive("completed")).toBe(false);
   });
 });

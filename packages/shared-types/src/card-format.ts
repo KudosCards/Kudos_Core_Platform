@@ -183,13 +183,24 @@ export const CARD_SIZE_NOTICE = `All cards are printed ${CARD_SIZE_LABEL}.`;
  * the band regardless — this exists to warn *before payment*, not to be the
  * guarantee. Erring toward under-reporting keeps it from crying wolf on designs
  * that are actually fine.
+ *
+ * Every caller hands this a `SavedDesign.document` or `CardDesign.document`,
+ * which is a Prisma `Json` column reached through an unchecked cast rather than
+ * a parse — so the shape is asserted, not known. A row that does not match (a
+ * legacy document, a hand-edited one) must read as "nothing in the strip" and
+ * not throw: this decides whether a design may be *saved* and whether an order
+ * may be *paid for*, and a TypeError there is a 500 on a customer's checkout
+ * over a design we simply could not read. Unreadable is the renderer's problem
+ * to report, in the editor, where it can be fixed.
  */
 export function backArtworkInReservedFooter(
   document: { pages: { name: string; background?: unknown; elements: unknown[] }[] },
   size: CardSize = DEFAULT_CARD_SIZE,
 ): { background: boolean; elements: number } {
-  const page = document.pages.find((p) => p.name === "back");
-  if (!page) return { background: false, elements: 0 };
+  const pages = document?.pages;
+  if (!Array.isArray(pages)) return { background: false, elements: 0 };
+  const page = pages.find((p) => p?.name === "back");
+  if (!page || !Array.isArray(page.elements)) return { background: false, elements: 0 };
 
   let elements = 0;
   for (const raw of page.elements) {
@@ -245,8 +256,8 @@ export function reservedFooterViolation(
     message:
       `The bottom ${BACK_RESERVED_FOOTER_MM}mm of the card back is reserved for the Kudos logo ` +
       `and QR code, which are already printed on the card. ${elements} ` +
-      `${elements === 1 ? "item reaches" : "items reach"} into that strip and ` +
-      `${elements === 1 ? "would not be" : "would not be"} printed. Open the design and move ` +
+      `${elements === 1 ? "item reaches" : "items reach"} into that strip and would not be ` +
+      `printed. Open the design and move ` +
       `${elements === 1 ? "it" : "them"} above the dashed line on the back face.`,
   };
 }
