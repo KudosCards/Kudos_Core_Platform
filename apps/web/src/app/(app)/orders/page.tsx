@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import type { BatchOrderListRow } from "@kudos/shared-types";
-import { describeSendSchedule } from "@kudos/shared-types";
+import { describeSendSchedule, orderScheduleIsLive } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { Skeleton } from "@/components/skeleton";
 import { formatGbp, formatOrderDate } from "@/lib/orders";
@@ -80,13 +80,17 @@ async function OrdersList() {
                   date it was placed, so a customer with a card scheduled for
                   November saw "Paid" and nothing else — the one question they
                   came to the page with went unanswered. Same sentence the order
-                  page gives, from the same function. */}
-              {(() => {
-                const copy = describeSendSchedule(order.sendSchedule, formatOrderDate);
-                return copy ? (
-                  <span className="text-xs text-muted">Scheduled — {copy.lead}</span>
-                ) : null;
-              })()}
+                  page gives, from the same function, behind the same gate: an
+                  occasion carries its dispatch date from approval onward, so an
+                  unpaid draft has post dates too and would otherwise be labelled
+                  "Scheduled" beside its own "Not checked out" pill. */}
+              {orderScheduleIsLive(order.status) &&
+                (() => {
+                  const copy = describeSendSchedule(order.sendSchedule, formatOrderDate);
+                  return copy ? (
+                    <span className="text-xs text-muted">Scheduled — {copy.lead}</span>
+                  ) : null;
+                })()}
             </div>
             <span className="hidden text-sm text-muted sm:block">
               {formatOrderDate(order.createdAt)}

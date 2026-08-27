@@ -70,4 +70,27 @@ describe("backArtworkInReservedFooter", () => {
       elements: 0,
     });
   });
+
+  it("reads a document it cannot understand as empty, rather than throwing", () => {
+    // Every caller reaches this through an unchecked cast off a Prisma `Json`
+    // column, so the shape is asserted rather than known. Since this now decides
+    // whether a design can be saved and whether an order can be paid for, a
+    // TypeError here would be a 500 on a customer's checkout over a document we
+    // simply could not read.
+    const empty = { background: false, elements: 0 };
+    const unreadable = [null, undefined, {}, { pages: null }, { pages: {} }, { pages: "back" }];
+    for (const document of unreadable) {
+      expect(
+        backArtworkInReservedFooter(
+          document as unknown as Parameters<typeof backArtworkInReservedFooter>[0],
+        ),
+      ).toEqual(empty);
+    }
+    // A back face whose `elements` isn't a list is the same story.
+    expect(
+      backArtworkInReservedFooter({
+        pages: [{ name: "back", elements: null }],
+      } as unknown as Parameters<typeof backArtworkInReservedFooter>[0]),
+    ).toEqual(empty);
+  });
 });

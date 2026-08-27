@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { AdminIdentity, AdminOrderDetail } from "@kudos/shared-types";
-import { describeSendSchedule, summariseSendSchedule } from "@kudos/shared-types";
+import {
+  describeSendSchedule,
+  orderScheduleIsLive,
+  summariseSendSchedule,
+} from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import {
   ORDER_STATUS_CLASSES,
@@ -129,29 +133,36 @@ export default async function AdminOrderDetailPage({
             in the table below, but on a seventy-six card order that means
             eyeballing seventy-six rows to answer "is this spread or not?" — so
             a support conversation started from a different summary of the same
-            order than the customer was looking at. See ADR 0170. */}
-        {(() => {
-          const copy = describeSendSchedule(
-            summariseSendSchedule(
-              order.lines.map((line) => ({
-                // The fulfilment-job statuses that matter here — posted,
-                // delivered, returned_to_sender — share their names with the
-                // order-recipient ones the summariser keys on. Anything earlier
-                // (pending / in_progress / printed) is correctly "still to
-                // come": printed is not posted.
-                status: line.jobStatus ?? "pending",
-                dispatchDate: line.dueDate,
-              })),
-            ),
-            formatOrderDate,
-          );
-          return copy ? (
-            <p className="text-sm text-muted">
-              <span className="font-medium text-foreground">Scheduled — {copy.lead}</span>
-              {copy.detail ? ` ${copy.detail}` : ""}
-            </p>
-          ) : null;
-        })()}
+            order than the customer was looking at. See ADR 0170.
+
+            Gated by the same predicate the customer's screens use. A
+            refund-cancel deletes only the *pending* fulfilment jobs, so a
+            cancelled order that had already been part-printed keeps dated jobs
+            behind — and without this the operator would be told a cancelled
+            order was still going out. */}
+        {orderScheduleIsLive(order.status) &&
+          (() => {
+            const copy = describeSendSchedule(
+              summariseSendSchedule(
+                order.lines.map((line) => ({
+                  // The fulfilment-job statuses that matter here — posted,
+                  // delivered, returned_to_sender — share their names with the
+                  // order-recipient ones the summariser keys on. Anything
+                  // earlier (pending / in_progress / printed) is correctly
+                  // "still to come": printed is not posted.
+                  status: line.jobStatus ?? "pending",
+                  dispatchDate: line.dueDate,
+                })),
+              ),
+              formatOrderDate,
+            );
+            return copy ? (
+              <p className="text-sm text-muted">
+                <span className="font-medium text-foreground">Scheduled — {copy.lead}</span>
+                {copy.detail ? ` ${copy.detail}` : ""}
+              </p>
+            ) : null;
+          })()}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">

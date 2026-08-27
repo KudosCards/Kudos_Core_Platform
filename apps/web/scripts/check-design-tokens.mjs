@@ -16,13 +16,24 @@
  * Reads the CSS rather than a duplicated table of hex codes, so the stylesheet
  * stays the single source of truth and there is nothing to keep in sync.
  *
+ * The second check is that the classes actually exist. Tailwind emits nothing
+ * for a class it does not recognise and says nothing about it, so a mistyped
+ * token is invisible everywhere: it lints, it typechecks, it builds, and the
+ * element simply renders with no colour. That is not hypothetical — the sweep
+ * that introduced these tokens rewrote `bg-emerald-500` to `bg-success-soft0`
+ * in four places (a `emerald-50` → `success-soft` rule reaching a `-500` class),
+ * which silently turned a notification dot, a seat-usage bar and the completed
+ * step of the get-started checklist transparent.
+ *
  * Usage: node scripts/check-design-tokens.mjs   (or: pnpm test)
  */
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const cssPath = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "app", "globals.css");
+const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const srcDir = join(webRoot, "src");
+const cssPath = join(srcDir, "app", "globals.css");
 
 /** WCAG 2.1 AA for normal-size body text. */
 const AA_BODY = 4.5;
@@ -86,7 +97,59 @@ function contrast(a, b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-const tokens = readTokens(readFileSync(cssPath, "utf8"));
+/**
+ * The colour names `@theme inline` actually exports, i.e. exactly the set
+ * Tailwind will generate `bg-*` / `text-*` / `border-*` utilities for.
+ */
+function readThemeColors(css) {
+  const start = css.indexOf("@theme inline");
+  const block = css.slice(start, css.indexOf("}", start));
+  return new Set([...block.matchAll(/--color-([a-z0-9-]+):/g)].map(([, name]) => name));
+}
+
+/**
+ * Utility prefixes that take a colour. Restricted to the ones this app uses —
+ * a shorter list is a smaller chance of matching ordinary prose.
+ */
+const COLOUR_UTILITIES =
+  "bg|text|border|ring|divide|outline|fill|stroke|shadow|caret|decoration|placeholder|from|via|to";
+
+/**
+ * Only names beginning with one of these are judged. They are ours, so a match
+ * is unambiguously an attempt to use a token — unlike `background`/`foreground`,
+ * which read as English and would flag comments rather than classes.
+ */
+const SEMANTIC_ROOTS = ["accent", "info", "success", "warning", "danger", "surface", "muted"];
+
+const CLASS_RE = new RegExp(
+  `(?<![a-z0-9-])(?:${COLOUR_UTILITIES})-((?:${SEMANTIC_ROOTS.join("|")})[a-z0-9-]*)`,
+  "g",
+);
+
+function* sourceFiles(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) yield* sourceFiles(full);
+    else if (/\.(tsx?|css)$/.test(entry.name)) yield full;
+  }
+}
+
+function checkClassNames(themeColors) {
+  const bad = [];
+  for (const file of sourceFiles(srcDir)) {
+    const text = readFileSync(file, "utf8");
+    text.split("\n").forEach((line, i) => {
+      for (const [match, name] of line.matchAll(CLASS_RE)) {
+        if (themeColors.has(name)) continue;
+        bad.push(`${relative(webRoot, file)}:${i + 1}  ${match}`);
+      }
+    });
+  }
+  return bad;
+}
+
+const css = readFileSync(cssPath, "utf8");
+const tokens = readTokens(css);
 const failures = [];
 const rows = [];
 
@@ -120,4 +183,22 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
+const themeColors = readThemeColors(css);
+const unknownClasses = checkClassNames(themeColors);
+const known = [...themeColors]
+  .filter((c) => SEMANTIC_ROOTS.some((root) => c === root || c.startsWith(`${root}-`)))
+  .sort();
+
+if (unknownClasses.length > 0) {
+  console.error(
+    `\n${unknownClasses.length} class(es) naming a colour @theme inline never exports:`,
+  );
+  for (const c of unknownClasses) console.error(`  ✗ ${c}`);
+  console.error(
+    `\nTailwind emits nothing for these, so they render with no colour at all. Exported: ${known.join(", ")}.`,
+  );
+  process.exit(1);
+}
+
 console.log(`\nAll ${PAIRS.length} pairings pass.`);
+console.log(`Every ${known.length}-token colour class in src/ resolves.`);

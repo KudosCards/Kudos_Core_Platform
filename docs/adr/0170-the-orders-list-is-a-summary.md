@@ -21,15 +21,15 @@ const ORDER_RECIPIENTS_INCLUDE = { orderRecipients: true } as const;
 
 No occasion join, so no `dispatchDate` anywhere on the row.
 
-Looking at what that read *did* fetch turned up something worse. The page uses
+Looking at what that read _did_ fetch turned up something worse. The page uses
 exactly two things from those recipients: `.length`, and `.status` for the
 header pill. Everything else was fetched, serialised and sent for nothing:
 
-| | Shipped | Used |
-| --- | --- | --- |
-| Per recipient row | 636 bytes | 19 bytes |
-| 50 orders × 5 cards | 186 KB | ~5 KB |
-| 50 orders × 76 cards | **2,391 KB** | ~5 KB |
+|                      | Shipped      | Used     |
+| -------------------- | ------------ | -------- |
+| Per recipient row    | 636 bytes    | 19 bytes |
+| 50 orders × 5 cards  | 186 KB       | ~5 KB    |
+| 50 orders × 76 cards | **2,391 KB** | ~5 KB    |
 
 There is no response serialiser on this endpoint — raw Prisma rows go out — so
 every row also carried `shippingAddressLine1`, `line2`, `city` and `postcode`.
@@ -50,7 +50,7 @@ The orders list row carries a **summary of an order**, never its cards:
 
 - `cardCount` — replaces `orderRecipients.length`.
 - `cardStatusCounts` — a tally, replacing an array of every card's status.
-  `orderHeaderStatus` now reads the tally, and the order *page* tallies its own
+  `orderHeaderStatus` now reads the tally, and the order _page_ tallies its own
   lines into the same shape, so both screens still answer from one function.
 - `sendSchedule` — `summariseSendSchedule` minus its `dates` array: how many
   distinct dates are ahead, the first and last, and the to-come / gone / undated
@@ -79,7 +79,7 @@ response change, taken deliberately after confirming the blast radius: the only
 consumer is our own `orders/page.tsx`. The API-key surface reaches exactly two
 endpoints — `GET /integrations/me` and `POST /integrations/contacts` (ADR 0134)
 — so no Zapier or CRM integration can see this route, which sits behind
-`MembershipGuard`. The order *detail* read is untouched, and `bulk-send` /
+`MembershipGuard`. The order _detail_ read is untouched, and `bulk-send` /
 `quick-send` still return the created order with its recipients (both callers
 only read `.id`, but that is a bounded single-order payload and out of scope
 here).
@@ -95,5 +95,37 @@ Two things this surfaced and fixed on the way:
   Nothing had caught it because the API returns Prisma rows rather than parsing
   through the schema, so the lie only ever existed as a type. Now nullable.
 - A code comment pointed at `docs/adr/0109-order-detail.md`, which does not
-  exist — 0109 is the *ops* order detail. The claim that "the list stays lean"
+  exist — 0109 is the _ops_ order detail. The claim that "the list stays lean"
   lived only in that comment and was not true. It now points here.
+
+## Follow-up — two ways the readout was still wrong
+
+Found reviewing this work the next day, and fixed under the same reasoning that
+motivated it: a signpost that contradicts itself is worse than no signpost.
+
+**It announced unpaid orders as scheduled.** An occasion carries its
+`dispatchDate` from the moment it is _approved_, which is before checkout — so a
+draft order that was never paid for has a perfectly good set of post dates
+hanging off it. The list rendered the sentence unconditionally, putting
+"Scheduled — we'll post it on 4 September" directly beside that same row's "Not
+checked out" pill. The order _page_ had the gate (`paid` or `fulfilling`) and the
+list did not, which is the same drift that produced two different status pills
+for one order.
+
+The gate is now `orderScheduleIsLive(status)` in shared-types, used by all three
+screens that render the sentence — the list, the order page and the ops order
+page. Writing the condition out at each call site is what let them diverge the
+first time. The ops page needs it for a second reason: a refund-cancel deletes
+only the _pending_ fulfilment jobs, so a cancelled order that was already
+part-printed keeps dated jobs behind it.
+
+**The lead spoke for cards it did not cover.** With a mix of dated and undated
+cards it said "we'll post these on 4 September" and the line underneath said "1
+of these has no occasion on file and goes as soon as it's printed" — two
+sentences, contradicting each other, in a readout written to stop exactly that.
+The lead is now scoped to the cards that actually carry a date ("we'll post one
+of these on…", "we'll post 2 of these on 2 dates, from…"), and the ordinary case
+where every card is dated is unchanged.
+
+Both were verified by reverting the fix and watching the new cases in
+`order-schedule.spec.ts` fail.
