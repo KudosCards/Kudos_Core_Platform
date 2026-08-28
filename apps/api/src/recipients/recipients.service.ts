@@ -26,6 +26,7 @@ import { parseRecipientRow, type ParsedRecipientRow } from "./csv-row.util";
 import { suggestMapping, remapRow } from "./csv-mapping.util";
 import type { CsvColumnMapping, CsvImportPreview } from "@kudos/shared-types";
 import { buildScheduledBirthdayOccasion, startOfUtcDay } from "../occasions/birthday-occasion.util";
+import { promoteDueOccasions } from "../occasions/promote-due-occasions.util";
 import { buildScheduledKeyDateOccasion } from "../occasions/key-date-occasion.util";
 import { keyDateTypeSchema } from "@kudos/shared-types";
 import type { UpsertKeyDateDto } from "./dto/upsert-key-date.dto";
@@ -158,6 +159,9 @@ export class RecipientsService {
         ],
         skipDuplicates: true,
       });
+      // …and lands in Approvals in the same moment if it is already inside the
+      // window, rather than waiting for the 06:00 sweep to notice it.
+      await promoteDueOccasions(this.prisma, accountId);
     }
     return recipient;
   }
@@ -350,6 +354,9 @@ export class RecipientsService {
           ],
           skipDuplicates: true,
         });
+        // A corrected date of birth can move a birthday into the window as well
+        // as out of it, so re-run the same rule here too.
+        await promoteDueOccasions(this.prisma, accountId);
       }
     }
 
@@ -787,6 +794,10 @@ export class RecipientsService {
       ),
       skipDuplicates: true,
     });
+    // The import case this was reported from: two thousand contacts land, a
+    // slice of them have birthdays inside the next three weeks, and those
+    // belong in Approvals now — not tomorrow morning.
+    await promoteDueOccasions(this.prisma, accountId, today);
   }
 
   /** Single source of truth for the cap comparison, shared by create() (via
