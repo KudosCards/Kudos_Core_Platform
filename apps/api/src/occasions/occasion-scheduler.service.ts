@@ -3,6 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../prisma/prisma.service";
 import { BIRTHDAY_LOOKAHEAD_DAYS } from "./occasion-scheduling.constants";
 import { buildScheduledBirthdayOccasion, startOfUtcDay } from "./birthday-occasion.util";
+import { promoteDueOccasions } from "./promote-due-occasions.util";
 import { buildScheduledKeyDateOccasion } from "./key-date-occasion.util";
 
 /**
@@ -39,8 +40,6 @@ export class OccasionSchedulerService {
   @Cron(CronExpression.EVERY_DAY_AT_6AM)
   async scheduleBirthdayOccasions(): Promise<number> {
     const today = startOfUtcDay(new Date());
-    const lookaheadEnd = new Date(today);
-    lookaheadEnd.setUTCDate(lookaheadEnd.getUTCDate() + BIRTHDAY_LOOKAHEAD_DAYS);
 
     // 1. Ensure a scheduled birthday occasion exists for every recipient's next
     //    birthday, and (1b) the same for renewal/anniversary key dates. Both
@@ -51,20 +50,12 @@ export class OccasionSchedulerService {
     const keyDateCount = await this.ensureScheduledKeyDates(today);
 
     // 2. Promote the recurring occasions now within the lookahead window into the
-    //    approvals queue. Their occasionDate is always today-or-later
-    //    (nextBirthdayOccurrence never returns a past date), so an upper bound is
-    //    all that's needed. This is a single set-based UPDATE — no rows are read
-    //    into the app, so it scales without a page loop.
-    const { count } = await this.prisma.occasion.updateMany({
-      where: {
-        type: { in: ["birthday", "renewal", "anniversary"] },
-        status: "scheduled",
-        occasionDate: { lte: lookaheadEnd },
-        // Don't pull an archived recipient's occasion into the approvals queue.
-        recipient: { status: "active" },
-      },
-      data: { status: "pending_approval" },
-    });
+    //    approvals queue. A single set-based UPDATE — no rows are read into the
+    //    app, so it scales without a page loop. Unscoped here: this is the
+    //    platform-wide nightly sweep. The same rule runs scoped to one account
+    //    whenever that account adds contacts, so an import does not have to wait
+    //    until 06:00 to show up in Approvals.
+    const count = await promoteDueOccasions(this.prisma, undefined, today);
 
     this.logger.log(
       `Recurring scheduler: ${recipientCount} recipient(s) with a DOB, ${keyDateCount} key date(s), ${count} occasion(s) promoted into the ${BIRTHDAY_LOOKAHEAD_DAYS}-day approval window`,
