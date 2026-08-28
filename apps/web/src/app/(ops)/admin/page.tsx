@@ -10,6 +10,7 @@ import { DispatchReminderSetup } from "./dispatch-reminder-setup";
 import { PrintSizeSetup } from "./print-size-setup";
 import { ArrivalSweepButton } from "./arrival-sweep-button";
 import { DailySummaryButton } from "./daily-summary-button";
+import { OccasionSchedulerButton } from "./occasion-scheduler-button";
 import { SubscriptionBackfillButton } from "./subscription-backfill-button";
 
 interface AdminOverview {
@@ -283,6 +284,10 @@ export default async function AdminOverviewPage() {
 
       {/* Send yesterday's business digest on demand (ADR 0165). */}
       <DailySummaryButton />
+
+      {/* Bring the 06:00 recurring-occasion sweep forward, to repair an account
+          whose Approvals page is empty while its calendar is full. */}
+      <OccasionSchedulerButton />
 
       {/* Import paid subscription invoices from Stripe so customer pages can
           show lifetime subscription spend. */}

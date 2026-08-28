@@ -11,6 +11,7 @@ import { AdminTeamService } from "./admin-team.service";
 import { CardSizeConfigService } from "./card-size-config.service";
 import { BatchOrdersModule } from "../batch-orders/batch-orders.module";
 import { WalletModule } from "../wallet/wallet.module";
+import { OccasionsModule } from "../occasions/occasions.module";
 
 /** The Kudos super-admin surface (platform-wide orders, subscribers, KPIs, the
  * in-app seat-price provisioning action, and operator identity + team
@@ -18,7 +19,9 @@ import { WalletModule } from "../wallet/wallet.module";
  * AuthModule. See docs/adr/0040-admin-auth.md. */
 @Module({
   // BatchOrdersModule: the occasion re-date repair is ops-triggered but the
-  // scheduling logic belongs with orders, not duplicated here.
+  // scheduling logic belongs with orders, not duplicated here. OccasionsModule:
+  // same reasoning for running the recurring scheduler on demand — the job is
+  // the nightly job, not a second copy of it.
   imports: [
     AuditModule,
     BillingModule,
@@ -26,6 +29,7 @@ import { WalletModule } from "../wallet/wallet.module";
     OpsActivityModule,
     BatchOrdersModule,
     WalletModule,
+    OccasionsModule,
   ],
   controllers: [AdminController, AdminTeamController],
   providers: [AdminService, AdminCustomerService, AdminTeamService, CardSizeConfigService],

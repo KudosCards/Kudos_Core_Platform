@@ -10,6 +10,6 @@ import { EntitlementsModule } from "../entitlements/entitlements.module";
   imports: [AuditModule, SavedDesignsModule, EntitlementsModule],
   controllers: [OccasionsController],
   providers: [OccasionsService, OccasionSchedulerService],
-  exports: [OccasionsService],
+  exports: [OccasionsService, OccasionSchedulerService],
 })
 export class OccasionsModule {}

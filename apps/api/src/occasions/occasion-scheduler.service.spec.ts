@@ -41,7 +41,7 @@ describe("OccasionSchedulerService pagination", () => {
     const { service, recipientFindMany, occasionCreateMany, occasionUpdateMany } = buildService();
     recipientFindMany.mockResolvedValueOnce(makeRecipients(3));
 
-    const promoted = await service.scheduleBirthdayOccasions();
+    const summary = await service.scheduleBirthdayOccasions();
 
     // One page fetched, one createMany written, no second fetch (short page ends it).
     expect(recipientFindMany).toHaveBeenCalledTimes(1);
@@ -49,9 +49,11 @@ describe("OccasionSchedulerService pagination", () => {
     // The first page carries no cursor.
     const firstCallArgs = recipientFindMany.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(firstCallArgs).not.toHaveProperty("cursor");
-    // The promoted count is passed straight through from the set-based UPDATE.
+    // The promoted count is passed straight through from the set-based UPDATE,
+    // and the run reports what it saw alongside it — the same three numbers the
+    // nightly run logs, so an operator triggering it by hand gets them back.
     expect(occasionUpdateMany).toHaveBeenCalledTimes(1);
-    expect(promoted).toBe(7);
+    expect(summary).toEqual({ recipients: 3, keyDates: 0, promoted: 7 });
   });
 
   it("advances the keyset cursor across a full page and stops on the next short page", async () => {
