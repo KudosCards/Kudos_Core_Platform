@@ -16,12 +16,14 @@ import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentMembership } from "../auth/current-membership.decorator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser, CurrentMembershipContext } from "../auth/types";
+import type { CalendarOccasionsResponse } from "@kudos/shared-types";
 import type { Paginated } from "../common/paginated";
 import { OccasionsService, type Occasion, type OccasionWithOrder } from "./occasions.service";
 import { CreateOccasionDto } from "./dto/create-occasion.dto";
 import { CreateRecipientEventDto } from "./dto/create-recipient-event.dto";
 import { UpdateOccasionEventDto } from "./dto/update-occasion-event.dto";
 import { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
+import { CalendarRangeQueryDto } from "./dto/calendar-range-query.dto";
 import { ApproveOccasionDto } from "./dto/approve-occasion.dto";
 import { SetDispatchDateDto } from "./dto/set-dispatch-date.dto";
 
@@ -39,6 +41,22 @@ export class OccasionsController {
     @Body() dto: CreateOccasionDto,
   ): Promise<Occasion> {
     return this.occasionsService.create(membership.accountId, user.id, dto);
+  }
+
+  /**
+   * The calendar's read: a whole date range, in the shape a pill needs.
+   *
+   * Separate from `GET /occasions` because that one is paginated at 100 and
+   * carries each contact's postal address for checkout pre-fill. The calendar
+   * needs neither — it needs the *whole* range, which is what a month grid
+   * actually asks. See OccasionsService.calendar.
+   */
+  @Get("calendar")
+  calendar(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Query() query: CalendarRangeQueryDto,
+  ): Promise<CalendarOccasionsResponse> {
+    return this.occasionsService.calendar(membership.accountId, query);
   }
 
   /** Add a hand-curated calendar event (graduation, end of exams, …) to a

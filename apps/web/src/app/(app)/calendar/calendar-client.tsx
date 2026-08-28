@@ -1,12 +1,17 @@
 "use client";
 
 import { Pin } from "lucide-react";
-import type { EventSummary, Occasion } from "@kudos/shared-types";
+import type {
+  CalendarOccasion,
+  CalendarOccasionsResponse,
+  EventSummary,
+} from "@kudos/shared-types";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
+import { Modal } from "@/components/modal";
 import { OccasionModal } from "./occasion-modal";
 import { EventModal } from "./event-modal";
 import {
@@ -23,7 +28,6 @@ import {
   OCCASION_TYPE_COLORS,
   OCCASION_TYPES,
   type CalendarView,
-  type Paginated,
 } from "./calendar-utils";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -43,7 +47,7 @@ async function fetchEventsForRange(
   return typeFilter === "all" ? items : items.filter((e) => e.type === typeFilter);
 }
 
-function occasionLabel(occasion: Occasion): string {
+function occasionLabel(occasion: CalendarOccasion): string {
   if (occasion.recipient) {
     return `${occasion.recipient.firstName} ${occasion.recipient.lastName}`;
   }
@@ -51,7 +55,7 @@ function occasionLabel(occasion: Occasion): string {
 }
 
 /** The occasion's descriptive kind, preferring a hand-entered event title. */
-function occasionKind(occasion: Occasion): string {
+function occasionKind(occasion: CalendarOccasion): string {
   return occasion.title ?? OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type;
 }
 
@@ -103,12 +107,12 @@ function OccasionPill({
   draggable = false,
   onDragStart,
 }: {
-  occasion: Occasion;
-  onOpen: (occasion: Occasion) => void;
+  occasion: CalendarOccasion;
+  onOpen: (occasion: CalendarOccasion) => void;
   /** When true, the pill can be dragged to a new dispatch day (grid + dispatch
    * view only, and only for cards not yet on an order). */
   draggable?: boolean;
-  onDragStart?: (occasion: Occasion) => void;
+  onDragStart?: (occasion: CalendarOccasion) => void;
 }) {
   const progress = occasionProgress(occasion.status, occasion.order?.status);
   const color =
@@ -203,10 +207,16 @@ function CalendarLegend() {
 
 export function CalendarClient({
   initialOccasions,
+  initialTruncated,
+  initialTotal,
   initialEvents,
   todayIso,
 }: {
-  initialOccasions: Occasion[];
+  initialOccasions: CalendarOccasion[];
+  /** True when the server had more occasions in this range than it returned. */
+  initialTruncated: boolean;
+  /** How many fall in the range in total, whether or not they were all sent. */
+  initialTotal: number;
   initialEvents: EventSummary[];
   todayIso: string;
 }) {
@@ -235,12 +245,22 @@ export function CalendarClient({
   const [anchor, setAnchor] = useState<Date>(today);
   const [showDispatch, setShowDispatch] = useState(false);
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [occasions, setOccasions] = useState<Occasion[]>(initialOccasions);
+  const [occasions, setOccasions] = useState<CalendarOccasion[]>(initialOccasions);
+  // Never truncate in silence. This is what the reported bug was: the calendar
+  // drew one page of 100 and stopped, so a month ended partway through a day
+  // with nothing to say why. The server now reports it and the reader is told.
+  const [truncated, setTruncated] = useState(initialTruncated);
+  const [total, setTotal] = useState(initialTotal);
   const [events, setEvents] = useState<EventSummary[]>(initialEvents);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The occasion whose pop-up is open (null = closed).
-  const [selected, setSelected] = useState<Occasion | null>(null);
+  const [selected, setSelected] = useState<CalendarOccasion | null>(null);
+  // A whole day, opened from "+N more". A grid cell shows three pills (twelve in
+  // week view) and until now the overflow was an inert label, so a day with
+  // eight birthdays simply hid five of them with no way to reach them. Nothing
+  // is fetched to open it: the client already holds every occasion in range.
+  const [openDay, setOpenDay] = useState<string | null>(null);
   // Shared-event pop-up: an existing event id to manage, or a date to create on.
   const [openEventId, setOpenEventId] = useState<string | null>(null);
   const [createDate, setCreateDate] = useState<string | null>(null);
@@ -256,20 +276,24 @@ export function CalendarClient({
   }, []);
 
   // Reflect an inline edit from the pop-up back into the calendar immediately.
-  const applyUpdate = useCallback((updated: Occasion) => {
+  const applyUpdate = useCallback((updated: CalendarOccasion) => {
     setOccasions((current) => current.map((o) => (o.id === updated.id ? updated : o)));
     setSelected(updated);
   }, []);
 
   const load = useCallback(async () => {
     const { start, end } = fetchRange(view, anchor);
-    const params = new URLSearchParams({ from: ymdUTC(start), to: ymdUTC(end), perPage: "100" });
+    const params = new URLSearchParams({ from: ymdUTC(start), to: ymdUTC(end) });
     if (typeFilter !== "all") params.set("type", typeFilter);
     setLoading(true);
     setError(null);
     try {
-      const result = await clientApiFetch<Paginated<Occasion>>(`/occasions?${params.toString()}`);
+      const result = await clientApiFetch<CalendarOccasionsResponse>(
+        `/occasions/calendar?${params.toString()}`,
+      );
       setOccasions(result.items);
+      setTruncated(result.truncated);
+      setTotal(result.total);
     } catch (loadError) {
       setError(loadError instanceof ApiError ? loadError.message : "Could not load the calendar");
     } finally {
@@ -290,10 +314,13 @@ export function CalendarClient({
         ),
       );
       try {
-        const updated = await clientApiFetch<Occasion>(`/occasions/${occasionId}/dispatch-date`, {
-          method: "PATCH",
-          body: JSON.stringify({ dispatchDate: dateKey }),
-        });
+        const updated = await clientApiFetch<CalendarOccasion>(
+          `/occasions/${occasionId}/dispatch-date`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ dispatchDate: dateKey }),
+          },
+        );
         setOccasions((current) => current.map((o) => (o.id === updated.id ? updated : o)));
       } catch (moveError) {
         setError(
@@ -362,7 +389,7 @@ export function CalendarClient({
   }
 
   // Bucket occasions onto their day (occasion date or dispatch date).
-  const byDay = new Map<string, Occasion[]>();
+  const byDay = new Map<string, CalendarOccasion[]>();
   for (const occasion of occasions) {
     const key = occasionDay(occasion, showDispatch);
     const bucket = byDay.get(key);
@@ -478,6 +505,19 @@ export function CalendarClient({
 
       {error && <p className="notice notice-danger">{error}</p>}
 
+      {/* The reported bug, made impossible to repeat quietly. The calendar used
+          to draw one page of 100 and stop, so a month ended partway through a
+          day with nothing to say why — while the week view, being under the cap,
+          showed that same day in full. If a range is ever too big to draw whole,
+          say so and name the way out. */}
+      {truncated && (
+        <p className="notice notice-warning">
+          Showing the first {occasions.length.toLocaleString("en-GB")} of{" "}
+          {total.toLocaleString("en-GB")} events in this range. Switch to week view, or filter by
+          occasion type, to see them all.
+        </p>
+      )}
+
       <CalendarLegend />
 
       {view === "list" ? (
@@ -502,6 +542,7 @@ export function CalendarClient({
           onOpen={setSelected}
           onOpenEvent={setOpenEventId}
           onCreateForDate={setCreateDate}
+          onShowDay={setOpenDay}
           showDispatch={showDispatch}
           onMoveDispatch={moveDispatch}
         />
@@ -536,6 +577,23 @@ export function CalendarClient({
         />
       )}
 
+      {openDay !== null && (
+        <DayModal
+          dateKey={openDay}
+          occasions={byDay.get(openDay) ?? []}
+          events={eventsByDay.get(openDay) ?? []}
+          onClose={() => setOpenDay(null)}
+          onOpen={(occasion) => {
+            setOpenDay(null);
+            setSelected(occasion);
+          }}
+          onOpenEvent={(id) => {
+            setOpenDay(null);
+            setOpenEventId(id);
+          }}
+        />
+      )}
+
       {(openEventId !== null || createDate !== null) && (
         <EventModal
           eventId={openEventId}
@@ -551,6 +609,59 @@ export function CalendarClient({
   );
 }
 
+/** "Mon 14 September" — the heading a day pop-up wants, and the label its
+ * trigger announces to a screen reader. */
+function dayLabel(day: Date): string {
+  return day.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * One day, in full.
+ *
+ * A month cell has room for three pills and a week cell for twelve, so a busy
+ * day has always been partly hidden — the difference is that the overflow used
+ * to be an inert `<span>`, leaving no way at all to reach the rest. This is that
+ * way. It needs no fetch: every occasion in the visible range is already in the
+ * client, which is what made the old label so odd — the data was right there.
+ */
+function DayModal({
+  dateKey,
+  occasions,
+  events,
+  onClose,
+  onOpen,
+  onOpenEvent,
+}: {
+  dateKey: string;
+  occasions: CalendarOccasion[];
+  events: EventSummary[];
+  onClose: () => void;
+  onOpen: (occasion: CalendarOccasion) => void;
+  onOpenEvent: (id: string) => void;
+}) {
+  const total = occasions.length + events.length;
+  return (
+    <Modal open onClose={onClose} title={dayLabel(new Date(`${dateKey}T00:00:00Z`))}>
+      <p className="text-sm text-muted">
+        {total} event{total === 1 ? "" : "s"} on this day
+      </p>
+      <div className="mt-3 flex max-h-[60vh] flex-col gap-1 overflow-y-auto">
+        {events.map((event) => (
+          <EventPill key={event.id} event={event} onOpen={onOpenEvent} />
+        ))}
+        {occasions.map((occasion) => (
+          <OccasionPill key={occasion.id} occasion={occasion} onOpen={onOpen} />
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 function GridView({
   view,
   anchor,
@@ -560,17 +671,20 @@ function GridView({
   onOpen,
   onOpenEvent,
   onCreateForDate,
+  onShowDay,
   showDispatch,
   onMoveDispatch,
 }: {
   view: CalendarView;
   anchor: Date;
-  byDay: Map<string, Occasion[]>;
+  byDay: Map<string, CalendarOccasion[]>;
   eventsByDay: Map<string, EventSummary[]>;
   todayKey: string;
-  onOpen: (occasion: Occasion) => void;
+  onOpen: (occasion: CalendarOccasion) => void;
   onOpenEvent: (id: string) => void;
   onCreateForDate: (dateKey: string) => void;
+  /** Open a day in full — what "+N more" is for. */
+  onShowDay: (dateKey: string) => void;
   showDispatch: boolean;
   onMoveDispatch: (occasionId: string, dateKey: string) => void;
 }) {
@@ -651,7 +765,16 @@ function GridView({
                     }
                   />
                 ))}
-                {extra > 0 && <span className="px-1 text-xs text-muted">+{extra} more</span>}
+                {extra > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onShowDay(key)}
+                    aria-label={`Show all ${dayOccasions.length + dayEvents.length} events on ${dayLabel(day)}`}
+                    className="rounded px-1 text-left text-xs text-muted underline decoration-dotted underline-offset-2 hover:text-foreground"
+                  >
+                    +{extra} more
+                  </button>
+                )}
               </div>
             );
           })}
@@ -673,10 +796,10 @@ function ListView({
   onToggleOrder,
 }: {
   anchor: Date;
-  byDay: Map<string, Occasion[]>;
+  byDay: Map<string, CalendarOccasion[]>;
   eventsByDay: Map<string, EventSummary[]>;
   todayKey: string;
-  onOpen: (occasion: Occasion) => void;
+  onOpen: (occasion: CalendarOccasion) => void;
   onOpenEvent: (id: string) => void;
   onCreateForDate: (dateKey: string) => void;
   orderSelection: Set<string>;

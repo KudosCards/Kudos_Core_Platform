@@ -5,11 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { Prisma, type OccasionType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { SavedDesignsService } from "../saved-designs/saved-designs.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
+import type { CalendarOccasionsResponse } from "@kudos/shared-types";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
 import {
@@ -54,6 +55,38 @@ export type Occasion = Prisma.OccasionGetPayload<{
   include: { recipient: typeof RECIPIENT_SELECT };
 }>;
 
+/**
+ * A ceiling on one calendar read, so a hand-crafted decade-wide range can't ask
+ * the database for everything. Not a page size — the calendar gets its whole
+ * range under this, and is told when it doesn't.
+ *
+ * 1,000 against a measured worst case of ~537: the widest window the calendar
+ * asks for is a little over three months, and the largest self-serve plan caps
+ * contacts at 2,000, which works out at roughly 5.5 birthdays a day. So the
+ * headroom is about double what the biggest ordinary account can produce.
+ */
+const CALENDAR_MAX_OCCASIONS = 1_000;
+
+/**
+ * What a calendar pill and its detail modal read, and nothing else — no
+ * address, no design or postage fields, no timestamps. See
+ * calendarOccasionSchema for why this is a separate shape rather than a
+ * trimmed `list()`.
+ */
+const CALENDAR_SELECT = {
+  id: true,
+  recipientId: true,
+  type: true,
+  source: true,
+  title: true,
+  occasionDate: true,
+  dispatchDate: true,
+  dispatchDateOverridden: true,
+  status: true,
+  recipient: { select: { firstName: true, lastName: true } },
+  orderRecipients: ORDER_LINK_ARGS,
+} satisfies Prisma.OccasionSelect;
+
 /** The order-link shape nested onto list/detail responses (see ADR 0055). */
 export type OccasionOrderLink = Prisma.BatchOrderGetPayload<{
   select: { id: true; orderNumber: true; status: true };
@@ -61,16 +94,15 @@ export type OccasionOrderLink = Prisma.BatchOrderGetPayload<{
 
 export type OccasionWithOrder = Occasion & { order: OccasionOrderLink | null };
 
-type OccasionWithOrderRecipients = Occasion & {
-  orderRecipients: { batchOrder: OccasionOrderLink }[];
-};
-
 /** Fold the (at most one) included order line into a flat `order` field, and
- * drop the raw orderRecipients array from the response. */
-function attachOrderLink({
+ * drop the raw orderRecipients array from the response.
+ *
+ * Generic over the row, so the full read and the calendar's leaner one share it
+ * rather than growing a second copy that could fold the link differently. */
+function attachOrderLink<T extends { orderRecipients: { batchOrder: OccasionOrderLink }[] }>({
   orderRecipients,
   ...occasion
-}: OccasionWithOrderRecipients): OccasionWithOrder {
+}: T): Omit<T, "orderRecipients"> & { order: OccasionOrderLink | null } {
   return { ...occasion, order: orderRecipients[0]?.batchOrder ?? null };
 }
 
@@ -294,6 +326,59 @@ export class OccasionsService {
     });
 
     return { items, total, page, perPage };
+  }
+
+  /**
+   * The calendar's read: every occasion in a date range, in the shape a calendar
+   * pill needs and no larger.
+   *
+   * Its own method rather than a flag on `list()` because the two want opposite
+   * things. `list()` carries the contact's postal address so checkout can
+   * pre-fill a shipping line (ADR 0119); the calendar renders no address at all,
+   * and a 42-day grid on a two-thousand-contact account is around 230 pills.
+   *
+   * **It is not paginated, and that is the fix.** The calendar asked `list()`
+   * for one page of 100 and drew whatever came back, so that same account saw
+   * its month stop partway through the 17th of September with nothing to say
+   * why — `parsePerPage` caps at 100 and asking for more was silently clamped.
+   * A date range is a bounded question and deserves a whole answer, so this
+   * returns the range. `CALENDAR_MAX_OCCASIONS` is a backstop against a range
+   * nobody sensible would ask for, and when it bites the response says so
+   * instead of quietly dropping the tail.
+   */
+  async calendar(
+    accountId: string,
+    query: { from: string; to: string; type?: OccasionType },
+  ): Promise<CalendarOccasionsResponse> {
+    const where: Prisma.OccasionWhereInput = {
+      accountId,
+      ...(query.type && { type: query.type }),
+      // Same archived-recipient rule as the account-wide list: hidden from the
+      // calendar without being deleted, so restoring the contact brings their
+      // events straight back.
+      OR: [{ recipientId: null }, { recipient: { status: { not: "archived" } } }],
+      occasionDate: { gte: new Date(query.from), lte: new Date(query.to) },
+    };
+
+    const rows = await this.prisma.occasion.findMany({
+      where,
+      orderBy: { occasionDate: "asc" },
+      take: CALENDAR_MAX_OCCASIONS,
+      select: CALENDAR_SELECT,
+    });
+    // Only counted when the cap was actually reached — on every ordinary range
+    // the length of what we just fetched is the total, and a second query for a
+    // number we already know is a query wasted.
+    const total =
+      rows.length < CALENDAR_MAX_OCCASIONS
+        ? rows.length
+        : await this.prisma.occasion.count({ where });
+
+    return {
+      items: rows.map(attachOrderLink),
+      total,
+      truncated: total > rows.length,
+    };
   }
 
   async findOne(accountId: string, actorUserId: string, id: string): Promise<OccasionWithOrder> {

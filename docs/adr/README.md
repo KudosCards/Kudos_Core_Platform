@@ -181,5 +181,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0170 — The orders list is a summary, not orders plus their cards](./0170-the-orders-list-is-a-summary.md)
 - [0171 — A design that can't be printed can't be saved](./0171-unprintable-designs-cannot-be-saved.md)
 - [0172 — Kudos HQ can set a plan by hand, unless Stripe owns it](./0172-admin-set-plan.md)
+- [0173 — The calendar reads its whole range, and says so when it can't](./0173-the-calendar-reads-its-whole-range.md)
 
 <!-- adr-index:end -->
