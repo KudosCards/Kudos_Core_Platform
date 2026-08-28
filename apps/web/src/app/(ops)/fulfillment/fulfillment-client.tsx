@@ -597,7 +597,13 @@ export function FulfillmentClient({
   function statusHref(tab: FulfillmentStatus): string {
     const params = new URLSearchParams({ status: tab });
     if (dueOn) params.set("dueOn", dueOn);
-    else if (due) params.set("due", due);
+    // A deadline narrows an open tab, and the lit chip shows it doing so. On a
+    // closed tab the chips are hidden — a posted card's deadline has nothing
+    // left to say — so carrying the filter there would cut the list with
+    // nothing on screen to say why, leaving it to disagree with the count on
+    // the tab itself. Drop it instead. (A pinned day is different: its banner
+    // is shown whatever the tab, so it is never a silent filter.)
+    else if (due && OPEN_STATUS_TABS.includes(tab)) params.set("due", due);
     return `/fulfillment?${params.toString()}`;
   }
 
@@ -794,11 +800,20 @@ export function FulfillmentClient({
 
       {/* A deadline view spans the open statuses, so no status tab is lit. Say
           so, rather than leaving the operator to wonder which tab they are on. */}
-      {!dueOn && due && due !== "all" && !status && (
+      {!dueOn && due && !status && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
           <span>
-            Showing <strong>{DUE_TABS.find((t) => t.key === due)?.label.toLowerCase()}</strong>{" "}
-            cards · all still to post, whether pending, in progress or printed.
+            {due === "all" ? (
+              <>
+                Showing <strong>every card still to post</strong> — pending, in progress and
+                printed.
+              </>
+            ) : (
+              <>
+                Showing <strong>{DUE_TABS.find((t) => t.key === due)?.label.toLowerCase()}</strong>{" "}
+                cards · all still to post, whether pending, in progress or printed.
+              </>
+            )}
           </span>
           <a href="/fulfillment" className="text-muted hover:text-accent">
             Show whole queue
