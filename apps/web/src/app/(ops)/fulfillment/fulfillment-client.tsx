@@ -117,9 +117,15 @@ const STATUS_TABS: FulfillmentStatus[] = [
   "failed",
 ];
 
+/** The statuses a card can still be posted from — the ones a dispatch deadline
+ * is still a live question for. Mirrors OPEN_STATUSES on the API. */
+const OPEN_STATUS_TABS: FulfillmentStatus[] = ["pending", "in_progress", "printed"];
+
 /** The due-date urgency filters, in the order the print/post team works them.
- * `key` matches the API's `due` param and the counts.due bucket; shown only on
- * the actionable `pending` queue (where the buckets are computed). See ADR 0108. */
+ * `key` matches the API's `due` param and the counts.due bucket. They ask a
+ * deadline question, which spans every still-open card rather than one status —
+ * so they are shown on the open tabs, and choosing one releases the status pin.
+ * See ADR 0108 §5. */
 const DUE_TABS: { key: DueFilter; label: string; bucket: keyof FulfillmentCounts["due"] | null }[] =
   [
     { key: "all", label: "All", bucket: null },
@@ -277,7 +283,8 @@ export function FulfillmentClient({
   /** The active status tab, or null when a calendar day is pinned with no
    * explicit status (the queue then shows every open card for that day). */
   status: FulfillmentStatus | null;
-  due: DueFilter;
+  /** The active deadline filter, or null on the landing view. */
+  due: DueFilter | null;
   counts: FulfillmentCounts;
   /** The dispatch-calendar drill-in day (YYYY-MM-DD), or null. See ADR 0110. */
   dueOn: string | null;
@@ -577,6 +584,7 @@ export function FulfillmentClient({
   function statusHref(tab: FulfillmentStatus): string {
     const params = new URLSearchParams({ status: tab });
     if (dueOn) params.set("dueOn", dueOn);
+    else if (due) params.set("due", due);
     return `/fulfillment?${params.toString()}`;
   }
 
@@ -771,6 +779,20 @@ export function FulfillmentClient({
         </div>
       )}
 
+      {/* A deadline view spans the open statuses, so no status tab is lit. Say
+          so, rather than leaving the operator to wonder which tab they are on. */}
+      {!dueOn && due && due !== "all" && !status && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
+          <span>
+            Showing <strong>{DUE_TABS.find((t) => t.key === due)?.label.toLowerCase()}</strong>{" "}
+            cards · all still to post, whether pending, in progress or printed.
+          </span>
+          <a href="/fulfillment" className="text-muted hover:text-accent">
+            Show whole queue
+          </a>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2 text-sm">
         {STATUS_TABS.map((tab) => (
           <button
@@ -791,10 +813,14 @@ export function FulfillmentClient({
         ))}
       </div>
 
-      {/* Dispatch-urgency filter — only on the actionable pending queue, where the
-          due buckets are computed. Hidden on a calendar day drill-in, whose own
-          date already scopes the list. Sorted soonest-deadline-first regardless. */}
-      {status === "pending" && !dueOn && (
+      {/* Dispatch-urgency filter. A deadline is a question about work still to
+          go out, so the chips count every open card and choosing one releases
+          the status pin — matching the dispatch calendar and the send-by-5
+          banner. Shown on the open tabs and on a deadline view; hidden on a
+          calendar day drill-in, whose own date already scopes the list, and on
+          the closed tabs, where a deadline has nothing left to say. Sorted
+          soonest-deadline-first regardless. */}
+      {!dueOn && (status === null || OPEN_STATUS_TABS.includes(status)) && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-xs uppercase tracking-wide text-foreground/40">
             By dispatch date
@@ -807,7 +833,7 @@ export function FulfillmentClient({
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => router.push(`/fulfillment?status=pending&due=${tab.key}`)}
+                onClick={() => router.push(`/fulfillment?due=${tab.key}`)}
                 className={`flex items-center gap-2 rounded-full px-3 py-1 ${
                   active
                     ? "bg-foreground text-background"

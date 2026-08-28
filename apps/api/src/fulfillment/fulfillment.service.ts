@@ -515,13 +515,17 @@ export class FulfillmentService {
     const where: Prisma.FulfillmentJobWhereInput = {};
     if (query.status) {
       where.status = query.status;
-    } else if (query.dueOn) {
-      // A calendar drill-in with no explicit status shows every still-open card
-      // due that day (pending / in progress / printed), so the queue count
-      // matches the calendar badge's open-status total rather than pending
-      // alone. An explicit status tab still narrows within the day. See ADR 0110.
+    } else if (query.dueOn || query.due) {
+      // A deadline question with no explicit status spans every still-open card
+      // (pending / in progress / printed), so the queue agrees with the dispatch
+      // calendar, the send-by-5 banner and the calendar drill-in — all of which
+      // count open statuses. A printed card sitting in Click & Drop has not been
+      // posted; "due today" has to include it. An explicit status tab still
+      // narrows within the deadline. See ADR 0108 §5 and ADR 0110.
       where.status = { in: OPEN_STATUSES };
     } else {
+      // No status and no deadline question: the queue's landing view, the
+      // actionable pending backlog.
       where.status = FulfillmentJobStatus.pending;
     }
     if (query.dueOn) {
@@ -581,9 +585,16 @@ export class FulfillmentService {
   }
 
   /** Queue counts for the ops filters: per-status across all statuses, plus the
-   * due-date urgency buckets within the actionable `pending` queue. The buckets
-   * come from one filtered-aggregate round-trip against the same cutoffs the
-   * list uses, so the chip totals and the filtered lists always agree. */
+   * due-date urgency buckets across every still-open card. The buckets come from
+   * one filtered-aggregate round-trip against the same cutoffs the list uses, so
+   * the chip totals and the filtered lists always agree.
+   *
+   * Open, not pending. The buckets used to count `pending` alone, on the
+   * reasoning that urgency is meaningless for a card already dealt with — true
+   * of `posted` and `delivered`, but not of `in_progress` or `printed`, which
+   * still have to physically go out. An operator with five printed cards due
+   * today saw "Due today 0" on this queue while the shell banner above it said
+   * "5 cards to post today" and the dispatch calendar said 5. See ADR 0108 §5. */
   async counts(): Promise<FulfillmentCounts> {
     const grouped = await this.prisma.fulfillmentJob.groupBy({
       by: ["status"],
@@ -615,7 +626,7 @@ export class FulfillmentService {
         count(*) FILTER (WHERE due_date > ${dueSoonIso}::date)::int AS upcoming,
         count(*) FILTER (WHERE due_date IS NULL)::int AS no_date
       FROM fulfillment_jobs
-      WHERE status::text = 'pending'
+      WHERE status::text IN (${Prisma.join(OPEN_STATUSES)})
     `);
     const due = rows[0];
 
