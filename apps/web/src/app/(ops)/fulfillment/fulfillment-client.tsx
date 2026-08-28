@@ -211,16 +211,29 @@ function downloadCsv(rows: ExportedAddress[]): void {
   URL.revokeObjectURL(url);
 }
 
-/** A pinned dispatch-calendar day (YYYY-MM-DD) rendered for the banner. */
+/**
+ * A pinned dispatch-calendar day (YYYY-MM-DD) rendered for the banner.
+ *
+ * Assembled from parts rather than taken from `toLocaleDateString` whole,
+ * because the full en-GB pattern is not stable across ICU versions: Node 22
+ * (ICU 78) renders "Friday, 28 August 2026" and Chromium "Friday 28 August
+ * 2026". The banner is server-rendered, so the two disagreeing threw a
+ * hydration error on every calendar drill-in and made React throw the subtree
+ * away and redo it. The part *names* are stable, so this still speaks ICU's
+ * English — only the punctuation between them is ours.
+ */
 function formatDueOn(dueOn: string): string {
   const [y, m, d] = dueOn.split("-").map(Number);
-  return new Date(Date.UTC(y!, m! - 1, d!)).toLocaleDateString("en-GB", {
+  const parts = new Intl.DateTimeFormat("en-GB", {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
     timeZone: "UTC",
-  });
+  }).formatToParts(new Date(Date.UTC(y!, m! - 1, d!)));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("weekday")} ${part("day")} ${part("month")} ${part("year")}`;
 }
 
 /** A concise date+time for an import sample's timestamp (arrives as an ISO
