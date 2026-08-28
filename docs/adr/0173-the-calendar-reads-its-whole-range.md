@@ -89,12 +89,16 @@ The union fetch stays. It costs more than fetching only the visible view, but it
 is a deliberate trade against a flash on first paint, and with lean rows the
 union is now cheaper than the single month used to be.
 
-**This does not make the month grid render everything.** A cell shows three
-pills and a "+N more"; the week view shows twelve. Those caps are a layout
-decision, not a data one, and until "+N more" becomes something you can click,
-a day with eight birthdays still hides five of them. That is a real gap, and a
-separate one — it was invisible behind this bug, because the days it affects
-were the days that had already vanished.
+**The month grid still does not render everything, and now that is only a
+layout decision.** A cell shows three pills and a "+N more"; the week view shows
+twelve. Those caps are about the size of a box, not about what the page knows —
+so "+N more" is a button that opens the whole day. It fetches nothing: every
+occasion in the visible range is already in the client, which is what made the
+old inert label so odd. The label counts shared events as well as occasions,
+because the pop-up lists both.
+
+That gap was invisible behind this bug, because the days it affected were the
+days that had already vanished. Fixing the read is what made it worth fixing.
 
 Verified by restoring the old behaviour — the 100 cap and the fat select — and
 watching four of the seven cases fail: the range, the addresses, the truncation

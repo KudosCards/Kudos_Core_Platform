@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
+import { Modal } from "@/components/modal";
 import { OccasionModal } from "./occasion-modal";
 import { EventModal } from "./event-modal";
 import {
@@ -255,6 +256,11 @@ export function CalendarClient({
   const [error, setError] = useState<string | null>(null);
   // The occasion whose pop-up is open (null = closed).
   const [selected, setSelected] = useState<CalendarOccasion | null>(null);
+  // A whole day, opened from "+N more". A grid cell shows three pills (twelve in
+  // week view) and until now the overflow was an inert label, so a day with
+  // eight birthdays simply hid five of them with no way to reach them. Nothing
+  // is fetched to open it: the client already holds every occasion in range.
+  const [openDay, setOpenDay] = useState<string | null>(null);
   // Shared-event pop-up: an existing event id to manage, or a date to create on.
   const [openEventId, setOpenEventId] = useState<string | null>(null);
   const [createDate, setCreateDate] = useState<string | null>(null);
@@ -536,6 +542,7 @@ export function CalendarClient({
           onOpen={setSelected}
           onOpenEvent={setOpenEventId}
           onCreateForDate={setCreateDate}
+          onShowDay={setOpenDay}
           showDispatch={showDispatch}
           onMoveDispatch={moveDispatch}
         />
@@ -570,6 +577,23 @@ export function CalendarClient({
         />
       )}
 
+      {openDay !== null && (
+        <DayModal
+          dateKey={openDay}
+          occasions={byDay.get(openDay) ?? []}
+          events={eventsByDay.get(openDay) ?? []}
+          onClose={() => setOpenDay(null)}
+          onOpen={(occasion) => {
+            setOpenDay(null);
+            setSelected(occasion);
+          }}
+          onOpenEvent={(id) => {
+            setOpenDay(null);
+            setOpenEventId(id);
+          }}
+        />
+      )}
+
       {(openEventId !== null || createDate !== null) && (
         <EventModal
           eventId={openEventId}
@@ -585,6 +609,59 @@ export function CalendarClient({
   );
 }
 
+/** "Mon 14 September" — the heading a day pop-up wants, and the label its
+ * trigger announces to a screen reader. */
+function dayLabel(day: Date): string {
+  return day.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * One day, in full.
+ *
+ * A month cell has room for three pills and a week cell for twelve, so a busy
+ * day has always been partly hidden — the difference is that the overflow used
+ * to be an inert `<span>`, leaving no way at all to reach the rest. This is that
+ * way. It needs no fetch: every occasion in the visible range is already in the
+ * client, which is what made the old label so odd — the data was right there.
+ */
+function DayModal({
+  dateKey,
+  occasions,
+  events,
+  onClose,
+  onOpen,
+  onOpenEvent,
+}: {
+  dateKey: string;
+  occasions: CalendarOccasion[];
+  events: EventSummary[];
+  onClose: () => void;
+  onOpen: (occasion: CalendarOccasion) => void;
+  onOpenEvent: (id: string) => void;
+}) {
+  const total = occasions.length + events.length;
+  return (
+    <Modal open onClose={onClose} title={dayLabel(new Date(`${dateKey}T00:00:00Z`))}>
+      <p className="text-sm text-muted">
+        {total} event{total === 1 ? "" : "s"} on this day
+      </p>
+      <div className="mt-3 flex max-h-[60vh] flex-col gap-1 overflow-y-auto">
+        {events.map((event) => (
+          <EventPill key={event.id} event={event} onOpen={onOpenEvent} />
+        ))}
+        {occasions.map((occasion) => (
+          <OccasionPill key={occasion.id} occasion={occasion} onOpen={onOpen} />
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 function GridView({
   view,
   anchor,
@@ -594,6 +671,7 @@ function GridView({
   onOpen,
   onOpenEvent,
   onCreateForDate,
+  onShowDay,
   showDispatch,
   onMoveDispatch,
 }: {
@@ -605,6 +683,8 @@ function GridView({
   onOpen: (occasion: CalendarOccasion) => void;
   onOpenEvent: (id: string) => void;
   onCreateForDate: (dateKey: string) => void;
+  /** Open a day in full — what "+N more" is for. */
+  onShowDay: (dateKey: string) => void;
   showDispatch: boolean;
   onMoveDispatch: (occasionId: string, dateKey: string) => void;
 }) {
@@ -685,7 +765,16 @@ function GridView({
                     }
                   />
                 ))}
-                {extra > 0 && <span className="px-1 text-xs text-muted">+{extra} more</span>}
+                {extra > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onShowDay(key)}
+                    aria-label={`Show all ${dayOccasions.length + dayEvents.length} events on ${dayLabel(day)}`}
+                    className="rounded px-1 text-left text-xs text-muted underline decoration-dotted underline-offset-2 hover:text-foreground"
+                  >
+                    +{extra} more
+                  </button>
+                )}
               </div>
             );
           })}
