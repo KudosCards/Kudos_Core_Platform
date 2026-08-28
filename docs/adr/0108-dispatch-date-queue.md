@@ -81,10 +81,37 @@ can never _hide_ an overdue card.
 ### 5. Counts return status totals **and** due buckets
 
 `GET /fulfillment/counts` now returns `{ status, due }`. The `due` buckets are
-computed within the actionable `pending` queue only (urgency is meaningless for
-already-posted cards) in **one** filtered-aggregate round-trip against the same
-cutoffs the list uses — so the chip totals and the filtered lists always agree.
-The web shows the due chips only on the pending tab, for the same reason.
+computed in **one** filtered-aggregate round-trip against the same cutoffs the
+list uses — so the chip totals and the filtered lists always agree.
+
+They span every **open** status: `pending`, `in_progress` and `printed`.
+
+> **Amended.** They originally counted `pending` alone, reasoning that urgency
+> is meaningless for a card already dealt with. That is true of `posted` and
+> `delivered`. It is not true of `in_progress` or `printed` — a printed card
+> sitting in Click & Drop has not been posted, and its deadline is the entire
+> point of it.
+>
+> Reported from the queue: five cards printed the day before, all due to post
+> that day, and "Due today" read **0** — while the send-by-5 banner at the top
+> of the same screen said "5 cards to post today" (ADR 0115, open statuses) and
+> the dispatch calendar beside it showed 5 (ADR 0110, open statuses). The queue
+> was the only one of the three counting `pending`.
+>
+> A dispatch deadline is a question about work still to go out, so it is scoped
+> to the work still to go out. The status tabs stay a filter _within_ that: pick
+> one and it narrows the deadline, exactly as a status tab narrows a pinned
+> calendar day. Picking a deadline releases the status pin, for the same reason
+> the calendar drill-in does — see ADR 0110.
+
+Because the buckets are no longer a partition of `pending`, they no longer sum
+to the pending tab; they sum to the open workload. Asking the deadline question
+at all is what widens the queue, so the landing view — no `due` parameter — is
+still the pending backlog, and no chip is lit on it.
+
+The web shows the chips on the open tabs. On the closed ones (`posted`,
+`delivered`, `returned_to_sender`, `failed`) a deadline has nothing left to say,
+which is the part of the original reasoning that survives.
 
 ## Consequences
 

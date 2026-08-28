@@ -37,9 +37,12 @@ export default async function FulfillmentPage({
   )
     ? (statusParam as FulfillmentStatus)
     : null;
-  const due: DueFilter = DUE_FILTERS.includes(dueParam as DueFilter)
+  // null = no deadline question asked, which is the queue's landing view. Kept
+  // distinct from an explicit `due=all`, because asking the deadline question at
+  // all widens the queue from pending to every still-open card.
+  const due: DueFilter | null = DUE_FILTERS.includes(dueParam as DueFilter)
     ? (dueParam as DueFilter)
-    : "all";
+    : null;
   const dueOn =
     typeof dueOnParam === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dueOnParam) ? dueOnParam : null;
 
@@ -50,11 +53,16 @@ export default async function FulfillmentPage({
   if (dueOn) {
     jobsQuery.set("dueOn", dueOn);
     if (explicitStatus) jobsQuery.set("status", explicitStatus);
-  } else {
-    // The queue defaults to soonest-deadline-first (API default sort), so overdue
-    // cards surface at the top even under the "all" filter. See ADR 0108.
-    jobsQuery.set("status", explicitStatus ?? "pending");
+  } else if (due) {
+    // A deadline filter spans every still-open card unless a status tab narrows
+    // it — the same rule as the calendar drill-in above, so the queue agrees
+    // with the dispatch calendar and the send-by-5 banner. See ADR 0108 §5.
     jobsQuery.set("due", due);
+    if (explicitStatus) jobsQuery.set("status", explicitStatus);
+  } else {
+    // The landing view: the actionable pending backlog, soonest deadline first
+    // (API default sort), so overdue cards surface at the top. See ADR 0108.
+    jobsQuery.set("status", explicitStatus ?? "pending");
   }
 
   const [result, counts, printSize] = await Promise.all([
@@ -80,11 +88,10 @@ export default async function FulfillmentPage({
     clickAndDropErrors: 0,
   };
 
-  // On a day drill-in with no chosen status, no tab is "active" — the queue
-  // shows every open card for the day. Otherwise the queue defaults to pending.
-  const clientStatus: FulfillmentStatus | null = dueOn
-    ? explicitStatus
-    : (explicitStatus ?? "pending");
+  // Under a deadline question with no chosen status, no tab is "active" — the
+  // queue shows every open card matching it. Otherwise it defaults to pending.
+  const clientStatus: FulfillmentStatus | null =
+    dueOn || due ? explicitStatus : (explicitStatus ?? "pending");
 
   return (
     <FulfillmentClient

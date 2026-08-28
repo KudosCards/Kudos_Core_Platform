@@ -30,9 +30,11 @@ export type QueueSort = (typeof QUEUE_SORTS)[number];
 
 /**
  * The queue's counts payload: per-status across every status, plus the due-date
- * urgency buckets computed within the actionable `pending` queue. `dueSoon`
- * counts cards due within the working-day window (excluding today and overdue,
- * which have their own buckets). Drives the ops filter chips.
+ * urgency buckets computed across every still-open card — `pending`,
+ * `in_progress` and `printed` — because a printed card that has not been posted
+ * still has a deadline to meet. `dueSoon` counts cards due within the
+ * working-day window (excluding today and overdue, which have their own
+ * buckets). Drives the ops filter chips. See ADR 0108 §5.
  */
 export const fulfillmentCountsSchema = z.object({
   status: z.record(fulfillmentJobStatusSchema, z.number()),
