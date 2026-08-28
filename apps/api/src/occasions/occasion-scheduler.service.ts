@@ -15,6 +15,18 @@ import { buildScheduledKeyDateOccasion } from "./key-date-occasion.util";
  */
 const SCHEDULER_PAGE_SIZE = 1_000;
 
+/** What one run of the recurring scheduler did. Returned so an operator running
+ * it by hand (POST /admin/occasions/scheduler/run) sees the same three numbers
+ * the nightly run logs, rather than a bare count with no context. */
+export interface OccasionSchedulerSummary {
+  /** Active recipients with a date of birth that were streamed through. */
+  recipients: number;
+  /** Renewal/anniversary key dates that were streamed through. */
+  keyDates: number;
+  /** Occasions moved from `scheduled` into `pending_approval` by this run. */
+  promoted: number;
+}
+
 /**
  * Only birthdays are auto-scheduled — see docs/adr/0006-phase-2-scope.md for
  * why the other five OccasionTypes are always created manually via the API.
@@ -38,7 +50,7 @@ export class OccasionSchedulerService {
   constructor(private readonly prisma: PrismaService) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_6AM)
-  async scheduleBirthdayOccasions(): Promise<number> {
+  async scheduleBirthdayOccasions(): Promise<OccasionSchedulerSummary> {
     const today = startOfUtcDay(new Date());
 
     // 1. Ensure a scheduled birthday occasion exists for every recipient's next
@@ -60,7 +72,7 @@ export class OccasionSchedulerService {
     this.logger.log(
       `Recurring scheduler: ${recipientCount} recipient(s) with a DOB, ${keyDateCount} key date(s), ${count} occasion(s) promoted into the ${BIRTHDAY_LOOKAHEAD_DAYS}-day approval window`,
     );
-    return count;
+    return { recipients: recipientCount, keyDates: keyDateCount, promoted: count };
   }
 
   /**

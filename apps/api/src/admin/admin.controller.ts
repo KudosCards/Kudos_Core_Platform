@@ -47,6 +47,10 @@ import {
   SubscriptionInvoicesService,
   type SubscriptionInvoiceBackfillSummary,
 } from "../billing/subscription-invoices.service";
+import {
+  OccasionSchedulerService,
+  type OccasionSchedulerSummary,
+} from "../occasions/occasion-scheduler.service";
 
 /**
  * The Kudos super-admin view: platform-wide orders, subscribers, and KPIs.
@@ -68,6 +72,7 @@ export class AdminController {
     private readonly subscriptionInvoices: SubscriptionInvoicesService,
     private readonly batchOrders: BatchOrdersService,
     private readonly wallet: WalletService,
+    private readonly occasionScheduler: OccasionSchedulerService,
   ) {}
 
   /**
@@ -128,6 +133,29 @@ export class AdminController {
   @Post("daily-summary/run")
   runDailySummary(): Promise<OpsDigestSummary> {
     return this.opsDigest.runDailyDigest(new Date(), { force: true });
+  }
+
+  /**
+   * Run the recurring occasion scheduler now, instead of waiting for 06:00.
+   *
+   * The same job the cron runs, platform-wide — not a second copy of the rule.
+   * Both halves are idempotent: the occasion writes are `skipDuplicates` on the
+   * idempotency key, and the promotion is one set-based UPDATE whose WHERE
+   * clause stops matching a row once it has moved. So a second run converges
+   * rather than doing anything twice, and running it mid-morning simply brings
+   * tomorrow's 06:00 forward.
+   *
+   * Added for the account that imported two thousand contacts and saw an empty
+   * Approvals page (#356 fixed that going forward, on the next write to the
+   * account; this is how an operator repairs an account that is already in that
+   * state without waiting a day, or asking the customer to touch a contact).
+   *
+   * Super-admin only: it touches every tenant.
+   */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
+  @Post("occasions/scheduler/run")
+  runOccasionScheduler(): Promise<OccasionSchedulerSummary> {
+    return this.occasionScheduler.scheduleBirthdayOccasions();
   }
 
   @Get("overview")
