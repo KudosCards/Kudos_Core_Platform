@@ -1,7 +1,7 @@
-import type { EventSummary, Occasion } from "@kudos/shared-types";
+import type { CalendarOccasionsResponse, EventSummary } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { CalendarClient } from "./calendar-client";
-import { listWindowRange, monthGridRange, ymdUTC, type Paginated } from "./calendar-utils";
+import { listWindowRange, monthGridRange, ymdUTC } from "./calendar-utils";
 
 export default async function CalendarPage() {
   // Server-render enough to populate BOTH first-paint views without a flash:
@@ -14,14 +14,20 @@ export default async function CalendarPage() {
   const { start } = monthGridRange(now);
   const { end } = listWindowRange(now);
   const range = `from=${ymdUTC(start)}&to=${ymdUTC(end)}`;
+  // The calendar's own read, not the paginated `/occasions` list. That one caps
+  // at 100 rows, which silently cut a 2,000-contact account's month off partway
+  // through a day, and carries each contact's postal address for checkout
+  // pre-fill — which no calendar pill renders. See ADR 0173.
   const [occasions, events] = await Promise.all([
-    serverApiFetch<Paginated<Occasion>>(`/occasions?${range}&perPage=100`),
+    serverApiFetch<CalendarOccasionsResponse>(`/occasions/calendar?${range}`),
     serverApiFetch<EventSummary[]>(`/events?${range}`),
   ]);
 
   return (
     <CalendarClient
       initialOccasions={occasions?.items ?? []}
+      initialTruncated={occasions?.truncated ?? false}
+      initialTotal={occasions?.total ?? 0}
       initialEvents={events ?? []}
       todayIso={now.toISOString()}
     />

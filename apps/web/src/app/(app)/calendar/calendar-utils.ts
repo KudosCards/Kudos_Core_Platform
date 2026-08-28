@@ -1,4 +1,4 @@
-import type { Occasion } from "@kudos/shared-types";
+import type { CalendarOccasion } from "@kudos/shared-types";
 
 // The pure calendar-grid date maths now lives in @/lib/calendar-grid, shared
 // with the ops dispatch calendar. Re-exported here so existing occasion-calendar
@@ -28,7 +28,7 @@ export interface Paginated<T> {
 }
 
 /** Which date an occasion sits on, honouring the "dispatch dates" toggle. */
-export function occasionDay(occasion: Occasion, useDispatch: boolean): string {
+export function occasionDay(occasion: CalendarOccasion, useDispatch: boolean): string {
   const value = useDispatch
     ? (occasion.dispatchDate ?? occasion.occasionDate)
     : occasion.occasionDate;

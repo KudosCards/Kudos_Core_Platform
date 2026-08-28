@@ -1,7 +1,11 @@
 "use client";
 
 import { Pin } from "lucide-react";
-import type { EventSummary, Occasion } from "@kudos/shared-types";
+import type {
+  CalendarOccasion,
+  CalendarOccasionsResponse,
+  EventSummary,
+} from "@kudos/shared-types";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ApiError } from "@/lib/api";
@@ -23,7 +27,6 @@ import {
   OCCASION_TYPE_COLORS,
   OCCASION_TYPES,
   type CalendarView,
-  type Paginated,
 } from "./calendar-utils";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -43,7 +46,7 @@ async function fetchEventsForRange(
   return typeFilter === "all" ? items : items.filter((e) => e.type === typeFilter);
 }
 
-function occasionLabel(occasion: Occasion): string {
+function occasionLabel(occasion: CalendarOccasion): string {
   if (occasion.recipient) {
     return `${occasion.recipient.firstName} ${occasion.recipient.lastName}`;
   }
@@ -51,7 +54,7 @@ function occasionLabel(occasion: Occasion): string {
 }
 
 /** The occasion's descriptive kind, preferring a hand-entered event title. */
-function occasionKind(occasion: Occasion): string {
+function occasionKind(occasion: CalendarOccasion): string {
   return occasion.title ?? OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type;
 }
 
@@ -103,12 +106,12 @@ function OccasionPill({
   draggable = false,
   onDragStart,
 }: {
-  occasion: Occasion;
-  onOpen: (occasion: Occasion) => void;
+  occasion: CalendarOccasion;
+  onOpen: (occasion: CalendarOccasion) => void;
   /** When true, the pill can be dragged to a new dispatch day (grid + dispatch
    * view only, and only for cards not yet on an order). */
   draggable?: boolean;
-  onDragStart?: (occasion: Occasion) => void;
+  onDragStart?: (occasion: CalendarOccasion) => void;
 }) {
   const progress = occasionProgress(occasion.status, occasion.order?.status);
   const color =
@@ -203,10 +206,16 @@ function CalendarLegend() {
 
 export function CalendarClient({
   initialOccasions,
+  initialTruncated,
+  initialTotal,
   initialEvents,
   todayIso,
 }: {
-  initialOccasions: Occasion[];
+  initialOccasions: CalendarOccasion[];
+  /** True when the server had more occasions in this range than it returned. */
+  initialTruncated: boolean;
+  /** How many fall in the range in total, whether or not they were all sent. */
+  initialTotal: number;
   initialEvents: EventSummary[];
   todayIso: string;
 }) {
@@ -235,12 +244,17 @@ export function CalendarClient({
   const [anchor, setAnchor] = useState<Date>(today);
   const [showDispatch, setShowDispatch] = useState(false);
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [occasions, setOccasions] = useState<Occasion[]>(initialOccasions);
+  const [occasions, setOccasions] = useState<CalendarOccasion[]>(initialOccasions);
+  // Never truncate in silence. This is what the reported bug was: the calendar
+  // drew one page of 100 and stopped, so a month ended partway through a day
+  // with nothing to say why. The server now reports it and the reader is told.
+  const [truncated, setTruncated] = useState(initialTruncated);
+  const [total, setTotal] = useState(initialTotal);
   const [events, setEvents] = useState<EventSummary[]>(initialEvents);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The occasion whose pop-up is open (null = closed).
-  const [selected, setSelected] = useState<Occasion | null>(null);
+  const [selected, setSelected] = useState<CalendarOccasion | null>(null);
   // Shared-event pop-up: an existing event id to manage, or a date to create on.
   const [openEventId, setOpenEventId] = useState<string | null>(null);
   const [createDate, setCreateDate] = useState<string | null>(null);
@@ -256,20 +270,24 @@ export function CalendarClient({
   }, []);
 
   // Reflect an inline edit from the pop-up back into the calendar immediately.
-  const applyUpdate = useCallback((updated: Occasion) => {
+  const applyUpdate = useCallback((updated: CalendarOccasion) => {
     setOccasions((current) => current.map((o) => (o.id === updated.id ? updated : o)));
     setSelected(updated);
   }, []);
 
   const load = useCallback(async () => {
     const { start, end } = fetchRange(view, anchor);
-    const params = new URLSearchParams({ from: ymdUTC(start), to: ymdUTC(end), perPage: "100" });
+    const params = new URLSearchParams({ from: ymdUTC(start), to: ymdUTC(end) });
     if (typeFilter !== "all") params.set("type", typeFilter);
     setLoading(true);
     setError(null);
     try {
-      const result = await clientApiFetch<Paginated<Occasion>>(`/occasions?${params.toString()}`);
+      const result = await clientApiFetch<CalendarOccasionsResponse>(
+        `/occasions/calendar?${params.toString()}`,
+      );
       setOccasions(result.items);
+      setTruncated(result.truncated);
+      setTotal(result.total);
     } catch (loadError) {
       setError(loadError instanceof ApiError ? loadError.message : "Could not load the calendar");
     } finally {
@@ -290,10 +308,13 @@ export function CalendarClient({
         ),
       );
       try {
-        const updated = await clientApiFetch<Occasion>(`/occasions/${occasionId}/dispatch-date`, {
-          method: "PATCH",
-          body: JSON.stringify({ dispatchDate: dateKey }),
-        });
+        const updated = await clientApiFetch<CalendarOccasion>(
+          `/occasions/${occasionId}/dispatch-date`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ dispatchDate: dateKey }),
+          },
+        );
         setOccasions((current) => current.map((o) => (o.id === updated.id ? updated : o)));
       } catch (moveError) {
         setError(
@@ -362,7 +383,7 @@ export function CalendarClient({
   }
 
   // Bucket occasions onto their day (occasion date or dispatch date).
-  const byDay = new Map<string, Occasion[]>();
+  const byDay = new Map<string, CalendarOccasion[]>();
   for (const occasion of occasions) {
     const key = occasionDay(occasion, showDispatch);
     const bucket = byDay.get(key);
@@ -478,6 +499,19 @@ export function CalendarClient({
 
       {error && <p className="notice notice-danger">{error}</p>}
 
+      {/* The reported bug, made impossible to repeat quietly. The calendar used
+          to draw one page of 100 and stop, so a month ended partway through a
+          day with nothing to say why — while the week view, being under the cap,
+          showed that same day in full. If a range is ever too big to draw whole,
+          say so and name the way out. */}
+      {truncated && (
+        <p className="notice notice-warning">
+          Showing the first {occasions.length.toLocaleString("en-GB")} of{" "}
+          {total.toLocaleString("en-GB")} events in this range. Switch to week view, or filter by
+          occasion type, to see them all.
+        </p>
+      )}
+
       <CalendarLegend />
 
       {view === "list" ? (
@@ -565,10 +599,10 @@ function GridView({
 }: {
   view: CalendarView;
   anchor: Date;
-  byDay: Map<string, Occasion[]>;
+  byDay: Map<string, CalendarOccasion[]>;
   eventsByDay: Map<string, EventSummary[]>;
   todayKey: string;
-  onOpen: (occasion: Occasion) => void;
+  onOpen: (occasion: CalendarOccasion) => void;
   onOpenEvent: (id: string) => void;
   onCreateForDate: (dateKey: string) => void;
   showDispatch: boolean;
@@ -673,10 +707,10 @@ function ListView({
   onToggleOrder,
 }: {
   anchor: Date;
-  byDay: Map<string, Occasion[]>;
+  byDay: Map<string, CalendarOccasion[]>;
   eventsByDay: Map<string, EventSummary[]>;
   todayKey: string;
-  onOpen: (occasion: Occasion) => void;
+  onOpen: (occasion: CalendarOccasion) => void;
   onOpenEvent: (id: string) => void;
   onCreateForDate: (dateKey: string) => void;
   orderSelection: Set<string>;

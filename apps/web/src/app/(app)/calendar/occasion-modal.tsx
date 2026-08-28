@@ -3,7 +3,7 @@
 import { Cake, Pin } from "lucide-react";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import type { Occasion } from "@kudos/shared-types";
+import type { CalendarOccasion, Occasion } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { Modal } from "@/components/modal";
@@ -15,7 +15,7 @@ import {
 } from "@/lib/occasions";
 
 /** The display name for a calendar occasion — recipient, else its label/type. */
-function occasionName(occasion: Occasion): string {
+function occasionName(occasion: CalendarOccasion): string {
   if (occasion.recipient) return `${occasion.recipient.firstName} ${occasion.recipient.lastName}`;
   return occasion.title ?? OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type;
 }
@@ -44,9 +44,9 @@ export function OccasionModal({
   onClose,
   onUpdated,
 }: {
-  occasion: Occasion;
+  occasion: CalendarOccasion;
   onClose: () => void;
-  onUpdated: (occasion: Occasion) => void;
+  onUpdated: (occasion: CalendarOccasion) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);

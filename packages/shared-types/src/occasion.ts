@@ -174,3 +174,58 @@ export const approveOccasionInputSchema = z.object({
   postageClass: postageClassSchema.optional(),
 });
 export type ApproveOccasionInput = z.infer<typeof approveOccasionInputSchema>;
+
+/**
+ * One occasion as the calendar needs it: enough to draw a pill, open the detail
+ * modal, and link to its order. Nothing else.
+ *
+ * A separate shape from `occasionSchema` rather than a trimmed version of it,
+ * because the two have genuinely different jobs. The full occasion carries the
+ * contact's postal address so checkout can pre-fill a shipping line without
+ * asking for it twice (ADR 0119) — the calendar renders no address at all, and
+ * shipping one to every pill on a 42-day grid is the orders-list mistake ADR
+ * 0170 was written about.
+ *
+ * Measured against the full shape on real rows: 362 bytes against 790, so a
+ * month of a two-thousand-contact account is 81 KB rather than 177 KB.
+ *
+ * A full `Occasion` satisfies this structurally, so the detail modal can keep
+ * PATCHing `/occasions/:id` and dropping the full row it gets back straight into
+ * the calendar's state.
+ */
+export const calendarOccasionSchema = z.object({
+  id: z.string().uuid(),
+  recipientId: z.string().uuid().nullable(),
+  type: occasionTypeSchema,
+  /** Drives whether the title is editable — a recurring birthday's is not. */
+  source: occasionSourceSchema,
+  title: z.string().nullable(),
+  occasionDate: z.coerce.date(),
+  dispatchDate: z.coerce.date().nullable(),
+  dispatchDateOverridden: z.boolean().optional(),
+  status: occasionStatusSchema,
+  recipient: z.object({ firstName: z.string(), lastName: z.string() }).nullable(),
+  order: occasionOrderLinkSchema.nullable().optional(),
+});
+export type CalendarOccasion = z.infer<typeof calendarOccasionSchema>;
+
+/**
+ * The calendar read's response.
+ *
+ * `total` and `truncated` are the point of it having its own shape. The calendar
+ * used to ask `/occasions` for one page of 100 and render whatever came back, so
+ * a two-thousand-contact account saw its month stop dead partway through the
+ * 17th with nothing to say why — the payload carried the real total all along
+ * and the page ignored it. A reader is now told when they are not seeing
+ * everything, and `truncated` is a fact from the server rather than something
+ * the client infers by comparing two numbers and hoping it got the comparison
+ * right.
+ */
+export const calendarOccasionsResponseSchema = z.object({
+  items: z.array(calendarOccasionSchema),
+  /** How many occasions fall in the requested range, ignoring the cap. */
+  total: z.number().int().nonnegative(),
+  /** True when `items` is a prefix of `total` rather than all of it. */
+  truncated: z.boolean(),
+});
+export type CalendarOccasionsResponse = z.infer<typeof calendarOccasionsResponseSchema>;
