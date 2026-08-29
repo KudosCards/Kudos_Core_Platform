@@ -256,6 +256,58 @@ describe("Segments (e2e)", () => {
     expect(result.capped).toBe(true);
   });
 
+  it("resolves a hand-picked list's members for the composer", async () => {
+    const token = await signUp();
+    const alice = await addMailable(token);
+    const bob = await addMailable(token);
+    await addMailable(token); // not on the list
+
+    const listRes = await request(app.getHttpServer())
+      .post("/recipient-lists")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Year 4 class" })
+      .expect(201);
+    const listId = (listRes.body as { id: string }).id;
+    await request(app.getHttpServer())
+      .post(`/recipient-lists/${listId}/members`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ recipientIds: [alice.id, bob.id] })
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .get(`/segments/members?list=${listId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const result = segmentMembersSchema.parse(res.body);
+
+    // Same shape as ?segment=, so the composer treats both kinds identically.
+    expect(result.name).toBe("Year 4 class");
+    expect(result.total).toBe(2);
+    expect(result.members.map((m) => m.id).sort()).toEqual([alice.id, bob.id].sort());
+    expect(result.capped).toBe(false);
+    expect(result.reconciliations).toEqual([]);
+  });
+
+  it("404s for an unknown list, and for another account's list", async () => {
+    const accountA = await signUp();
+    const accountB = await signUp();
+    const listRes = await request(app.getHttpServer())
+      .post("/recipient-lists")
+      .set("Authorization", `Bearer ${accountA}`)
+      .send({ name: "A's class" })
+      .expect(201);
+    const listId = (listRes.body as { id: string }).id;
+
+    await request(app.getHttpServer())
+      .get(`/segments/members?list=${listId}`)
+      .set("Authorization", `Bearer ${accountB}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`/segments/members?list=${randomUUID()}`)
+      .set("Authorization", `Bearer ${accountA}`)
+      .expect(404);
+  });
+
   it("404s for an unknown segment", async () => {
     const token = await signUp();
     await request(app.getHttpServer())
@@ -305,6 +357,27 @@ describe("Segments (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
     expect(segmentsOverviewSchema.parse(overview.body).saved).toHaveLength(0);
+  });
+
+  it("honours both directions of the mailable-address filter", async () => {
+    const token = await signUp();
+    const { accountId } = await addMailable(token);
+    await addUnmailable(accountId);
+    await addUnmailable(accountId);
+
+    const countFor = async (hasMailableAddress: boolean) => {
+      const res = await request(app.getHttpServer())
+        .post("/segments/preview")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ definition: { contact: { hasMailableAddress } } })
+        .expect(200);
+      return segmentPreviewSchema.parse(res.body).count;
+    };
+
+    // `true` was accepted and then ignored, so "only people we can post to"
+    // returned everyone — the two directions must not agree.
+    expect(await countFor(false)).toBe(2);
+    expect(await countFor(true)).toBe(1);
   });
 
   it("rejects a preview of an empty rule", async () => {

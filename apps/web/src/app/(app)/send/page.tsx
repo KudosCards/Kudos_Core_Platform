@@ -16,20 +16,27 @@ import type { Paginated } from "./recipient-picker";
  * contacts in a single order. Contacts can be chosen right here, and any that
  * arrive pre-selected from the Recipients page (`?recipients=id,id`), from a
  * segment (`?segment=<preset-key-or-saved-id>` — its members seed the selection),
- * or a design being round-tripped back from the editor (`?design=`) — seed the
- * initial state. See docs/adr/0106-send-to-segment.md.
+ * a hand-picked list (`?list=<id>`, which seeds the same way), or a design being
+ * round-tripped back from the editor (`?design=`) — seed the initial state.
+ * See docs/adr/0106-send-to-segment.md and docs/adr/0177.
  */
 const PICKER_PER_PAGE = 20;
 
 export default async function SendPage({
   searchParams,
 }: {
-  searchParams: Promise<{ recipients?: string; design?: string; segment?: string }>;
+  searchParams: Promise<{
+    recipients?: string;
+    design?: string;
+    segment?: string;
+    list?: string;
+  }>;
 }) {
   const {
     recipients: recipientsParam,
     design: designParam,
     segment: segmentParam,
+    list: listParam,
   } = await searchParams;
   const preIds = (recipientsParam ?? "")
     .split(",")
@@ -59,11 +66,17 @@ export default async function SendPage({
     serverApiFetch<Paginated<Recipient>>(
       `/recipients?page=1&perPage=${PICKER_PER_PAGE}&status=active`,
     ),
+    // A hand-picked list seeds the composer the same way a smart one does. It
+    // rides the same endpoint — a contact-mode definition scoped to the list —
+    // so the cap, the "capped" flag and the heading all behave identically
+    // rather than needing a second, parallel path.
     segmentParam
       ? serverApiFetch<SegmentMembers>(
           `/segments/members?segment=${encodeURIComponent(segmentParam)}`,
         )
-      : Promise.resolve(null),
+      : listParam
+        ? serverApiFetch<SegmentMembers>(`/segments/members?list=${encodeURIComponent(listParam)}`)
+        : Promise.resolve(null),
     // The account's message pages, offered when the chosen design has a QR (ADR 0132).
     serverApiFetch<MessagePageSummary[]>("/message-pages"),
     serverApiFetch<PlanEntitlement>("/accounts/me/entitlements"),

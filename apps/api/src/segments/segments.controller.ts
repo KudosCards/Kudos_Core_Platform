@@ -40,16 +40,21 @@ export class SegmentsController {
   }
 
   /**
-   * A segment (by preset key or saved id) resolved to its full member recipients,
-   * capped at the plan's per-order limit — seeds the bulk-send composer's "Send
-   * to this list". 404 if neither a preset nor a saved segment matches.
+   * A list resolved to its full member recipients, capped at the plan's
+   * per-order limit — seeds the bulk-send composer's "Send to this list".
+   * `?segment=` takes a preset key or a saved smart list's id; `?list=` takes a
+   * hand-picked list's id, so both kinds seed the composer the same way. 404 if
+   * neither matches. See docs/adr/0106 and 0177.
    */
   @Get("members")
   members(
     @CurrentMembership() membership: CurrentMembershipContext,
-    @Query("segment") segment: string,
+    @Query("segment") segment?: string,
+    @Query("list") list?: string,
   ): Promise<SegmentMembersResult> {
-    return this.segments.membersForKey(membership.accountId, segment);
+    return list
+      ? this.segments.membersForList(membership.accountId, list)
+      : this.segments.membersForKey(membership.accountId, segment ?? "");
   }
 
   /**

@@ -1,15 +1,10 @@
-import type { SegmentsOverview } from "@kudos/shared-types";
-import { serverApiFetch } from "@/lib/api.server";
-import { SegmentsClient } from "./segments-client";
+import { redirect } from "next/navigation";
 
 /**
- * Segments (smart lists): suggested presets + the account's saved segments, each
- * resolved live to a count + preview. See docs/adr/0105-segments-smart-lists.md.
+ * Segments moved to /lists, where hand-picked and smart lists live side by
+ * side under one word. Kept as a redirect so bookmarks and any emailed link
+ * still land somewhere useful. See docs/adr/0177.
  */
-export default async function SegmentsPage() {
-  const overview =
-    (await serverApiFetch<SegmentsOverview>("/segments").catch(() => null)) ??
-    ({ suggested: [], saved: [] } satisfies SegmentsOverview);
-
-  return <SegmentsClient initial={overview} />;
+export default function SegmentsPage() {
+  redirect("/lists");
 }

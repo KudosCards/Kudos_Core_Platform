@@ -158,7 +158,32 @@ export class SegmentsService {
    * Throws NotFoundException if neither a preset nor a saved segment matches.
    */
   async membersForKey(accountId: string, key: string): Promise<SegmentMembersResult> {
-    const { name, definition } = await this.lookupDefinition(accountId, key);
+    return this.membersFor(accountId, await this.lookupDefinition(accountId, key));
+  }
+
+  /**
+   * The same thing for a hand-picked list, so `/send?list=` seeds the composer
+   * exactly as `?segment=` does — one cap, one "capped" flag, one heading.
+   * Resolved as a contact-mode rule scoped to the list rather than a second
+   * parallel path, so the two kinds cannot drift apart.
+   */
+  async membersForList(accountId: string, listId: string): Promise<SegmentMembersResult> {
+    if (!listId) throw new NotFoundException("List not found");
+    const list = await this.prisma.recipientList.findFirst({
+      where: { id: listId, accountId },
+      select: { name: true },
+    });
+    if (!list) throw new NotFoundException("List not found");
+    return this.membersFor(accountId, {
+      name: list.name,
+      definition: { contact: { listId } },
+    });
+  }
+
+  private async membersFor(
+    accountId: string,
+    { name, definition }: { name: string; definition: SegmentDefinition },
+  ): Promise<SegmentMembersResult> {
     const { batchOrderMaxSize } = await this.entitlements.getForAccount(accountId);
     const { members, total, capped } = await this.members(accountId, definition, batchOrderMaxSize);
     const reconciliations = await this.reconciliationsFor(accountId, definition, members);
@@ -320,7 +345,14 @@ export class SegmentsService {
     return { count, sample };
   }
 
-  /** The recipient-side predicate shared by both modes (status + facets). */
+  /**
+   * The recipient-side predicate shared by both modes (status + facets).
+   *
+   * `hasMailableAddress: true` used to be accepted by the schema and then
+   * ignored here, so a rule asking for "only people we can post to" quietly
+   * returned everyone, missing addresses included. Both directions are honoured
+   * now; leaving the field off still means "either".
+   */
   private recipientFilter(definition: SegmentDefinition): Prisma.RecipientWhereInput {
     const contact = definition.contact;
     return {
@@ -328,6 +360,7 @@ export class SegmentsService {
       ...(contact?.source && { source: contact.source }),
       ...(contact?.listId && { listMemberships: { some: { listId: contact.listId } } }),
       ...(contact?.hasMailableAddress === false && MISSING_ADDRESS_WHERE),
+      ...(contact?.hasMailableAddress === true && { NOT: MISSING_ADDRESS_WHERE }),
     };
   }
 

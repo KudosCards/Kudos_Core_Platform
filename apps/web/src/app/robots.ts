@@ -37,6 +37,7 @@ export default function robots(): MetadataRoute.Robots {
           "/messages",
           "/orders",
           "/recipients",
+          "/lists",
           "/segments",
           "/send",
           "/settings",

@@ -185,5 +185,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0174 — The approvals queue lets go, and skipping is no longer a one-way door](./0174-the-approvals-queue-lets-go.md)
 - [0175 — Component tests for the screens where a mistake costs money](./0175-component-tests-for-the-screens-that-cost-money.md)
 - [0176 — No HTML entities in JSX text: they eat a space](./0176-no-html-entities-in-jsx-text.md)
+- [0177 — One word for a group of contacts: "Lists"](./0177-one-word-for-a-group-of-contacts.md)
 
 <!-- adr-index:end -->
