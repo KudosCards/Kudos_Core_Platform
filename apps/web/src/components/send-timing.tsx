@@ -37,23 +37,58 @@ export interface OccasionDatingSummary {
   latest: string | null;
 }
 
+/**
+ * "Mon 21 Sept", or "Fri 11 Jun 2027" when the date is not in the current year.
+ *
+ * The year matters: a contact list's occasions routinely span twelve months, and
+ * without it a range reads backwards — "from Fri 4 Sept to Sat 19 Jun" looks
+ * like a mistake rather than a span into next year.
+ *
+ * Assembled from parts rather than taken from `format` whole, because the full
+ * en-GB pattern is not stable across ICU versions and this component renders on
+ * the server as well as in the browser: Node 22 (ICU 78) produces "Sun 30 Aug"
+ * where Chromium produces "Sun, 30 Aug", which threw a hydration error on every
+ * render of this screen. The part names are ICU's; the punctuation is ours.
+ */
 function formatLong(iso: string): string {
   const d = new Date(`${iso}T00:00:00.000Z`);
-  return new Intl.DateTimeFormat("en-GB", {
+  const parts = new Intl.DateTimeFormat("en-GB", {
     weekday: "short",
     day: "numeric",
     month: "short",
+    year: "numeric",
     timeZone: "UTC",
-  }).format(d);
+  }).formatToParts(d);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  const base = `${part("weekday")} ${part("day")} ${part("month")}`;
+  return d.getUTCFullYear() === new Date().getUTCFullYear() ? base : `${base} ${part("year")}`;
+}
+
+/** "1 card" / "12 cards". */
+function cards(n: number): string {
+  return `${n} card${n === 1 ? "" : "s"}`;
 }
 
 /**
- * "When should this go?" — the choice at payment between **Send now**,
- * **Schedule delivery**, and (where the selection has dated occasions to time
- * to) **each card on its own occasion**. You pay now either way; scheduling
- * just holds the card until it's posted to arrive around the chosen date. The picker's range and the
- * "posts on…" line are computed from the same working-days lead engine the API
- * validates against, so what the customer sees is what they get. See ADR 0130.
+ * "When should these go?" — the choice at payment between posting everything as
+ * soon as possible, timing each card to its own recipient's occasion (offered
+ * only when the selection has dated occasions), and posting to arrive on a
+ * chosen date. You pay now in all three; the later two just hold the card back
+ * until its posting day.
+ *
+ * Every option leads with **the day cards actually post**, in the same shape, so
+ * the three can be compared rather than parsed. That is the fix for a reported
+ * confusion: the options were each phrased their own way, one of them said
+ * "Send now" above a line explaining it would not go for four days, and the
+ * occasion option printed the *occasion* dates in a sentence claiming the cards
+ * posted on them — five working days out, and often naming a Saturday, which is
+ * never a posting day.
+ *
+ * Every date here comes from the same working-day engine the API validates
+ * against — `computeDispatchDate` over `POSTAGE_LEAD_DAYS`, the same call the
+ * send itself makes — so what the customer reads is what they get. See ADR 0130
+ * and ADR 0167.
  */
 export function SendTimingPicker({
   postageClass,
@@ -99,9 +134,40 @@ export function SendTimingPicker({
   const sendNowPostsOn = isoDay(sendNowDispatchDate());
   const sendNowIsToday = sendNowPostsOn === isoDay(new Date());
 
+  // When an occasion-dated card actually posts. The server computes each card's
+  // dispatch date backwards from its occasion by the same working-day lead
+  // (batch-orders.service.ts), so this is the real posting day, not a preview of
+  // one. It is the whole point of the rewrite: the screen used to print the
+  // *occasion* dates in a sentence that said the cards "post" on them, which is
+  // five working days out — and named Saturdays, which are never posting days.
+  const lead = POSTAGE_LEAD_DAYS[postageClass];
+  const postsFor = (iso: string) => {
+    const dispatch = isoDay(computeDispatchDate(new Date(`${iso}T00:00:00.000Z`), lead));
+    // An occasion closer than the lead computes a dispatch date in the past. The
+    // send clamps that (`notBeforeToday`, batch-orders.service.ts) — a card
+    // cannot post before the order exists — so floor it here at the same day a
+    // post-now card would leave. Without this the picker would promise a date
+    // that has already been, which is the class of thing this rewrite exists to
+    // stop. ISO dates compare correctly as strings.
+    return dispatch < sendNowPostsOn ? sendNowPostsOn : dispatch;
+  };
+  const firstPost = occasionDating?.earliest ? postsFor(occasionDating.earliest) : null;
+  const lastPost = occasionDating?.latest ? postsFor(occasionDating.latest) : null;
+  // A single dated card, or several sharing one occasion day, all post together.
+  const onePostingDay = firstPost !== null && firstPost === lastPost;
+  const undated = occasionDating ? occasionDating.total - occasionDating.count : 0;
+  // Every option answers the same question in the same shape — "which cards, on
+  // what day" — so the three can be compared at a glance instead of each being
+  // phrased its own way.
+  const together = Boolean(occasionDating && occasionDating.count > 0);
+
   return (
     <fieldset className="flex flex-col gap-2">
-      <legend className="mb-1 text-sm font-medium text-foreground">When should this go?</legend>
+      <legend className="mb-1 text-sm font-medium text-foreground">
+        {occasionDating && occasionDating.total > 1
+          ? "When should these cards go?"
+          : "When should this go?"}
+      </legend>
 
       {/* Listed first because on a selection that has occasions it is almost
           always the right answer — but never pre-ticked: the choice stays a
@@ -116,24 +182,28 @@ export function SendTimingPicker({
             onChange={() => onChange({ mode: "occasion" })}
           />
           <span>
-            <span className="font-medium">Time each card to its own occasion</span>
+            <span className="font-medium">Each card on its own occasion</span>
             <span className="block text-xs text-muted">
-              <strong>
-                {occasionDating.count} of {occasionDating.total}
-              </strong>{" "}
-              cards post ahead of that person&apos;s own occasion
-              {occasionDating.earliest && occasionDating.latest && (
+              {onePostingDay ? (
                 <>
-                  , spread from <strong>{formatLong(occasionDating.earliest)}</strong> to{" "}
-                  <strong>{formatLong(occasionDating.latest)}</strong>
+                  {cards(occasionDating.count)} post{occasionDating.count === 1 ? "s" : ""}{" "}
+                  <strong>{formatLong(firstPost)}</strong>, ahead of{" "}
+                  {occasionDating.count === 1 ? "its occasion" : "their occasions"} on{" "}
+                  {formatLong(occasionDating.earliest!)}.
+                </>
+              ) : (
+                <>
+                  {cards(occasionDating.count)} post between{" "}
+                  <strong>{formatLong(firstPost!)}</strong> and{" "}
+                  <strong>{formatLong(lastPost!)}</strong>, each ahead of its own occasion.
                 </>
               )}
-              .
-              {occasionDating.count < occasionDating.total && (
+              {undated > 0 && (
                 <>
                   {" "}
-                  The other {occasionDating.total - occasionDating.count} have no occasion on file
-                  and post {sendNowIsToday ? "today" : formatLong(sendNowPostsOn)}.
+                  The other {undated === 1 ? "card has" : `${undated} have`} no occasion on file —{" "}
+                  {undated === 1 ? "it posts" : "they post"}{" "}
+                  <strong>{sendNowIsToday ? "today" : formatLong(sendNowPostsOn)}</strong>.
                 </>
               )}
             </span>
@@ -151,19 +221,31 @@ export function SendTimingPicker({
         />
         <span>
           <span className="font-medium">
-            Send now{occasionDating && occasionDating.count > 0 ? " — one date for everyone" : ""}
+            {together ? "All together, as soon as possible" : "As soon as possible"}
           </span>
           <span className="block text-xs text-muted">
-            {sendNowIsToday ? (
-              <>Posted today, as soon as it&apos;s printed.</>
+            {together ? (
+              <>
+                All {occasionDating!.total} post{" "}
+                <strong>{sendNowIsToday ? "today" : formatLong(sendNowPostsOn)}</strong>
+                {sendNowIsToday
+                  ? ", as soon as they're printed"
+                  : " — today's post has already gone"}
+                . Occasion dates are ignored.
+              </>
             ) : (
               <>
-                Today&apos;s post has gone — we post it{" "}
-                <strong>{formatLong(sendNowPostsOn)}</strong>.
+                {sendNowIsToday ? (
+                  <>
+                    Posted <strong>today</strong>, as soon as it&apos;s printed.
+                  </>
+                ) : (
+                  <>
+                    We post it <strong>{formatLong(sendNowPostsOn)}</strong>
+                    {" — today's post has already gone."}
+                  </>
+                )}
               </>
-            )}
-            {occasionDating && occasionDating.count > 0 && (
-              <> Occasion dates are ignored — every card goes together.</>
             )}
           </span>
         </span>
@@ -178,9 +260,12 @@ export function SendTimingPicker({
           onChange={() => onChange({ mode: "scheduled", deliverBy: selected })}
         />
         <span className="flex-1">
-          <span className="font-medium">Schedule delivery</span>
+          <span className="font-medium">
+            {together ? "All together, arriving on a date I choose" : "Arriving on a date I choose"}
+          </span>
           <span className="block text-xs text-muted">
-            Pay now — we post it timed to arrive around your date.
+            Pick a date — we post {lead} working days ahead so it arrives around then.
+            {together && " Occasion dates are ignored."}
           </span>
           {value?.mode === "scheduled" && (
             <span className="mt-2 flex flex-col gap-1">
