@@ -19,7 +19,12 @@ import { ClickAndDropService } from "../shipping/click-and-drop.service";
 import { DispatchConfigService } from "../dispatch/dispatch-config.service";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
-import { addWorkingDays, isoDay, startOfUtcDay } from "@kudos/shared-types";
+import {
+  addWorkingDays,
+  isoDay,
+  OPEN_FULFILLMENT_STATUSES,
+  startOfUtcDay,
+} from "@kudos/shared-types";
 import type { FulfillmentCalendar, FulfillmentCalendarDay } from "@kudos/shared-types";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { dueCutoffs, isoDayToUtc, workingDaysUntilDue } from "./fulfillment-due.util";
@@ -149,8 +154,10 @@ const FROM_STATUSES: Record<TransitionableStatus, FulfillmentJobStatus[]> = {
 };
 
 /** Statuses whose posting deadline is still actionable — a card not yet posted.
- * The dispatch calendar and its "overdue" carry-over count only these. */
-const OPEN_STATUSES: FulfillmentJobStatus[] = ["pending", "in_progress", "printed"];
+ * The dispatch calendar and its "overdue" carry-over count only these. Defined
+ * once in shared-types so the API, the ops cockpit and the queue's filter chips
+ * cannot drift apart on it — which they had. */
+const OPEN_STATUSES: FulfillmentJobStatus[] = [...OPEN_FULFILLMENT_STATUSES];
 
 /** How many of the most-urgent must-ship cards to return with the summary —
  * enough for the reminder digest + dashboard preview without unbounding it. */

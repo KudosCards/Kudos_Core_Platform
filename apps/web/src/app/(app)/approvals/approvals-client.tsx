@@ -7,6 +7,7 @@ import { useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { OCCASION_TYPE_LABELS, formatOccasionDate } from "@/lib/occasions";
+import { TruncationNotice } from "@/components/truncation-notice";
 
 // occasionSchema already includes the nested recipient the real API always
 // returns — kept as a named alias since other files import this name.
@@ -16,11 +17,14 @@ type PostageClass = "first_class" | "second_class";
 
 export function ApprovalsClient({
   initialOccasions,
+  totalPending,
   initialScheduledSends,
   savedDesigns,
   autoSendEnabled,
 }: {
   initialOccasions: OccasionWithRecipient[];
+  /** How many are waiting in total, which can exceed what one read returns. */
+  totalPending: number;
   initialScheduledSends: OccasionWithRecipient[];
   savedDesigns: SavedDesign[];
   autoSendEnabled: boolean;
@@ -187,6 +191,14 @@ export function ApprovalsClient({
       </div>
 
       {error && <p className="notice notice-danger">{error}</p>}
+
+      {/* A queue that ends without saying so reads as the whole queue. */}
+      <TruncationNotice
+        shown={initialOccasions.length}
+        total={totalPending}
+        unit="waiting for approval"
+        hint="Approve or skip some to see the rest."
+      />
 
       {/* The way back. Every skip this visit stays here until the page is left,
           because the damage this undoes was done in seconds and noticed days

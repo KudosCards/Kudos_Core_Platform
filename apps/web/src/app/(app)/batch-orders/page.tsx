@@ -35,7 +35,9 @@ export default async function BatchOrdersPage({
     .filter(Boolean);
 
   const [occasions, orders, wallet, pricing, entitlement] = await Promise.all([
-    serverApiFetch<Paginated<OccasionWithRecipient>>("/occasions?status=approved&perPage=50"),
+    // 100 is the API's ceiling (parsePerPage); above it the page says so rather
+    // than quietly listing part of what is ready to order.
+    serverApiFetch<Paginated<OccasionWithRecipient>>("/occasions?status=approved&perPage=100"),
     serverApiFetch<Paginated<UnfinishedBatchOrder>>("/batch-orders?perPage=50"),
     serverApiFetch<WalletSummary>("/wallet"),
     serverApiFetch<AccountPricing>("/pricing"),
@@ -56,6 +58,7 @@ export default async function BatchOrdersPage({
   return (
     <BatchOrdersClient
       initialOccasions={occasions?.items ?? []}
+      totalApproved={occasions?.total ?? 0}
       initialUnfinishedOrders={unfinishedOrders}
       walletBalanceMinor={wallet?.balanceMinor ?? 0}
       initialSelectedIds={initialSelectedIds}

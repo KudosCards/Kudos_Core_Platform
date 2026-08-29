@@ -11,7 +11,11 @@ import type {
   DueFilter,
   FulfillmentCounts,
 } from "@kudos/shared-types";
-import { applyMergeTokens, royalMailTrackingUrl } from "@kudos/shared-types";
+import {
+  applyMergeTokens,
+  OPEN_FULFILLMENT_STATUSES,
+  royalMailTrackingUrl,
+} from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { Modal } from "@/components/modal";
@@ -118,8 +122,9 @@ const STATUS_TABS: FulfillmentStatus[] = [
 ];
 
 /** The statuses a card can still be posted from — the ones a dispatch deadline
- * is still a live question for. Mirrors OPEN_STATUSES on the API. */
-const OPEN_STATUS_TABS: FulfillmentStatus[] = ["pending", "in_progress", "printed"];
+ * is still a live question for. The same list the API and the ops cockpit use,
+ * defined once so the three cannot drift on it. See ADR 0108 §5. */
+const OPEN_STATUS_TABS: readonly FulfillmentStatus[] = OPEN_FULFILLMENT_STATUSES;
 
 /** The due-date urgency filters, in the order the print/post team works them.
  * `key` matches the API's `due` param and the counts.due bucket. They ask a
@@ -937,7 +942,7 @@ export function FulfillmentClient({
                     onChange={() => toggle(job.id)}
                   />
                   <div>
-                    {["pending", "in_progress", "printed"].includes(job.status) &&
+                    {OPEN_STATUS_TABS.includes(job.status) &&
                       (() => {
                         const badge = dueBadge(job.workingDaysUntilDue);
                         return (

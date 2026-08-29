@@ -12,7 +12,9 @@ interface Paginated<T> {
 export default async function ApprovalsPage() {
   const [occasions, scheduledSends, savedDesigns, entitlements] = await Promise.all([
     serverApiFetch<Paginated<OccasionWithRecipient>>(
-      "/occasions?status=pending_approval&perPage=50",
+      // 100 is the API's ceiling (parsePerPage). Above that the queue says so
+      // rather than quietly ending — see TruncationNotice.
+      "/occasions?status=pending_approval&perPage=100",
     ),
     // Cards already approved for auto-send but not yet posted — shown so they're
     // visible after approval and cancellable until the auto-send cron posts them.
@@ -26,6 +28,7 @@ export default async function ApprovalsPage() {
   return (
     <ApprovalsClient
       initialOccasions={occasions?.items ?? []}
+      totalPending={occasions?.total ?? 0}
       initialScheduledSends={scheduledSends?.items ?? []}
       savedDesigns={savedDesigns ?? []}
       autoSendEnabled={entitlements?.autoSendEnabled ?? false}

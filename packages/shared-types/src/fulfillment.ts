@@ -1,5 +1,25 @@
 import { z } from "zod";
 import { fulfillmentJobStatusSchema } from "./enums";
+import type { FulfillmentJobStatus } from "./enums";
+
+/**
+ * A card that has not been posted yet, so its dispatch deadline is still a live
+ * question.
+ *
+ * One definition, shared, because the same three statuses were written out in
+ * four places — the API's queue and counts, the ops order cockpit, the queue's
+ * filter chips and once as a bare literal inside a row — and four copies of a
+ * rule is how they drift. They already had: the queue's due-date chips counted
+ * `pending` alone while the send-by-5 banner directly above them and the
+ * dispatch calendar beside them counted all three, so an operator with five
+ * printed cards due today read "Due today 0" under a banner saying "5 cards to
+ * post today". See ADR 0108 §5.
+ */
+export const OPEN_FULFILLMENT_STATUSES = [
+  "pending",
+  "in_progress",
+  "printed",
+] as const satisfies readonly FulfillmentJobStatus[];
 
 /**
  * v1 fulfillment is an internal ops queue (manual print/post). This shape
