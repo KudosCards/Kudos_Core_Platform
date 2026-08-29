@@ -10,6 +10,7 @@ import {
   POSTAGE_LEAD_DAYS,
   seasonalDispatchRuleFor,
   sendNowDispatchDate,
+  startOfUtcDay,
   setSeasonalDispatchRules,
   suggestFirstClass,
   UK_BANK_HOLIDAYS,
@@ -214,6 +215,34 @@ describe("deliverByWindow (scheduled sends)", () => {
     expect(isoDay(computeDispatchDate(earliest, POSTAGE_LEAD_DAYS.second_class))).toBe(
       "2026-08-07",
     );
+  });
+
+  it("offers an earliest arrive-by the API will actually accept, on any day", () => {
+    // The invariant above held only on a working day before the cut-off. On a
+    // weekend or a bank holiday, counting forward skipped those days while
+    // counting back went through them, so the earliest arrive-by we offered had
+    // a post-by date already in the past — which resolveSendSchedule rejects,
+    // naming that very date as the soonest available. A sender scheduling at a
+    // weekend met a dead end on the picker's own default value.
+    const cases: [string, Date][] = [
+      ["Saturday", utc(2026, 7, 29)],
+      ["Sunday", utc(2026, 7, 30)],
+      ["August bank holiday Monday", utc(2026, 7, 31)],
+      ["ordinary Tuesday", utc(2026, 8, 1)],
+    ];
+    // Labelled so a failure names the day that broke rather than a bare date.
+    const offered = cases.map(([label, from]) => {
+      const { earliest } = deliverByWindow("second_class", from);
+      const postsOn = computeDispatchDate(earliest, POSTAGE_LEAD_DAYS.second_class);
+      const inThePast = postsOn.getTime() < startOfUtcDay(from).getTime();
+      return `${label}: posts ${isoDay(postsOn)}${inThePast ? " — IN THE PAST" : ""}`;
+    });
+    expect(offered).toEqual([
+      "Saturday: posts 2026-09-01",
+      "Sunday: posts 2026-09-01",
+      "August bank holiday Monday: posts 2026-09-01",
+      "ordinary Tuesday: posts 2026-09-01",
+    ]);
   });
 
   it("latest is the horizon out from today", () => {

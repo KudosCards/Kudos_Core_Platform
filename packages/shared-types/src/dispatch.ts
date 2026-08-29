@@ -328,7 +328,20 @@ export function deliverByWindow(
 ): { earliest: Date; latest: Date } {
   const holidays = options.holidays ?? UK_BANK_HOLIDAYS;
   const today = startOfUtcDay(from);
-  const earliest = addWorkingDays(today, POSTAGE_LEAD_DAYS[postageClass], holidays);
+  // Counted forward from the day a card ordered right now would actually post,
+  // not from today.
+  //
+  // Counting from today held only when today was a working day before the
+  // cut-off. On a weekend, a bank holiday, or after the cut-off, nothing leaves
+  // today — and going forward skipped those days while computing the post-by
+  // date back from the result went through them, so the earliest arrive-by we
+  // offered had a post-by date already in the past. The API rejects exactly
+  // that, and its refusal named the same date as the soonest available, so a
+  // sender scheduling at a weekend hit a dead end on the picker's own default
+  // value. `sendNowDispatchDate` always lands on a working day, which makes the
+  // two directions inverses again on every day of the week.
+  const postsOn = sendNowDispatchDate(from, undefined, options);
+  const earliest = addWorkingDays(postsOn, POSTAGE_LEAD_DAYS[postageClass], holidays);
   const latest = new Date(today.getTime() + MAX_SCHEDULE_AHEAD_DAYS * 86_400_000);
   return { earliest, latest };
 }
