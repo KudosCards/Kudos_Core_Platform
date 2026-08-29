@@ -9,7 +9,7 @@ import type {
   FulfillmentJobStatus,
   OccasionRedateSummary,
 } from "@kudos/shared-types";
-import { royalMailTrackingUrl } from "@kudos/shared-types";
+import { OPEN_FULFILLMENT_STATUSES, royalMailTrackingUrl } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
@@ -63,7 +63,9 @@ const NEXT_STEP: Partial<
 };
 
 /** The active job statuses whose posting deadline still matters. */
-const OPEN_STATUSES: FulfillmentJobStatus[] = ["pending", "in_progress", "printed"];
+/** Shared with the API and the fulfilment queue, so the three cannot drift on
+ * what "still to post" means — which they had. See ADR 0108 §5. */
+const OPEN_STATUSES: readonly FulfillmentJobStatus[] = OPEN_FULFILLMENT_STATUSES;
 
 function fmtDay(value: string | Date | null): string {
   if (!value) return "";
