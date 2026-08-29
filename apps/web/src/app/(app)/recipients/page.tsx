@@ -5,9 +5,9 @@ import { RecipientsClient, PER_PAGE, type Paginated } from "./recipients-client"
 export default async function RecipientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; missingAddress?: string }>;
+  searchParams: Promise<{ page?: string; missingAddress?: string; addToList?: string }>;
 }) {
-  const { page: pageParam, missingAddress } = await searchParams;
+  const { page: pageParam, missingAddress, addToList } = await searchParams;
   const page = Math.max(1, Number(pageParam) || 1);
   // The dashboard "needs address" nudge lands here with ?missingAddress=true so
   // the worklist opens pre-filtered.
@@ -28,6 +28,7 @@ export default async function RecipientsPage({
       initialPage={page}
       initialLists={lists ?? []}
       initialMissingOnly={missingOnly}
+      addToListId={addToList ?? null}
     />
   );
 }

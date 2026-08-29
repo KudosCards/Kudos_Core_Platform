@@ -8,6 +8,7 @@ import { clientApiFetch } from "@/lib/api.client";
 import { AddressFields } from "@/components/address-fields";
 import { CsvImport, downloadSampleCsv } from "@/components/csv-import";
 import { Modal } from "@/components/modal";
+import { NameDialog } from "@/components/name-dialog";
 
 /** A contact is mailable only with line 1, city, and postcode — mirrors the
  * API's MISSING_ADDRESS_WHERE so the badge agrees with the server filter/count. */
@@ -130,6 +131,7 @@ export function RecipientsClient({
   initialPage,
   initialLists,
   initialMissingOnly = false,
+  addToListId = null,
 }: {
   initialRecipients: Recipient[];
   initialTotal: number;
@@ -138,6 +140,10 @@ export function RecipientsClient({
   /** When true (from ?missingAddress=true), the contacts-without-address filter
    * starts on — the target of the dashboard "needs address" nudge. */
   initialMissingOnly?: boolean;
+  /** Set by ?addToList=<id>, the "Add contacts" link on a list's own page: the
+   * page says which list you came from and how to finish, so filling a list is
+   * a round trip rather than a dead end. */
+  addToListId?: string | null;
 }) {
   const [recipients, setRecipients] = useState(initialRecipients);
   const [total, setTotal] = useState(initialTotal);
@@ -181,6 +187,10 @@ export function RecipientsClient({
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [listBusy, setListBusy] = useState(false);
+  const [newListOpen, setNewListOpen] = useState(false);
+  const [newListError, setNewListError] = useState<string | null>(null);
+  /** Confirmation of the last add-to-list, with a way through to the list. */
+  const [added, setAdded] = useState<{ id: string; name: string; count: number } | null>(null);
 
   const reloadLists = useCallback(async () => {
     try {
@@ -381,43 +391,29 @@ export function RecipientsClient({
   }
 
   /** Create a list and return it (used by both list-filter and add-to-list). */
-  async function createList(name: string): Promise<RecipientListSummary | null> {
-    try {
-      const created = await clientApiFetch<RecipientListSummary>("/recipient-lists", {
-        method: "POST",
-        body: JSON.stringify({ name }),
-      });
-      setLists((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
-      return created;
-    } catch (createError) {
-      setError(createError instanceof ApiError ? createError.message : "Could not create the list");
-      return null;
-    }
-  }
-
-  /** The list-filter dropdown, with a "＋ New list…" escape hatch. */
-  async function handleListFilterChange(value: string) {
-    if (value === "__new__") {
-      const name = window.prompt("New list name")?.trim();
-      if (!name) return;
-      const created = await createList(name);
-      if (created) selectList(created.id);
-      return;
-    }
+  /** The list-filter dropdown. Creating, renaming and deleting a list all live
+   * on the Lists page now, so this only ever filters. */
+  function handleListFilterChange(value: string) {
     selectList(value || null);
   }
 
   async function addSelectedToList(listId: string) {
     if (!listId || selected.size === 0) return;
     setError(null);
+    setAdded(null);
     setListBusy(true);
+    const count = selected.size;
     try {
-      await clientApiFetch(`/recipient-lists/${listId}/members`, {
-        method: "POST",
-        body: JSON.stringify({ recipientIds: [...selected] }),
-      });
+      const updated = await clientApiFetch<RecipientListSummary>(
+        `/recipient-lists/${listId}/members`,
+        { method: "POST", body: JSON.stringify({ recipientIds: [...selected] }) },
+      );
       setSelected(new Set());
       await reloadLists();
+      // The old version cleared the ticks and said nothing at all, so there was
+      // no way to tell an add from a no-op — and no way to reach the list you
+      // had just filled without hunting for it in a dropdown.
+      setAdded({ id: listId, name: updated.name, count });
     } catch (addError) {
       setError(addError instanceof ApiError ? addError.message : "Could not add to the list");
     } finally {
@@ -428,53 +424,29 @@ export function RecipientsClient({
   async function handleAddToList(value: string) {
     if (!value) return;
     if (value === "__new__") {
-      const name = window.prompt("New list name")?.trim();
-      if (!name) return;
-      const created = await createList(name);
-      if (created) await addSelectedToList(created.id);
+      setNewListOpen(true);
       return;
     }
     await addSelectedToList(value);
   }
 
-  async function renameActiveList() {
-    if (!activeListId) return;
-    const current = lists.find((l) => l.id === activeListId);
-    const name = window.prompt("Rename list", current?.name ?? "")?.trim();
-    if (!name || name === current?.name) return;
-    setError(null);
+  /** Create a list from the bulk bar and put the ticked contacts straight on it —
+   * one action, so nobody has to go and find the list they just made. */
+  async function createListAndAdd(name: string) {
     setListBusy(true);
+    setNewListError(null);
     try {
-      await clientApiFetch(`/recipient-lists/${activeListId}`, {
-        method: "PATCH",
+      const created = await clientApiFetch<RecipientListSummary>("/recipient-lists", {
+        method: "POST",
         body: JSON.stringify({ name }),
       });
-      await reloadLists();
-    } catch (renameError) {
-      setError(renameError instanceof ApiError ? renameError.message : "Could not rename the list");
-    } finally {
-      setListBusy(false);
-    }
-  }
-
-  async function deleteActiveList() {
-    if (!activeListId) return;
-    const current = lists.find((l) => l.id === activeListId);
-    if (
-      !window.confirm(
-        `Delete "${current?.name ?? "this list"}"? The contacts stay; only the list is removed.`,
-      )
-    ) {
-      return;
-    }
-    setError(null);
-    setListBusy(true);
-    try {
-      await clientApiFetch(`/recipient-lists/${activeListId}`, { method: "DELETE" });
-      setLists((current) => current.filter((l) => l.id !== activeListId));
-      selectList(null);
-    } catch (deleteError) {
-      setError(deleteError instanceof ApiError ? deleteError.message : "Could not delete the list");
+      setLists((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewListOpen(false);
+      await addSelectedToList(created.id);
+    } catch (createError) {
+      setNewListError(
+        createError instanceof ApiError ? createError.message : "Could not create the list",
+      );
     } finally {
       setListBusy(false);
     }
@@ -608,6 +580,9 @@ export function RecipientsClient({
   }
 
   const inputClass = "rounded-md border border-border bg-surface px-3 py-2 text-sm";
+  // Resolved from the lists we already loaded, so arriving with a stale or
+  // foreign id simply shows no banner rather than an error.
+  const addToList = addToListId ? (lists.find((l) => l.id === addToListId) ?? null) : null;
   const activeList = activeListId ? lists.find((l) => l.id === activeListId) : null;
   const emptyMessage = archivedView
     ? "No archived contacts."
@@ -654,6 +629,40 @@ export function RecipientsClient({
       </div>
 
       {error && <p className="notice notice-danger">{error}</p>}
+
+      {added && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-success/30 bg-success-soft px-4 py-3 text-sm">
+          <span className="banner-lead">
+            {added.count} {added.count === 1 ? "contact" : "contacts"} added to {added.name}.
+          </span>
+          <Link href={`/lists/${added.id}`} className="font-semibold text-accent hover:underline">
+            Open the list →
+          </Link>
+          <button
+            type="button"
+            onClick={() => setAdded(null)}
+            aria-label="Dismiss"
+            className="ml-auto text-muted hover:text-foreground"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {addToList && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
+          <span className="banner-lead text-accent">
+            Adding to {addToList.name}. Tick the contacts you want, then choose it in the bar at the
+            bottom.
+          </span>
+          <Link
+            href={`/lists/${addToList.id}`}
+            className="ml-auto font-semibold text-accent hover:underline"
+          >
+            Back to the list →
+          </Link>
+        </div>
+      )}
 
       {/* Missing-address banner — the worklist nudge, front and centre. */}
       {showMissingBanner && (
@@ -722,7 +731,7 @@ export function RecipientsClient({
 
         <select
           value={activeListId ?? ""}
-          onChange={(e) => void handleListFilterChange(e.target.value)}
+          onChange={(e) => handleListFilterChange(e.target.value)}
           aria-label="Filter by list"
           className={inputClass}
         >
@@ -732,7 +741,6 @@ export function RecipientsClient({
               {list.name} ({list.memberCount})
             </option>
           ))}
-          <option value="__new__">＋ New list…</option>
         </select>
 
         <select
@@ -772,21 +780,18 @@ export function RecipientsClient({
               <span>
                 Showing <span className="font-medium text-foreground">{activeList.name}</span>
               </span>
+              {/* Renaming and deleting used to happen here, but only while you
+                  were filtered to the list — the one place you were least
+                  likely to be. They live on the list's own page now. */}
+              <Link href={`/lists/${activeList.id}`} className="underline hover:text-foreground">
+                Open this list
+              </Link>
               <button
                 type="button"
-                onClick={() => void renameActiveList()}
-                disabled={listBusy}
+                onClick={() => selectList(null)}
                 className="underline hover:text-foreground"
               >
-                Rename
-              </button>
-              <button
-                type="button"
-                onClick={() => void deleteActiveList()}
-                disabled={listBusy}
-                className="underline hover:text-accent"
-              >
-                Delete list
+                Show all contacts
               </button>
             </>
           )}
@@ -1187,6 +1192,21 @@ export function RecipientsClient({
       <Modal open={importOpen} onClose={() => setImportOpen(false)} title="Import from CSV">
         <CsvImport onImported={handleImported} />
       </Modal>
+
+      <NameDialog
+        open={newListOpen}
+        title="New list"
+        label="List name"
+        hint={`The ${selected.size} ticked ${selected.size === 1 ? "contact goes" : "contacts go"} straight on it.`}
+        confirmLabel="Create and add"
+        busy={listBusy}
+        error={newListError}
+        onSubmit={(name) => void createListAndAdd(name)}
+        onClose={() => {
+          setNewListOpen(false);
+          setNewListError(null);
+        }}
+      />
     </div>
   );
 }

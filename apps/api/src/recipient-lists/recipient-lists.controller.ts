@@ -15,11 +15,7 @@ import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentMembership } from "../auth/current-membership.decorator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser, CurrentMembershipContext } from "../auth/types";
-import {
-  RecipientListsService,
-  type RecipientListSummary,
-  type RecipientListWithMembers,
-} from "./recipient-lists.service";
+import { RecipientListsService, type RecipientListSummary } from "./recipient-lists.service";
 import { CreateRecipientListDto } from "./dto/create-recipient-list.dto";
 import { UpdateRecipientListDto } from "./dto/update-recipient-list.dto";
 import { AddListMembersDto } from "./dto/set-list-members.dto";
@@ -59,7 +55,7 @@ export class RecipientListsController {
     @CurrentMembership() membership: CurrentMembershipContext,
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseUUIDPipe) id: string,
-  ): Promise<RecipientListWithMembers> {
+  ): Promise<RecipientListSummary> {
     return this.service.findOne(membership.accountId, user.id, id);
   }
 
@@ -89,8 +85,19 @@ export class RecipientListsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: AddListMembersDto,
-  ): Promise<RecipientListWithMembers> {
+  ): Promise<RecipientListSummary> {
     return this.service.addMembers(membership.accountId, user.id, id, dto);
+  }
+
+  /** Take several people off at once — what the list view's bulk bar calls. */
+  @Delete(":id/members")
+  removeMembers(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: AddListMembersDto,
+  ): Promise<RecipientListSummary> {
+    return this.service.removeMembers(membership.accountId, user.id, id, dto);
   }
 
   @Delete(":id/members/:recipientId")

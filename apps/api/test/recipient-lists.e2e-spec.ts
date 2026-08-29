@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import { recipientListSummarySchema, recipientListWithMembersSchema } from "@kudos/shared-types";
+import { recipientListSummarySchema } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { z } from "zod";
@@ -105,9 +105,9 @@ describe("Recipient lists (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ recipientIds: [alice, bob] })
       .expect(201);
-    const detail = recipientListWithMembersSchema.parse(withMembers.body);
+    const detail = recipientListSummarySchema.parse(withMembers.body);
     expect(detail.memberCount).toBe(2);
-    expect(detail.members.map((m) => m.id).sort()).toEqual([alice, bob].sort());
+    expect(detail.sample.map((m) => m.id).sort()).toEqual([alice, bob].sort());
 
     // Filtering the recipients list by listId returns only its members.
     const filtered = await request(app.getHttpServer())
@@ -122,7 +122,7 @@ describe("Recipient lists (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ recipientIds: [alice] })
       .expect(201);
-    expect(recipientListWithMembersSchema.parse(again.body).memberCount).toBe(2);
+    expect(recipientListSummarySchema.parse(again.body).memberCount).toBe(2);
 
     await request(app.getHttpServer())
       .delete(`/recipient-lists/${listId}/members/${alice}`)
@@ -133,7 +133,75 @@ describe("Recipient lists (e2e)", () => {
       .get(`/recipient-lists/${listId}`)
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
-    expect(recipientListWithMembersSchema.parse(afterRemoval.body).memberCount).toBe(1);
+    expect(recipientListSummarySchema.parse(afterRemoval.body).memberCount).toBe(1);
+  });
+
+  it("caps the inline member preview but keeps the true count", async () => {
+    const token = await signUp();
+    const listId = await createList(token, "Whole school");
+    const ids: string[] = [];
+    for (let i = 0; i < 10; i++) ids.push(await createRecipient(token, `Pupil${i}`));
+
+    const added = await request(app.getHttpServer())
+      .post(`/recipient-lists/${listId}/members`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ recipientIds: ids })
+      .expect(201);
+
+    // The whole membership is read through /recipients?listId= — the list route
+    // carries a preview only, so a five-thousand-contact list stays cheap.
+    const summary = recipientListSummarySchema.parse(added.body);
+    expect(summary.memberCount).toBe(10);
+    expect(summary.sample).toHaveLength(8);
+  });
+
+  it("removes several members at once, and is indifferent to ids already off the list", async () => {
+    const token = await signUp();
+    const listId = await createList(token, "Reading group B");
+    const alice = await createRecipient(token, "Alice");
+    const bob = await createRecipient(token, "Bob");
+    const carol = await createRecipient(token, "Carol");
+
+    await request(app.getHttpServer())
+      .post(`/recipient-lists/${listId}/members`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ recipientIds: [alice, bob, carol] })
+      .expect(201);
+
+    // Carol is asked for twice over two calls. The second is a no-op rather
+    // than a 404: the caller ticked rows on a view that may have moved on, and
+    // the outcome it asked for is true either way.
+    const first = await request(app.getHttpServer())
+      .delete(`/recipient-lists/${listId}/members`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ recipientIds: [alice, carol] })
+      .expect(200);
+    expect(recipientListSummarySchema.parse(first.body).memberCount).toBe(1);
+
+    const second = await request(app.getHttpServer())
+      .delete(`/recipient-lists/${listId}/members`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ recipientIds: [carol] })
+      .expect(200);
+    expect(recipientListSummarySchema.parse(second.body).memberCount).toBe(1);
+  });
+
+  it("won't bulk-remove members of another account's list", async () => {
+    const accountA = await signUp();
+    const accountB = await signUp();
+    const listId = await createList(accountA, "A's reading group");
+    const alice = await createRecipient(accountA, "Alice");
+    await request(app.getHttpServer())
+      .post(`/recipient-lists/${listId}/members`)
+      .set("Authorization", `Bearer ${accountA}`)
+      .send({ recipientIds: [alice] })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .delete(`/recipient-lists/${listId}/members`)
+      .set("Authorization", `Bearer ${accountB}`)
+      .send({ recipientIds: [alice] })
+      .expect(404);
   });
 
   it("won't attach a recipient that belongs to another account", async () => {
