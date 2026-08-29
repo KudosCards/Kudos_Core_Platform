@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
 import {
   segmentMembersSchema,
+  segmentPreviewSchema,
+  segmentSummarySchema,
   segmentsOverviewSchema,
   type SegmentSummary,
 } from "@kudos/shared-types";
@@ -282,5 +284,140 @@ describe("Segments (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Dupe", definition })
       .expect(400);
+  });
+
+  it("previews a rule that has not been saved", async () => {
+    const token = await signUp();
+    const { accountId } = await addMailable(token);
+    await addUnmailable(accountId);
+    await addUnmailable(accountId);
+
+    const res = await request(app.getHttpServer())
+      .post("/segments/preview")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ definition: { contact: { hasMailableAddress: false } } })
+      .expect(200);
+    expect(segmentPreviewSchema.parse(res.body).count).toBe(2);
+
+    // Previewing must not save: the account still has no smart lists.
+    const overview = await request(app.getHttpServer())
+      .get("/segments")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(segmentsOverviewSchema.parse(overview.body).saved).toHaveLength(0);
+  });
+
+  it("rejects a preview of an empty rule", async () => {
+    const token = await signUp();
+    await request(app.getHttpServer())
+      .post("/segments/preview")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ definition: {} })
+      .expect(400);
+  });
+
+  it("renames a saved smart list without restating its rule", async () => {
+    const token = await signUp();
+    const { accountId } = await addMailable(token);
+    await addUnmailable(accountId);
+
+    const definition = { contact: { hasMailableAddress: false } };
+    const created = await request(app.getHttpServer())
+      .post("/segments")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Needs an address", definition })
+      .expect(201);
+    const id = segmentSummarySchema.parse(created.body).id!;
+
+    const renamed = await request(app.getHttpServer())
+      .patch(`/segments/${id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Chase for addresses" })
+      .expect(200);
+    const after = segmentSummarySchema.parse(renamed.body);
+    expect(after.name).toBe("Chase for addresses");
+    // The rule is untouched by a name-only edit, and still resolves.
+    expect(after.definition).toEqual(definition);
+    expect(after.count).toBe(1);
+  });
+
+  it("changes a saved smart list's rule, and the count follows", async () => {
+    const token = await signUp();
+    const { accountId } = await addMailable(token);
+    await addUnmailable(accountId);
+
+    const created = await request(app.getHttpServer())
+      .post("/segments")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Rule swap", definition: { contact: { hasMailableAddress: false } } })
+      .expect(201);
+    const id = segmentSummarySchema.parse(created.body).id!;
+    expect(segmentSummarySchema.parse(created.body).count).toBe(1);
+
+    const updated = await request(app.getHttpServer())
+      .patch(`/segments/${id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ definition: { contact: { status: "active" } } })
+      .expect(200);
+    const after = segmentSummarySchema.parse(updated.body);
+    expect(after.name).toBe("Rule swap");
+    expect(after.count).toBe(2);
+  });
+
+  it("rejects an empty update, an invalid rule, and a name already in use", async () => {
+    const token = await signUp();
+    const definition = { contact: { hasMailableAddress: false } };
+    const created = await request(app.getHttpServer())
+      .post("/segments")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "First", definition })
+      .expect(201);
+    const id = segmentSummarySchema.parse(created.body).id!;
+    await request(app.getHttpServer())
+      .post("/segments")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Second", definition })
+      .expect(201);
+
+    // Nothing to change is a mistake, not a no-op worth accepting.
+    await request(app.getHttpServer())
+      .patch(`/segments/${id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({})
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .patch(`/segments/${id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ definition: {} })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .patch(`/segments/${id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Second" })
+      .expect(400);
+  });
+
+  it("scopes editing to the account — one account cannot rename another's smart list", async () => {
+    const accountA = await signUp();
+    const accountB = await signUp();
+    const created = await request(app.getHttpServer())
+      .post("/segments")
+      .set("Authorization", `Bearer ${accountA}`)
+      .send({ name: "A's list", definition: { contact: { hasMailableAddress: false } } })
+      .expect(201);
+    const id = segmentSummarySchema.parse(created.body).id!;
+
+    await request(app.getHttpServer())
+      .patch(`/segments/${id}`)
+      .set("Authorization", `Bearer ${accountB}`)
+      .send({ name: "Stolen" })
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .delete(`/segments/${id}`)
+      .set("Authorization", `Bearer ${accountB}`)
+      .expect(404);
   });
 });

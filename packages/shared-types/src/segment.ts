@@ -123,3 +123,27 @@ export const createSegmentInputSchema = z.object({
   definition: segmentDefinitionSchema,
 });
 export type CreateSegmentInput = z.infer<typeof createSegmentInputSchema>;
+
+/** Rename a saved segment, change its rule, or both. At least one must be
+ * present — an empty body is a mistake, not a no-op worth accepting. */
+export const updateSegmentInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    definition: segmentDefinitionSchema.optional(),
+  })
+  .refine((body) => body.name !== undefined || body.definition !== undefined, {
+    message: "Give a new name, a new rule, or both",
+  });
+export type UpdateSegmentInput = z.infer<typeof updateSegmentInputSchema>;
+
+/** Resolve a rule that has not been saved, so the builder can show a live count
+ * and a few example members while it is still being edited. */
+export const previewSegmentInputSchema = z.object({ definition: segmentDefinitionSchema });
+export type PreviewSegmentInput = z.infer<typeof previewSegmentInputSchema>;
+
+/** What a preview returns: the same count + sample a saved segment carries. */
+export const segmentPreviewSchema = z.object({
+  count: z.number().int().nonnegative(),
+  sample: z.array(segmentMemberSchema),
+});
+export type SegmentPreview = z.infer<typeof segmentPreviewSchema>;

@@ -11,21 +11,51 @@ import type { CreateRecipientListDto } from "./dto/create-recipient-list.dto";
 import type { UpdateRecipientListDto } from "./dto/update-recipient-list.dto";
 import type { AddListMembersDto } from "./dto/set-list-members.dto";
 
-/** A list with its member count — the shape the lists index renders. */
+/** One previewed member, for the "who's on this" line on a list card. */
+export interface RecipientListMember {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+/** A list with its member count and a bounded preview of who is on it — the
+ * shape every list route returns. */
 export interface RecipientListSummary {
   id: string;
   name: string;
   memberCount: number;
+  sample: RecipientListMember[];
   createdAt: Date;
   updatedAt: Date;
 }
 
-/** A list with its members' display details — the shape the detail view renders. */
-export interface RecipientListWithMembers extends RecipientListSummary {
-  members: { id: string; firstName: string; lastName: string }[];
-}
-
 const UNIQUE_CONSTRAINT_VIOLATION = "P2002";
+
+/**
+ * How many members a list carries inline.
+ *
+ * This used to be "all of them": the detail route loaded every membership row
+ * with its recipient joined, which is fine for a Year 4 class and is a table
+ * scan for an account that imported five thousand contacts into one list. The
+ * whole membership is read through `GET /recipients?listId=` instead — already
+ * paginated, and already carrying the search, sort, status and missing-address
+ * filters the contacts table uses, so a list's people are browsed with exactly
+ * the same tools as everyone else's.
+ *
+ * Matches the sample size a smart list previews with (segments.service.ts), so
+ * the two kinds of list can render through one card.
+ */
+const SAMPLE_SIZE = 8;
+
+/** The bounded member preview, newest-added last — Prisma include + shaping. */
+const sampleInclude = {
+  _count: { select: { members: true } },
+  members: {
+    take: SAMPLE_SIZE,
+    orderBy: { createdAt: "asc" },
+    include: { recipient: { select: { id: true, firstName: true, lastName: true } } },
+  },
+} as const;
 
 @Injectable()
 export class RecipientListsService {
@@ -57,14 +87,14 @@ export class RecipientListsService {
       targetType: "RecipientList",
       targetId: list.id,
     });
-    return { ...list, memberCount: 0 };
+    return { ...list, memberCount: 0, sample: [] };
   }
 
   async list(accountId: string, actorUserId: string): Promise<RecipientListSummary[]> {
     const lists = await this.prisma.recipientList.findMany({
       where: { accountId },
       orderBy: { name: "asc" },
-      include: { _count: { select: { members: true } } },
+      include: sampleInclude,
     });
 
     await this.audit.record({
@@ -75,30 +105,13 @@ export class RecipientListsService {
       targetId: accountId,
     });
 
-    return lists.map((list) => ({
-      id: list.id,
-      name: list.name,
-      memberCount: list._count.members,
-      createdAt: list.createdAt,
-      updatedAt: list.updatedAt,
-    }));
+    return lists.map((list) => this.toSummary(list));
   }
 
-  async findOne(
-    accountId: string,
-    actorUserId: string,
-    id: string,
-  ): Promise<RecipientListWithMembers> {
+  async findOne(accountId: string, actorUserId: string, id: string): Promise<RecipientListSummary> {
     const list = await this.prisma.recipientList.findFirst({
       where: { id, accountId },
-      include: {
-        members: {
-          orderBy: { createdAt: "asc" },
-          include: {
-            recipient: { select: { id: true, firstName: true, lastName: true } },
-          },
-        },
-      },
+      include: sampleInclude,
     });
     if (!list) {
       throw new NotFoundException("List not found");
@@ -112,14 +125,7 @@ export class RecipientListsService {
       targetId: id,
     });
 
-    return {
-      id: list.id,
-      name: list.name,
-      memberCount: list.members.length,
-      createdAt: list.createdAt,
-      updatedAt: list.updatedAt,
-      members: list.members.map((m) => m.recipient),
-    };
+    return this.toSummary(list);
   }
 
   async rename(
@@ -157,15 +163,9 @@ export class RecipientListsService {
 
     const list = await this.prisma.recipientList.findFirstOrThrow({
       where: { id, accountId },
-      include: { _count: { select: { members: true } } },
+      include: sampleInclude,
     });
-    return {
-      id: list.id,
-      name: list.name,
-      memberCount: list._count.members,
-      createdAt: list.createdAt,
-      updatedAt: list.updatedAt,
-    };
+    return this.toSummary(list);
   }
 
   async remove(accountId: string, actorUserId: string, id: string): Promise<void> {
@@ -188,7 +188,7 @@ export class RecipientListsService {
     actorUserId: string,
     id: string,
     dto: AddListMembersDto,
-  ): Promise<RecipientListWithMembers> {
+  ): Promise<RecipientListSummary> {
     await this.assertListExists(accountId, id);
 
     // Only attach recipients that actually belong to this account — a stray or
@@ -202,7 +202,10 @@ export class RecipientListsService {
       throw new BadRequestException("None of those recipients belong to your account");
     }
 
-    await this.prisma.recipientListMembership.createMany({
+    // `added` is what actually changed, not what was asked for: re-adding
+    // someone already on the list is a no-op, and the audit trail should say
+    // so rather than claiming a membership it did not create.
+    const { count: added } = await this.prisma.recipientListMembership.createMany({
       data: owned.map((r) => ({ listId: id, recipientId: r.id })),
       skipDuplicates: true,
     });
@@ -213,10 +216,10 @@ export class RecipientListsService {
       action: "add_members",
       targetType: "RecipientList",
       targetId: id,
-      metadata: { added: owned.length },
+      metadata: { requested: uniqueIds.length, added },
     });
 
-    return this.findOne(accountId, actorUserId, id);
+    return this.reload(accountId, id);
   }
 
   async removeMember(
@@ -240,6 +243,67 @@ export class RecipientListsService {
       targetId: id,
       metadata: { recipientId },
     });
+  }
+
+  /**
+   * Take several people off a list at once — the counterpart of addMembers,
+   * and what the list detail view's bulk bar calls. Unlike the single-member
+   * route this does not 404 on an id that was not on the list: the caller
+   * ticked rows on a view that may have moved on, and the outcome it asked for
+   * (these people are not on this list) is true either way. The audit row
+   * carries what actually changed.
+   */
+  async removeMembers(
+    accountId: string,
+    actorUserId: string,
+    id: string,
+    dto: AddListMembersDto,
+  ): Promise<RecipientListSummary> {
+    await this.assertListExists(accountId, id);
+    const uniqueIds = [...new Set(dto.recipientIds)];
+    const { count: removed } = await this.prisma.recipientListMembership.deleteMany({
+      where: { listId: id, recipientId: { in: uniqueIds } },
+    });
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "remove_members",
+      targetType: "RecipientList",
+      targetId: id,
+      metadata: { requested: uniqueIds.length, removed },
+    });
+
+    return this.reload(accountId, id);
+  }
+
+  /** Re-read a list after a membership write, without the "view" audit row
+   * findOne records — a member change is one event, not two. */
+  private async reload(accountId: string, id: string): Promise<RecipientListSummary> {
+    const list = await this.prisma.recipientList.findFirstOrThrow({
+      where: { id, accountId },
+      include: sampleInclude,
+    });
+    return this.toSummary(list);
+  }
+
+  /** Prisma row (with `sampleInclude`) to the wire shape. */
+  private toSummary(list: {
+    id: string;
+    name: string;
+    createdAt: Date;
+    updatedAt: Date;
+    _count: { members: number };
+    members: { recipient: RecipientListMember }[];
+  }): RecipientListSummary {
+    return {
+      id: list.id,
+      name: list.name,
+      memberCount: list._count.members,
+      sample: list.members.map((m) => m.recipient),
+      createdAt: list.createdAt,
+      updatedAt: list.updatedAt,
+    };
   }
 
   /** Confirms the list exists in this account before a membership mutation, so a

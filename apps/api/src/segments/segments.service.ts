@@ -2,8 +2,13 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { Prisma, type Recipient } from "@prisma/client";
 import {
   createSegmentInputSchema,
+  previewSegmentInputSchema,
   segmentDefinitionSchema,
+  updateSegmentInputSchema,
   type CreateSegmentInput,
+  type PreviewSegmentInput,
+  type SegmentPreview,
+  type UpdateSegmentInput,
   type OccasionType,
   type SegmentDefinition,
   type SegmentMember,
@@ -37,6 +42,7 @@ export interface SegmentMembersResult {
  * consume so the natural occasion doesn't independently fire. */
 const RECONCILABLE_STATUSES = ["scheduled", "pending_approval", "approved"] as const;
 import { PrismaService } from "../prisma/prisma.service";
+import { AuditService } from "../audit/audit.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { MISSING_ADDRESS_WHERE } from "../recipients/recipients.service";
 import { SEGMENT_PRESETS } from "./segment-presets";
@@ -91,6 +97,7 @@ function windowRange(window: SegmentWindow, today: Date): { from: Date; to: Date
 export class SegmentsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
   ) {}
 
@@ -324,8 +331,25 @@ export class SegmentsService {
     };
   }
 
+  /**
+   * Resolve a rule that has not been saved. The builder calls this on every
+   * edit so the count beside the form is the real answer for the rule as it
+   * currently stands, rather than a promise the save has to make good on.
+   */
+  async preview(accountId: string, body: PreviewSegmentInput): Promise<SegmentPreview> {
+    const parsed = previewSegmentInputSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid rule");
+    }
+    return this.resolve(accountId, parsed.data.definition);
+  }
+
   /** Save a new segment, then return it resolved for immediate display. */
-  async create(accountId: string, body: CreateSegmentInput): Promise<SegmentSummary> {
+  async create(
+    accountId: string,
+    actorUserId: string,
+    body: CreateSegmentInput,
+  ): Promise<SegmentSummary> {
     const parsed = createSegmentInputSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid segment");
@@ -337,11 +361,17 @@ export class SegmentsService {
         data: { accountId, name: input.name, definition: input.definition },
       });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw new BadRequestException("You already have a segment with that name");
-      }
-      throw error;
+      throw this.mapWriteError(error);
     }
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "create",
+      targetType: "Segment",
+      targetId: row.id,
+    });
+
     const { count, sample } = await this.resolve(accountId, input.definition);
     return {
       id: row.id,
@@ -355,10 +385,90 @@ export class SegmentsService {
     };
   }
 
-  async remove(accountId: string, id: string): Promise<void> {
+  /**
+   * Rename a saved segment, change its rule, or both.
+   *
+   * A smart list had no way to be edited at all: the only way to change one was
+   * to delete it and save a new one, which loses the name every link and habit
+   * points at. Both fields are optional and at least one is required, so a
+   * rename does not have to restate the rule (and cannot accidentally rewrite
+   * it with a stale copy the client was holding).
+   */
+  async update(
+    accountId: string,
+    actorUserId: string,
+    id: string,
+    body: UpdateSegmentInput,
+  ): Promise<SegmentSummary> {
+    const parsed = updateSegmentInputSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid segment");
+    }
+    const input = parsed.data;
+
+    let count: number;
+    try {
+      // accountId is scoped into the write itself, so there is a tenant guard
+      // even if a future change drops the separate existence check.
+      ({ count } = await this.prisma.segment.updateMany({
+        where: { id, accountId },
+        data: {
+          ...(input.name !== undefined && { name: input.name }),
+          ...(input.definition !== undefined && { definition: input.definition }),
+        },
+      }));
+    } catch (error) {
+      throw this.mapWriteError(error);
+    }
+    if (count === 0) {
+      throw new NotFoundException("Segment not found");
+    }
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "update",
+      targetType: "Segment",
+      targetId: id,
+      metadata: {
+        renamed: input.name !== undefined,
+        ruleChanged: input.definition !== undefined,
+      },
+    });
+
+    const row = await this.prisma.segment.findFirstOrThrow({ where: { id, accountId } });
+    const definition = segmentDefinitionSchema.parse(row.definition);
+    const resolved = await this.resolve(accountId, definition);
+    return {
+      id: row.id,
+      key: row.id,
+      name: row.name,
+      description: null,
+      definition,
+      count: resolved.count,
+      sample: resolved.sample,
+      suggested: false,
+    };
+  }
+
+  async remove(accountId: string, actorUserId: string, id: string): Promise<void> {
     const { count } = await this.prisma.segment.deleteMany({ where: { id, accountId } });
     if (count === 0) {
       throw new NotFoundException("Segment not found");
     }
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "delete",
+      targetType: "Segment",
+      targetId: id,
+    });
+  }
+
+  private mapWriteError(error: unknown): Error {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return new BadRequestException("You already have a segment with that name");
+    }
+    return error instanceof Error ? error : new Error("Unknown error");
   }
 }
