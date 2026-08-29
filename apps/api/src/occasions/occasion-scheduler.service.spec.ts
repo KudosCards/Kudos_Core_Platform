@@ -25,12 +25,14 @@ describe("OccasionSchedulerService pagination", () => {
     const recipientFindMany = jest.fn<Promise<unknown[]>, [Record<string, unknown>]>();
     const keyDateFindMany = jest.fn().mockResolvedValue([]);
     const occasionCreateMany = jest.fn().mockResolvedValue({ count: 0 });
-    // Two distinct counts so the summary can't pass by both halves happening to
-    // report the same number: the promotion runs first, the lapse sweep second.
+    // Three distinct counts so the summary can't pass by two of its numbers
+    // happening to match: promotion runs first, then the past-approval sweep,
+    // then the past-event sweep.
     const occasionUpdateMany = jest
       .fn()
       .mockResolvedValueOnce({ count: 7 })
       .mockResolvedValueOnce({ count: 4 })
+      .mockResolvedValueOnce({ count: 2 })
       .mockResolvedValue({ count: 0 });
 
     const prisma = {
@@ -55,12 +57,18 @@ describe("OccasionSchedulerService pagination", () => {
     // The first page carries no cursor.
     const firstCallArgs = recipientFindMany.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(firstCallArgs).not.toHaveProperty("cursor");
-    // Two set-based UPDATEs now: promote into the window, then retire the
-    // approvals whose date has been. The run reports both alongside what it saw,
-    // so an operator triggering it by hand gets the same numbers the nightly run
-    // logs.
-    expect(occasionUpdateMany).toHaveBeenCalledTimes(2);
-    expect(summary).toEqual({ recipients: 3, keyDates: 0, promoted: 7, lapsed: 4 });
+    // Three set-based UPDATEs: promote into the window, retire the approvals
+    // whose date has been, then retire the hand-added events no timer ever
+    // promotes. The run reports each alongside what it saw, so an operator
+    // triggering it by hand gets the same numbers the nightly run logs.
+    expect(occasionUpdateMany).toHaveBeenCalledTimes(3);
+    expect(summary).toEqual({
+      recipients: 3,
+      keyDates: 0,
+      promoted: 7,
+      lapsed: 4,
+      missedEvents: 2,
+    });
   });
 
   it("advances the keyset cursor across a full page and stops on the next short page", async () => {

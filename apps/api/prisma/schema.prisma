@@ -431,6 +431,11 @@ enum OccasionStatus {
   posted
   delivered
   skipped
+  /// The date came and went with no card sent — nobody chose that, it just
+  /// happened. Kept apart from `skipped` (a person's decision) so the app never
+  /// tells a customer they skipped a birthday they never touched.
+  /// See docs/adr/0178.
+  missed
 }
 
 model Occasion {

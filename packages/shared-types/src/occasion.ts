@@ -44,20 +44,22 @@ export function isOccasionSent(
   return false;
 }
 
-export type OccasionProgress = "upcoming" | "sent" | "skipped";
+export type OccasionProgress = "upcoming" | "sent" | "skipped" | "missed";
 
 /**
- * The calendar's three-way progress for an occasion. `skipped` is terminal;
- * otherwise it's `sent` (paid + in/through fulfilment, see isOccasionSent) or
- * `upcoming`. Order-aware — pass the linked order's status.
+ * The calendar's progress for an occasion. `skipped` and `missed` are terminal
+ * and are kept apart on purpose: one is the customer's decision, the other is a
+ * date that went by with nothing sent. Telling someone they skipped a birthday
+ * they never touched reads as an accusation. Otherwise it's `sent` (paid + in
+ * or through fulfilment, see isOccasionSent) or `upcoming`. Order-aware — pass
+ * the linked order's status.
  */
 export function occasionProgress(
   status: OccasionStatus,
   orderStatus?: BatchOrderStatus | null,
 ): OccasionProgress {
-  if (status === "skipped") {
-    return "skipped";
-  }
+  if (status === "skipped") return "skipped";
+  if (status === "missed") return "missed";
   return isOccasionSent(status, orderStatus) ? "sent" : "upcoming";
 }
 

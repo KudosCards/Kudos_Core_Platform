@@ -6,7 +6,28 @@ import Link from "next/link";
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
-import { OCCASION_TYPE_LABELS, formatOccasionDate } from "@/lib/occasions";
+import { formatOccasionDate, occasionKind, occasionName } from "@/lib/occasions";
+
+/**
+ * The little square beside each row: the initials of whoever the card is for.
+ *
+ * It used to be the first three letters of the occasion type, so every row in a
+ * queue of birthdays carried an identical "Bir" — a column of the same three
+ * letters, telling the reader nothing and helping them find nobody. The person
+ * is what distinguishes one row from the next.
+ */
+function rowInitials(occasion: {
+  type: string;
+  title?: string | null;
+  recipient?: { firstName: string; lastName: string } | null;
+}): string {
+  const source = occasion.recipient
+    ? `${occasion.recipient.firstName} ${occasion.recipient.lastName}`
+    : occasionName(occasion);
+  const words = source.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return `${words[0]![0]}${words[1]![0]}`.toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+}
 import { TruncationNotice } from "@/components/truncation-notice";
 
 // occasionSchema already includes the nested recipient the real API always
@@ -222,7 +243,7 @@ export function ApprovalsClient({
                   <span className="font-medium">
                     {occasion.recipient
                       ? `${occasion.recipient.firstName} ${occasion.recipient.lastName}`
-                      : (OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type)}
+                      : occasionName(occasion)}
                   </span>
                 </button>
               </li>
@@ -292,21 +313,25 @@ export function ApprovalsClient({
                       aria-label={`Select ${
                         occasion.recipient
                           ? `${occasion.recipient.firstName} ${occasion.recipient.lastName}`
-                          : (OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type)
+                          : occasionName(occasion)
                       }`}
                       className="accent-accent"
                     />
                     <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-accent-soft text-xs font-semibold text-accent">
-                      {(OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type).slice(0, 3)}
+                      {rowInitials(occasion)}
                     </div>
                     <div>
                       <p className="font-semibold">
                         {occasion.recipient
                           ? `${occasion.recipient.firstName} ${occasion.recipient.lastName}`
-                          : (OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type)}
+                          : occasionName(occasion)}
                       </p>
                       <p className="text-sm text-muted">
-                        {OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type} ·{" "}
+                        {/* The name the customer gave this date, then its kind.
+                            This line printed the kind alone, so a leaver's date
+                            named "96" arrived here as a bare "Leaver". */}
+                        {occasionName(occasion)}
+                        {occasionKind(occasion) ? ` · ${occasionKind(occasion)}` : ""} ·{" "}
                         {formatOccasionDate(occasion.occasionDate)}
                       </p>
                     </div>
@@ -434,16 +459,17 @@ export function ApprovalsClient({
             >
               <div className="flex items-center gap-3">
                 <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-success-soft text-xs font-semibold text-success">
-                  {(OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type).slice(0, 3)}
+                  {rowInitials(occasion)}
                 </div>
                 <div>
                   <p className="font-semibold">
                     {occasion.recipient
                       ? `${occasion.recipient.firstName} ${occasion.recipient.lastName}`
-                      : (OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type)}
+                      : occasionName(occasion)}
                   </p>
                   <p className="text-sm text-muted">
-                    {OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type} ·{" "}
+                    {occasionName(occasion)}
+                    {occasionKind(occasion) ? ` · ${occasionKind(occasion)}` : ""} ·{" "}
                     {formatOccasionDate(occasion.occasionDate)} ·{" "}
                     {designName(occasion.savedDesignId)}
                   </p>

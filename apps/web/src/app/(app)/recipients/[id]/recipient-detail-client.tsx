@@ -12,7 +12,15 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
-import { OCCASION_TYPE_LABELS, formatOccasionDate } from "@/lib/occasions";
+import {
+  OCCASION_STATUS_HELP,
+  OCCASION_STATUS_LABELS,
+  OCCASION_STATUS_STYLES,
+  OCCASION_TYPE_LABELS,
+  formatOccasionDate,
+  occasionKind,
+  occasionName,
+} from "@/lib/occasions";
 import { ReturnRecoveryPanel } from "./return-recovery-panel";
 
 /** Types a subscriber can add by hand — birthdays come from the DOB, not here. */
@@ -25,31 +33,6 @@ const EVENT_TYPES = [
 ] as const;
 
 /** How far along the card pipeline each status is — drives the badge colour. */
-const STATUS_STYLES: Record<string, string> = {
-  scheduled: "bg-foreground/[0.06] text-muted",
-  pending_approval: "bg-warning-soft text-warning",
-  approved: "bg-success-soft text-success",
-  queued: "bg-info-soft text-info",
-  printed: "bg-info-soft text-info",
-  posted: "bg-info-soft text-info",
-  delivered: "bg-success-soft text-success",
-  skipped: "bg-foreground/[0.06] text-muted",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  scheduled: "Scheduled",
-  pending_approval: "Awaiting approval",
-  approved: "Approved",
-  queued: "In fulfilment",
-  printed: "Printed",
-  posted: "Posted",
-  delivered: "Delivered",
-  skipped: "Skipped",
-};
-
-function eventKind(occasion: Occasion): string {
-  return occasion.title ?? OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type;
-}
 
 /** A Date|string to the yyyy-mm-dd a <input type="date"> expects. */
 function toDateInput(value: string | Date | null): string {
@@ -65,6 +48,11 @@ function daysUntil(value: string | Date): number {
   target.setHours(0, 0, 0, 0);
   return Math.round((target.getTime() - today.getTime()) / 86_400_000);
 }
+
+/** How many past dates the timeline shows before folding the rest away. Enough
+ * to see the recent history at a glance without the section becoming an archive.
+ */
+const PAST_EVENTS_SHOWN = 4;
 
 /** A friendly countdown for an upcoming date — "Today", "Tomorrow", "In 3 weeks". */
 function countdownLabel(days: number): string {
@@ -96,6 +84,7 @@ export function RecipientDetailClient({
 }) {
   const [recipient, setRecipient] = useState<Recipient>(initialRecipient);
   const [events, setEvents] = useState<Occasion[]>(initialEvents);
+  const [showAllPast, setShowAllPast] = useState(false);
   const [keyDates, setKeyDates] = useState<RecipientKeyDate[]>(initialKeyDates);
   const [pendingKeyDate, setPendingKeyDate] = useState<KeyDateType | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +143,11 @@ export function RecipientDetailClient({
   const sortedEvents = sortEvents(events);
   const upcomingEvents = sortedEvents.filter((e) => daysUntil(e.occasionDate) >= 0);
   const pastEvents = sortedEvents.filter((e) => daysUntil(e.occasionDate) < 0).reverse();
+  // A contact accumulates every date they have ever had — a birthday a year,
+  // plus every one-off — so after a few years the history buries the one thing
+  // this section is for, which is what is coming up. The recent past is shown
+  // and the rest is a click away.
+  const shownPastEvents = showAllPast ? pastEvents : pastEvents.slice(0, PAST_EVENTS_SHOWN);
 
   async function handleSaveDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -390,7 +384,7 @@ export function RecipientDetailClient({
               <input
                 name="title"
                 defaultValue={occasion.title ?? ""}
-                placeholder={eventKind(occasion)}
+                placeholder={occasionName(occasion)}
                 className={inputClass}
               />
             </label>
@@ -430,7 +424,13 @@ export function RecipientDetailClient({
         <div className="flex flex-col gap-0.5">
           <span className="flex items-center gap-1.5 font-medium">
             {occasion.type === "birthday" && <Cake className="h-4 w-4" aria-hidden />}
-            {eventKind(occasion)}
+            {occasionName(occasion)}
+            {/* The kind, beside the name the customer gave it. A leaver's date
+                named "96" used to render as a bare "96" with nothing to say
+                what it was. */}
+            {occasionKind(occasion) && (
+              <span className="text-sm font-normal text-muted">· {occasionKind(occasion)}</span>
+            )}
           </span>
           <span className="flex flex-wrap items-center gap-2 text-sm text-muted">
             {formatOccasionDate(occasion.occasionDate)}
@@ -439,15 +439,18 @@ export function RecipientDetailClient({
                 {countdownLabel(days)}
               </span>
             )}
+            {OCCASION_STATUS_HELP[occasion.status] && (
+              <span className="text-xs">{OCCASION_STATUS_HELP[occasion.status]}</span>
+            )}
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span
             className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-              STATUS_STYLES[occasion.status] ?? "bg-foreground/[0.06] text-muted"
+              OCCASION_STATUS_STYLES[occasion.status] ?? "bg-foreground/[0.06] text-muted"
             }`}
           >
-            {STATUS_LABELS[occasion.status] ?? occasion.status}
+            {OCCASION_STATUS_LABELS[occasion.status] ?? occasion.status}
           </span>
           {occasion.order && (
             <Link
@@ -880,8 +883,17 @@ export function RecipientDetailClient({
               <div className="flex flex-col gap-1">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Past</h3>
                 <ul className="flex flex-col divide-y divide-border opacity-70">
-                  {pastEvents.map(renderEvent)}
+                  {shownPastEvents.map(renderEvent)}
                 </ul>
+                {pastEvents.length > PAST_EVENTS_SHOWN && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllPast((current) => !current)}
+                    className="self-start pt-1 text-sm font-medium text-accent hover:underline"
+                  >
+                    {showAllPast ? "Show fewer" : `Show all ${pastEvents.length} past dates`}
+                  </button>
+                )}
               </div>
             )}
           </div>
