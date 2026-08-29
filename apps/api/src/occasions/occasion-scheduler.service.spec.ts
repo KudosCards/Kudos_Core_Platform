@@ -25,7 +25,13 @@ describe("OccasionSchedulerService pagination", () => {
     const recipientFindMany = jest.fn<Promise<unknown[]>, [Record<string, unknown>]>();
     const keyDateFindMany = jest.fn().mockResolvedValue([]);
     const occasionCreateMany = jest.fn().mockResolvedValue({ count: 0 });
-    const occasionUpdateMany = jest.fn().mockResolvedValue({ count: 7 });
+    // Two distinct counts so the summary can't pass by both halves happening to
+    // report the same number: the promotion runs first, the lapse sweep second.
+    const occasionUpdateMany = jest
+      .fn()
+      .mockResolvedValueOnce({ count: 7 })
+      .mockResolvedValueOnce({ count: 4 })
+      .mockResolvedValue({ count: 0 });
 
     const prisma = {
       recipient: { findMany: recipientFindMany },
@@ -49,11 +55,12 @@ describe("OccasionSchedulerService pagination", () => {
     // The first page carries no cursor.
     const firstCallArgs = recipientFindMany.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(firstCallArgs).not.toHaveProperty("cursor");
-    // The promoted count is passed straight through from the set-based UPDATE,
-    // and the run reports what it saw alongside it — the same three numbers the
-    // nightly run logs, so an operator triggering it by hand gets them back.
-    expect(occasionUpdateMany).toHaveBeenCalledTimes(1);
-    expect(summary).toEqual({ recipients: 3, keyDates: 0, promoted: 7 });
+    // Two set-based UPDATEs now: promote into the window, then retire the
+    // approvals whose date has been. The run reports both alongside what it saw,
+    // so an operator triggering it by hand gets the same numbers the nightly run
+    // logs.
+    expect(occasionUpdateMany).toHaveBeenCalledTimes(2);
+    expect(summary).toEqual({ recipients: 3, keyDates: 0, promoted: 7, lapsed: 4 });
   });
 
   it("advances the keyset cursor across a full page and stops on the next short page", async () => {
