@@ -6,6 +6,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
+import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 
 /** How many days ahead of an occasion we send its reminder. */
 const REMINDER_LEAD_DAYS = 7;
@@ -33,7 +34,7 @@ export class RemindersService {
 
   /** Runs after the birthday scheduler (6am) and auto-send (7am) so the day's
    * occasions exist and anything auto-sent is already gone. */
-  @Cron(CronExpression.EVERY_DAY_AT_8AM)
+  @Cron(CronExpression.EVERY_DAY_AT_8AM, { timeZone: PLATFORM_TIME_ZONE })
   async runDueReminders(): Promise<ReminderRunResult> {
     const now = new Date();
     const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));

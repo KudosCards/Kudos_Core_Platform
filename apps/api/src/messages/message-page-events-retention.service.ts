@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { Cron } from "@nestjs/schedule";
 import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
+import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -41,7 +42,7 @@ export class MessagePageEventsRetentionService {
 
   /** 03:30 daily — offset from the 03:00 storage reaper so the two nightly
    * DELETE jobs don't contend. */
-  @Cron("30 3 * * *")
+  @Cron("30 3 * * *", { timeZone: PLATFORM_TIME_ZONE })
   async runScheduled(): Promise<void> {
     try {
       const { deleted, retentionDays } = await this.prune();

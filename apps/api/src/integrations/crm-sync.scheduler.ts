@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { CrmConnectionsService } from "./crm-connections.service";
+import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 
 /**
  * Nightly sweep: re-sync every enabled CRM connection so recipients stay
@@ -14,7 +15,7 @@ export class CrmSyncScheduler {
 
   constructor(private readonly crmConnections: CrmConnectionsService) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_5AM)
+  @Cron(CronExpression.EVERY_DAY_AT_5AM, { timeZone: PLATFORM_TIME_ZONE })
   async run(): Promise<void> {
     const connections = await this.crmConnections.listEnabled();
     for (const connection of connections) {

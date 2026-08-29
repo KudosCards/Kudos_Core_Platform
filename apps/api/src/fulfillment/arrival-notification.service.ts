@@ -3,6 +3,7 @@ import { Cron } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
 import type { EnvConfig } from "../config/env.schema";
 import { FulfillmentService, type ArrivalSweepResult } from "./fulfillment.service";
+import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 
 /**
  * The estimated-arrival notification loop (ADR 0124). Our cards ship on ordinary
@@ -32,10 +33,10 @@ export class ArrivalNotificationService {
   }
 
   /**
-   * Once a day (09:00 UTC, offset from the 07:00 auto-send cron). Arrival is
+   * Once a day (09:00 UK time, offset from the 07:00 auto-send cron). Arrival is
    * day-granular, so a daily pass is enough. Skips entirely unless enabled.
    */
-  @Cron("0 9 * * *")
+  @Cron("0 9 * * *", { timeZone: PLATFORM_TIME_ZONE })
   async scheduledSweep(): Promise<void> {
     if (!this.enabled()) return;
     await this.runSweep();
