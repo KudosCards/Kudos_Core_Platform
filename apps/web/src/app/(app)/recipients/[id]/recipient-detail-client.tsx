@@ -9,6 +9,7 @@ import type {
   ReturnCase,
 } from "@kudos/shared-types";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
@@ -54,6 +55,13 @@ function daysUntil(value: string | Date): number {
  */
 const PAST_EVENTS_SHOWN = 4;
 
+/** Mirrors the API's lower bound on a date of birth (MAX_AGE_YEARS). */
+function earliestPlausibleBirth(): Date {
+  const d = new Date();
+  d.setUTCFullYear(d.getUTCFullYear() - 120);
+  return d;
+}
+
 /** A friendly countdown for an upcoming date — "Today", "Tomorrow", "In 3 weeks". */
 function countdownLabel(days: number): string {
   if (days <= 0) return "Today";
@@ -85,6 +93,9 @@ export function RecipientDetailClient({
   const [recipient, setRecipient] = useState<Recipient>(initialRecipient);
   const [events, setEvents] = useState<Occasion[]>(initialEvents);
   const [showAllPast, setShowAllPast] = useState(false);
+  const router = useRouter();
+  /** What the last save actually did, including when it did nothing. */
+  const [saveNote, setSaveNote] = useState<{ changed: boolean; text: string } | null>(null);
   const [keyDates, setKeyDates] = useState<RecipientKeyDate[]>(initialKeyDates);
   const [pendingKeyDate, setPendingKeyDate] = useState<KeyDateType | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -176,8 +187,32 @@ export function RecipientDetailClient({
         method: "PATCH",
         body: JSON.stringify(body),
       });
+      // Say what was actually saved, and say when nothing was.
+      //
+      // A customer reported changing a date of birth and finding it unchanged.
+      // The audit trail settled it: the form had submitted the date already on
+      // record, so the save did exactly what it was asked and reported success.
+      // Whatever made the field hold its old value — a date picker that never
+      // committed, a keystroke that did not land — the app confirmed a change it
+      // had not made, and that is the part worth fixing.
+      const before = toDateInput(recipient.dateOfBirth);
+      const after = toDateInput(updated.dateOfBirth);
+      setSaveNote(
+        before === after
+          ? { changed: false, text: "Saved — nothing was different, so nothing changed." }
+          : {
+              changed: true,
+              text: after
+                ? `Saved. Date of birth is now ${formatOccasionDate(updated.dateOfBirth!)}.`
+                : "Saved. The date of birth was cleared.",
+            },
+      );
       setRecipient(updated);
       closeEditor();
+      // The contact appears on the contacts list, the calendar and Approvals.
+      // Without this the client Router Cache could hand any of them back from
+      // before the edit.
+      router.refresh();
     } catch (saveError) {
       setError(saveError instanceof ApiError ? saveError.message : "Could not save the details");
     } finally {
@@ -546,6 +581,26 @@ export function RecipientDetailClient({
 
       {error && <p className="notice notice-danger">{error}</p>}
 
+      {saveNote && (
+        <div
+          className={`flex flex-wrap items-center gap-3 rounded-lg px-4 py-3 text-sm ${
+            saveNote.changed
+              ? "border border-success/30 bg-success-soft"
+              : "border border-border bg-foreground/[0.03]"
+          }`}
+        >
+          <span className={saveNote.changed ? "banner-lead" : "font-medium"}>{saveNote.text}</span>
+          <button
+            type="button"
+            onClick={() => setSaveNote(null)}
+            aria-label="Dismiss"
+            className="ml-auto text-muted hover:text-foreground"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <ReturnRecoveryPanel
         recipient={recipient}
         initialCases={initialReturnCases}
@@ -671,10 +726,15 @@ export function RecipientDetailClient({
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Date of birth</span>
+              {/* Bounded in the browser as well as the API, so a mistyped year
+                  is refused at the point of typing rather than accepted and
+                  turned into a birthday the platform posts a card for. */}
               <input
                 type="date"
                 name="dateOfBirth"
                 defaultValue={toDateInput(recipient.dateOfBirth)}
+                min={toDateInput(earliestPlausibleBirth())}
+                max={toDateInput(new Date())}
                 className={inputClass}
               />
             </label>

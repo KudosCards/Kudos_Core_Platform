@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ukDateRegex } from "@kudos/shared-types";
 import { UK_POSTCODE_REGEX } from "../common/uk-postcode";
+import { MAX_AGE_YEARS } from "./dto/create-recipient.dto";
 
 /** Build a UTC date and reject impossible calendar dates (e.g. 31 April). */
 function toUtcDate(year: number, month: number, day: number): Date | null {
@@ -55,6 +56,18 @@ export function parseFlexibleDate(value: string): Date | null {
   return null;
 }
 
+/**
+ * A parseable date is not automatically a birth date. Shares its bounds with
+ * the API's create/update DTO, so a contact added by hand and one arriving in a
+ * CSV are held to the same rule.
+ */
+export function isPlausibleDateOfBirth(value: Date, now: Date = new Date()): boolean {
+  if (value.getTime() > now.getTime()) return false;
+  const earliest = new Date(now);
+  earliest.setUTCFullYear(earliest.getUTCFullYear() - MAX_AGE_YEARS);
+  return value.getTime() >= earliest.getTime();
+}
+
 export interface ParsedRecipientRow {
   firstName: string;
   lastName: string;
@@ -97,6 +110,16 @@ export function parseRecipientRow(row: Record<string, string>): ParsedRecipientR
       warnings.push(
         `Date of birth "${dobRaw}" wasn't recognised (use dd/mm/yyyy) — imported without it`,
       );
+    } else if (!isPlausibleDateOfBirth(dateOfBirth)) {
+      // A parseable date is not necessarily a birth date. A mistyped year gets
+      // read as a birthday, put on the calendar, and posted a card — so the row
+      // is imported without it rather than with a date nobody could have been
+      // born on. The API rejects the same range on a direct add; a whole import
+      // should not fail over one bad cell.
+      warnings.push(
+        `Date of birth "${dobRaw}" isn't a date anyone could be born on — imported without it`,
+      );
+      dateOfBirth = null;
     }
   }
 
