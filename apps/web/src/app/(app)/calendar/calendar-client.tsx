@@ -10,7 +10,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
-import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
+import { OCCASION_TYPE_LABELS, occasionKind, occasionName } from "@/lib/occasions";
 import { Modal } from "@/components/modal";
 import { OccasionModal } from "./occasion-modal";
 import { EventModal } from "./event-modal";
@@ -51,12 +51,14 @@ function occasionLabel(occasion: CalendarOccasion): string {
   if (occasion.recipient) {
     return `${occasion.recipient.firstName} ${occasion.recipient.lastName}`;
   }
-  return occasion.title ?? OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type;
+  return occasionName(occasion);
 }
 
-/** The occasion's descriptive kind, preferring a hand-entered event title. */
-function occasionKind(occasion: CalendarOccasion): string {
-  return occasion.title ?? OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type;
+/** The name and kind together, for the pop-up's detail line — "96 · Leaver"
+ * rather than either half on its own. See lib/occasions.ts. */
+function occasionDescription(occasion: CalendarOccasion): string {
+  const kind = occasionKind(occasion);
+  return kind ? `${occasionName(occasion)} · ${kind}` : occasionName(occasion);
 }
 
 /** A friendly heading for the list view's month relative to today: "This month",
@@ -118,10 +120,20 @@ function OccasionPill({
   const color =
     progress === "sent"
       ? OCCASION_SENT_COLOR
-      : progress === "skipped"
+      : progress === "skipped" || progress === "missed"
         ? OCCASION_SKIPPED_COLOR
         : (OCCASION_TYPE_COLORS[occasion.type] ?? OCCASION_TYPE_COLORS.bespoke_campaign);
-  const stateNote = progress === "sent" ? " · Sent" : progress === "skipped" ? " · Skipped" : "";
+  // "Missed" and "Skipped" look the same on the grid — both are over — but they
+  // are never called the same thing: one is the customer's decision, the other
+  // is a date that went by.
+  const stateNote =
+    progress === "sent"
+      ? " · Sent"
+      : progress === "skipped"
+        ? " · Skipped"
+        : progress === "missed"
+          ? " · Missed"
+          : "";
   return (
     <button
       type="button"
@@ -142,7 +154,7 @@ function OccasionPill({
       title={
         draggable
           ? `${occasionLabel(occasion)} — drag to change the dispatch day`
-          : `${occasionLabel(occasion)} · ${occasionKind(occasion)}${stateNote}`
+          : `${occasionLabel(occasion)} · ${occasionDescription(occasion)}${stateNote}`
       }
     >
       {progress === "sent" && (
@@ -197,9 +209,13 @@ function CalendarLegend() {
         />
         Upcoming (coloured by type)
       </span>
+      {/* Both are over and both are struck through, so they share a swatch —
+          but the key names both. It said only "Skipped", which is the wrong word
+          for a date that simply went by, and the one word a customer should
+          never read about something they never touched. */}
       <span className="flex items-center gap-1.5">
         <span className={`inline-block h-3 w-3 rounded-sm border ${OCCASION_SKIPPED_COLOR}`} />
-        Skipped
+        Skipped or missed
       </span>
     </div>
   );

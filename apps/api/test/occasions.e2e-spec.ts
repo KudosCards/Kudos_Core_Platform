@@ -32,6 +32,20 @@ const orderLinkedOccasionSchema = occasionSchema.extend({
     .optional(),
 });
 
+/**
+ * A date `days` from today, as yyyy-mm-dd.
+ *
+ * These tests used to carry hard-coded dates. That works until the day they
+ * fall into the past, at which point they start failing for reasons that have
+ * nothing to do with what they are testing — which is exactly what happened
+ * when `prepare` gained a bound refusing a date that has already been.
+ */
+function dayFromToday(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 describe("Occasions (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
@@ -432,7 +446,7 @@ describe("Occasions (e2e)", () => {
         await request(app.getHttpServer())
           .post("/occasions/events")
           .set("Authorization", `Bearer ${token}`)
-          .send({ recipientId, type: "leaver", occasionDate: "2026-07-20" })
+          .send({ recipientId, type: "leaver", occasionDate: dayFromToday(30) })
           .expect(201)
       ).body,
     );
@@ -462,7 +476,12 @@ describe("Occasions (e2e)", () => {
         await request(app.getHttpServer())
           .post("/occasions/events")
           .set("Authorization", `Bearer ${token}`)
-          .send({ recipientId, type: "achievement", title: "Exams", occasionDate: "2026-07-15" })
+          .send({
+            recipientId,
+            type: "achievement",
+            title: "Exams",
+            occasionDate: dayFromToday(20),
+          })
           .expect(201)
       ).body,
     );
@@ -470,10 +489,12 @@ describe("Occasions (e2e)", () => {
     const updated = await request(app.getHttpServer())
       .patch(`/occasions/${created.id}`)
       .set("Authorization", `Bearer ${token}`)
-      .send({ title: "End of exams", occasionDate: "2026-07-20" })
+      .send({ title: "End of exams", occasionDate: dayFromToday(25) })
       .expect(200);
     expect((updated.body as { title: string }).title).toBe("End of exams");
-    expect((updated.body as { occasionDate: string }).occasionDate.slice(0, 10)).toBe("2026-07-20");
+    expect((updated.body as { occasionDate: string }).occasionDate.slice(0, 10)).toBe(
+      dayFromToday(25),
+    );
     expect(occasionSchema.parse(updated.body).status).toBe("scheduled");
   });
 
@@ -485,7 +506,7 @@ describe("Occasions (e2e)", () => {
         await request(app.getHttpServer())
           .post("/occasions/events")
           .set("Authorization", `Bearer ${token}`)
-          .send({ recipientId, type: "seasonal", occasionDate: "2026-08-05" })
+          .send({ recipientId, type: "seasonal", occasionDate: dayFromToday(35) })
           .expect(201)
       ).body,
     );
@@ -509,7 +530,7 @@ describe("Occasions (e2e)", () => {
         await request(app.getHttpServer())
           .post("/occasions/events")
           .set("Authorization", `Bearer ${token}`)
-          .send({ recipientId, type: "seasonal", occasionDate: "2026-08-05" })
+          .send({ recipientId, type: "seasonal", occasionDate: dayFromToday(35) })
           .expect(201)
       ).body,
     );

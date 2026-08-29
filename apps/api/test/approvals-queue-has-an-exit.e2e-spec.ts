@@ -100,7 +100,9 @@ describe("The approvals queue has an exit (e2e)", () => {
 
     await scheduler.scheduleBirthdayOccasions();
 
-    expect(await statusOf(lapsed)).toBe("skipped");
+    // `missed`, not `skipped`: nobody chose this, and telling a customer they
+    // skipped a birthday they never touched reads as an accusation.
+    expect(await statusOf(lapsed)).toBe("missed");
     expect(await statusOf(live)).toBe("pending_approval");
     expect((await approvals(token)).body).toMatchObject({ total: 1 });
   });
@@ -149,15 +151,49 @@ describe("The approvals queue has an exit (e2e)", () => {
     expect(summary.lapsed).toBeGreaterThanOrEqual(2);
   });
 
-  it("does not touch an approval the customer has already approved", async () => {
-    // Only the queue is swept. An approved card is on its way and a past date on
-    // it means the send is in flight, not that it lapsed.
+  it("retires an approval the customer made but never ordered", async () => {
+    // This test used to assert the opposite, on the premise that "an approved
+    // card is on its way". It is not: `approved` only means a design was chosen,
+    // and nothing had checked it out. A real contact carried a card approved on
+    // 27 July for a birthday on 24 July and five weeks later nothing had been
+    // sent — the row kept a green "Ready to send" badge the whole time. Approved
+    // and past is a failure, not a send in flight. See docs/adr/0178.
     const { accountId } = await account();
     const id = await occasion(accountId, -3, "pending_approval");
     await prisma.occasion.update({ where: { id }, data: { status: "approved" } });
 
     await scheduler.scheduleBirthdayOccasions();
 
-    expect(await statusOf(id)).toBe("approved");
+    expect(await statusOf(id)).toBe("missed");
+  });
+
+  it("never touches a card that is already paid for and in production", async () => {
+    // The real "in flight" line: `queued` and beyond means money is spent and
+    // the occasion is part of an order's history. A past date on one of those is
+    // a card that went out, not one that lapsed.
+    const { accountId } = await account();
+    for (const status of ["queued", "printed", "posted", "delivered"] as const) {
+      const id = await occasion(accountId, -3, "pending_approval");
+      await prisma.occasion.update({ where: { id }, data: { status } });
+      await scheduler.scheduleBirthdayOccasions();
+      expect(await statusOf(id)).toBe(status);
+    }
+  });
+
+  it("keeps a deliberate skip apart from a date that simply went by", async () => {
+    const { token, accountId } = await account();
+    const chosen = await occasion(accountId, 6, "pending_approval");
+    await request(app.getHttpServer())
+      .post(`/occasions/${chosen}/skip`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    // Move it into the past — the sweep must not relabel someone's own decision.
+    const past = new Date();
+    past.setUTCDate(past.getUTCDate() - 2);
+    await prisma.occasion.update({ where: { id: chosen }, data: { occasionDate: past } });
+
+    await scheduler.scheduleBirthdayOccasions();
+
+    expect(await statusOf(chosen)).toBe("skipped");
   });
 });

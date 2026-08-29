@@ -54,8 +54,18 @@ export const occasionStatusSchema = z.enum([
   "posted",
   "delivered",
   "skipped",
+  /** The date came and went with no card sent. Distinct from `skipped`, which
+   * is a person's decision — see docs/adr/0178. */
+  "missed",
 ]);
 export type OccasionStatus = z.infer<typeof occasionStatusSchema>;
+
+/** Occasion statuses that are over: nothing more will happen to the card. */
+export const CLOSED_OCCASION_STATUSES = ["delivered", "skipped", "missed"] as const;
+
+/** Statuses where a card has been paid for and is in or through production, so
+ * the occasion's date must never be moved out from under it. */
+export const COMMITTED_OCCASION_STATUSES = ["queued", "printed", "posted", "delivered"] as const;
 
 export const dispatchOptionSchema = z.enum(["asap", "auto_send"]);
 export type DispatchOption = z.infer<typeof dispatchOptionSchema>;

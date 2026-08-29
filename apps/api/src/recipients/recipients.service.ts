@@ -26,6 +26,7 @@ import { parseRecipientRow, type ParsedRecipientRow } from "./csv-row.util";
 import { suggestMapping, remapRow } from "./csv-mapping.util";
 import type { CsvColumnMapping, CsvImportPreview } from "@kudos/shared-types";
 import { buildScheduledBirthdayOccasion, startOfUtcDay } from "../occasions/birthday-occasion.util";
+import { realignBirthdayOccasion, type RealignResult } from "../occasions/realign-birthday.util";
 import { promoteDueOccasions } from "../occasions/promote-due-occasions.util";
 import { buildScheduledKeyDateOccasion } from "../occasions/key-date-occasion.util";
 import { keyDateTypeSchema } from "@kudos/shared-types";
@@ -322,6 +323,14 @@ export class RecipientsService {
     // rather than relying solely on a separate pre-check — a bare `update({ where:
     // { id } })` has no tenant guard of its own if a future change drops the
     // pre-check.
+    // Read the old date of birth before the write, so the audit entry can say
+    // what it changed from.
+    const previous = await this.prisma.recipient.findFirst({
+      where: { id, accountId },
+      select: { dateOfBirth: true },
+    });
+    const previousDateOfBirth = previous?.dateOfBirth ?? null;
+
     let count: number;
     try {
       ({ count } = await this.prisma.recipient.updateMany({
@@ -337,25 +346,21 @@ export class RecipientsService {
 
     const recipient = await this.prisma.recipient.findFirstOrThrow({ where: { id, accountId } });
 
-    // If the date of birth changed, re-point the (not-yet-actionable) birthday
-    // event at the new date. Only `scheduled` occasions are touched — one that
-    // has already entered the approval/dispatch pipeline is left alone.
+    // If the date of birth changed, move the contact's live birthday onto the
+    // corrected date rather than leaving it behind. Deleting only the
+    // `scheduled` row (what this used to do) orphaned anything already in
+    // Approvals or approved, so a contact accrued one stale birthday per
+    // correction. See realign-birthday.util.ts.
+    let realigned: RealignResult | null = null;
     if (dto.dateOfBirth !== undefined) {
-      await this.prisma.occasion.deleteMany({
-        where: { recipientId: id, type: "birthday", status: "scheduled" },
-      });
+      realigned = await realignBirthdayOccasion(
+        this.prisma,
+        { accountId, recipientId: id, dateOfBirth: recipient.dateOfBirth },
+        new Date(),
+      );
+      // A corrected date of birth can move a birthday into the approval window
+      // as well as out of it, so re-run the same rule here too.
       if (recipient.dateOfBirth) {
-        await this.prisma.occasion.createMany({
-          data: [
-            buildScheduledBirthdayOccasion(
-              { id: recipient.id, accountId, dateOfBirth: recipient.dateOfBirth },
-              startOfUtcDay(new Date()),
-            ),
-          ],
-          skipDuplicates: true,
-        });
-        // A corrected date of birth can move a birthday into the window as well
-        // as out of it, so re-run the same rule here too.
         await promoteDueOccasions(this.prisma, accountId);
       }
     }
@@ -366,6 +371,25 @@ export class RecipientsService {
       action: "update",
       targetType: "Recipient",
       targetId: id,
+      // What actually changed. This used to be null, so an audit trail could
+      // show that a date of birth had been edited four times and not what any
+      // of the four values were — which is exactly the question asked of it.
+      metadata: {
+        fields: Object.keys(dto).sort(),
+        ...(dto.dateOfBirth !== undefined && {
+          dateOfBirth: {
+            from: previousDateOfBirth ? previousDateOfBirth.toISOString().slice(0, 10) : null,
+            to: recipient.dateOfBirth ? recipient.dateOfBirth.toISOString().slice(0, 10) : null,
+          },
+          birthdayOccasion: realigned
+            ? {
+                moved: realigned.moved,
+                retired: realigned.retired,
+                created: realigned.created,
+              }
+            : null,
+        }),
+      },
     });
     return recipient;
   }

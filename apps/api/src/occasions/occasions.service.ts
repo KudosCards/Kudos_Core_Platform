@@ -657,14 +657,28 @@ export class OccasionsService {
    * but this lets a subscriber pull any event forward on demand.
    */
   async prepare(accountId: string, actorUserId: string, id: string): Promise<Occasion> {
+    // Not a date that has been. Without this bound, preparing a card for an
+    // event whose day had passed moved it into Approvals, where the next
+    // nightly sweep immediately retired it as missed — a round trip that looked
+    // like it had done something and had not.
     const { count } = await this.prisma.occasion.updateMany({
-      where: { id, accountId, status: "scheduled" },
+      where: {
+        id,
+        accountId,
+        status: "scheduled",
+        occasionDate: { gte: startOfUtcDay(new Date()) },
+      },
       data: { status: "pending_approval" },
     });
     if (count === 0) {
       const existing = await this.prisma.occasion.findFirst({ where: { id, accountId } });
       if (!existing) {
         throw new NotFoundException("Occasion not found");
+      }
+      if (existing.status === "scheduled") {
+        throw new ConflictException(
+          "That date has already passed, so a card can no longer arrive for it",
+        );
       }
       throw new ConflictException(`Occasion is "${existing.status}", not scheduled`);
     }

@@ -4,7 +4,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { BIRTHDAY_LOOKAHEAD_DAYS } from "./occasion-scheduling.constants";
 import { buildScheduledBirthdayOccasion, startOfUtcDay } from "./birthday-occasion.util";
 import { promoteDueOccasions } from "./promote-due-occasions.util";
-import { lapsePastApprovals } from "./lapse-past-approvals.util";
+import { retirePastOccasions } from "./retire-past-occasions.util";
 import { buildScheduledKeyDateOccasion } from "./key-date-occasion.util";
 
 /**
@@ -26,8 +26,12 @@ export interface OccasionSchedulerSummary {
   keyDates: number;
   /** Occasions moved from `scheduled` into `pending_approval` by this run. */
   promoted: number;
-  /** Approvals retired because their date had already been. */
+  /** Approvals — actioned or not — retired as `missed` because their date had
+   * already been. */
   lapsed: number;
+  /** Hand-added events retired as `missed` for the same reason. No timer ever
+   * promotes these, so their date passing is terminal. */
+  missedEvents: number;
 }
 
 /**
@@ -72,16 +76,22 @@ export class OccasionSchedulerService {
     //    until 06:00 to show up in Approvals.
     const count = await promoteDueOccasions(this.prisma, undefined, today);
 
-    // 3. Retire the approvals whose date has been. The queue had no exit before
-    //    this, so it grew for as long as an account existed — and a customer
-    //    facing a pile of birthdays they could no longer act on cleared it by
-    //    hand, taking live ones with it. See lapse-past-approvals.util.ts.
-    const lapsed = await lapsePastApprovals(this.prisma, undefined, today);
+    // 3. Close off the dates that have been and gone with no card sent —
+    //    approvals nobody actioned, approvals that were actioned and then never
+    //    ordered, and hand-added events no timer ever promotes. See
+    //    retire-past-occasions.util.ts.
+    const retired = await retirePastOccasions(this.prisma, undefined, today);
 
     this.logger.log(
-      `Recurring scheduler: ${recipientCount} recipient(s) with a DOB, ${keyDateCount} key date(s), ${count} occasion(s) promoted into the ${BIRTHDAY_LOOKAHEAD_DAYS}-day approval window, ${lapsed} past approval(s) retired`,
+      `Recurring scheduler: ${recipientCount} recipient(s) with a DOB, ${keyDateCount} key date(s), ${count} occasion(s) promoted into the ${BIRTHDAY_LOOKAHEAD_DAYS}-day approval window, ${retired.approvals} past approval(s) and ${retired.events} past event(s) retired as missed`,
     );
-    return { recipients: recipientCount, keyDates: keyDateCount, promoted: count, lapsed };
+    return {
+      recipients: recipientCount,
+      keyDates: keyDateCount,
+      promoted: count,
+      lapsed: retired.approvals,
+      missedEvents: retired.events,
+    };
   }
 
   /**
