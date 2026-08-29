@@ -39,9 +39,14 @@ export async function promoteDueOccasions(
       // by a human, who has already decided they want them.
       type: { in: ["birthday", "renewal", "anniversary"] },
       status: "scheduled",
-      // `occasionDate` is always today-or-later (nextBirthdayOccurrence never
-      // returns a past date), so an upper bound is all that is needed.
-      occasionDate: { lte: lookaheadEnd },
+      // Bounded at both ends. The upper bound is the approval window; the lower
+      // bound is today, because an occasion whose date has been cannot be
+      // delivered and has no business arriving in a queue that asks someone to
+      // act on it. This used to rely on `nextBirthdayOccurrence` never returning
+      // a past date — true of the moment an occasion is created, and irrelevant
+      // afterwards: one created for a birthday nine days out is still sitting
+      // there, unactioned, three weeks later with its date long gone.
+      occasionDate: { gte: startOfUtcDay(now), lte: lookaheadEnd },
       // Don't pull an archived recipient's occasion into the approvals queue.
       recipient: { status: "active" },
     },

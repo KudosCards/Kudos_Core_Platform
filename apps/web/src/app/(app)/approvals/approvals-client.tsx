@@ -37,9 +37,37 @@ export function ApprovalsClient({
   const [postageByOccasion, setPostageByOccasion] = useState<Record<string, PostageClass>>({});
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * What this visit has skipped, newest first, so it can be put back.
+   *
+   * Skipping used to remove the row and that was that — no confirmation, no way
+   * back. A school clearing a queue of birthdays that had already passed skipped
+   * twenty-seven in about as many seconds, ten of them live birthdays weeks
+   * away, and the only repair was a hand-written UPDATE against production.
+   */
+  const [justSkipped, setJustSkipped] = useState<OccasionWithRecipient[]>([]);
+  /** Ticked for a bulk skip. Clearing a backlog should be one deliberate act,
+   * not one click per row at the speed a queue invites. */
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   function removeFromList(id: string) {
     setOccasions((current) => current.filter((occasion) => occasion.id !== id));
+    setTicked((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleTick(id: string) {
+    setTicked((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function approve(occasion: OccasionWithRecipient) {
@@ -74,8 +102,50 @@ export function ApprovalsClient({
     try {
       await clientApiFetch(`/occasions/${occasion.id}/skip`, { method: "POST" });
       removeFromList(occasion.id);
+      setJustSkipped((current) => [occasion, ...current]);
     } catch (skipError) {
       setError(skipError instanceof ApiError ? skipError.message : "Could not skip");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  /** Skip everything ticked, in one deliberate action. */
+  async function skipTicked() {
+    const chosen = occasions.filter((o) => ticked.has(o.id));
+    if (chosen.length === 0) return;
+    setError(null);
+    setBulkBusy(true);
+    const done: OccasionWithRecipient[] = [];
+    try {
+      for (const occasion of chosen) {
+        await clientApiFetch(`/occasions/${occasion.id}/skip`, { method: "POST" });
+        done.push(occasion);
+      }
+    } catch (skipError) {
+      setError(skipError instanceof ApiError ? skipError.message : "Could not skip");
+    } finally {
+      // Whatever succeeded before a failure is still skipped, so reflect exactly
+      // that — and keep every one of them undoable.
+      for (const occasion of done) removeFromList(occasion.id);
+      setJustSkipped((current) => [...done.reverse(), ...current]);
+      setBulkBusy(false);
+    }
+  }
+
+  /** Put a skipped occasion back in the queue. */
+  async function unskip(occasion: OccasionWithRecipient) {
+    setError(null);
+    setPendingAction(occasion.id);
+    try {
+      const restored = await clientApiFetch<OccasionWithRecipient>(
+        `/occasions/${occasion.id}/unskip`,
+        { method: "POST" },
+      );
+      setJustSkipped((current) => current.filter((o) => o.id !== occasion.id));
+      setOccasions((current) => [restored, ...current]);
+    } catch (unskipError) {
+      setError(unskipError instanceof ApiError ? unskipError.message : "Could not restore");
     } finally {
       setPendingAction(null);
     }
@@ -118,6 +188,79 @@ export function ApprovalsClient({
 
       {error && <p className="notice notice-danger">{error}</p>}
 
+      {/* The way back. Every skip this visit stays here until the page is left,
+          because the damage this undoes was done in seconds and noticed days
+          later — by which point nothing in the product could reverse it. */}
+      {justSkipped.length > 0 && (
+        <div className="notice notice-info flex flex-col gap-2">
+          <p className="font-medium">
+            Skipped {justSkipped.length} {justSkipped.length === 1 ? "card" : "cards"}. Changed your
+            mind?
+          </p>
+          <ul className="flex flex-wrap gap-2">
+            {justSkipped.map((occasion) => (
+              <li key={occasion.id}>
+                <button
+                  type="button"
+                  disabled={pendingAction === occasion.id}
+                  onClick={() => void unskip(occasion)}
+                  className="rounded-full border border-black/15 bg-surface px-3 py-1 text-sm hover:bg-black/5 disabled:opacity-40"
+                >
+                  Restore{" "}
+                  <span className="font-medium">
+                    {occasion.recipient
+                      ? `${occasion.recipient.firstName} ${occasion.recipient.lastName}`
+                      : (OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Clearing a backlog in one action, rather than one click per row at the
+          speed a long queue invites — which is how live birthdays got caught up
+          in a sweep meant for dead ones. */}
+      {ticked.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
+          <span>
+            <strong>{ticked.size}</strong> selected.
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setTicked(new Set())}
+              className="text-muted hover:text-accent"
+            >
+              Clear selection
+            </button>
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={() => void skipTicked()}
+              className="btn-secondary"
+            >
+              {bulkBusy ? "Skipping…" : `Skip ${ticked.size} selected`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {occasions.length > 1 && (
+        <label className="flex w-fit items-center gap-2 text-sm text-muted">
+          <input
+            type="checkbox"
+            checked={ticked.size === occasions.length}
+            onChange={(e) =>
+              setTicked(e.target.checked ? new Set(occasions.map((o) => o.id)) : new Set())
+            }
+            className="accent-accent"
+          />
+          Select all {occasions.length}
+        </label>
+      )}
+
       {occasions.length === 0 ? (
         <div className="card p-8 text-center text-sm text-muted">
           Nothing waiting for approval right now.
@@ -130,6 +273,17 @@ export function ApprovalsClient({
               <div key={occasion.id} className="card flex flex-col gap-3 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={ticked.has(occasion.id)}
+                      onChange={() => toggleTick(occasion.id)}
+                      aria-label={`Select ${
+                        occasion.recipient
+                          ? `${occasion.recipient.firstName} ${occasion.recipient.lastName}`
+                          : (OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type)
+                      }`}
+                      className="accent-accent"
+                    />
                     <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-accent-soft text-xs font-semibold text-accent">
                       {(OCCASION_TYPE_LABELS[occasion.type] ?? occasion.type).slice(0, 3)}
                     </div>

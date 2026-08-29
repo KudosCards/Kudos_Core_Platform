@@ -1397,6 +1397,71 @@ describe("Batch orders (e2e)", () => {
       ).toBe(true);
     });
 
+    it("counts a skipped birthday apart from a contact who has none", async () => {
+      // The composer used to fold these together and tell the sender "no
+      // occasion on file". For a skipped birthday that is untrue — it is on
+      // file, it is ahead of them, and restoring it is the one thing they could
+      // do about it. A school that cleared its approvals queue in a hurry read
+      // that line fifteen minutes later and had no way to know what it meant;
+      // twelve cards meant for twelve birthdays went out as one undated batch.
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const matched = await contactWithBirthday(token, accountId, 40);
+      const skippedOne = await contactWithBirthday(token, accountId, 30);
+      // No birthday at all — genuinely nothing to time to.
+      const noBirthday = await createRecipientWithAddress(token);
+
+      await prisma.occasion.updateMany({
+        where: { accountId, recipientId: skippedOne.contactId },
+        data: { status: "skipped" },
+      });
+
+      const preflight = await request(app.getHttpServer())
+        .post("/batch-orders/preflight")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [matched.contactId, skippedOne.contactId, noBirthday],
+          postageClass: "second_class",
+        })
+        .expect(201);
+      const { occasionDated } = preflight.body as {
+        occasionDated: { count: number; skipped: number };
+      };
+
+      // One will be timed, one is skipped-but-restorable, one has nothing.
+      expect(occasionDated.count).toBe(1);
+      expect(occasionDated.skipped).toBe(1);
+    });
+
+    it("does not offer to restore a skipped birthday that has already gone", async () => {
+      // Only a date still ahead can be restored — `unskip` refuses the rest. A
+      // count that included last month's skips would promise the sender a fix
+      // the product would then refuse to perform.
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const contact = await contactWithBirthday(token, accountId, 40);
+
+      await prisma.occasion.updateMany({
+        where: { accountId, recipientId: contact.contactId },
+        data: { status: "skipped", occasionDate: new Date(Date.now() - 30 * 86_400_000) },
+      });
+
+      const preflight = await request(app.getHttpServer())
+        .post("/batch-orders/preflight")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [contact.contactId],
+          postageClass: "second_class",
+        })
+        .expect(201);
+
+      expect((preflight.body as { occasionDated: { skipped: number } }).occasionDated.skipped).toBe(
+        0,
+      );
+    });
+
     it("previews the occasion dating the send will actually apply", async () => {
       const { token, accountId } = await signUp();
       const savedDesignId = await createSavedDesign(token);

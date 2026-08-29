@@ -107,6 +107,18 @@ export class OccasionsController {
     return this.occasionsService.skip(membership.accountId, user.id, id);
   }
 
+  /** Undo a skip, putting the occasion back in the approvals queue. Skipping was
+   * a one-way door until this existed, and a queue cleared in a hurry took live
+   * birthdays with it. See OccasionsService.unskip. */
+  @Post(":id/unskip")
+  unskip(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<Occasion> {
+    return this.occasionsService.unskip(membership.accountId, user.id, id);
+  }
+
   /** Cancel an approval (e.g. a scheduled auto-send) before it's sent, returning
    * the occasion to the approvals queue. */
   @Post(":id/unapprove")

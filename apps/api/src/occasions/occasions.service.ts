@@ -13,6 +13,7 @@ import { EntitlementsService } from "../entitlements/entitlements.service";
 import type { CalendarOccasionsResponse } from "@kudos/shared-types";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
+import { startOfUtcDay } from "./birthday-occasion.util";
 import {
   DEFAULT_POSTAGE_LEAD_DAYS,
   POSTAGE_LEAD_DAYS,
@@ -559,6 +560,56 @@ export class OccasionsService {
       targetId: id,
     });
     return occasion;
+  }
+
+  /**
+   * Put a skipped occasion back in the approvals queue (`skipped` →
+   * `pending_approval`).
+   *
+   * Skipping used to be a one-way door. One click, no confirmation, no undo —
+   * and the occasion was gone for the year, invisible to the approvals queue,
+   * the send matcher and the customer alike. A school clearing a queue of
+   * birthdays that had already passed skipped twenty-seven in about as many
+   * seconds; ten of them were live birthdays weeks away, and the cards they
+   * then paid for went out as one undated batch rather than on each child's day.
+   * Nothing in the product could undo that. This is the way back.
+   *
+   * Only a date still ahead can be restored. Returning a birthday that has been
+   * would put an un-sendable card back in the queue — the very thing the nightly
+   * sweep now retires, and the pile that caused the sweeping in the first place.
+   */
+  async unskip(accountId: string, actorUserId: string, id: string): Promise<Occasion> {
+    const today = startOfUtcDay(new Date());
+    const { count } = await this.prisma.occasion.updateMany({
+      where: { id, accountId, status: "skipped", occasionDate: { gte: today } },
+      data: { status: "pending_approval" },
+    });
+    if (count === 0) {
+      const existing = await this.prisma.occasion.findFirst({ where: { id, accountId } });
+      if (!existing) {
+        throw new NotFoundException("Occasion not found");
+      }
+      if (existing.status !== "skipped") {
+        throw new ConflictException(
+          `This occasion is "${existing.status}", not skipped, so there is nothing to restore`,
+        );
+      }
+      throw new ConflictException(
+        "That date has already passed, so this can no longer be restored",
+      );
+    }
+
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "unskip",
+      targetType: "Occasion",
+      targetId: id,
+    });
+    return this.prisma.occasion.findFirstOrThrow({
+      where: { id, accountId },
+      include: { recipient: RECIPIENT_SELECT },
+    });
   }
 
   /**

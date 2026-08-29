@@ -35,6 +35,10 @@ export interface OccasionDatingSummary {
   total: number;
   earliest: string | null;
   latest: string | null;
+  /** Contacts whose birthday is still ahead but skipped, so it cannot be timed
+   * to until it is restored. Told apart from "no birthday at all" because the
+   * sender can do something about one and not the other. */
+  skipped: number;
 }
 
 /**
@@ -156,6 +160,11 @@ export function SendTimingPicker({
   // A single dated card, or several sharing one occasion day, all post together.
   const onePostingDay = firstPost !== null && firstPost === lastPost;
   const undated = occasionDating ? occasionDating.total - occasionDating.count : 0;
+  // Of the ones that won't be timed, how many *could* be. A skipped birthday is
+  // still on file and can be restored in Approvals; telling the sender they have
+  // "no occasion on file" was untrue and hid the only thing they could act on.
+  const skippedAhead = Math.min(occasionDating?.skipped ?? 0, undated);
+  const noBirthday = undated - skippedAhead;
   // Every option answers the same question in the same shape — "which cards, on
   // what day" — so the three can be compared at a glance instead of each being
   // phrased its own way.
@@ -198,12 +207,29 @@ export function SendTimingPicker({
                   <strong>{formatLong(lastPost!)}</strong>, each ahead of its own occasion.
                 </>
               )}
-              {undated > 0 && (
+              {noBirthday > 0 && (
                 <>
                   {" "}
-                  The other {undated === 1 ? "card has" : `${undated} have`} no occasion on file —{" "}
-                  {undated === 1 ? "it posts" : "they post"}{" "}
+                  {skippedAhead > 0 ? "Another" : "The other"}{" "}
+                  {noBirthday === 1 ? "card has" : `${noBirthday} have`} no birthday on file —{" "}
+                  {noBirthday === 1 ? "it posts" : "they post"}{" "}
                   <strong>{sendNowIsToday ? "today" : formatLong(sendNowPostsOn)}</strong>.
+                </>
+              )}
+              {skippedAhead > 0 && (
+                <>
+                  {" "}
+                  <strong>
+                    {skippedAhead} {skippedAhead === 1 ? "has a birthday" : "have birthdays"} coming
+                    up that {skippedAhead === 1 ? "was" : "were"} skipped
+                  </strong>
+                  , so {skippedAhead === 1 ? "it posts" : "they post"}{" "}
+                  {sendNowIsToday ? "today" : formatLong(sendNowPostsOn)} with the rest. Restore{" "}
+                  {skippedAhead === 1 ? "it" : "them"} in{" "}
+                  <a href="/approvals" className="underline hover:text-foreground">
+                    Approvals
+                  </a>{" "}
+                  first to time {skippedAhead === 1 ? "that card" : "those cards"} properly.
                 </>
               )}
             </span>
