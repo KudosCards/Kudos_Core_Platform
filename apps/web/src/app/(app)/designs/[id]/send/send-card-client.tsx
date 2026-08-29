@@ -247,7 +247,7 @@ export function SendCardClient({
         </Link>
         <h1 className="text-3xl font-bold tracking-tight">Send your card</h1>
         <p className="text-muted">
-          Tell us who it&apos;s for and we&apos;ll print &amp; post a real card to their door.
+          Tell us who it’s for and we’ll print & post a real card to their door.
         </p>
       </div>
 
@@ -259,7 +259,7 @@ export function SendCardClient({
         className="grid gap-6 lg:grid-cols-[1.4fr_1fr]"
       >
         <div className="card flex flex-col gap-4 p-6">
-          <h2 className="font-semibold">Who&apos;s this card for?</h2>
+          <h2 className="font-semibold">Who’s this card for?</h2>
 
           {selectedContactId ? (
             // Sending to a saved contact — show who, with a way back to search.
@@ -441,7 +441,7 @@ export function SendCardClient({
                       Upgrade to add message pages
                     </Link>
                   )}{" "}
-                  to use this card&apos;s QR code.
+                  to use this card’s QR code.
                 </p>
               )}
             </fieldset>

@@ -73,8 +73,8 @@ export function CookieBanner() {
     >
       <div className="mx-auto flex max-w-4xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-600">
-          We&rsquo;d like to use analytics cookies to understand how the site is used. They&rsquo;re
-          off unless you say yes, and the site works either way.{" "}
+          We’d like to use analytics cookies to understand how the site is used. They’re off unless
+          you say yes, and the site works either way.{" "}
           <Link href="/privacy" className="font-medium text-slate-900 underline">
             Privacy policy
           </Link>

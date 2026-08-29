@@ -119,7 +119,7 @@ export function ReturnRecoveryPanel({
               </span>
             </p>
             <p className="text-xs text-muted">
-              Kudos Promise: once the address is corrected, we&apos;ll resend this card{" "}
+              Kudos Promise: once the address is corrected, we’ll resend this card{" "}
               <strong>free of charge</strong>, once.
             </p>
 
@@ -179,8 +179,8 @@ export function ReturnRecoveryPanel({
                 </p>
                 {c.resend.birthdayPassed && (
                   <p className="rounded-md bg-warning-soft px-3 py-2 text-xs text-foreground">
-                    This birthday has already passed, so it can&apos;t be resent in time — you can
-                    still have the original card hand-delivered to your business, or archive it.
+                    This birthday has already passed, so it can’t be resent in time — you can still
+                    have the original card hand-delivered to your business, or archive it.
                   </p>
                 )}
                 <div className="flex flex-wrap items-center gap-2">

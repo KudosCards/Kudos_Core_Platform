@@ -153,7 +153,7 @@ export default async function AdminOverviewPage() {
     serverApiFetch<MustShipSummary>("/fulfillment/must-ship").catch(() => null),
   ]);
   if (!overview) {
-    return <p className="text-sm text-muted">Couldn&apos;t load the dashboard.</p>;
+    return <p className="text-sm text-muted">Couldn’t load the dashboard.</p>;
   }
 
   const planMax = Math.max(1, ...overview.subscribersByPlan.map((p) => p.count));

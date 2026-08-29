@@ -79,10 +79,10 @@ export function AdminTeamClient({
 
       {!emailConfigured && (
         <div className="rounded-lg border border-[#a8630a]/30 bg-[#fff4e5] px-4 py-3 text-sm text-[#7a4708]">
-          <p className="font-semibold">Email sending isn&apos;t configured.</p>
+          <p className="font-semibold">Email sending isn’t configured.</p>
           <p className="mt-0.5">
-            Invited operators won&apos;t receive an email — share the operator sign-in link with
-            them directly. They still get access as soon as they sign in with their invited email.
+            Invited operators won’t receive an email — share the operator sign-in link with them
+            directly. They still get access as soon as they sign in with their invited email.
           </p>
         </div>
       )}
@@ -179,8 +179,8 @@ export function AdminTeamClient({
             </button>
           </form>
           <p className="text-xs text-foreground/50">
-            We&apos;ll email them a link to the operator sign-in. They get access as soon as they
-            sign in with this email.
+            We’ll email them a link to the operator sign-in. They get access as soon as they sign in
+            with this email.
           </p>
 
           {team.invites.length > 0 && (

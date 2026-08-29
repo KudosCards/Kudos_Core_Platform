@@ -83,7 +83,7 @@ export function InviteAcceptClient({ token, preview }: { token: string; preview:
       <div className="card flex flex-col gap-2 p-8 text-center">
         <h1 className="text-xl font-bold">Confirm your email</h1>
         <p className="text-sm text-muted">
-          We&apos;ve sent a confirmation link to <strong>{preview.email}</strong>. Confirm it, then
+          We’ve sent a confirmation link to <strong>{preview.email}</strong>. Confirm it, then
           reopen this invite to finish joining.
         </p>
       </div>
@@ -96,7 +96,7 @@ export function InviteAcceptClient({ token, preview }: { token: string; preview:
     <div className="card flex flex-col gap-5 p-8">
       <div className="flex flex-col gap-1 text-center">
         <h1 className="text-xl font-bold">Join {preview.accountName}</h1>
-        <p className="text-sm text-muted">You&apos;ve been invited to join as {roleLabel}.</p>
+        <p className="text-sm text-muted">You’ve been invited to join as {roleLabel}.</p>
       </div>
 
       {error && <p className="notice notice-danger">{error}</p>}
@@ -113,7 +113,7 @@ export function InviteAcceptClient({ token, preview }: { token: string; preview:
           </button>
         ) : (
           <p className="text-sm text-muted">
-            You&apos;re signed in as <strong>{sessionEmail}</strong>, but this invite is for{" "}
+            You’re signed in as <strong>{sessionEmail}</strong>, but this invite is for{" "}
             <strong>{preview.email}</strong>. Sign out and sign back in with the invited email to
             accept.
           </p>

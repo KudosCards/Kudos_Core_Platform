@@ -33,7 +33,7 @@ export default async function GiftSuccessPage({
         </div>
         <h1 className="text-3xl font-extrabold tracking-tight">Your card is on its way!</h1>
         <p className="text-slate-600">
-          Thanks — we&apos;re printing your card and posting it out. A receipt is on its way to your
+          Thanks — we’re printing your card and posting it out. A receipt is on its way to your
           email.
         </p>
         <div className="mt-2 flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-6">

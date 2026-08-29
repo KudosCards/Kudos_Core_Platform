@@ -88,9 +88,9 @@ export function RtsRecoveryClient({
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-bold">A card to {rtsCase.recipientName} came back</h1>
         <p className="text-sm text-muted">
-          We couldn&apos;t deliver it because {REASON_LABELS[rtsCase.reason] ?? "it was returned"}.
-          As part of our Kudos Promise, we&apos;ll resend it <strong>free of charge</strong> once
-          you confirm the address.
+          We couldn’t deliver it because {REASON_LABELS[rtsCase.reason] ?? "it was returned"}. As
+          part of our Kudos Promise, we’ll resend it <strong>free of charge</strong> once you
+          confirm the address.
         </p>
       </div>
 
@@ -133,7 +133,7 @@ export function RtsRecoveryClient({
           <p className="text-sm font-medium">Address updated — how should we recover this card?</p>
           {rtsCase.resend.birthdayPassed && (
             <p className="rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900">
-              This birthday has already passed, so it can&apos;t arrive in time — but we can still
+              This birthday has already passed, so it can’t arrive in time — but we can still
               hand-deliver the original card to your business, or you can archive it.
             </p>
           )}

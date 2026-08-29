@@ -7,8 +7,8 @@ export default function BatchOrderSuccessPage() {
         <span className="text-4xl">🎉</span>
         <h1 className="text-2xl font-bold tracking-tight">Your card is on its way</h1>
         <p className="text-muted">
-          Payment received — we&apos;re printing and posting it now. You can follow it through
-          printing and posting from your orders at any time.
+          Payment received — we’re printing and posting it now. You can follow it through printing
+          and posting from your orders at any time.
         </p>
         <div className="flex flex-wrap gap-3">
           <Link href="/orders" className="btn-accent">

@@ -38,8 +38,8 @@ export default async function CardsPage() {
         <div className="flex max-w-2xl flex-col gap-3">
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">Our card library</h1>
           <p className="text-slate-600">
-            Pick a design you love, personalise it with your centre&apos;s message, and we print and
-            post a real card. No account needed to browse.
+            Pick a design you love, personalise it with your centre’s message, and we print and post
+            a real card. No account needed to browse.
           </p>
           <p className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
             {CARD_SIZE_NOTICE}

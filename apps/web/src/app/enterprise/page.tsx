@@ -38,9 +38,9 @@ export default function EnterprisePage() {
               Kudos at scale for your whole organisation
             </h1>
             <p className="max-w-lg text-lg text-slate-600">
-              Running multiple sites, a franchise, or thousands of contacts? We&apos;ll tailor
-              pricing and setup around your organisation — tell us what you need and we&apos;ll take
-              it from there.
+              Running multiple sites, a franchise, or thousands of contacts? We’ll tailor pricing
+              and setup around your organisation — tell us what you need and we’ll take it from
+              there.
             </p>
 
             <ul className="flex flex-col gap-3">
@@ -82,7 +82,7 @@ export default function EnterprisePage() {
               Log in
             </Link>
             <Link href="/terms" className="text-sm text-slate-600 hover:text-slate-900">
-              Terms &amp; Conditions
+              Terms & Conditions
             </Link>
             <Link href="/privacy" className="text-sm text-slate-600 hover:text-slate-900">
               Privacy Policy

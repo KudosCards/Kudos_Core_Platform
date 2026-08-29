@@ -44,8 +44,8 @@ export default function ForgotPasswordPage() {
       <div className="flex flex-col gap-2 text-center">
         <h1 className="text-xl font-bold tracking-tight">Check your email</h1>
         <p className="text-sm text-muted">
-          If that email has a Kudos account, we&apos;ve sent a link to reset your password. It may
-          take a minute to arrive — check your spam folder too.
+          If that email has a Kudos account, we’ve sent a link to reset your password. It may take a
+          minute to arrive — check your spam folder too.
         </p>
         <Link href="/login" className="mt-2 text-sm text-accent hover:underline">
           Back to log in
@@ -59,7 +59,7 @@ export default function ForgotPasswordPage() {
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-bold tracking-tight">Reset your password</h1>
         <p className="text-sm text-muted">
-          Enter your email and we&apos;ll send you a link to choose a new password.
+          Enter your email and we’ll send you a link to choose a new password.
         </p>
       </div>
       {error && <p className="notice notice-danger">{error}</p>}

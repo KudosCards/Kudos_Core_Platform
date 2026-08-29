@@ -54,7 +54,7 @@ export function DeleteAccountSection({ accountName }: { accountName: string }) {
           <p className="font-medium">Delete this account</p>
           <p className="text-sm text-muted">
             Permanently removes your contacts, designs, orders, and team, and cancels any
-            subscription. This can&apos;t be undone.
+            subscription. This can’t be undone.
           </p>
         </div>
 

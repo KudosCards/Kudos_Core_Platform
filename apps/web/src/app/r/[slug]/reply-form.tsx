@@ -65,7 +65,7 @@ export function ReplyForm({ slug }: { slug: string }) {
         className={`${INPUT} resize-y`}
       />
       {state === "error" && (
-        <p className="text-sm text-danger">Couldn&apos;t send that — please try again.</p>
+        <p className="text-sm text-danger">Couldn’t send that — please try again.</p>
       )}
       <button
         type="submit"

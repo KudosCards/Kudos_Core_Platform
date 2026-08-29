@@ -41,10 +41,10 @@ export function ArrivalSweepButton() {
     <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-5">
       <h2 className="text-xs font-medium tracking-wide text-muted uppercase">Arrival sweep</h2>
       <p className="text-sm text-muted">
-        Estimated-arrival emails for stamped post. Standard letters aren&rsquo;t tracked, so a daily
-        sweep marks each posted card delivered once its estimated arrival has passed and emails the
-        buyer a &ldquo;should have arrived&rdquo; note. Runs automatically each morning when enabled
-        — use this to force a run now.
+        Estimated-arrival emails for stamped post. Standard letters aren’t tracked, so a daily sweep
+        marks each posted card delivered once its estimated arrival has passed and emails the buyer
+        a “should have arrived” note. Runs automatically each morning when enabled — use this to
+        force a run now.
       </p>
 
       {error && <p className="text-sm font-medium text-danger">{error}</p>}
@@ -52,7 +52,7 @@ export function ArrivalSweepButton() {
         <p className="text-sm text-foreground">
           <span className="font-medium text-emerald-700">Done.</span> Checked{" "}
           {result.checked.toLocaleString("en-GB")} posted card{result.checked === 1 ? "" : "s"};{" "}
-          {result.notified.toLocaleString("en-GB")} marked arrived &amp; emailed.
+          {result.notified.toLocaleString("en-GB")} marked arrived & emailed.
           {result.checked > 0 && result.notified === 0 && (
             <span className="text-muted">
               {" "}

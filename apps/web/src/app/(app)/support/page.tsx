@@ -23,8 +23,8 @@ export default function SupportPage() {
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Support</h1>
         <p className="text-muted">
-          Need a hand? Raise a ticket and our support team will reply here — you&apos;ll get an
-          email and a notification when they do.
+          Need a hand? Raise a ticket and our support team will reply here — you’ll get an email and
+          a notification when they do.
         </p>
       </div>
 
@@ -46,7 +46,7 @@ async function TicketList() {
   if (tickets.length === 0) {
     return (
       <div className="card p-8 text-center text-sm text-muted">
-        You haven&apos;t raised any tickets yet. Use the form above to get in touch.
+        You haven’t raised any tickets yet. Use the form above to get in touch.
       </div>
     );
   }

@@ -137,7 +137,7 @@ function BucketPanel({
       )}
       {!fixable && label === "Personalisation gaps" && (
         <p className="mt-1.5 text-xs text-muted">
-          These tokens have no value for the contact, so they&apos;d print as-is.{" "}
+          These tokens have no value for the contact, so they’d print as-is.{" "}
           <a href={editDesignHref} className="text-accent hover:underline">
             Edit the design
           </a>{" "}
@@ -235,8 +235,7 @@ export function PreSendCheck({
         <div className="flex flex-col gap-1 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2.5 text-sm text-foreground">
           <span className="banner-lead">
             {preflight.backArtworkClipped.elements} item
-            {preflight.backArtworkClipped.elements === 1 ? "" : "s"} on the back won&apos;t be
-            printed
+            {preflight.backArtworkClipped.elements === 1 ? "" : "s"} on the back won’t be printed
           </span>
           <span className="text-xs">
             The bottom {BACK_RESERVED_FOOTER_MM}mm of the back is already printed on the card with
@@ -278,8 +277,8 @@ export function PreSendCheck({
             />
           ))}
           <p className="text-xs text-muted">
-            A card can appear under more than one check — fixing one won&apos;t hide the others.
-            Address problems block a card; the rest still send, just worth a look first.
+            A card can appear under more than one check — fixing one won’t hide the others. Address
+            problems block a card; the rest still send, just worth a look first.
           </p>
         </div>
       )}

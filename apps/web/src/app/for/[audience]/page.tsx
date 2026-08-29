@@ -74,7 +74,7 @@ export default async function AudiencePage({ params }: { params: Promise<{ audie
           <div className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
             <nav className="text-sm text-slate-500">
               <Link href="/for" className="hover:text-slate-900">
-                ← Who it&apos;s for
+                ← Who it’s for
               </Link>
             </nav>
             <h1 className="mt-4 text-3xl font-extrabold tracking-tight sm:text-4xl">

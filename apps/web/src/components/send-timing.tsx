@@ -263,7 +263,7 @@ export function SendTimingPicker({
               <>
                 {sendNowIsToday ? (
                   <>
-                    Posted <strong>today</strong>, as soon as it&apos;s printed.
+                    Posted <strong>today</strong>, as soon as it’s printed.
                   </>
                 ) : (
                   <>

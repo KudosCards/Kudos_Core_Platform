@@ -154,7 +154,7 @@ export function GetStartedChecklist({
             }`}
           />
           <span>
-            <span className="font-semibold group-hover:underline">Let&apos;s get you set up</span>
+            <span className="font-semibold group-hover:underline">Let’s get you set up</span>
             {!isCollapsed && (
               <span className="block text-sm text-muted">
                 Three steps to your first automated birthday card.

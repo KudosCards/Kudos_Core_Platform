@@ -56,10 +56,9 @@ export function SubscriptionBackfillButton() {
         Subscription income
       </h2>
       <p className="text-sm text-muted">
-        Reads every paid invoice from Stripe and records the subscription ones, so each
-        customer&rsquo;s page shows what they have actually paid us. Run it once to import the
-        history, and again any time you suspect a payment was missed — repeat runs can&rsquo;t
-        double-count.
+        Reads every paid invoice from Stripe and records the subscription ones, so each customer’s
+        page shows what they have actually paid us. Run it once to import the history, and again any
+        time you suspect a payment was missed — repeat runs can’t double-count.
       </p>
 
       {error && <p className="text-sm font-medium text-danger">{error}</p>}
@@ -73,15 +72,14 @@ export function SubscriptionBackfillButton() {
           </p>
           {result.notSubscription > 0 && (
             <p className="text-xs text-muted">
-              {result.notSubscription.toLocaleString("en-GB")} weren&rsquo;t subscription invoices
-              (card orders and one-offs) and were left alone.
+              {result.notSubscription.toLocaleString("en-GB")} weren’t subscription invoices (card
+              orders and one-offs) and were left alone.
             </p>
           )}
           {result.unmatched > 0 && (
             <p className="text-xs text-amber-600">
-              {result.unmatched.toLocaleString("en-GB")} couldn&rsquo;t be matched to an account —
-              that income is missing from someone&rsquo;s record. Check the API logs for the invoice
-              ids.
+              {result.unmatched.toLocaleString("en-GB")} couldn’t be matched to an account — that
+              income is missing from someone’s record. Check the API logs for the invoice ids.
             </p>
           )}
           {result.truncated && (

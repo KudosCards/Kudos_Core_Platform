@@ -226,9 +226,7 @@ export function MessagePageBuilder({ page }: { page: MessagePageDetail | null })
             </p>
           )}
           {videoWarning && (
-            <p className="mt-1 text-xs text-danger">
-              That link isn&apos;t from a supported provider.
-            </p>
+            <p className="mt-1 text-xs text-danger">That link isn’t from a supported provider.</p>
           )}
         </Field>
 

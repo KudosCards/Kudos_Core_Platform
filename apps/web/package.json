@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings 0",
-    "test": "node scripts/check-design-tokens.mjs && jest",
+    "test": "node scripts/check-design-tokens.mjs && node scripts/check-jsx-text.mjs && jest",
     "typecheck": "tsc --noEmit",
     "analyze:bundle": "node scripts/analyze-bundle.mjs",
     "clipart:build": "node scripts/build-clipart.mjs",

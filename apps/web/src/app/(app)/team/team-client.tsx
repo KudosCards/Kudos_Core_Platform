@@ -195,8 +195,7 @@ export function TeamClient({ initialTeam }: { initialTeam: Team }) {
             <h2 className="font-semibold">Invite a teammate</h2>
             {atLimit && (
               <div className="rounded-lg bg-accent-soft px-4 py-3 text-sm text-accent">
-                You&apos;ve used all {seats.limit} of your seats. Add a seat above to invite more
-                people.
+                You’ve used all {seats.limit} of your seats. Add a seat above to invite more people.
               </div>
             )}
             <form onSubmit={(e) => void invite(e)} className="flex flex-wrap items-end gap-3">

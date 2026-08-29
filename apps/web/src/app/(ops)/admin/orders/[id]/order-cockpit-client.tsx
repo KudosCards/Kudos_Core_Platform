@@ -421,7 +421,7 @@ export function OrderCockpit({
           {redate.redated === 0 && (
             <p className="border-b border-border bg-amber-50 px-4 py-3 text-xs text-amber-900">
               Nothing moved. Every card here either has no dated occasion to move to — the recipient
-              has no birthday on file, or it&apos;s a genuine one-off campaign card — or was already
+              has no birthday on file, or it’s a genuine one-off campaign card — or was already
               re-dated by an earlier run.
             </p>
           )}
@@ -543,7 +543,7 @@ export function OrderCockpit({
                     {clickAndDropEnabled && line.clickAndDropError && (
                       <p className="mt-1 text-xs">
                         <span title={line.clickAndDropError} className="text-amber-700">
-                          ⚠ Click &amp; Drop import failed
+                          ⚠ Click & Drop import failed
                         </span>{" "}
                         <button
                           type="button"

@@ -91,7 +91,7 @@ export function BasketClient() {
       <div className="mx-auto max-w-md rounded-2xl border border-slate-100 bg-slate-50 px-6 py-16 text-center">
         <p className="text-lg font-semibold text-slate-900">Your basket is empty</p>
         <p className="mt-1 text-sm text-slate-600">
-          Browse the card library, personalise a card for someone, and it&apos;ll appear here.
+          Browse the card library, personalise a card for someone, and it’ll appear here.
         </p>
         <Link
           href="/cards"
@@ -206,9 +206,7 @@ export function BasketClient() {
             />
             <span>
               <span className="font-medium">Send now</span>
-              <span className="block text-xs text-slate-400">
-                Posted as soon as it&apos;s printed.
-              </span>
+              <span className="block text-xs text-slate-400">Posted as soon as it’s printed.</span>
             </span>
           </label>
           <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 has-[:checked]:border-slate-400 has-[:checked]:bg-slate-50">
@@ -277,7 +275,7 @@ export function BasketClient() {
         <p className="text-center text-xs text-slate-400">
           By paying you agree to our{" "}
           <Link href="/terms" className="underline hover:text-slate-600">
-            Terms &amp; Conditions
+            Terms & Conditions
           </Link>{" "}
           and{" "}
           <Link href="/privacy" className="underline hover:text-slate-600">

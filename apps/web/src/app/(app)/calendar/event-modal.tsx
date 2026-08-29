@@ -509,7 +509,7 @@ function SendCohort({
       {localError && <p className="notice notice-danger">{localError}</p>}
       <p className="text-sm text-muted">
         One card to {unsentCount} contact{unsentCount === 1 ? "" : "s"} on {event.title}. Each is
-        addressed from the contact&apos;s own record.
+        addressed from the contact’s own record.
       </p>
 
       <label className="flex flex-col gap-1 text-sm text-muted">

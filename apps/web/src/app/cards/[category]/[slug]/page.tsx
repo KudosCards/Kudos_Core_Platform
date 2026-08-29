@@ -153,21 +153,20 @@ export default async function CardPreviewPage({
             </Link>
             <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{card.name}</h1>
             <p className="text-slate-600">
-              Make it yours — add your centre&apos;s message and every student&apos;s name is merged
-              in automatically. We print it and post a real card to their home.
+              Make it yours — add your centre’s message and every student’s name is merged in
+              automatically. We print it and post a real card to their home.
             </p>
             <ul className="flex flex-col gap-2 text-sm text-slate-600">
               <li className="flex items-center gap-2">
-                <span className="text-emerald-500">✓</span> Personalised with each recipient&apos;s
-                name
+                <span className="text-emerald-500">✓</span> Personalised with each recipient’s name
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-500">✓</span> Printed &amp; posted for you — from £
+                <span className="text-emerald-500">✓</span> Printed & posted for you — from £
                 {(CARD_PRICE_MINOR / 100).toFixed(2)} a card plus postage
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-emerald-500">✓</span> Add a scan-to-watch message page —
-                video, note &amp; link
+                video, note & link
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-emerald-500">✓</span> Printed {CARD_SIZE_LABEL} — more sizes

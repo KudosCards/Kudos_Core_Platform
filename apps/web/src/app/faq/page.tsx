@@ -109,8 +109,8 @@ export default function FaqPage() {
         <section className="mt-16 rounded-2xl bg-slate-50 px-6 py-8 text-center">
           <h2 className="text-xl font-extrabold tracking-tight">Still not sure?</h2>
           <p className="mx-auto mt-2 max-w-lg text-slate-600">
-            Have a look at the cards — you can send one without an account, and there&apos;s nothing
-            to pay until you do.
+            Have a look at the cards — you can send one without an account, and there’s nothing to
+            pay until you do.
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-3">
             <Link

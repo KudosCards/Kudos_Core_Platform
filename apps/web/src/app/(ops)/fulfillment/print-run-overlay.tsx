@@ -287,10 +287,10 @@ export function PrintRunOverlay({
         )}
         {reservedFooter === "reveal" && (
           <p className="order-last basis-full text-sm text-black/70" role="status">
-            Showing the customer&apos;s full uploaded artwork. Everything below the red dashed line
-            falls in the bottom {BACK_RESERVED_FOOTER_MM}mm that is already printed on the card with
-            the Kudos logo and QR, so it will not be printed. The print-ready PDF is unaffected by
-            this view.
+            Showing the customer’s full uploaded artwork. Everything below the red dashed line falls
+            in the bottom {BACK_RESERVED_FOOTER_MM}mm that is already printed on the card with the
+            Kudos logo and QR, so it will not be printed. The print-ready PDF is unaffected by this
+            view.
           </p>
         )}
         {lowResCount !== null && lowResCount > 0 && (

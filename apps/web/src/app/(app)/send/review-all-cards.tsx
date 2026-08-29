@@ -274,8 +274,8 @@ function ConfirmFooter({
               className="mt-0.5 size-4 accent-accent"
             />
             <span>
-              I&apos;ve reviewed the {chargeCount} card{chargeCount === 1 ? "" : "s"} and the
-              addresses they post to.
+              I’ve reviewed the {chargeCount} card{chargeCount === 1 ? "" : "s"} and the addresses
+              they post to.
             </span>
           </label>
         </div>

@@ -699,7 +699,7 @@ export function FulfillmentClient({
         <div className="rounded-xl border border-black/10 bg-black/[0.02] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold">Click &amp; Drop import status</h2>
+              <h2 className="text-sm font-semibold">Click & Drop import status</h2>
               {!cndStatus.enabled && (
                 <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-700">
                   not configured
@@ -731,7 +731,7 @@ export function FulfillmentClient({
           {cndStatus.recentImports.length > 0 && (
             <div className="mt-4">
               <p className="text-xs text-foreground/60">
-                Recently imported — search these references in your Click &amp; Drop dashboard to
+                Recently imported — search these references in your Click & Drop dashboard to
                 confirm our orders land in the right account:
               </p>
               <ul className="mt-1.5 space-y-1 text-xs">
@@ -1001,7 +1001,7 @@ export function FulfillmentClient({
                       <p className="mt-1 text-xs">
                         {job.clickAndDropOrderId ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800">
-                            ✓ In Click &amp; Drop
+                            ✓ In Click & Drop
                           </span>
                         ) : job.clickAndDropError ? (
                           <span className="inline-flex flex-wrap items-center gap-1.5">
@@ -1009,7 +1009,7 @@ export function FulfillmentClient({
                               title={job.clickAndDropError}
                               className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
                             >
-                              ⚠️ Click &amp; Drop import failed
+                              ⚠️ Click & Drop import failed
                             </span>
                             <button
                               type="button"
@@ -1021,7 +1021,7 @@ export function FulfillmentClient({
                             </button>
                           </span>
                         ) : (
-                          <span className="text-foreground/50">Importing to Click &amp; Drop…</span>
+                          <span className="text-foreground/50">Importing to Click & Drop…</span>
                         )}
                       </p>
                     )}
@@ -1126,7 +1126,7 @@ export function FulfillmentClient({
           <div className="flex flex-col items-center gap-3">
             <p className="text-sm text-foreground/60">
               {preview.orderRecipient.savedDesign.name} — printed exactly as shown, with this
-              recipient&apos;s name merged in.
+              recipient’s name merged in.
             </p>
             <CardFacePreview
               document={applyMergeTokens(preview.orderRecipient.savedDesign.document, {
