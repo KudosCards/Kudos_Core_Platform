@@ -30,6 +30,8 @@ export class DeliveryPollService {
    * carrier to ask). Royal Mail tracking updates through the day; hourly keeps
    * `delivered` fresh without hammering the API.
    */
+  // No timezone: an hour is an hour everywhere, so pinning one here would
+  // imply a decision about wall-clock time that isn't being made.
   @Cron("35 * * * *")
   async scheduledPoll(): Promise<void> {
     if (!this.royalMail.enabled) return;

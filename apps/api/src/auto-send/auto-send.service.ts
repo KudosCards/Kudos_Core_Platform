@@ -10,6 +10,7 @@ import { WalletService } from "../wallet/wallet.service";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import { computeCardPriceMinor, computePostageMinor } from "../billing/billing.constants";
 import { runSerializable } from "../common/run-serializable";
+import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 
 /** No human triggers the cron — mirrors the webhook's SYSTEM_ACTOR convention. */
 const SYSTEM_ACTOR = "system:auto-send";
@@ -53,7 +54,7 @@ export class AutoSendService {
 
   /** Runs after the 6am birthday scheduler so newly-scheduled occasions aren't
    * raced, though they still need human approval before they're ever eligible. */
-  @Cron(CronExpression.EVERY_DAY_AT_7AM)
+  @Cron(CronExpression.EVERY_DAY_AT_7AM, { timeZone: PLATFORM_TIME_ZONE })
   async runDue(): Promise<AutoSendResult> {
     const now = new Date();
     const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));

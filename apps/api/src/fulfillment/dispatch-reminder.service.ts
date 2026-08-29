@@ -9,6 +9,7 @@ import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
 import { PlatformNotificationService } from "../platform-notifications/platform-notification.service";
 import { DispatchConfigService } from "../dispatch/dispatch-config.service";
 import { FulfillmentService, type MustShipCard, type MustShipSummary } from "./fulfillment.service";
+import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 
 /** What one reminder run did — returned for tests + logging. */
 export interface DispatchReminderResult {
@@ -48,7 +49,7 @@ export class DispatchReminderService {
    * Weekends are skipped — Kudos HQ doesn't print/post then, and Monday's run
    * carries the weekend's cards. See ADR 0115/0117.
    */
-  @Cron("0 * * * 1-5")
+  @Cron("0 * * * 1-5", { timeZone: PLATFORM_TIME_ZONE })
   async scheduledReminder(): Promise<void> {
     const config = await this.dispatchConfig.getReminderConfig();
     if (!config.enabled) return;

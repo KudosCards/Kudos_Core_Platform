@@ -6,6 +6,7 @@ import { buildScheduledBirthdayOccasion, startOfUtcDay } from "./birthday-occasi
 import { promoteDueOccasions } from "./promote-due-occasions.util";
 import { retirePastOccasions } from "./retire-past-occasions.util";
 import { buildScheduledKeyDateOccasion } from "./key-date-occasion.util";
+import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 
 /**
  * How many rows the recurring scheduler pulls per page. The job runs across
@@ -56,7 +57,7 @@ export class OccasionSchedulerService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_6AM)
+  @Cron(CronExpression.EVERY_DAY_AT_6AM, { timeZone: PLATFORM_TIME_ZONE })
   async scheduleBirthdayOccasions(): Promise<OccasionSchedulerSummary> {
     const today = startOfUtcDay(new Date());
 

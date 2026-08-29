@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { StorageReaperService } from "./storage-reaper.service";
+import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 
 /**
  * Runs the orphaned-asset reaper nightly. A no-op (with a log line) unless
@@ -13,7 +14,7 @@ export class StorageReaperSchedulerService {
 
   constructor(private readonly reaper: StorageReaperService) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  @Cron(CronExpression.EVERY_DAY_AT_3AM, { timeZone: PLATFORM_TIME_ZONE })
   async run(): Promise<void> {
     if (!this.reaper.isEnabled()) {
       this.logger.log("Skipping scheduled storage reap — STORAGE_REAPER_ENABLED not set");

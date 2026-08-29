@@ -180,6 +180,7 @@ export class ClickAndDropService {
 
   /** Runs every 5 minutes: import any paid card not yet in Click & Drop. No-op
    * when import is disabled or a previous sweep is still running. */
+  // No timezone: five minutes is five minutes everywhere. See common/scheduling.ts.
   @Cron(CronExpression.EVERY_5_MINUTES)
   async scheduledSweep(): Promise<void> {
     if (!this.client.enabled || this.sweeping) return;

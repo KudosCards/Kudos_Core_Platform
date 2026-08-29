@@ -9,6 +9,7 @@ import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
 import { PlatformNotificationService } from "../platform-notifications/platform-notification.service";
 import { PAID_STATUSES } from "../admin/admin.service";
 import { formatMinor } from "./ops-activity.service";
+import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 
 /** One new account with a login, for the digest's sign-up list. */
 export interface DigestSignup {
@@ -103,7 +104,7 @@ export class OpsDigestService {
    * a human's morning. After the 07:00 auto-send run, and clear of the other
    * daily crons (03:00–09:00 are otherwise taken).
    */
-  @Cron("30 7 * * *", { timeZone: "Europe/London" })
+  @Cron("30 7 * * *", { timeZone: PLATFORM_TIME_ZONE })
   async scheduledDigest(): Promise<void> {
     await this.runDailyDigest();
   }

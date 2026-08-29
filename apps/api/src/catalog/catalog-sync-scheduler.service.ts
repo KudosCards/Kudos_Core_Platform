@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { CatalogSyncService } from "./catalog-sync.service";
+import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 
 /**
  * Keeps the catalog fresh without an operator having to remember to click
@@ -15,7 +16,7 @@ export class CatalogSyncSchedulerService {
 
   // 4am UK, not 4am UTC. @nestjs/schedule uses the process timezone unless it's
   // told otherwise, so without this the run drifts an hour with the clocks.
-  @Cron("0 4 * * *", { timeZone: "Europe/London" })
+  @Cron("0 4 * * *", { timeZone: PLATFORM_TIME_ZONE })
   async run(): Promise<void> {
     if (!this.catalogSync.isConfigured()) {
       this.logger.log("Skipping scheduled catalog sync — Airtable not configured");
