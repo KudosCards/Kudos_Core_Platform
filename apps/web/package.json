@@ -7,10 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings 0",
-    "test": "node scripts/check-design-tokens.mjs",
+    "test": "node scripts/check-design-tokens.mjs && jest",
     "typecheck": "tsc --noEmit",
     "analyze:bundle": "node scripts/analyze-bundle.mjs",
-    "clipart:build": "node scripts/build-clipart.mjs"
+    "clipart:build": "node scripts/build-clipart.mjs",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@kudos/shared-types": "workspace:*",
@@ -31,6 +32,11 @@
   "devDependencies": {
     "@kudos/config": "workspace:*",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.6",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
@@ -38,6 +44,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
     "eslint-config-prettier": "^9.1.0",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.5.0",
     "sharp": "^0.35.3",
     "svgo": "^4.0.2",
     "tailwindcss": "^4",

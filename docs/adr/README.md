@@ -183,5 +183,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0172 — Kudos HQ can set a plan by hand, unless Stripe owns it](./0172-admin-set-plan.md)
 - [0173 — The calendar reads its whole range, and says so when it can't](./0173-the-calendar-reads-its-whole-range.md)
 - [0174 — The approvals queue lets go, and skipping is no longer a one-way door](./0174-the-approvals-queue-lets-go.md)
+- [0175 — Component tests for the screens where a mistake costs money](./0175-component-tests-for-the-screens-that-cost-money.md)
 
 <!-- adr-index:end -->
