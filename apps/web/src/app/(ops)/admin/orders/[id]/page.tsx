@@ -20,7 +20,7 @@ function ProgressBreakdown({ progress }: { progress: AdminOrderDetail["progress"
   if (progress.total === 0) {
     return (
       <p className="text-sm text-muted">
-        This order isn&apos;t in fulfilment yet — cards enter the queue once it&apos;s paid.
+        This order isn’t in fulfilment yet — cards enter the queue once it’s paid.
       </p>
     );
   }
@@ -60,7 +60,7 @@ function ProgressBreakdown({ progress }: { progress: AdminOrderDetail["progress"
       </div>
       {(progress.imported > 0 || progress.importErrors > 0) && (
         <p className="text-xs text-muted">
-          Click &amp; Drop: {progress.imported.toLocaleString("en-GB")} imported
+          Click & Drop: {progress.imported.toLocaleString("en-GB")} imported
           {progress.importErrors > 0 && (
             <span className="text-amber-700">
               {" "}

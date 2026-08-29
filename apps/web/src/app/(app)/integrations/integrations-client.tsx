@@ -265,8 +265,8 @@ function BrevoConnector({
               </label>
             </div>
             <p className="mt-1 text-xs text-muted">
-              Name and email use Brevo&apos;s standard fields automatically. Set these only if you
-              store a birthday or postcode in custom Brevo attributes.
+              Name and email use Brevo’s standard fields automatically. Set these only if you store
+              a birthday or postcode in custom Brevo attributes.
             </p>
           </details>
           <div className="flex gap-2">
@@ -594,7 +594,7 @@ export function IntegrationsClient({
             {newKey && (
               <div className="card flex flex-col gap-2 border-accent/30 bg-accent-soft/50 p-4">
                 <p className="text-sm font-semibold text-accent">
-                  Here&apos;s your new key — copy it now, it won&apos;t be shown again.
+                  Here’s your new key — copy it now, it won’t be shown again.
                 </p>
                 <div className="flex items-center gap-2">
                   <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm">

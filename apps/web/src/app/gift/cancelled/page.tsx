@@ -13,8 +13,7 @@ export default function GiftCancelledPage() {
       <main className="mx-auto flex max-w-lg flex-col items-center gap-6 px-6 py-20 text-center">
         <h1 className="text-3xl font-extrabold tracking-tight">Checkout cancelled</h1>
         <p className="text-slate-600">
-          No worries — you haven&apos;t been charged. Your card is still waiting whenever
-          you&apos;re ready.
+          No worries — you haven’t been charged. Your card is still waiting whenever you’re ready.
         </p>
         <Link
           href="/cards"

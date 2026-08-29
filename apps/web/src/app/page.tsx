@@ -266,8 +266,8 @@ export default async function HomePage() {
               birthday, thank-you or big moment.
             </p>
             <p className="max-w-lg text-slate-600">
-              Whether it&apos;s a single birthday card or a thank-you to your whole customer list,
-              we print and post real cards for you. The people who matter feel remembered, and you
+              Whether it’s a single birthday card or a thank-you to your whole customer list, we
+              print and post real cards for you. The people who matter feel remembered, and you
               never have to remember a date again. No admin, no forgotten birthdays.
             </p>
             <div className="flex flex-wrap items-center gap-4">
@@ -288,8 +288,8 @@ export default async function HomePage() {
             <div className="mt-2 w-fit rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
               <Stars />
               <p className="mt-1 max-w-sm text-sm text-slate-600 italic">
-                &quot;Set it up in 10 minutes. Cards just go out. Parents message us to say thank
-                you — that never happened before.&quot;
+                “Set it up in 10 minutes. Cards just go out. Parents message us to say thank you —
+                that never happened before.”
               </p>
               <p className="mt-1 text-sm font-semibold">
                 Sarah T. — Tuition Centre Owner, Manchester
@@ -401,7 +401,7 @@ export default async function HomePage() {
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-6 py-16 md:grid-cols-2">
         <div className="flex flex-col gap-5">
           <h2 className="text-3xl font-bold tracking-tight">
-            Personalised with every recipient&apos;s name
+            Personalised with every recipient’s name
           </h2>
           <p className="text-slate-600">
             Your own message, printed inside every card. Pick a design you like, add a QR code that
@@ -533,9 +533,7 @@ export default async function HomePage() {
             <span className="rounded-full bg-amber-400/20 px-3 py-1 text-xs font-semibold text-amber-300">
               VERIFIED REVIEWS
             </span>
-            <h2 className="mt-4 text-3xl font-bold tracking-tight">
-              Don&apos;t take our word for it
-            </h2>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight">Don’t take our word for it</h2>
             <p className="mt-3 text-slate-300">
               Real feedback from the businesses, tutors and centres who use Kudos every day.
             </p>
@@ -555,7 +553,7 @@ export default async function HomePage() {
           <div className="mt-12 grid gap-6 border-t border-white/10 pt-10 text-center sm:grid-cols-3">
             <div>
               <p className="text-3xl font-extrabold text-amber-400">100+</p>
-              <p className="text-sm text-slate-300">Businesses, tutors &amp; teams using Kudos</p>
+              <p className="text-sm text-slate-300">Businesses, tutors & teams using Kudos</p>
             </div>
             <div>
               <p className="text-3xl font-extrabold text-amber-400">£2.50</p>
@@ -705,7 +703,7 @@ export default async function HomePage() {
                 Register
               </Link>
               <Link href="/for" className="hover:text-slate-900">
-                Who it&apos;s for
+                Who it’s for
               </Link>
               <Link href="/guides" className="hover:text-slate-900">
                 Guides
@@ -714,7 +712,7 @@ export default async function HomePage() {
                 FAQ
               </Link>
               <Link href="/terms" className="hover:text-slate-900">
-                Terms &amp; Conditions
+                Terms & Conditions
               </Link>
               <Link href="/privacy" className="hover:text-slate-900">
                 Privacy Policy

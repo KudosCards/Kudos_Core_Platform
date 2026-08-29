@@ -27,7 +27,7 @@ export default function AppError({
     <div className="flex flex-1 flex-col items-center justify-center gap-4 py-24 text-center">
       <h1 className="text-xl font-bold tracking-tight">Something went wrong</h1>
       <p className="max-w-md text-sm text-muted">
-        We couldn&apos;t load this page. This is usually temporary — try again in a moment.
+        We couldn’t load this page. This is usually temporary — try again in a moment.
       </p>
       <button type="button" onClick={() => reset()} className="btn-accent">
         Try again

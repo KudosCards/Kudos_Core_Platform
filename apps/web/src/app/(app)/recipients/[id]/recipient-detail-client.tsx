@@ -737,8 +737,8 @@ export function RecipientDetailClient({
         <div className="flex flex-col gap-1">
           <h2 className="text-lg font-semibold">Key dates</h2>
           <p className="text-sm text-muted">
-            Recurring renewal and anniversary dates. We&apos;ll schedule a card for each one every
-            year — just like birthdays.
+            Recurring renewal and anniversary dates. We’ll schedule a card for each one every year —
+            just like birthdays.
           </p>
         </div>
         <div className="flex flex-col divide-y divide-border">

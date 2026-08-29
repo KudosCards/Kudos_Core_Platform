@@ -89,7 +89,7 @@ export default function AdminLoginPage() {
 
       {notOperator ? (
         <div className="card flex flex-col items-center gap-3 p-8 text-center">
-          <h1 className="text-lg font-bold">This account isn&apos;t a Kudos operator</h1>
+          <h1 className="text-lg font-bold">This account isn’t a Kudos operator</h1>
           <p className="text-sm text-muted">
             Ask a super admin to grant your email operator access, then sign in again.
           </p>

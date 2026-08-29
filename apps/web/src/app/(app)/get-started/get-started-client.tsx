@@ -283,7 +283,7 @@ export function GetStartedClient({
       {/* Step 3 — the first send. */}
       <Step n={3} done={false} title="Design &amp; send a card">
         <p className="mb-3 text-sm text-muted">
-          Pick a design, personalise it, and we&apos;ll print and post a real card to their door.
+          Pick a design, personalise it, and we’ll print and post a real card to their door.
         </p>
         <Link href="/cards" className="btn-secondary">
           Browse card designs

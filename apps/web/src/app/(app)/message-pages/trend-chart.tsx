@@ -52,7 +52,7 @@ export function TrendChart({ series }: { series: MessagePageTimeSeries }) {
   if (total === 0) {
     return (
       <p className="rounded-lg border border-border bg-surface px-3 py-6 text-center text-xs text-muted">
-        No activity in the last {series.days} days yet — it&apos;ll show here once cards are opened.
+        No activity in the last {series.days} days yet — it’ll show here once cards are opened.
       </p>
     );
   }

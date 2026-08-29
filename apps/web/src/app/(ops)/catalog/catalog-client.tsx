@@ -72,7 +72,7 @@ export function CatalogClient({ configured }: { configured: boolean }) {
 
       {!configured && (
         <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700">
-          Airtable isn&apos;t connected yet. Set <code>AIRTABLE_API_KEY</code> and{" "}
+          Airtable isn’t connected yet. Set <code>AIRTABLE_API_KEY</code> and{" "}
           <code>AIRTABLE_BASE_ID</code> on the API service, then reload this page.
         </p>
       )}
@@ -118,7 +118,7 @@ export function CatalogClient({ configured }: { configured: boolean }) {
               ) : (
                 <div className="flex flex-col gap-1">
                   <p className="font-medium text-amber-600">
-                    Synced, but the public card library wasn&rsquo;t refreshed.
+                    Synced, but the public card library wasn’t refreshed.
                   </p>
                   <p className="text-xs text-foreground/60">
                     {summary.published.reason ??
@@ -147,10 +147,10 @@ export function CatalogClient({ configured }: { configured: boolean }) {
                 Updated, but still showing their previous artwork:
               </p>
               <p className="text-xs text-foreground/60">
-                The text on these cards is current — only the new image couldn&rsquo;t be stored.
-                The library accepts PNG, JPEG, WebP and GIF up to 10MB, so a HEIC straight off a
-                phone or an oversized print file will fail here. Re-export and re-attach in
-                Airtable, then sync again.
+                The text on these cards is current — only the new image couldn’t be stored. The
+                library accepts PNG, JPEG, WebP and GIF up to 10MB, so a HEIC straight off a phone
+                or an oversized print file will fail here. Re-export and re-attach in Airtable, then
+                sync again.
               </p>
               {summary.artworkFailed.map((c) => (
                 <p key={c.externalId} className="text-xs text-foreground/60">
@@ -164,10 +164,9 @@ export function CatalogClient({ configured }: { configured: boolean }) {
             <div className="flex flex-col gap-1 border-t border-black/10 pt-2">
               <p className="font-medium">Columns read from Airtable</p>
               <p className="text-xs text-foreground/60">
-                Column names aren&rsquo;t fixed in code — the sync takes the first one it
-                recognises. If a card&rsquo;s name looks wrong and editing it changes nothing,
-                it&rsquo;s almost always because the sync is reading a different column from the one
-                being edited.
+                Column names aren’t fixed in code — the sync takes the first one it recognises. If a
+                card’s name looks wrong and editing it changes nothing, it’s almost always because
+                the sync is reading a different column from the one being edited.
               </p>
               {Object.entries(summary.fieldMapping.fields).map(([field, resolution]) => (
                 <p key={field} className="text-xs text-foreground/70">
@@ -189,7 +188,7 @@ export function CatalogClient({ configured }: { configured: boolean }) {
           )}
           {summary.errors.length > 0 && (
             <div className="flex flex-col gap-1 border-t border-black/10 pt-2">
-              <p className="font-medium text-red-600">Cards that didn&apos;t import:</p>
+              <p className="font-medium text-red-600">Cards that didn’t import:</p>
               {summary.errors.map((e) => (
                 <p key={e.externalId} className="text-xs text-foreground/60">
                   {e.sku ?? e.externalId}: {e.reason}

@@ -128,9 +128,9 @@ export function CsvImport({ onImported }: { onImported?: (summary: ImportSummary
     return (
       <div className="flex flex-col gap-3">
         <p className="text-xs text-muted">
-          Upload any CSV — exported from a spreadsheet, your HR system, or another tool. We&apos;ll
-          detect the columns and let you match them to the right fields, so you don&apos;t need to
-          rename anything first.
+          Upload any CSV — exported from a spreadsheet, your HR system, or another tool. We’ll
+          detect the columns and let you match them to the right fields, so you don’t need to rename
+          anything first.
         </p>
         <input
           ref={fileInputRef}
@@ -153,8 +153,8 @@ export function CsvImport({ onImported }: { onImported?: (summary: ImportSummary
             {summary.rejected.length > 0 && (
               <details className="rounded-lg border border-border px-4 py-2 text-sm">
                 <summary className="cursor-pointer font-medium text-accent">
-                  {summary.rejected.length} row{summary.rejected.length === 1 ? "" : "s"}{" "}
-                  couldn&apos;t be imported — see why
+                  {summary.rejected.length} row{summary.rejected.length === 1 ? "" : "s"} couldn’t
+                  be imported — see why
                 </summary>
                 <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-xs text-muted">
                   {summary.rejected.slice(0, 20).map((r) => (
@@ -290,8 +290,7 @@ export function CsvImport({ onImported }: { onImported?: (summary: ImportSummary
             : `Import ${preview.totalRows} contact${preview.totalRows === 1 ? "" : "s"}`}
         </button>
         <p className="text-xs text-muted">
-          Contacts without a full address still import — we&apos;ll flag them as &ldquo;needs
-          address&rdquo;.
+          Contacts without a full address still import — we’ll flag them as “needs address”.
         </p>
       </div>
     </div>

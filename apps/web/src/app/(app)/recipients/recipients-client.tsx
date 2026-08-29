@@ -660,7 +660,7 @@ export function RecipientsClient({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent/30 bg-accent-soft px-4 py-3 text-sm">
           <p className="text-accent">
             <span className="font-semibold">
-              {missingTotal} contact{missingTotal === 1 ? "" : "s"} can&apos;t be posted to.
+              {missingTotal} contact{missingTotal === 1 ? "" : "s"} can’t be posted to.
             </span>{" "}
             {joinNames(missing.slice(0, 3).map((r) => `${r.firstName} ${r.lastName}`))}{" "}
             {missingTotal === 1 ? "is" : "are"} missing an address.
@@ -1168,9 +1168,9 @@ export function RecipientsClient({
           </div>
           <AddressFields key={addFormKey} required={false} />
           <p className="text-xs text-muted">
-            The address is optional — save the contact now and add it later. We&apos;ll flag anyone
-            without one and won&apos;t let a card be sent until it&apos;s added. A date of birth
-            puts their birthday on the calendar automatically.
+            The address is optional — save the contact now and add it later. We’ll flag anyone
+            without one and won’t let a card be sent until it’s added. A date of birth puts their
+            birthday on the calendar automatically.
           </p>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setAddOpen(false)} className="btn-secondary">

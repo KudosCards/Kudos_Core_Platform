@@ -183,7 +183,7 @@ export function ApprovalsClient({
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Approvals</h1>
         <p className="text-muted">
-          Review upcoming occasions and choose a design before they&apos;re sent.
+          Review upcoming occasions and choose a design before they’re sent.
           {autoSendEnabled
             ? " Turn on auto-send to have us order, pay from your wallet, and post the card automatically — timed to arrive on time."
             : ""}
@@ -423,7 +423,7 @@ export function ApprovalsClient({
           <div className="flex flex-col gap-1">
             <h2 className="text-lg font-semibold tracking-tight">Scheduled to auto-send</h2>
             <p className="text-sm text-muted">
-              Approved and waiting — we&apos;ll order, pay from your wallet, and post each one
+              Approved and waiting — we’ll order, pay from your wallet, and post each one
               automatically near its date. Cancel any time before then to bring it back for review.
             </p>
           </div>
@@ -474,7 +474,7 @@ export function ApprovalsClient({
 
       {savedDesigns.length === 0 && (
         <p className="text-sm text-muted">
-          You don&apos;t have any saved designs yet — visit{" "}
+          You don’t have any saved designs yet — visit{" "}
           <Link href="/designs" className="text-accent hover:underline">
             Designs
           </Link>{" "}

@@ -189,10 +189,10 @@ export function BillingClient({
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4">
         <div>
-          <p className="font-semibold">Invoices &amp; receipts</p>
+          <p className="font-semibold">Invoices & receipts</p>
           <p className="text-sm text-muted">
             Download your invoices and receipts, update your payment card, or cancel — all in
-            Stripe&apos;s secure billing portal.
+            Stripe’s secure billing portal.
           </p>
         </div>
         <button
@@ -209,7 +209,7 @@ export function BillingClient({
         <div>
           <p className="font-semibold">Birthday reminder emails</p>
           <p className="text-sm text-muted">
-            We&apos;ll email you a week before each upcoming birthday so nothing slips by.
+            We’ll email you a week before each upcoming birthday so nothing slips by.
           </p>
         </div>
         <button

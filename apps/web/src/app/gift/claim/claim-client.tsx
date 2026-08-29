@@ -75,7 +75,7 @@ export function ClaimClient({ token, email }: { token: string; email: string }) 
         <Link href="/login" className="font-medium text-rose-600 hover:underline">
           log in
         </Link>{" "}
-        and we&apos;ll finish saving your order.
+        and we’ll finish saving your order.
       </p>
     );
   }

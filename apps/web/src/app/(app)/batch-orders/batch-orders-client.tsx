@@ -303,7 +303,7 @@ export function BatchOrdersClient({
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Checkout</h1>
         <p className="text-muted">
-          This is where occasions you&apos;ve already approved on the{" "}
+          This is where occasions you’ve already approved on the{" "}
           <Link href="/calendar" className="text-accent hover:underline">
             calendar
           </Link>{" "}
@@ -335,7 +335,7 @@ export function BatchOrdersClient({
         <div className="flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning-soft p-4">
           <h2 className="font-semibold">Unfinished orders</h2>
           <p className="text-sm text-foreground/60">
-            These orders haven&apos;t been paid for yet — resume checkout or cancel to release their
+            These orders haven’t been paid for yet — resume checkout or cancel to release their
             cards back to Approvals.
           </p>
           <div className="flex flex-col gap-2">
@@ -416,7 +416,7 @@ export function BatchOrdersClient({
                 <p className="font-semibold">⚠️ Check the address before sending</p>
                 <p className="mt-1">
                   A card to {names} was recently returned. Update the address on the contact record
-                  if it&apos;s changed — otherwise it may come back again. You can still send now.
+                  if it’s changed — otherwise it may come back again. You can still send now.
                 </p>
               </div>
             );
@@ -437,7 +437,7 @@ export function BatchOrdersClient({
                 </p>
                 <p className="mt-1">
                   Cards use the first name in the greeting, so these may read oddly. Add a first
-                  name on the contact record before sending, or continue if that&apos;s intended.
+                  name on the contact record before sending, or continue if that’s intended.
                 </p>
               </div>
             );
@@ -588,7 +588,7 @@ export function BatchOrdersClient({
             {selectedIds.length} of {maxPerOrder} selected
             {selectedIds.length > maxPerOrder && (
               <span className="ml-2 font-medium text-warning">
-                — that&apos;s over the {maxPerOrder}-card limit for this order. Deselect{" "}
+                — that’s over the {maxPerOrder}-card limit for this order. Deselect{" "}
                 {selectedIds.length - maxPerOrder} to continue.
               </span>
             )}
@@ -627,7 +627,7 @@ export function BatchOrdersClient({
       <p className="text-xs text-muted">
         By paying you agree to our{" "}
         <Link href="/terms" className="hover:underline">
-          Terms &amp; Conditions
+          Terms & Conditions
         </Link>{" "}
         and{" "}
         <Link href="/privacy" className="hover:underline">

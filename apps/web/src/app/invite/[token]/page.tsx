@@ -28,7 +28,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
 
       {invalid ? (
         <div className="card flex flex-col items-center gap-3 p-8 text-center">
-          <h1 className="text-xl font-bold">This invite isn&apos;t valid</h1>
+          <h1 className="text-xl font-bold">This invite isn’t valid</h1>
           <p className="text-sm text-muted">
             {preview?.expired
               ? "This invitation has expired. Ask whoever invited you to send a new one."

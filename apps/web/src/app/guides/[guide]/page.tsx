@@ -112,7 +112,7 @@ export default async function GuidePage({ params }: { params: Promise<{ guide: s
             {"{firstName} isn't something you type out."}
           </span>{" "}
           Write the message once with it in, and every card in the send is printed with that
-          person&apos;s own name.
+          person’s own name.
         </p>
 
         <section className="mt-14">

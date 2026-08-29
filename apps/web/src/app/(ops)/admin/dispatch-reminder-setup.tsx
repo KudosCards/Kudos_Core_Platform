@@ -75,8 +75,8 @@ export function DispatchReminderSetup() {
         {saved && <span className="text-xs font-medium text-emerald-700">Saved</span>}
       </div>
       <p className="text-sm text-muted">
-        The daily &ldquo;cards to post&rdquo; digest to Kudos HQ — email, dashboard and the ops
-        bell. Applied on the next run — no redeploy.
+        The daily “cards to post” digest to Kudos HQ — email, dashboard and the ops bell. Applied on
+        the next run — no redeploy.
       </p>
 
       {error && <p className="text-sm font-medium text-danger">{error}</p>}
@@ -157,9 +157,8 @@ export function DispatchReminderSetup() {
             </label>
           </div>
           <p className="text-xs text-muted">
-            Cards overdue by the escalation threshold get a louder alert to super admins. A
-            &ldquo;Send now&rdquo; order placed at or after the same-day cut-off (UK time) posts the
-            next working day.
+            Cards overdue by the escalation threshold get a louder alert to super admins. A “Send
+            now” order placed at or after the same-day cut-off (UK time) posts the next working day.
           </p>
 
           <div className="flex flex-wrap items-center gap-2">

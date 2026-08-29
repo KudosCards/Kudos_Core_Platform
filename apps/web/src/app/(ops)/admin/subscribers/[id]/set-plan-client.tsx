@@ -76,7 +76,7 @@ export function SetPlan({
         <p className="text-sm font-medium">Plan</p>
         <p className="mt-1 text-xs text-muted">
           On {planDisplayName(currentPlanId)} via a {subscriptionStatus} Stripe subscription, so the
-          plan is Stripe&apos;s to change — anything set here would be overwritten by the next
+          plan is Stripe’s to change — anything set here would be overwritten by the next
           subscription event. Change it in Stripe instead.
         </p>
       </div>

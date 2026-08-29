@@ -52,8 +52,7 @@ export function TemplatePickerModal({
       ) : (
         <div className="flex flex-col gap-3">
           <p className="text-sm text-muted">
-            Pick a template to open in the editor — we&apos;ll bring you back here with it ready to
-            send.
+            Pick a template to open in the editor — we’ll bring you back here with it ready to send.
           </p>
           {categories.length > 1 && (
             <div className="flex flex-wrap gap-1.5">

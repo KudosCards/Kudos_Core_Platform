@@ -487,9 +487,8 @@ export function BulkSendClient({
         </Link>
         <h1 className="text-3xl font-bold tracking-tight">Send a card</h1>
         <p className="text-muted">
-          The quickest way to post a card — pick who it&apos;s for, choose a design, and we print
-          &amp; post each one, addressed automatically. Send to one contact or a whole group in the
-          same go.
+          The quickest way to post a card — pick who it’s for, choose a design, and we print & post
+          each one, addressed automatically. Send to one contact or a whole group in the same go.
         </p>
       </div>
 
@@ -501,13 +500,13 @@ export function BulkSendClient({
           </p>
           {seededSegment.capped ? (
             <p className="mt-0.5 text-muted">
-              Your plan sends up to {selectedList.length} per order, so we&apos;ve added the first{" "}
+              Your plan sends up to {selectedList.length} per order, so we’ve added the first{" "}
               {selectedList.length}. Remove anyone below, or send the rest in a second order.
             </p>
           ) : (
             <p className="mt-0.5 text-muted">
-              Everyone&apos;s pre-selected below — remove anyone you don&apos;t want, fix any
-              missing addresses, then choose a design and pay.
+              Everyone’s pre-selected below — remove anyone you don’t want, fix any missing
+              addresses, then choose a design and pay.
             </p>
           )}
 
@@ -636,7 +635,7 @@ export function BulkSendClient({
             </div>
             {designs.length === 0 ? (
               <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border p-6 text-center">
-                <p className="text-sm text-muted">You don&apos;t have any saved designs yet.</p>
+                <p className="text-sm text-muted">You don’t have any saved designs yet.</p>
                 {templates.length > 0 ? (
                   <button type="button" onClick={() => setPickerOpen(true)} className="btn-accent">
                     ＋ Start a new design
@@ -709,7 +708,7 @@ export function BulkSendClient({
                 <h2 className="font-semibold">Personalised for each contact</h2>
                 <p className="text-sm text-muted">
                   {personalises ? (
-                    <>Each card is printed with that person&apos;s name. </>
+                    <>Each card is printed with that person’s name. </>
                   ) : (
                     <>
                       This design has no{" "}
@@ -721,7 +720,7 @@ export function BulkSendClient({
                       >
                         Edit / personalise
                       </Link>{" "}
-                      to include each contact&apos;s name.{" "}
+                      to include each contact’s name.{" "}
                     </>
                   )}
                   Click any card to flip through every face and check the address.
@@ -862,7 +861,7 @@ export function BulkSendClient({
                       Upgrade to add message pages
                     </Link>
                   )}{" "}
-                  to use this card&apos;s QR code.
+                  to use this card’s QR code.
                 </p>
               )}
             </fieldset>
@@ -901,7 +900,7 @@ export function BulkSendClient({
                 <p className="font-medium text-foreground">When these go</p>
                 <p className="mt-1 text-xs text-muted">
                   Each card posts automatically, timed to arrive for its own {reconcileNounSingular}{" "}
-                  — you don&apos;t need to pick a delivery date.
+                  — you don’t need to pick a delivery date.
                 </p>
               </div>
             ) : (
@@ -932,7 +931,7 @@ export function BulkSendClient({
               }
               className="hidden text-xs text-muted underline hover:text-foreground lg:block"
             >
-              ⬇ Download proof sheet (every card, address &amp; message)
+              ⬇ Download proof sheet (every card, address & message)
             </button>
           )}
 

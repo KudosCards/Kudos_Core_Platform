@@ -58,8 +58,8 @@ export function OccasionSchedulerButton() {
         Moves birthdays and key dates that have come within 21 days out of the calendar and into
         Approvals, and retires approvals whose date has already been — across every account. Runs by
         itself at 6am. Use this when a customer says their Approvals page is empty but their
-        calendar isn&rsquo;t, or when it is clogged with birthdays that have gone. Safe to press
-        more than once.
+        calendar isn’t, or when it is clogged with birthdays that have gone. Safe to press more than
+        once.
       </p>
 
       {error && <p className="text-sm font-medium text-danger">{error}</p>}

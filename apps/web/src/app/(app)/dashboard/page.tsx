@@ -155,9 +155,7 @@ async function DashboardOverview() {
     <>
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Welcome, {account?.name}</h1>
-        <p className="text-muted">
-          Here&apos;s what&apos;s happening with your recognition programme.
-        </p>
+        <p className="text-muted">Here’s what’s happening with your recognition programme.</p>
       </div>
 
       {summary && (
@@ -192,7 +190,7 @@ async function DashboardOverview() {
               {summary!.contactsMissingAddress === 1 ? "s" : ""} an address
             </p>
             <p className="text-sm text-warning">
-              We post real cards, so these can&apos;t be sent until an address is added.
+              We post real cards, so these can’t be sent until an address is added.
             </p>
           </div>
           <Link

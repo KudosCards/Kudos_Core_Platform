@@ -107,8 +107,8 @@ export function SegmentsClient({ initial }: { initial: SegmentsOverview }) {
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Segments</h1>
         <p className="text-muted">
-          Smart lists that stay up to date on their own — who&apos;s coming up, and who needs
-          attention. Save one to reuse it.
+          Smart lists that stay up to date on their own — who’s coming up, and who needs attention.
+          Save one to reuse it.
         </p>
       </div>
 

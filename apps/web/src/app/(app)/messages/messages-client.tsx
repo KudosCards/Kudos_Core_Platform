@@ -122,8 +122,8 @@ export function MessagesClient({ initialPages }: { initialPages: AccountMessageP
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Message pages</h1>
         <p className="text-muted">
-          Add a message, emoji, or video to each card&apos;s QR page. Recipients scan the code on
-          their card to see it.
+          Add a message, emoji, or video to each card’s QR page. Recipients scan the code on their
+          card to see it.
         </p>
       </div>
 
@@ -131,7 +131,7 @@ export function MessagesClient({ initialPages }: { initialPages: AccountMessageP
 
       {pages.length === 0 ? (
         <div className="card p-8 text-center text-sm text-muted">
-          No message pages yet — they&apos;re created automatically once a card order is paid.
+          No message pages yet — they’re created automatically once a card order is paid.
         </div>
       ) : (
         <div className="flex flex-col gap-4">
@@ -164,8 +164,7 @@ export function MessagesClient({ initialPages }: { initialPages: AccountMessageP
                       </a>
                     </p>
                     <p className="mt-1 text-xs text-muted">
-                      This card&apos;s QR code — it prints on the card and opens this page when
-                      scanned.
+                      This card’s QR code — it prints on the card and opens this page when scanned.
                     </p>
                   </div>
                   <QrCode

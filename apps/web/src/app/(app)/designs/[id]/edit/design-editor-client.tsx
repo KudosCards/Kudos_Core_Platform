@@ -980,7 +980,7 @@ export function DesignEditorClient({
         <div className="flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="font-semibold">
-              These won&apos;t personalise — use curly braces, not square brackets
+              These won’t personalise — use curly braces, not square brackets
             </p>
             <button
               type="button"
@@ -1322,9 +1322,9 @@ export function DesignEditorClient({
                     className="rounded-md border border-black/10 px-2 py-1 text-sm text-foreground"
                   />
                   <span>
-                    We&apos;ll build a simple page with just this video. It&apos;s the default for
-                    every card from this design — you can personalise it per contact later on the
-                    Messages page.
+                    We’ll build a simple page with just this video. It’s the default for every card
+                    from this design — you can personalise it per contact later on the Messages
+                    page.
                   </span>
                 </label>
               )}
@@ -1351,8 +1351,8 @@ export function DesignEditorClient({
           {activePage === "back" && (
             <p className="mt-2 rounded-md border border-black/10 bg-black/[0.03] px-3 py-2 text-xs text-muted">
               The bottom {BACK_RESERVED_FOOTER_MM}mm of the back is already printed on the card with
-              the Kudos logo and QR code. Anything below the dashed line won&apos;t be printed —
-              drag content above it and it will snap into place.
+              the Kudos logo and QR code. Anything below the dashed line won’t be printed — drag
+              content above it and it will snap into place.
             </p>
           )}
           {/* And amber once something actually is affected. A background is called
@@ -1367,11 +1367,11 @@ export function DesignEditorClient({
                 </>
               ) : backHasBackground ? (
                 <>
-                  Your background stops at the dashed line — it won&apos;t reach the bottom of the
-                  card. Keep anything that matters above it.
+                  Your background stops at the dashed line — it won’t reach the bottom of the card.
+                  Keep anything that matters above it.
                 </>
               ) : (
-                <>Something on this face reaches below the dashed line and won&apos;t be printed.</>
+                <>Something on this face reaches below the dashed line and won’t be printed.</>
               )}
             </p>
           )}
@@ -1614,8 +1614,8 @@ export function DesignEditorClient({
               </div>
               {selectedOverflow && (
                 <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
-                  This text spills outside the card&apos;s safe area (the dashed frame). Shorten it,
-                  shrink the font, or narrow the box so it isn&apos;t clipped when printed.
+                  This text spills outside the card’s safe area (the dashed frame). Shorten it,
+                  shrink the font, or narrow the box so it isn’t clipped when printed.
                 </p>
               )}
             </>
@@ -1718,8 +1718,8 @@ export function DesignEditorClient({
             <>
               <p className="text-xs text-foreground/60">
                 A QR code recipients scan to open their message page. Choose what it links to in
-                &ldquo;What plays when they scan this QR?&rdquo; above, drag it on the card to
-                position it, and size it here.
+                “What plays when they scan this QR?” above, drag it on the card to position it, and
+                size it here.
               </p>
               <div className="flex flex-col gap-1.5 text-xs text-foreground/60">
                 <span>Size</span>

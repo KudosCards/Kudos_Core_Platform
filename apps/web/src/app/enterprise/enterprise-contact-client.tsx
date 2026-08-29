@@ -60,10 +60,10 @@ export function EnterpriseContactForm() {
         >
           ✓
         </div>
-        <h2 className="mt-4 text-xl font-bold text-slate-900">Thanks — we&apos;ll be in touch</h2>
+        <h2 className="mt-4 text-xl font-bold text-slate-900">Thanks — we’ll be in touch</h2>
         <p className="mt-2 text-sm text-slate-600">
-          Your enquiry has reached our team. We&apos;ll get back to you within one working day to
-          talk through the right setup for your organisation.
+          Your enquiry has reached our team. We’ll get back to you within one working day to talk
+          through the right setup for your organisation.
         </p>
       </div>
     );
@@ -128,7 +128,7 @@ export function EnterpriseContactForm() {
         {submitting ? "Sending…" : "Send enquiry"}
       </button>
       <p className="text-xs text-slate-400">
-        We&apos;ll only use your details to respond to this enquiry.
+        We’ll only use your details to respond to this enquiry.
       </p>
     </form>
   );

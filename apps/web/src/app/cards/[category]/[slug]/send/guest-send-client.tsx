@@ -61,7 +61,7 @@ export function GuestSendClient({
       )}
 
       <fieldset className="flex flex-col gap-3">
-        <legend className="text-sm font-semibold text-slate-900">Who&apos;s it for?</legend>
+        <legend className="text-sm font-semibold text-slate-900">Who’s it for?</legend>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm text-slate-600">
             First name

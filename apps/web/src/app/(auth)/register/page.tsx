@@ -125,7 +125,7 @@ export default function RegisterPage() {
       <h1 className="text-xl font-bold tracking-tight">Create your account</h1>
       {error && <p className="notice notice-danger">{error}</p>}
       <div className="flex flex-col gap-1.5 text-sm">
-        <span>Who&apos;s this for?</span>
+        <span>Who’s this for?</span>
         <div className="grid grid-cols-2 gap-2">
           {(
             [
@@ -209,7 +209,7 @@ export default function RegisterPage() {
       <p className="text-xs text-muted">
         By creating an account you agree to our{" "}
         <Link href="/terms" className="text-accent hover:underline">
-          Terms &amp; Conditions
+          Terms & Conditions
         </Link>{" "}
         and{" "}
         <Link href="/privacy" className="text-accent hover:underline">

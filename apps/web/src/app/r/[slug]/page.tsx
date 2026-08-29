@@ -77,9 +77,9 @@ export default async function MessagePage({ params }: { params: Promise<{ slug: 
     return (
       <Shell>
         <div className="flex flex-col items-center gap-3">
-          <p className="text-lg font-semibold">This message couldn&apos;t be found</p>
+          <p className="text-lg font-semibold">This message couldn’t be found</p>
           <p className="max-w-sm text-muted">
-            The link may be mistyped, or the card hasn&apos;t been sent yet.
+            The link may be mistyped, or the card hasn’t been sent yet.
           </p>
         </div>
       </Shell>

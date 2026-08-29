@@ -177,14 +177,12 @@ export function NotificationBell() {
           <div className="max-h-[24rem] overflow-y-auto">
             {error ? (
               <p className="px-4 py-6 text-center text-sm text-muted">
-                Couldn&apos;t load notifications.
+                Couldn’t load notifications.
               </p>
             ) : feed === null || inbox === null ? (
               <p className="px-4 py-6 text-center text-sm text-muted">Loading…</p>
             ) : feedCount === 0 && inbox.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-muted">
-                You&apos;re all caught up. 🎉
-              </p>
+              <p className="px-4 py-8 text-center text-sm text-muted">You’re all caught up. 🎉</p>
             ) : (
               <>
                 {feedCount > 0 && (

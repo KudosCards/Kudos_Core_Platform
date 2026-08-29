@@ -49,8 +49,8 @@ export function LibraryClient({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Message pages</h1>
           <p className="mt-1 text-sm text-muted">
-            Digital pages recipients open by scanning a card&apos;s QR code — a video, a written
-            note, a link. Reuse one across many cards, or make a bespoke one.
+            Digital pages recipients open by scanning a card’s QR code — a video, a written note, a
+            link. Reuse one across many cards, or make a bespoke one.
           </p>
         </div>
         {canAuthor && (
@@ -203,8 +203,8 @@ function EmptyState({ hasAny, canAuthor }: { hasAny: boolean; canAuthor: boolean
       <div className="text-4xl">💌</div>
       <p className="text-lg font-semibold">No message pages yet</p>
       <p className="max-w-sm text-sm text-muted">
-        Create a page with a video and a personal message, then attach it to a card&apos;s QR code
-        when you send.
+        Create a page with a video and a personal message, then attach it to a card’s QR code when
+        you send.
       </p>
       {canAuthor && (
         <Link href="/message-pages/new" className="btn-accent mt-2">

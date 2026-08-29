@@ -6,7 +6,7 @@ export default function BatchOrderCancelledPage() {
       <h1 className="text-2xl font-bold tracking-tight">Checkout cancelled</h1>
       <p className="text-muted">
         No payment was taken. Your selected occasions are still approved and ready — you can pick up
-        checkout again whenever you&apos;re ready.
+        checkout again whenever you’re ready.
       </p>
       <div className="flex gap-3">
         <Link href="/batch-orders" className="btn-accent">

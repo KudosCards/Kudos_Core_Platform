@@ -24,7 +24,7 @@ export default async function RtsPage({ params }: { params: Promise<{ token: str
 
       {!initialCase ? (
         <div className="card flex flex-col items-center gap-3 p-8 text-center">
-          <h1 className="text-xl font-bold">This link isn&apos;t valid</h1>
+          <h1 className="text-xl font-bold">This link isn’t valid</h1>
           <p className="text-sm text-muted">
             It may have expired or already been used. If you still need to update an address, sign
             in and open the contact record.

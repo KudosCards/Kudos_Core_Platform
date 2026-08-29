@@ -283,7 +283,7 @@ export function OrderDetailClient({
                 <p className="notice notice-warning">
                   These {schedule.toCome} cards are timed to {schedule.dates.length} different
                   occasions. Rescheduling moves all of them to the one date above and discards that
-                  timing — we can&apos;t put it back for you.
+                  timing — we can’t put it back for you.
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
@@ -315,8 +315,7 @@ export function OrderDetailClient({
               {!confirmRefund ? (
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-muted">
-                    Changed your mind? You can cancel and get a full refund while it&apos;s still
-                    held.
+                    Changed your mind? You can cancel and get a full refund while it’s still held.
                   </p>
                   <button
                     type="button"
@@ -324,7 +323,7 @@ export function OrderDetailClient({
                     onClick={() => setConfirmRefund(true)}
                     className="btn-secondary text-sm"
                   >
-                    Cancel &amp; refund
+                    Cancel & refund
                   </button>
                 </div>
               ) : (
@@ -368,7 +367,7 @@ export function OrderDetailClient({
               <Link href="/support" className="text-accent hover:underline">
                 Contact support
               </Link>{" "}
-              and we&apos;ll sort it before it posts.
+              and we’ll sort it before it posts.
             </p>
           )}
         </div>
@@ -377,8 +376,8 @@ export function OrderDetailClient({
       {payable && (
         <div className="banner banner-warning">
           <p className="banner-lead text-sm">
-            This order hasn&apos;t been paid yet. Pay to send it to production, or cancel to release
-            its cards back to Approvals.
+            This order hasn’t been paid yet. Pay to send it to production, or cancel to release its
+            cards back to Approvals.
           </p>
           {/* The wallet is spent first, automatically (ADR 0169). Say so before
               they click: being charged less than the total is a pleasant
@@ -388,8 +387,8 @@ export function OrderDetailClient({
               {canWalletPay ? (
                 <>
                   Your wallet balance of <strong>{formatGbp(walletBalanceMinor)}</strong> covers
-                  this order in full — paying takes it from your balance, and your card won&apos;t
-                  be charged.
+                  this order in full — paying takes it from your balance, and your card won’t be
+                  charged.
                 </>
               ) : (
                 <>

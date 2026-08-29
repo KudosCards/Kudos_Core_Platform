@@ -343,7 +343,7 @@ export function DesignsClient({
         <div className="flex flex-col gap-1">
           <h2 className="text-xl font-semibold">Templates</h2>
           <p className="text-sm text-muted">
-            Pick a design to personalise — it&apos;s saved to My designs.
+            Pick a design to personalise — it’s saved to My designs.
           </p>
         </div>
 

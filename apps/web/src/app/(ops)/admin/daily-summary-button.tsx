@@ -47,9 +47,9 @@ export function DailySummaryButton() {
     <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-5">
       <h2 className="text-xs font-medium tracking-wide text-muted uppercase">Daily summary</h2>
       <p className="text-sm text-muted">
-        Yesterday&rsquo;s orders, cards posted and new sign-ups, emailed to every super admin at
-        7:30am UK time and recorded in the notification bell. Use this to send it now — handy the
-        first time, to check it reaches you.
+        Yesterday’s orders, cards posted and new sign-ups, emailed to every super admin at 7:30am UK
+        time and recorded in the notification bell. Use this to send it now — handy the first time,
+        to check it reaches you.
       </p>
 
       {error && <p className="text-sm font-medium text-danger">{error}</p>}

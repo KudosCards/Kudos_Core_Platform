@@ -66,7 +66,7 @@ export function TrendSection({ path }: { path: string }) {
         <div className="h-32 animate-pulse rounded-lg bg-foreground/5" />
       ) : current === "error" ? (
         <p className="rounded-lg border border-border bg-surface px-3 py-6 text-center text-xs text-muted">
-          Couldn&apos;t load the trend just now.
+          Couldn’t load the trend just now.
         </p>
       ) : (
         <TrendChart series={current} />
