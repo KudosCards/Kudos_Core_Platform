@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import type { AccountPricing, BatchOrderListRow } from "@kudos/shared-types";
 import { computePricingBreakdown, suggestFirstClass } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
+import { TruncationNotice } from "@/components/truncation-notice";
 import { clientApiFetch } from "@/lib/api.client";
 import { PricingBreakdownCard } from "@/components/pricing-breakdown";
 import { OCCASION_TYPE_LABELS, formatOccasionDate } from "@/lib/occasions";
@@ -75,6 +76,7 @@ function formatGbp(minor: number): string {
 
 export function BatchOrdersClient({
   initialOccasions,
+  totalApproved,
   initialUnfinishedOrders,
   walletBalanceMinor,
   initialSelectedIds = [],
@@ -82,6 +84,8 @@ export function BatchOrdersClient({
   maxPerOrder,
 }: {
   initialOccasions: OccasionWithRecipient[];
+  /** How many are approved and waiting in total, which can exceed one read. */
+  totalApproved: number;
   initialUnfinishedOrders: UnfinishedBatchOrder[];
   walletBalanceMinor: number;
   /** Occasion ids pre-ticked from the calendar list-view bulk action. */
@@ -288,6 +292,14 @@ export function BatchOrdersClient({
 
   return (
     <div className="flex flex-col gap-6">
+      {/* A checkout list that ends without saying so hides cards the customer
+          has already approved and is waiting to send. */}
+      <TruncationNotice
+        shown={initialOccasions.length}
+        total={totalApproved}
+        unit="approved and ready to send"
+        hint="Order some of these to see the rest."
+      />
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Checkout</h1>
         <p className="text-muted">

@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { BatchOrderListRow } from "@kudos/shared-types";
 import { describeSendSchedule, orderScheduleIsLive } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
+import { TruncationNotice } from "@/components/truncation-notice";
 import { Skeleton } from "@/components/skeleton";
 import { formatGbp, formatOrderDate } from "@/lib/orders";
 import { OrderStatusPill } from "@/components/order-status-pill";
@@ -54,29 +55,38 @@ async function OrdersList() {
   }
 
   return (
-    <div className="card overflow-hidden">
-      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-border px-5 py-3 sm:grid-cols-[1.5fr_1fr_0.6fr_0.9fr_0.7fr]">
-        <span className="section-label">Order</span>
-        <span className="section-label hidden sm:block">Date</span>
-        <span className="section-label hidden text-right sm:block">Cards</span>
-        <span className="section-label">Status</span>
-        <span className="section-label text-right">Total</span>
-      </div>
-      <div className="divide-y divide-border">
-        {items.map((order) => (
-          <Link
-            key={order.id}
-            href={`/orders/${order.id}`}
-            className="grid grid-cols-[1fr_auto_auto] items-center gap-4 px-5 py-4 transition-colors hover:bg-foreground/[0.02] sm:grid-cols-[1.5fr_1fr_0.6fr_0.9fr_0.7fr]"
-          >
-            <div className="flex flex-col gap-0.5">
-              <span className="font-semibold">
-                {order.cardCount} card{order.cardCount === 1 ? "" : "s"}
-              </span>
-              <span className="text-xs text-muted sm:hidden">
-                {formatOrderDate(order.createdAt)}
-              </span>
-              {/* When this order actually posts. The list used to show only the
+    <div className="flex flex-col gap-3">
+      {/* An order history that ends without saying so reads as "my older orders
+          have gone". */}
+      <TruncationNotice
+        shown={items.length}
+        total={orders?.total ?? 0}
+        unit="orders"
+        hint="Your older orders are still here — ask us if you need one."
+      />
+      <div className="card overflow-hidden">
+        <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-border px-5 py-3 sm:grid-cols-[1.5fr_1fr_0.6fr_0.9fr_0.7fr]">
+          <span className="section-label">Order</span>
+          <span className="section-label hidden sm:block">Date</span>
+          <span className="section-label hidden text-right sm:block">Cards</span>
+          <span className="section-label">Status</span>
+          <span className="section-label text-right">Total</span>
+        </div>
+        <div className="divide-y divide-border">
+          {items.map((order) => (
+            <Link
+              key={order.id}
+              href={`/orders/${order.id}`}
+              className="grid grid-cols-[1fr_auto_auto] items-center gap-4 px-5 py-4 transition-colors hover:bg-foreground/[0.02] sm:grid-cols-[1.5fr_1fr_0.6fr_0.9fr_0.7fr]"
+            >
+              <div className="flex flex-col gap-0.5">
+                <span className="font-semibold">
+                  {order.cardCount} card{order.cardCount === 1 ? "" : "s"}
+                </span>
+                <span className="text-xs text-muted sm:hidden">
+                  {formatOrderDate(order.createdAt)}
+                </span>
+                {/* When this order actually posts. The list used to show only the
                   date it was placed, so a customer with a card scheduled for
                   November saw "Paid" and nothing else — the one question they
                   came to the page with went unanswered. Same sentence the order
@@ -84,24 +94,27 @@ async function OrdersList() {
                   occasion carries its dispatch date from approval onward, so an
                   unpaid draft has post dates too and would otherwise be labelled
                   "Scheduled" beside its own "Not checked out" pill. */}
-              {orderScheduleIsLive(order.status) &&
-                (() => {
-                  const copy = describeSendSchedule(order.sendSchedule, formatOrderDate);
-                  return copy ? (
-                    <span className="text-xs text-muted">Scheduled — {copy.lead}</span>
-                  ) : null;
-                })()}
-            </div>
-            <span className="hidden text-sm text-muted sm:block">
-              {formatOrderDate(order.createdAt)}
-            </span>
-            <span className="hidden text-right text-sm text-muted sm:block">{order.cardCount}</span>
-            <span>
-              <OrderStatusPill status={order.status} cardStatusCounts={order.cardStatusCounts} />
-            </span>
-            <span className="text-right font-semibold">{formatGbp(order.totalMinor)}</span>
-          </Link>
-        ))}
+                {orderScheduleIsLive(order.status) &&
+                  (() => {
+                    const copy = describeSendSchedule(order.sendSchedule, formatOrderDate);
+                    return copy ? (
+                      <span className="text-xs text-muted">Scheduled — {copy.lead}</span>
+                    ) : null;
+                  })()}
+              </div>
+              <span className="hidden text-sm text-muted sm:block">
+                {formatOrderDate(order.createdAt)}
+              </span>
+              <span className="hidden text-right text-sm text-muted sm:block">
+                {order.cardCount}
+              </span>
+              <span>
+                <OrderStatusPill status={order.status} cardStatusCounts={order.cardStatusCounts} />
+              </span>
+              <span className="text-right font-semibold">{formatGbp(order.totalMinor)}</span>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );

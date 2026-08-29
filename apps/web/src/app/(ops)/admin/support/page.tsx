@@ -10,6 +10,7 @@ import {
   formatSupportDate,
   ticketRef,
 } from "@/lib/support";
+import { TruncationNotice } from "@/components/truncation-notice";
 
 interface Paginated<T> {
   items: T[];
@@ -44,6 +45,12 @@ export default async function AdminSupportPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <TruncationNotice
+        shown={items.length}
+        total={result?.total ?? 0}
+        unit="tickets"
+        hint="Close some to see the rest."
+      />
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold tracking-tight">Support</h1>
         <p className="text-sm text-foreground/60">
