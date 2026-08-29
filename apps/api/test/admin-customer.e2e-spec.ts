@@ -215,6 +215,33 @@ describe("Admin — Customer 360 (e2e)", () => {
     expect(customer.occasions.scheduled).toBe(2);
     expect(customer.occasions.autoSend).toBe(1);
 
+    // An abandoned occasion is not an auto-send an operator can act on. This
+    // count read `status: { not: skipped }`, so it began counting `missed` the
+    // moment that status existed — quietly inflating a customer's profile with
+    // dead rows.
+    for (const status of ["skipped", "missed"] as const) {
+      await prisma.occasion.create({
+        data: {
+          accountId,
+          recipientId: firstRecipient.id,
+          type: "seasonal",
+          source: "recurring_per_recipient",
+          occasionDate: new Date(status === "skipped" ? "2030-12-05" : "2030-12-06"),
+          status,
+          dispatchOption: "auto_send",
+        },
+      });
+    }
+    const afterAbandoned = customer360Schema.parse(
+      (
+        await request(app.getHttpServer())
+          .get(`/admin/customers/${accountId}`)
+          .set("Authorization", `Bearer ${token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(afterAbandoned.occasions.autoSend).toBe(1);
+
     expect(customer.integrations.crm).toHaveLength(1);
     expect(customer.integrations.apiKeys).toHaveLength(1);
     expect(customer.wallet.balanceMinor).toBe(5000);

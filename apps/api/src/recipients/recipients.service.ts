@@ -385,6 +385,7 @@ export class RecipientsService {
             ? {
                 moved: realigned.moved,
                 retired: realigned.retired,
+                discarded: realigned.discarded,
                 created: realigned.created,
               }
             : null,
