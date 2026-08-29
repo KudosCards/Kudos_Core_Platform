@@ -63,6 +63,18 @@ export type OccasionStatus = z.infer<typeof occasionStatusSchema>;
 /** Occasion statuses that are over: nothing more will happen to the card. */
 export const CLOSED_OCCASION_STATUSES = ["delivered", "skipped", "missed"] as const;
 
+/**
+ * Statuses where no card was sent and none ever will be — the occasion was
+ * abandoned, whether by the customer's decision (`skipped`) or by its date
+ * going by (`missed`).
+ *
+ * Named because it is used as an exclusion, and an unnamed exclusion silently
+ * widens every time a status is added: the ops "auto-send" count read
+ * `status: { not: skipped }` and started counting missed occasions the moment
+ * that value existed. A list with a name has to be looked at.
+ */
+export const ABANDONED_OCCASION_STATUSES = ["skipped", "missed"] as const;
+
 /** Statuses where a card has been paid for and is in or through production, so
  * the occasion's date must never be moved out from under it. */
 export const COMMITTED_OCCASION_STATUSES = ["queued", "printed", "posted", "delivered"] as const;

@@ -9,10 +9,54 @@ type PrismaLike = Pick<PrismaClient, "occasion"> | Prisma.TransactionClient;
 export interface RealignResult {
   /** The occasion moved onto the corrected date, if there was one to move. */
   moved: boolean;
-  /** Extra live birthday rows retired because only one can hold the date. */
+  /** Extra rows whose date had already been, closed off as `missed`. */
   retired: number;
+  /** Extra rows still in the future, removed outright — see `discardLosers`. */
+  discarded: number;
   /** A fresh `scheduled` occasion was created because none could be moved. */
   created: boolean;
+}
+
+/**
+ * Clear the birthday rows that lost the date.
+ *
+ * Only one row can hold a given (recipient, type, date), so a correction that
+ * leaves several live birthdays has to end all but one. How it ends them
+ * depends on whether their day has been:
+ *
+ *   - **Already past** → `missed`, which is exactly what it is.
+ *   - **Still ahead** → removed. It is a duplicate that should never have
+ *     existed, nothing was ordered against it (a committed card is filtered out
+ *     before this point), and no card was sent or ever going to be. Marking it
+ *     `missed` would put "the date passed and no card was sent" on the
+ *     contact's timeline against a date that has not passed — which is the
+ *     kind of small, confident falsehood that makes a customer distrust
+ *     everything else on the page.
+ */
+async function discardLosers(
+  prisma: PrismaLike,
+  losers: { id: string; occasionDate: Date }[],
+  today: Date,
+): Promise<{ retired: number; discarded: number }> {
+  const past = losers.filter((o) => o.occasionDate.getTime() < today.getTime());
+  const ahead = losers.filter((o) => o.occasionDate.getTime() >= today.getTime());
+
+  let retired = 0;
+  if (past.length > 0) {
+    ({ count: retired } = await prisma.occasion.updateMany({
+      where: { id: { in: past.map((o) => o.id) } },
+      data: { status: "missed" },
+    }));
+  }
+
+  let discarded = 0;
+  if (ahead.length > 0) {
+    ({ count: discarded } = await prisma.occasion.deleteMany({
+      where: { id: { in: ahead.map((o) => o.id) } },
+    }));
+  }
+
+  return { retired, discarded };
 }
 
 /**
@@ -66,12 +110,9 @@ export async function realignBirthdayOccasion(
   // No date of birth any more: there is no birthday to hold, so every live row
   // goes. (A committed card is untouched by the filter above.)
   if (!input.dateOfBirth) {
-    if (live.length === 0) return { moved: false, retired: 0, created: false };
-    const { count } = await prisma.occasion.updateMany({
-      where: { id: { in: live.map((o) => o.id) } },
-      data: { status: "missed" },
-    });
-    return { moved: false, retired: count, created: false };
+    if (live.length === 0) return { moved: false, retired: 0, discarded: 0, created: false };
+    const { retired, discarded } = await discardLosers(prisma, live, today);
+    return { moved: false, retired, discarded, created: false };
   }
 
   const target = nextBirthdayOccurrence(input.dateOfBirth, today);
@@ -86,14 +127,9 @@ export async function realignBirthdayOccasion(
   const rank = (status: string) => LIVE_ORDER.indexOf(status as (typeof LIVE_ORDER)[number]);
   const keeper = onTarget[0] ?? [...offTarget].sort((a, b) => rank(a.status) - rank(b.status))[0];
 
-  let retired = 0;
   const losers = live.filter((o) => o.id !== keeper?.id);
-  if (losers.length > 0) {
-    ({ count: retired } = await prisma.occasion.updateMany({
-      where: { id: { in: losers.map((o) => o.id) } },
-      data: { status: "missed" },
-    }));
-  }
+  const { retired, discarded } =
+    losers.length > 0 ? await discardLosers(prisma, losers, today) : { retired: 0, discarded: 0 };
 
   if (!keeper) {
     // Nothing live to move — every birthday row is committed or closed. The
@@ -112,18 +148,18 @@ export async function realignBirthdayOccasion(
       ],
       skipDuplicates: true,
     });
-    return { moved: false, retired, created: true };
+    return { moved: false, retired, discarded, created: true };
   }
 
   if (keeper.occasionDate.getTime() === targetTime) {
-    return { moved: false, retired, created: false };
+    return { moved: false, retired, discarded, created: false };
   }
 
   await prisma.occasion.update({
     where: { id: keeper.id },
     data: { occasionDate: target, dispatchDate: computeDispatchDate(target) },
   });
-  return { moved: true, retired, created: false };
+  return { moved: true, retired, discarded, created: false };
 }
 
 /** Statuses a birthday occasion can be in and still be moved. Exported so the

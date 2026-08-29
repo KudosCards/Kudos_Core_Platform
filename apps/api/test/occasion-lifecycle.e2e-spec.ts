@@ -183,12 +183,52 @@ describe("Occasion lifecycle (e2e)", () => {
 
     // One birthday left, on the right date, and it is the approved one — the
     // furthest-along row wins, so an approval with a design is not thrown away.
+    // The two duplicates were still in the future, so they are gone rather than
+    // marked `missed`: "the date passed and no card was sent" would be a plain
+    // falsehood on a date that has not passed.
     const rows = await birthdays(id);
-    const live = rows.filter((r) => r.status !== "missed");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe("approved");
+    expect(iso(rows[0]!.occasionDate)).toBe(iso(dayFromNow(70)));
+  });
+
+  it("marks a duplicate whose date has been as missed, and only that one", async () => {
+    const token = await signUp();
+    const id = await addContact(token, dobFalling(5));
+    const first = await prisma.occasion.findFirstOrThrow({ where: { recipientId: id } });
+    await prisma.occasion.update({ where: { id: first.id }, data: { status: "approved" } });
+
+    // One stale row behind us, one still ahead. They end differently because
+    // only one of them describes something that actually happened.
+    for (const days of [-15, 12]) {
+      await prisma.occasion.create({
+        data: {
+          accountId: first.accountId,
+          recipientId: id,
+          type: "birthday",
+          source: "recurring_per_recipient",
+          occasionDate: dayFromNow(days),
+          dispatchDate: dayFromNow(days),
+          status: "pending_approval",
+        },
+      });
+    }
+
+    await request(app.getHttpServer())
+      .patch(`/recipients/${id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ dateOfBirth: dobFalling(70) })
+      .expect(200);
+
+    const rows = await birthdays(id);
+    expect(rows.filter((r) => r.status === "missed").map((r) => iso(r.occasionDate))).toEqual([
+      iso(dayFromNow(-15)),
+    ]);
+    // The future duplicate is gone, not relabelled.
+    expect(rows.map((r) => iso(r.occasionDate))).not.toContain(iso(dayFromNow(12)));
+    const live = rows.filter((r) => r.status === "approved");
     expect(live).toHaveLength(1);
-    expect(live[0]!.status).toBe("approved");
     expect(iso(live[0]!.occasionDate)).toBe(iso(dayFromNow(70)));
-    expect(rows.filter((r) => r.status === "missed")).toHaveLength(2);
   });
 
   it("refuses a date of birth nobody could have been born on", async () => {

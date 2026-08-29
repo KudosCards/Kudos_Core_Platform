@@ -9,6 +9,7 @@ import {
   PAID_STATUSES,
   accountHealth,
 } from "./admin.service";
+import { ABANDONED_OCCASION_STATUSES } from "@kudos/shared-types";
 
 /** Return-case statuses that are still open (need someone to act). */
 const OPEN_RETURN_STATUSES = ["awaiting_address", "awaiting_resend"] as const;
@@ -175,7 +176,14 @@ export class AdminCustomerService {
       this.prisma.recipientList.count({ where: { accountId } }),
       this.prisma.occasion.count({ where: { accountId, status: OccasionStatus.scheduled } }),
       this.prisma.occasion.count({
-        where: { accountId, dispatchOption: "auto_send", status: { not: OccasionStatus.skipped } },
+        // Everything auto-send that wasn't abandoned. This read `not: skipped`,
+        // so it began counting `missed` occasions the moment that status
+        // existed — inflating an operator's view of a customer with dead rows.
+        where: {
+          accountId,
+          dispatchOption: "auto_send",
+          status: { notIn: [...ABANDONED_OCCASION_STATUSES] },
+        },
       }),
       this.prisma.occasion.findMany({
         where: {
