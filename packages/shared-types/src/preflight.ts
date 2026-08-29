@@ -43,6 +43,17 @@ export interface PreflightOccasionDating {
    * nothing matched. */
   earliest: string | null;
   latest: string | null;
+  /**
+   * Contacts in this send whose birthday is still ahead of them but has been
+   * skipped, so the send cannot time a card to it.
+   *
+   * Counted separately because the composer used to fold them in with the
+   * contacts who have no birthday at all and tell the sender "no occasion on
+   * file" — which is untrue, and hides the one thing they could act on. A school
+   * that cleared its approvals queue in a hurry, skipping ten live birthdays,
+   * read that line fifteen minutes later and had no way to know what it meant.
+   */
+  skipped: number;
 }
 
 export interface BatchOrderPreflight {

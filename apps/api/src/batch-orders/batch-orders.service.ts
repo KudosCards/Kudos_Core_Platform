@@ -652,10 +652,31 @@ export class BatchOrdersService {
     const dated = [...(await this.findDatedOccasions(accountId, mailableIds)).values()]
       .map((match) => match.occasionDate)
       .sort((a, b) => a.getTime() - b.getTime());
+    // Contacts whose birthday is still ahead but skipped. They are not "no
+    // occasion on file" — they have one, it is simply out of reach until it is
+    // restored, and saying so is the difference between a sender fixing this
+    // before they pay and finding out afterwards.
+    // Distinct *contacts*, not occasions: someone with a skipped birthday and a
+    // skipped anniversary is one person the sender can act on, and counting them
+    // twice would make "the rest have no birthday" go negative.
+    const skippedAhead = (
+      await this.prisma.occasion.findMany({
+        where: {
+          accountId,
+          recipientId: { in: mailableIds },
+          source: { not: "one_off_campaign" },
+          status: "skipped",
+          occasionDate: { gte: startOfUtcDay(new Date()) },
+        },
+        select: { recipientId: true },
+        distinct: ["recipientId"],
+      })
+    ).length;
     const occasionDated = {
       count: dated.length,
       earliest: dated.length > 0 ? isoDay(dated[0]!) : null,
       latest: dated.length > 0 ? isoDay(dated[dated.length - 1]!) : null,
+      skipped: skippedAhead,
     };
 
     const total = recipients.length;
