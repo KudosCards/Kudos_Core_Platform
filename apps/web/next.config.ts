@@ -25,13 +25,23 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
-    // Keep visited pages warm in the client-side Router Cache so bouncing
-    // between recently-seen pages is instant (served from cache, no server
-    // round-trip). `dynamic` covers our pages — they're all dynamically
-    // rendered because they read the session cookie. 30s is long enough to make
-    // back-and-forth navigation feel native without serving badly stale data;
-    // any mutation still calls router.refresh()/revalidatePath to bust it.
-    staleTimes: { dynamic: 30, static: 180 },
+    // `dynamic: 0` — a dynamically rendered page is never served from a stale
+    // client Router Cache.
+    //
+    // This was 30 seconds, on a written assumption that "any mutation still
+    // calls router.refresh()/revalidatePath to bust it". That assumption was
+    // never true: of 61 client components that mutate through the API, 16
+    // called router.refresh() and 45 did not. The cache was therefore free to
+    // hold a contact list, an approvals queue or a calendar from before an edit
+    // that had already been saved.
+    //
+    // Every page here reads the session cookie, so `dynamic` covers all of
+    // them — which is precisely why the risk was general rather than niche.
+    // These screens describe real people, real dates and real money; a page
+    // that is a few hundred milliseconds slower to return to is a far better
+    // trade than one that quietly shows yesterday's answer. `static` keeps its
+    // window: those pages have no per-user data to go stale.
+    staleTimes: { dynamic: 0, static: 180 },
   },
 };
 

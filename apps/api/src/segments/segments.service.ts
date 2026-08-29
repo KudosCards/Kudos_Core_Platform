@@ -280,10 +280,34 @@ export class SegmentsService {
   /** The Occasion-side predicate (type + date window) an occasion-mode segment
    * matches — shared by the preview count and the member query so they can't
    * drift. Recipient-side facets are applied separately via `recipientFilter`. */
+  /**
+   * The occasion-side predicate for an occasion-mode segment.
+   *
+   * The status bound is not optional. Without it a smart list matched an
+   * occasion in *any* state, so "Birthdays this month" counted the ones already
+   * posted, the ones the customer had deliberately skipped, and the ones that
+   * had been missed. A real account showed a contact under "Birthdays this
+   * month" against a 9 August date he had skipped himself — and his actual
+   * birthday is in October.
+   *
+   * The display was the smaller half of it. `members()` shares this predicate,
+   * so "Send to this list" seeded and charged for those same people: sending to
+   * "Birthdays this month" a second time in one month posted a second card to
+   * everyone who had already had one. Reconciliation would decline to consume
+   * the spent occasion (it has always carried this bound) but the card was
+   * still ordered and paid for.
+   *
+   * A smart list of dates is a list of cards still to send, so it matches only
+   * the statuses where a card can still go out.
+   */
   private occasionMatch(definition: SegmentDefinition): Prisma.OccasionWhereInput {
     const { types, window } = definition.occasion!;
     const { from, to } = windowRange(window, new Date());
-    return { type: { in: types }, occasionDate: { gte: from, lte: to } };
+    return {
+      type: { in: types },
+      status: { in: [...RECONCILABLE_STATUSES] },
+      occasionDate: { gte: from, lte: to },
+    };
   }
 
   private async resolveOccasions(

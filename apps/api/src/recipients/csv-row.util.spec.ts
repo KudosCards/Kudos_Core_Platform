@@ -130,4 +130,26 @@ describe("parseRecipientRow", () => {
     expect(parsed.email).toBe("archie@example.com");
     expect(warnings).toEqual([]);
   });
+
+  it("imports a contact without a date of birth nobody could be born on", () => {
+    const future = new Date();
+    future.setUTCFullYear(future.getUTCFullYear() + 1);
+    const dd = String(future.getUTCDate()).padStart(2, "0");
+    const mm = String(future.getUTCMonth() + 1).padStart(2, "0");
+
+    const { parsed, warnings } = parseRecipientRow({
+      ...baseRow,
+      dateOfBirth: `${dd}/${mm}/${future.getUTCFullYear()}`,
+    });
+    // The row still imports — a whole file should not fail over one bad cell —
+    // but not carrying a birthday the platform would schedule a card for.
+    expect(parsed.dateOfBirth).toBeNull();
+    expect(warnings.join(" ")).toMatch(/could be born on/i);
+  });
+
+  it("still accepts a real date of birth", () => {
+    const { parsed, warnings } = parseRecipientRow({ ...baseRow, dateOfBirth: "23/10/1996" });
+    expect(parsed.dateOfBirth?.toISOString()).toBe("1996-10-23T00:00:00.000Z");
+    expect(warnings).toHaveLength(0);
+  });
 });

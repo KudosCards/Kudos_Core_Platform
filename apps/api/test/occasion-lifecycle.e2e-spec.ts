@@ -191,6 +191,58 @@ describe("Occasion lifecycle (e2e)", () => {
     expect(rows.filter((r) => r.status === "missed")).toHaveLength(2);
   });
 
+  it("refuses a date of birth nobody could have been born on", async () => {
+    const token = await signUp();
+    const body = (dateOfBirth: string) => ({
+      firstName: "Frank",
+      lastName: randomUUID().slice(0, 8),
+      dateOfBirth,
+      addressLine1: "33 Helen's Wood Crescent",
+      addressCity: "Bangor",
+      addressPostcode: "BT19 1FE",
+    });
+
+    // The bound is what is *impossible*, not what is unusual. A live account
+    // held a contact recorded as born three weeks ago — almost certainly a
+    // mistyped year, and the app duly read it as a birthday and scheduled a
+    // card. But a date three weeks ago is a date someone could be born on, so
+    // it is not the API's to refuse; what it can refuse is a date that has not
+    // happened yet, which is what that entry was when it was typed.
+    await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send(body(iso(dayFromNow(-20))))
+      .expect(201);
+    await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send(body(iso(dayFromNow(30))))
+      .expect(400);
+    await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send(body("1850-01-01"))
+      .expect(400);
+
+    // And a real one still goes through, on create and on update alike.
+    const ok = await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send(body("1996-10-23"))
+      .expect(201);
+    const id = (ok.body as { id: string }).id;
+    await request(app.getHttpServer())
+      .patch(`/recipients/${id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ dateOfBirth: iso(dayFromNow(10)) })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch(`/recipients/${id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ dateOfBirth: "1995-07-13" })
+      .expect(200);
+  });
+
   it("records what the date of birth changed from and to", async () => {
     const token = await signUp();
     const before = dobFalling(5);

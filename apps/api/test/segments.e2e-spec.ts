@@ -338,6 +338,96 @@ describe("Segments (e2e)", () => {
       .expect(400);
   });
 
+  it("leaves out dates whose card has been sent, skipped or missed", async () => {
+    // Reported from a real account: a contact appeared under "Birthdays this
+    // month" against a 9 August date he had skipped himself, and his actual
+    // birthday is in October. A smart list of dates is a list of cards still to
+    // send.
+    const token = await signUp();
+    const { id: liveId, accountId } = await addMailable(token);
+    const today = new Date();
+    const thisMonth = (day: number) =>
+      new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), day));
+
+    await prisma.occasion.deleteMany({ where: { accountId } });
+    await prisma.occasion.create({
+      data: {
+        accountId,
+        recipientId: liveId,
+        type: "birthday",
+        source: "recurring_per_recipient",
+        occasionDate: thisMonth(2),
+        status: "pending_approval",
+      },
+    });
+
+    // One contact per dead status, all with a birthday in the same month.
+    const dead = ["skipped", "missed", "posted", "delivered"] as const;
+    for (const [i, status] of dead.entries()) {
+      const other = await addMailable(token);
+      await prisma.occasion.create({
+        data: {
+          accountId,
+          recipientId: other.id,
+          type: "birthday",
+          source: "recurring_per_recipient",
+          occasionDate: thisMonth(3 + i),
+          status,
+        },
+      });
+    }
+
+    const overview = await request(app.getHttpServer())
+      .get("/segments")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const preset = segmentsOverviewSchema
+      .parse(overview.body)
+      .suggested.find((s) => s.key === "birthdays-this-month")!;
+    expect(preset.count).toBe(1);
+    expect(preset.sample).toHaveLength(1);
+
+    // The half that costs money: sending to the list must not seed the four
+    // whose cards are spent or declined. Before this, a second send to
+    // "Birthdays this month" posted a second card to everyone already done.
+    const members = await request(app.getHttpServer())
+      .get("/segments/members?segment=birthdays-this-month")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const resolved = segmentMembersSchema.parse(members.body);
+    expect(resolved.total).toBe(1);
+    expect(resolved.members.map((m) => m.id)).toEqual([liveId]);
+  });
+
+  it("still counts a date that is approved but not yet ordered", async () => {
+    const token = await signUp();
+    const { id, accountId } = await addMailable(token);
+    const today = new Date();
+    await prisma.occasion.deleteMany({ where: { accountId } });
+    await prisma.occasion.create({
+      data: {
+        accountId,
+        recipientId: id,
+        type: "birthday",
+        source: "recurring_per_recipient",
+        occasionDate: new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 5)),
+        status: "approved",
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/segments")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    // Approved means a design was chosen, not that a card went out — the
+    // status bound must not be so tight it hides work still to do.
+    expect(
+      segmentsOverviewSchema
+        .parse(res.body)
+        .suggested.find((s) => s.key === "birthdays-this-month")!.count,
+    ).toBe(1);
+  });
+
   it("previews a rule that has not been saved", async () => {
     const token = await signUp();
     const { accountId } = await addMailable(token);

@@ -17,25 +17,25 @@ export const SEGMENT_PRESETS: SegmentPreset[] = [
   {
     key: "birthdays-this-month",
     name: "Birthdays this month",
-    description: "Everyone with a birthday in the current month.",
+    description: "Birthdays this month that still need a card.",
     definition: { occasion: { types: ["birthday"], window: { kind: "this_month" } } },
   },
   {
     key: "upcoming-birthdays",
     name: "Upcoming birthdays",
-    description: "Birthdays in the next 30 days.",
+    description: "Birthdays in the next 30 days that still need a card.",
     definition: { occasion: { types: ["birthday"], window: { kind: "next_days", days: 30 } } },
   },
   {
     key: "renewals-due",
     name: "Renewals due",
-    description: "Renewals coming up in the next 30 days.",
+    description: "Renewals in the next 30 days that still need a card.",
     definition: { occasion: { types: ["renewal"], window: { kind: "next_days", days: 30 } } },
   },
   {
     key: "anniversaries-this-month",
     name: "Anniversaries this month",
-    description: "Anniversaries in the current month.",
+    description: "Anniversaries this month that still need a card.",
     definition: { occasion: { types: ["anniversary"], window: { kind: "this_month" } } },
   },
   {
