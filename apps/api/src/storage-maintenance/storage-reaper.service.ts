@@ -16,6 +16,15 @@ const CATALOG_PREFIX = "catalog/";
 
 /** Supabase Storage's `list` default/again page size — we page through it. */
 const LIST_PAGE_SIZE = 100;
+
+/**
+ * Database rows read per page when collecting referenced paths.
+ *
+ * Exported so a test can fill a page and check the row after it is still seen —
+ * the reaper deletes storage objects, so a row it fails to read is a live asset
+ * deleted. See ADR 0208.
+ */
+export const REAPER_PAGE_SIZE = 200;
 /** Deletes are batched into `remove([...])` calls of at most this many paths. */
 const DELETE_BATCH_SIZE = 100;
 /**
@@ -142,24 +151,79 @@ export class StorageReaperService {
   private async collectReferencedPaths(): Promise<Set<string>> {
     const paths = new Set<string>();
 
-    const [assets, cardDesigns, savedDesigns] = await Promise.all([
-      this.prisma.designAsset.findMany({ select: { url: true } }),
-      this.prisma.cardDesign.findMany({ select: { thumbnailUrl: true, document: true } }),
-      this.prisma.savedDesign.findMany({ select: { document: true } }),
-    ]);
+    // Paged, and one table at a time.
+    //
+    // These were three unbounded platform-wide reads run together, two of them
+    // pulling whole JSON design documents. At 50k saved designs averaging 15 KB
+    // that is hundreds of megabytes of row buffers, plus an equal transient
+    // copy from JSON.stringify, on a container also serving traffic — at 03:00,
+    // unattended. The cron OOMs, the scheduler catches only the rejection, and
+    // the visible symptom is one log line and a reaper that silently never
+    // reclaims anything again.
+    //
+    // Only the extracted paths are kept, so memory is a page of documents
+    // rather than every document. Sequential rather than concurrent for the
+    // same reason: three pages resident at once is three times the peak for no
+    // gain on a job with all night to run. See ADR 0208.
+    await this.forEachPage(
+      (cursor) =>
+        this.prisma.designAsset.findMany({
+          select: { id: true, url: true },
+          ...this.page(cursor),
+        }),
+      (asset) => addExtractedPaths(paths, asset.url),
+    );
 
-    for (const asset of assets) {
-      addExtractedPaths(paths, asset.url);
-    }
-    for (const design of cardDesigns) {
-      addExtractedPaths(paths, design.thumbnailUrl);
-      addExtractedPaths(paths, JSON.stringify(design.document));
-    }
-    for (const design of savedDesigns) {
-      addExtractedPaths(paths, JSON.stringify(design.document));
-    }
+    await this.forEachPage(
+      (cursor) =>
+        this.prisma.cardDesign.findMany({
+          select: { id: true, thumbnailUrl: true, document: true },
+          ...this.page(cursor),
+        }),
+      (design) => {
+        addExtractedPaths(paths, design.thumbnailUrl);
+        addExtractedPaths(paths, JSON.stringify(design.document));
+      },
+    );
+
+    await this.forEachPage(
+      (cursor) =>
+        this.prisma.savedDesign.findMany({
+          select: { id: true, document: true },
+          ...this.page(cursor),
+        }),
+      (design) => addExtractedPaths(paths, JSON.stringify(design.document)),
+    );
 
     return paths;
+  }
+
+  /** Keyset page arguments for a cursor-paged scan, ordered by primary key. */
+  private page(cursor: string | undefined) {
+    return {
+      orderBy: { id: "asc" } as const,
+      take: REAPER_PAGE_SIZE,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    };
+  }
+
+  /**
+   * Read every row through `read`, a page at a time, handing each to `use` and
+   * then letting the page go. Keyset-paginated on the primary key: stable,
+   * index-backed, and unaffected by rows written while the scan runs.
+   */
+  private async forEachPage<T extends { id: string }>(
+    read: (cursor: string | undefined) => Promise<T[]>,
+    use: (row: T) => void,
+  ): Promise<void> {
+    let cursor: string | undefined;
+    for (;;) {
+      const rows = await read(cursor);
+      if (rows.length === 0) return;
+      for (const row of rows) use(row);
+      if (rows.length < REAPER_PAGE_SIZE) return;
+      cursor = rows[rows.length - 1]!.id;
+    }
   }
 
   /**
