@@ -420,6 +420,48 @@ describe("Recipients (e2e)", () => {
     expect(items[0]?.occasionDate.slice(5, 10)).toBe("11-10");
   });
 
+  it("clears a date of birth and email when sent as null, and retires the birthday", async () => {
+    const { token } = await signUp();
+    const created = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/recipients")
+          .set("Authorization", `Bearer ${token}`)
+          .send({
+            firstName: "Wrongly",
+            lastName: "Dated",
+            dateOfBirth: "2015-12-25",
+            email: "wrong@example.com",
+            ...MAILABLE,
+          })
+          .expect(201)
+      ).body,
+    );
+
+    // A contact imported with a US-order date mix-up: the fix is to clear the
+    // field, not to guess a replacement. Clearing has to reach the column *and*
+    // take the birthday with it — a date of birth is what schedules the card,
+    // so a stale birthday keeps generating one, paid from the wallet on an
+    // auto-send account.
+    const updated = recipientSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .patch(`/recipients/${created.id}`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({ dateOfBirth: null, email: null })
+          .expect(200)
+      ).body,
+    );
+    expect(updated.dateOfBirth).toBeNull();
+    expect(updated.email).toBeNull();
+
+    const occasions = await request(app.getHttpServer())
+      .get("/occasions?type=birthday")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(occasionListSchema.parse(occasions.body).items).toHaveLength(0);
+  });
+
   it("edits a recipient's details", async () => {
     const { token } = await signUp();
     const created = recipientSchema.parse(

@@ -208,5 +208,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0197 — Cancel must cancel](./0197-cancel-must-cancel.md)
 - [0198 — A report nobody sees is not a report](./0198-a-report-nobody-sees-is-not-a-report.md)
 - [0199 — One selection, one meaning](./0199-one-selection-one-meaning.md)
+- [0200 — An emptied field is an instruction](./0200-an-emptied-field-is-an-instruction.md)
 
 <!-- adr-index:end -->
