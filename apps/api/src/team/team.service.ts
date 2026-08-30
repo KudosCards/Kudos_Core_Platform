@@ -17,6 +17,7 @@ import { escapeHtml, renderBrandedEmail } from "../email/email-layout";
 import { generateInviteToken, INVITE_TTL_DAYS } from "../common/generate-invite-token";
 import type { EnvConfig } from "../config/env.schema";
 import type { AuthenticatedUser } from "../auth/types";
+import { verifiedEmailFromToken } from "../auth/types";
 import { SAFE_ACCOUNT_SELECT, type SafeAccount } from "../accounts/accounts.service";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import { CENTRE_SEAT_PRICE_MINOR } from "../billing/billing.constants";
@@ -339,10 +340,14 @@ export class TeamService {
    * a user who already belongs to an account can't accept.
    */
   async acceptInvite(user: AuthenticatedUser, token: string): Promise<SafeAccount> {
-    if (!user.email) {
-      throw new ForbiddenException("Your login has no email address");
+    // Verified only. The invite token is the primary binding — it is emailed to
+    // the intended address — and this match is the second factor that stops a
+    // forwarded link being redeemed by whoever received it. An unconfirmed
+    // address cannot serve as that second factor. See ADR 0188.
+    const email = verifiedEmailFromToken(user);
+    if (!email) {
+      throw new ForbiddenException("Confirm your email address before accepting an invite");
     }
-    const email = user.email;
 
     return this.prisma.$transaction(async (tx) => {
       const invite = await tx.invite.findUnique({ where: { token } });

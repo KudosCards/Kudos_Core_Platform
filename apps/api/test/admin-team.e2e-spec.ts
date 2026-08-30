@@ -50,6 +50,9 @@ describe("Admin team / operator auth (e2e)", () => {
     await prisma.platformAdmin.deleteMany({});
     emailMock.sendTransactional.mockClear();
     getUserByIdMock.mockClear();
+    // Operator provisioning reads the authoritative Supabase record, and only
+    // accepts a *confirmed* address (ADR 0188) — so the default fake is a user
+    // that does not exist, and each test that expects success supplies one.
     getUserByIdMock.mockResolvedValue({ data: { user: null }, error: null });
     generateLinkMock.mockClear();
     generateLinkMock.mockResolvedValue({
@@ -111,6 +114,18 @@ describe("Admin team / operator auth (e2e)", () => {
     );
 
     const inviteeUserId = randomUUID();
+    // The address is confirmed in Supabase — which is what provisioning now
+    // requires, rather than the token's own claim (ADR 0188).
+    getUserByIdMock.mockResolvedValue({
+      data: {
+        user: {
+          id: inviteeUserId,
+          email: inviteeEmail,
+          email_confirmed_at: new Date().toISOString(),
+        },
+      },
+      error: null,
+    });
     const inviteeToken = await mintToken(inviteeUserId, inviteeEmail);
     const access = await request(app.getHttpServer())
       .post("/admin/access")
@@ -145,7 +160,13 @@ describe("Admin team / operator auth (e2e)", () => {
     // "not a Kudos operator" without the authoritative Supabase lookup.
     const inviteeUserId = randomUUID();
     getUserByIdMock.mockResolvedValue({
-      data: { user: { id: inviteeUserId, email: inviteeEmail } },
+      data: {
+        user: {
+          id: inviteeUserId,
+          email: inviteeEmail,
+          email_confirmed_at: new Date().toISOString(),
+        },
+      },
       error: null,
     });
     const inviteeToken = await mintToken(inviteeUserId, null);

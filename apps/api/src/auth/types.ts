@@ -1,9 +1,21 @@
 import type { MembershipRole } from "@prisma/client";
 
-/** Populated by JwtAuthGuard from a verified Supabase-issued JWT. */
+/**
+ * Populated by JwtAuthGuard from a cryptographically verified Supabase JWT.
+ *
+ * `id` is trustworthy: it is the `sub` of a signature-checked token.
+ *
+ * `unverifiedEmail` is **not** an identity. It is a claim the token carries, and
+ * the name says so on purpose — it used to be called `email`, which read as
+ * something proven and was used to authorize three different things. Use
+ * `verifiedEmailFromToken` where the address decides an outcome, and prefer an
+ * authoritative lookup where nothing else binds the request. See ADR 0188.
+ */
 export interface AuthenticatedUser {
   id: string;
-  email: string | null;
+  unverifiedEmail: string | null;
+  /** Whether the token itself asserts the address has been confirmed. */
+  emailVerified: boolean;
 }
 
 /** Populated by MembershipGuard once the user's account/role is resolved. */
@@ -38,4 +50,17 @@ declare module "express" {
     platformAdmin?: PlatformAdminContext;
     apiKey?: ApiKeyContext;
   }
+}
+
+/**
+ * The signed-in user's email, but only when the token says it has been
+ * confirmed. `null` otherwise — so a caller that authorizes on an address gets
+ * nothing to compare against rather than an unproven string.
+ *
+ * Deliberately a function rather than a field: reaching for it is a decision,
+ * and the alternative (`unverifiedEmail`) is named so that using the wrong one
+ * is visible in the diff. See ADR 0188.
+ */
+export function verifiedEmailFromToken(user: AuthenticatedUser): string | null {
+  return user.emailVerified ? user.unverifiedEmail : null;
 }
