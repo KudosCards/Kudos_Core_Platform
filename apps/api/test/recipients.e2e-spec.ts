@@ -36,10 +36,41 @@ const occasionListSchema = z.object({
 describe("Recipients (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
+  /** Set by a test to race a colliding recipient in just before the import's
+   * createMany — the window `skipDuplicates` exists for. */
+  let raceBeforeCreateMany: (() => Promise<void>) | null = null;
+  /** Set by a test to inspect every Recipient.findMany the request issues. */
+  /** Set by a test to measure how many Recipient.update calls overlap. */
+  let watchRecipientUpdate: { enter: () => void; leave: () => void } | null = null;
+  let watchRecipientFindMany:
+    ((args: { take?: number; where?: unknown } | undefined) => void) | null = null;
 
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
+
+    prisma.$use(async (params, next) => {
+      if (raceBeforeCreateMany && params.model === "Recipient" && params.action === "createMany") {
+        const race = raceBeforeCreateMany;
+        raceBeforeCreateMany = null;
+        await race();
+      }
+      if (watchRecipientFindMany && params.model === "Recipient" && params.action === "findMany") {
+        watchRecipientFindMany(params.args as { take?: number; where?: unknown } | undefined);
+      }
+      if (watchRecipientUpdate && params.model === "Recipient" && params.action === "update") {
+        const watcher = watchRecipientUpdate;
+        watcher.enter();
+        try {
+          const updated: unknown = await next(params);
+          return updated;
+        } finally {
+          watcher.leave();
+        }
+      }
+      const result: unknown = await next(params);
+      return result;
+    });
   });
 
   afterAll(async () => {
@@ -196,6 +227,143 @@ describe("Recipients (e2e)", () => {
       addressCity: "Leeds",
       addressPostcode: "LS1 1AA",
     });
+  });
+
+  it("reads recipients in bounded pages when scheduling birthdays after an import", async () => {
+    // Every import calls ensureScheduledBirthdays, which read *every* active
+    // recipient with a date of birth into memory in one go. Centre's cap is
+    // 2,000 and Enterprise has none, so "any plan's cap (50-200)" — the premise
+    // the unbounded read was written under — has not held for a while.
+    const { token } = await signUp();
+    // Only the birthday read: the dedupe lookup is bounded by chunking its OR
+    // terms rather than by `take`, because a `take` there would silently drop
+    // matches instead of limiting work.
+    const unbounded: unknown[] = [];
+    watchRecipientFindMany = (args) => {
+      const where = args?.where as { dateOfBirth?: unknown } | undefined;
+      if (where?.dateOfBirth !== undefined && args?.take === undefined) unbounded.push(args);
+    };
+    try {
+      await request(app.getHttpServer())
+        .post("/recipients/import")
+        .set("Authorization", `Bearer ${token}`)
+        .attach(
+          "file",
+          Buffer.from("firstName,lastName,dateOfBirth\nPaged,Contact,01/02/2015\n"),
+          "contacts.csv",
+        )
+        .expect(201);
+    } finally {
+      watchRecipientFindMany = null;
+    }
+
+    expect(unbounded).toHaveLength(0);
+  });
+
+  it("bounds how many contact updates it runs at once", async () => {
+    // The most common real import is a corrected re-upload of the same file,
+    // where every row matches an existing contact. Firing one UPDATE per row at
+    // once exhausts the Prisma pool and stalls every other request on the
+    // instance; the work does not finish sooner for it.
+    const { token } = await signUp();
+    const rows = Array.from(
+      { length: 40 },
+      (_, i) => `Person${i},Contact,SW1A ${i}AA,person${i}@example.com`,
+    );
+    const header = "firstName,lastName,postcode,email\n";
+    await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(header + rows.join("\n") + "\n"), "contacts.csv")
+      .expect(201);
+
+    // Re-upload the same file with changed emails: every row is now an update.
+    let inFlight = 0;
+    let peak = 0;
+    watchRecipientUpdate = {
+      enter: () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+      },
+      leave: () => {
+        inFlight -= 1;
+      },
+    };
+    try {
+      const changed = rows.map((row) => row.replace("@example.com", "@changed.example.com"));
+      await request(app.getHttpServer())
+        .post("/recipients/import")
+        .set("Authorization", `Bearer ${token}`)
+        .attach("file", Buffer.from(header + changed.join("\n") + "\n"), "contacts.csv")
+        .expect(201);
+    } finally {
+      watchRecipientUpdate = null;
+    }
+
+    expect(peak).toBeGreaterThan(0);
+    expect(peak).toBeLessThanOrEqual(8);
+  });
+
+  it("does not count a duplicate row within the file as an updated contact", async () => {
+    // Two rows for the same person in one file. The second is merged into the
+    // first — nothing existing was changed, so reporting it as "updated 1"
+    // tells the customer a contact was edited when none was. It is a duplicate,
+    // and the row it duplicates is the useful thing to say.
+    const { token } = await signUp();
+    const csv =
+      "firstName,lastName,postcode\n" +
+      "Twice,Listed,SW1A 1AA\n" +
+      "Twice,Listed,SW1A 1AA\n" +
+      "Once,Listed,SW1A 2AA\n";
+    const response = await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(csv), "contacts.csv")
+      .expect(201);
+    const summary = importSummarySchema.parse(response.body);
+
+    expect(summary.created).toBe(2);
+    expect(summary.updated).toBe(0);
+    expect(summary.warnings.some((w) => w.row === 3 && /duplicate/i.test(w.message))).toBe(true);
+  });
+
+  it("reports the contacts it actually created, not the ones it tried to", async () => {
+    // `skipDuplicates` is on the import's createMany for a documented reason:
+    // another request can create a contact matching this batch's dedupe key
+    // between the lookup and the insert. When it does, the insert is silently
+    // short — and reporting `accepted.length` claims a contact that is not
+    // there. ingestFromSource reads `result.count`; the CSV path did not.
+    const { token, accountId } = await signUp();
+    raceBeforeCreateMany = async () => {
+      await prisma.recipient.create({
+        data: {
+          accountId,
+          source: "api",
+          firstName: "Raced",
+          lastName: "In",
+          addressPostcode: "SW1A 1AA",
+          // The dedupe key includes the DOB, and Postgres treats NULLs as
+          // distinct — so a collision needs every part of the key present.
+          dateOfBirth: new Date("2015-03-04T00:00:00.000Z"),
+        },
+      });
+    };
+
+    const csv =
+      "firstName,lastName,postcode,dateOfBirth\n" +
+      "Raced,In,SW1A 1AA,04/03/2015\n" +
+      "Genuinely,New,SW1A 2AA,05/06/2016\n";
+    const response = await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(csv), "contacts.csv")
+      .expect(201);
+    const summary = importSummarySchema.parse(response.body);
+
+    // Three contacts exist: the raced one, and the one genuinely new row. The
+    // import created one of them, and the count must say one.
+    expect(await prisma.recipient.count({ where: { accountId } })).toBe(2);
+    expect(summary.created).toBe(1);
   });
 
   it("imports contacts whose birthdays aren't dd/mm/yyyy instead of rejecting the whole file", async () => {

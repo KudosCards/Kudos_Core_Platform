@@ -15,6 +15,7 @@ import {
 import { parse } from "csv-parse/sync";
 import { PrismaService } from "../prisma/prisma.service";
 import { runSerializable } from "../common/run-serializable";
+import { mapWithConcurrency } from "../common/map-with-concurrency";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { AuditService } from "../audit/audit.service";
 import type { Paginated } from "../common/paginated";
@@ -30,6 +31,27 @@ import { realignBirthdayOccasion, type RealignResult } from "../occasions/realig
 import { promoteDueOccasions } from "../occasions/promote-due-occasions.util";
 import { buildScheduledKeyDateOccasion } from "../occasions/key-date-occasion.util";
 import { keyDateTypeSchema, OPEN_OCCASION_STATUSES } from "@kudos/shared-types";
+
+/**
+ * Distinct (first name, last name) pairs per dedupe-lookup query.
+ *
+ * The lookup is an OR over name pairs, and an OR with thousands of terms is a
+ * query Postgres plans badly and a payload Prisma serialises slowly. 200 keeps
+ * each query small while a 2,000-contact file still takes only a handful.
+ */
+const DEDUPE_LOOKUP_BATCH = 200;
+
+/**
+ * Simultaneous per-row UPDATEs during a CSV import. Deliberately well under the
+ * Prisma pool so an import cannot starve the requests being served alongside
+ * it — an import is a background-shaped job wearing a request's clothes.
+ */
+const RECIPIENT_UPDATE_CONCURRENCY = 8;
+
+/** Recipients read per page when backfilling birthdays after an import. Matches
+ * the nightly scheduler's page size, for the same reason: memory stays flat
+ * however many contacts an account holds. */
+const BIRTHDAY_BACKFILL_PAGE = 1_000;
 import type { UpsertKeyDateDto } from "./dto/upsert-key-date.dto";
 
 export type { Paginated };
@@ -518,17 +540,26 @@ export class RecipientsService {
     const distinguishableRows = parsedRows.filter(
       ({ parsed }) => parsed.addressPostcode !== null || parsed.dateOfBirth !== null,
     );
-    const existingRecipients = distinguishableRows.length
-      ? await this.prisma.recipient.findMany({
-          where: {
-            accountId,
-            OR: distinguishableRows.map(({ parsed }) => ({
-              firstName: parsed.firstName,
-              lastName: parsed.lastName,
-            })),
-          },
-        })
-      : [];
+    // De-duplicated and chunked. One OR term per eligible row meant a
+    // 2,000-contact re-upload — the most common real import, a corrected copy
+    // of the same file — built a 2,000-term OR, and a file may hold many rows
+    // for the same name. Distinct pairs, in batches, keeps the query a size
+    // Postgres plans well however large the file. See ADR 0207.
+    const namePairs = [
+      ...new Map(
+        distinguishableRows.map(({ parsed }) => [
+          `${parsed.firstName}\u0000${parsed.lastName}`,
+          { firstName: parsed.firstName, lastName: parsed.lastName },
+        ]),
+      ).values(),
+    ];
+    const existingRecipients: Recipient[] = [];
+    for (let i = 0; i < namePairs.length; i += DEDUPE_LOOKUP_BATCH) {
+      const batch = namePairs.slice(i, i + DEDUPE_LOOKUP_BATCH);
+      existingRecipients.push(
+        ...(await this.prisma.recipient.findMany({ where: { accountId, OR: batch } })),
+      );
+    }
     const existingByKey = new Map(
       existingRecipients.map((r) => [
         dedupeKey(r.firstName, r.lastName, r.addressPostcode, r.dateOfBirth),
@@ -569,7 +600,14 @@ export class RecipientsService {
       const pending = hasDistinguishingInfo ? pendingByKey.get(key) : undefined;
       if (pending) {
         pending.recipient.email = parsed.email ?? pending.recipient.email;
-        summary.updated += 1;
+        // Merged into an earlier row of this same file. Nothing existing was
+        // changed, so counting it as "updated" tells the customer a contact was
+        // edited when none was — and hides that their file has duplicates in
+        // it. Named as what it is, against the row it duplicates.
+        summary.warnings.push({
+          row: rowNumber,
+          message: `Duplicate of row ${pending.rowNumber} in this file — merged into it`,
+        });
         continue;
       }
 
@@ -601,7 +639,7 @@ export class RecipientsService {
     // Built inside the transaction callback below, which Prisma may retry on
     // a serialization conflict (P2034) — so it must return its result rather
     // than mutate `summary` directly, or a retry would double-push rejections.
-    const { toCreate, capRejected } = await runSerializable(this.prisma, async (tx) => {
+    const { insertedCount, capRejected } = await runSerializable(this.prisma, async (tx) => {
       let activeCount =
         entitlement.recipientCap === null
           ? 0
@@ -621,29 +659,36 @@ export class RecipientsService {
         activeCount += 1;
       }
 
+      let insertedCount = 0;
       if (accepted.length > 0) {
         // skipDuplicates guards the rare window where a concurrent request
         // creates a recipient matching this batch's dedupe key between our
         // pre-transaction lookup and this insert, instead of a raw P2002
-        // crashing the whole import.
-        await tx.recipient.createMany({ data: accepted, skipDuplicates: true });
+        // crashing the whole import. When it fires, fewer rows land than were
+        // accepted — so the count comes from the result, not from the input.
+        // Reporting the input claimed contacts that are not there.
+        // ingestFromSource has always read `result.count`; this did not.
+        const result = await tx.recipient.createMany({ data: accepted, skipDuplicates: true });
+        insertedCount = result.count;
       }
-      return { toCreate: accepted, capRejected: rejected };
+      return { insertedCount, capRejected: rejected };
     });
-    summary.created = toCreate.length;
+    summary.created = insertedCount;
     summary.rejected.push(...capRejected);
 
-    // One UPDATE per matched existing recipient, not batched: Prisma has no
-    // "update many rows, each with a different value" primitive short of
-    // raw SQL, and each row's new email differs. Acceptable because this is
-    // bounded by how many existing recipients a single CSV import re-matches
-    // (typically a small fraction of the file, not its full row count) —
-    // revisit with a raw `UPDATE ... FROM (VALUES ...)` if that stops holding.
-    await Promise.all(
-      toUpdate.map(({ id, email }) =>
-        this.prisma.recipient.update({ where: { id }, data: { email } }),
-      ),
-    );
+    // One UPDATE per matched existing recipient: Prisma has no "update many
+    // rows, each with a different value" primitive short of raw SQL, and each
+    // row's new email differs.
+    //
+    // Bounded, not `Promise.all`. The old comment justified unbounded fan-out
+    // as "typically a small fraction of the file" — but the most common real
+    // import is a corrected re-upload of the same file, where *every* row
+    // matches. Two thousand simultaneous updates exhaust the connection pool
+    // and stall every other request on the instance; they do not finish sooner.
+    // See ADR 0207.
+    await mapWithConcurrency(toUpdate, RECIPIENT_UPDATE_CONCURRENCY, async ({ id, email }) => {
+      await this.prisma.recipient.update({ where: { id }, data: { email } });
+    });
 
     // Newly imported recipients with a DOB get their birthday on the calendar
     // straight away, without waiting for the nightly scheduler.
@@ -848,22 +893,40 @@ export class RecipientsService {
    */
   private async ensureScheduledBirthdays(accountId: string): Promise<void> {
     const today = startOfUtcDay(new Date());
-    const recipients = await this.prisma.recipient.findMany({
-      where: { accountId, status: "active", dateOfBirth: { not: null } },
-      select: { id: true, accountId: true, dateOfBirth: true },
-    });
-    if (recipients.length === 0) {
+    // Keyset-paginated, like the nightly scheduler's equivalent. This read
+    // every active recipient with a date of birth into memory in one go, on
+    // every import — written when the comments still assumed "any plan's
+    // recipient cap (50–200)". Centre's is 2,000 and Enterprise has none.
+    // See ADR 0207.
+    let cursor: string | undefined;
+    let seenAny = false;
+    for (;;) {
+      const recipients = await this.prisma.recipient.findMany({
+        where: { accountId, status: "active", dateOfBirth: { not: null } },
+        select: { id: true, accountId: true, dateOfBirth: true },
+        orderBy: { id: "asc" },
+        take: BIRTHDAY_BACKFILL_PAGE,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
+      if (recipients.length === 0) break;
+      seenAny = true;
+
+      await this.prisma.occasion.createMany({
+        data: recipients.map((recipient) =>
+          buildScheduledBirthdayOccasion(
+            { id: recipient.id, accountId, dateOfBirth: recipient.dateOfBirth as Date },
+            today,
+          ),
+        ),
+        skipDuplicates: true,
+      });
+
+      if (recipients.length < BIRTHDAY_BACKFILL_PAGE) break;
+      cursor = recipients[recipients.length - 1]!.id;
+    }
+    if (!seenAny) {
       return;
     }
-    await this.prisma.occasion.createMany({
-      data: recipients.map((recipient) =>
-        buildScheduledBirthdayOccasion(
-          { id: recipient.id, accountId, dateOfBirth: recipient.dateOfBirth as Date },
-          today,
-        ),
-      ),
-      skipDuplicates: true,
-    });
     // The import case this was reported from: two thousand contacts land, a
     // slice of them have birthdays inside the next three weeks, and those
     // belong in Approvals now — not tomorrow morning.

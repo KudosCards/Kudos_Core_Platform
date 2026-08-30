@@ -93,6 +93,28 @@ describe("Recipient lists (e2e)", () => {
       .expect(409);
   });
 
+  it("accepts more ids than the largest capped plan allows contacts", async () => {
+    // The bound was 1,000, commented as "well above any plan's recipient cap".
+    // Centre's cap is 2,000 and Enterprise has none, so a Centre account that
+    // ticked all its contacts and pressed "Add to list" got a 400 for doing
+    // exactly what the button offers. The ids here are unknown to the account,
+    // so nothing is added — this is about the request being accepted at all.
+    const token = await signUp();
+    const listId = await createList(token, "Everyone");
+    // Two real contacts, padded out past the old bound. The padding stands in
+    // for the rest of a large account's book without the cost of creating it.
+    const real = [await createRecipient(token, "Alice"), await createRecipient(token, "Bob")];
+    const ids = [...real, ...Array.from({ length: 1_498 }, () => randomUUID())];
+
+    const response = await request(app.getHttpServer())
+      .post(`/recipient-lists/${listId}/members`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ recipientIds: ids })
+      .expect(201);
+
+    expect(recipientListSummarySchema.parse(response.body).memberCount).toBe(2);
+  });
+
   it("adds and removes members, and filters recipients by list", async () => {
     const token = await signUp();
     const listId = await createList(token, "Reading group");
