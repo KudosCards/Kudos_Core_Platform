@@ -82,12 +82,32 @@ function ConnectorShell({
 
 const CONNECTED_PILL = <span className="pill pill-positive">Connected</span>;
 
-/** Small green summary shown after a manual sync. */
+/** Shown on the "Last synced" line until the next page load replaces it with
+ * the status the API stored. Any non-"ok" value renders verbatim. */
+const PARTIAL_SYNC_LABEL = "partial: some contacts were not imported";
+
+/**
+ * Summary shown after a manual sync — green when everything came across, amber
+ * when it didn't. A truncated pull is a partial import, and saying "Imported 5,000"
+ * in green for a 12,000-contact portal is how someone ends up believing their
+ * whole address book is here.
+ */
 function SyncSummary({ result }: { result: CrmSyncResult }) {
+  const counts = `Imported ${result.created} new, ${result.updated} updated${
+    result.skipped > 0 ? `, ${result.skipped} skipped` : ""
+  } (of ${result.fetched} fetched).`;
+
+  if (!result.truncated) {
+    return (
+      <p className="rounded-lg bg-success-soft px-4 py-2 text-sm font-medium text-success">
+        {counts}
+      </p>
+    );
+  }
   return (
-    <p className="rounded-lg bg-success-soft px-4 py-2 text-sm font-medium text-success">
-      Imported {result.created} new, {result.updated} updated
-      {result.skipped > 0 ? `, ${result.skipped} skipped` : ""} (of {result.fetched} fetched).
+    <p className="rounded-lg border border-warning/30 bg-warning-soft px-4 py-2 text-sm font-medium text-warning">
+      {counts} This was a partial import — there were more contacts than one sync can read. Run it
+      again, or narrow what you sync, to bring across the rest.
     </p>
   );
 }
@@ -165,7 +185,15 @@ function BrevoConnector({
         },
       );
       setResult(syncResult);
-      if (connection) onChange({ ...connection, lastSyncedAt: new Date(), lastSyncStatus: "ok" });
+      if (connection) {
+        onChange({
+          ...connection,
+          lastSyncedAt: new Date(),
+          // Not unconditionally "ok": a truncated pull is a partial import, and
+          // the "Last synced" line is what carries that until the next reload.
+          lastSyncStatus: syncResult.truncated ? PARTIAL_SYNC_LABEL : "ok",
+        });
+      }
     } catch (syncError) {
       setError(syncError instanceof ApiError ? syncError.message : "Sync failed");
     } finally {
@@ -341,7 +369,15 @@ function OAuthConnector({
         { method: "POST" },
       );
       setResult(syncResult);
-      if (connection) onChange({ ...connection, lastSyncedAt: new Date(), lastSyncStatus: "ok" });
+      if (connection) {
+        onChange({
+          ...connection,
+          lastSyncedAt: new Date(),
+          // Not unconditionally "ok": a truncated pull is a partial import, and
+          // the "Last synced" line is what carries that until the next reload.
+          lastSyncStatus: syncResult.truncated ? PARTIAL_SYNC_LABEL : "ok",
+        });
+      }
     } catch (syncError) {
       setError(syncError instanceof ApiError ? syncError.message : "Sync failed");
     } finally {

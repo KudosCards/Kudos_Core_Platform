@@ -1,4 +1,5 @@
 import { BadGatewayException, Logger } from "@nestjs/common";
+import { httpRequest } from "../common/http-request";
 import type { MarketingContactInput, MarketingContactsClient } from "./marketing-contacts.client";
 
 const BREVO_CONTACTS_URL = "https://api.brevo.com/v3/contacts";
@@ -24,20 +25,27 @@ export class HttpMarketingContactsClient implements MarketingContactsClient {
     if (input.lastName) attributes.LASTNAME = input.lastName;
     if (input.company) attributes.COMPANY = input.company;
 
-    const response = await fetch(BREVO_CONTACTS_URL, {
-      method: "POST",
-      headers: {
-        "api-key": this.apiKey,
-        "content-type": "application/json",
-        accept: "application/json",
+    // Safe to retry despite being a POST: `updateEnabled: true` makes this an
+    // upsert keyed on email, so a repeat of a call Brevo already applied lands
+    // on the same contact rather than creating a second one.
+    const response = await httpRequest(
+      BREVO_CONTACTS_URL,
+      {
+        method: "POST",
+        headers: {
+          "api-key": this.apiKey,
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({
+          email: input.email,
+          attributes,
+          listIds: [input.listId],
+          updateEnabled: true,
+        }),
       },
-      body: JSON.stringify({
-        email: input.email,
-        attributes,
-        listIds: [input.listId],
-        updateEnabled: true,
-      }),
-    });
+      { maxAttempts: 3, label: "Brevo contact upsert" },
+    );
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");

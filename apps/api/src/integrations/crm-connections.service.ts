@@ -78,6 +78,17 @@ export interface CrmConnectionView {
 
 export interface CrmSyncResult extends IngestResult {
   fetched: number;
+  /** True when the provider's paging cap stopped the pull with more contacts
+   * still to read — the import is partial, not complete. */
+  truncated: boolean;
+}
+
+/** One provider's pull, before ingest: the mapped contacts, how many rows the
+ * provider actually handed over, and whether its paging cap cut the pull short. */
+interface ProviderFetch {
+  contacts: NormalizedContact[];
+  fetched: number;
+  truncated: boolean;
 }
 
 /** What a signed OAuth state carries across the redirect — the account/user we
@@ -88,6 +99,16 @@ interface OAuthState {
   provider: string;
   nonce: string;
   iat: number;
+}
+
+/**
+ * The status stored when a pull stopped at the provider's page cap. It is
+ * deliberately not "ok": the connections list renders any non-"ok" status
+ * verbatim, so this is what tells a customer their address book only came
+ * across in part — the thing the previous "ok" hid from them entirely.
+ */
+export function partialSyncStatus(fetched: number): string {
+  return `partial: stopped at the provider page limit after ${fetched} contacts — some were not imported`;
 }
 
 function toView(connection: CrmConnection): CrmConnectionView {
@@ -357,7 +378,7 @@ export class CrmConnectionsService {
     }
 
     try {
-      const { contacts, fetched } = await this.fetchContacts(connection);
+      const { contacts, fetched, truncated } = await this.fetchContacts(connection);
       const result = await this.recipients.ingestFromSource(
         accountId,
         provider,
@@ -365,11 +386,20 @@ export class CrmConnectionsService {
         actorUserId,
       );
 
+      if (truncated) {
+        this.logger.warn(
+          `CRM sync for account ${accountId} (${provider}) hit the provider page limit ` +
+            `after ${fetched} contacts — the import is partial`,
+        );
+      }
       await this.prisma.crmConnection.update({
         where: { id: connection.id },
-        data: { lastSyncedAt: new Date(), lastSyncStatus: "ok" },
+        data: {
+          lastSyncedAt: new Date(),
+          lastSyncStatus: truncated ? partialSyncStatus(fetched) : "ok",
+        },
       });
-      return { fetched, ...result };
+      return { fetched, truncated, ...result };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       this.logger.warn(`CRM sync failed for account ${accountId} (${provider}): ${message}`);
@@ -390,9 +420,7 @@ export class CrmConnectionsService {
   // Per-provider fetch: decrypt credentials, pull, map to NormalizedContact.
   // ---------------------------------------------------------------------------
 
-  private async fetchContacts(
-    connection: CrmConnection,
-  ): Promise<{ contacts: NormalizedContact[]; fetched: number }> {
+  private async fetchContacts(connection: CrmConnection): Promise<ProviderFetch> {
     switch (connection.provider) {
       case "brevo":
         return this.fetchBrevoContacts(connection);
@@ -405,37 +433,34 @@ export class CrmConnectionsService {
     }
   }
 
-  private async fetchBrevoContacts(
-    connection: CrmConnection,
-  ): Promise<{ contacts: NormalizedContact[]; fetched: number }> {
+  private async fetchBrevoContacts(connection: CrmConnection): Promise<ProviderFetch> {
     if (!connection.encryptedApiKey) {
       throw new BadRequestException("Brevo connection is missing its API key");
     }
     const apiKey = this.crypto.decrypt(connection.encryptedApiKey);
     const mapping = this.resolveMapping(connection.fieldMapping, DEFAULT_BREVO_MAPPING);
-    const raw = await this.brevo.fetchContacts(apiKey);
+    const { contacts: raw, truncated } = await this.brevo.fetchContacts(apiKey);
     const contacts = raw
       .map((contact) => mapBrevoContact(contact, mapping))
       .filter((c): c is NormalizedContact => c !== null);
-    return { contacts, fetched: raw.length };
+    return { contacts, fetched: raw.length, truncated };
   }
 
-  private async fetchHubSpotContacts(
-    connection: CrmConnection,
-  ): Promise<{ contacts: NormalizedContact[]; fetched: number }> {
+  private async fetchHubSpotContacts(connection: CrmConnection): Promise<ProviderFetch> {
     this.assertOAuthConfigured("hubspot");
     const accessToken = await this.validAccessToken("hubspot", connection);
     const mapping = this.resolveMapping(connection.fieldMapping, DEFAULT_HUBSPOT_MAPPING);
-    const raw = await this.hubspot.fetchContacts(accessToken, hubspotProperties(mapping));
+    const { contacts: raw, truncated } = await this.hubspot.fetchContacts(
+      accessToken,
+      hubspotProperties(mapping),
+    );
     const contacts = raw
       .map((contact) => mapHubSpotContact(contact, mapping))
       .filter((c): c is NormalizedContact => c !== null);
-    return { contacts, fetched: raw.length };
+    return { contacts, fetched: raw.length, truncated };
   }
 
-  private async fetchGoHighLevelContacts(
-    connection: CrmConnection,
-  ): Promise<{ contacts: NormalizedContact[]; fetched: number }> {
+  private async fetchGoHighLevelContacts(connection: CrmConnection): Promise<ProviderFetch> {
     this.assertOAuthConfigured("gohighlevel");
     // GoHighLevel scopes contacts to the location the token was granted for; we
     // persisted that locationId as externalAccountId at connect time.
@@ -447,11 +472,11 @@ export class CrmConnectionsService {
     }
     const accessToken = await this.validAccessToken("gohighlevel", connection);
     const mapping = this.resolveMapping(connection.fieldMapping, DEFAULT_GOHIGHLEVEL_MAPPING);
-    const raw = await this.ghl.fetchContacts(accessToken, locationId);
+    const { contacts: raw, truncated } = await this.ghl.fetchContacts(accessToken, locationId);
     const contacts = raw
       .map((contact) => mapGoHighLevelContact(contact, mapping))
       .filter((c): c is NormalizedContact => c !== null);
-    return { contacts, fetched: raw.length };
+    return { contacts, fetched: raw.length, truncated };
   }
 
   /** Returns a usable access token for an OAuth provider, refreshing (and

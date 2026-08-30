@@ -104,6 +104,36 @@ describe("AirtableCatalogSource", () => {
     );
   });
 
+  it("waits and tries again when Airtable rate-limits, instead of failing the sync", async () => {
+    // The whole nightly catalog sync hangs off this one read, and the operator
+    // hint for a 429 has always been "wait a moment and try again". Now the code
+    // does that rather than asking a person to. See ADR 0209.
+    fetchSpy = jest
+      .spyOn(global, "fetch")
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        headers: { get: () => null },
+        text: () => Promise.resolve("rate limited"),
+      } as unknown as Response)
+      .mockResolvedValueOnce(jsonResponse({ records: [] }));
+
+    await expect(new AirtableCatalogSource(config).fetchActiveCards()).resolves.toEqual([]);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after a bounded number of attempts rather than retrying all night", async () => {
+    fetchSpy = jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: false,
+      status: 503,
+      headers: { get: () => null },
+      text: () => Promise.resolve("upstream down"),
+    } as unknown as Response);
+
+    await expect(new AirtableCatalogSource(config).fetchActiveCards()).rejects.toThrow(/503/);
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+  });
+
   it("on a 403 lists the base's real tables (via schema) so the operator can fix the table name", async () => {
     fetchSpy = jest
       .spyOn(global, "fetch")

@@ -1,4 +1,5 @@
 import { BadGatewayException, Logger } from "@nestjs/common";
+import { httpRequest } from "../common/http-request";
 import type { EmailClient, SendEmailInput } from "./email.client";
 
 const BREVO_EMAIL_URL = "https://api.brevo.com/v3/smtp/email";
@@ -29,19 +30,26 @@ export class HttpBrevoEmailClient implements EmailClient {
       ? { templateId: input.templateId, params: input.params ?? {} }
       : { subject: input.subject, htmlContent: input.html ?? "" };
 
-    const response = await fetch(BREVO_EMAIL_URL, {
-      method: "POST",
-      headers: {
-        "api-key": this.apiKey,
-        "content-type": "application/json",
-        accept: "application/json",
+    // Deliberately no retry: Brevo may well have accepted and queued a send
+    // that then failed to answer us, and a second attempt puts a second copy in
+    // the recipient's inbox. A failed send is surfaced instead.
+    const response = await httpRequest(
+      BREVO_EMAIL_URL,
+      {
+        method: "POST",
+        headers: {
+          "api-key": this.apiKey,
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({
+          ...sender,
+          to: [{ email: input.to, ...(input.toName && { name: input.toName }) }],
+          ...content,
+        }),
       },
-      body: JSON.stringify({
-        ...sender,
-        to: [{ email: input.to, ...(input.toName && { name: input.toName }) }],
-        ...content,
-      }),
-    });
+      { label: "Brevo email" },
+    );
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");

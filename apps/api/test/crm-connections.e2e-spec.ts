@@ -28,6 +28,7 @@ const paginatedRecipientsSchema = z.object({
 
 const syncResultSchema = z.object({
   fetched: z.number(),
+  truncated: z.boolean(),
   created: z.number(),
   updated: z.number(),
   skipped: z.number(),
@@ -44,12 +45,15 @@ const connectionViewSchema = z.object({
 
 /** Mutable so a test can change what Brevo "returns" for the re-sync case. */
 let mockContacts: BrevoContact[] = [];
+/** Set by the truncation test: the Brevo list held more contacts than the
+ * paging cap allowed the client to read. */
+let brevoTruncated = false;
 const brevoMock: BrevoClient = {
   verifyKey: (apiKey) =>
     apiKey.includes("bad")
       ? Promise.reject(new UnauthorizedException("bad key"))
       : Promise.resolve(),
-  fetchContacts: () => Promise.resolve(mockContacts),
+  fetchContacts: () => Promise.resolve({ contacts: mockContacts, truncated: brevoTruncated }),
 };
 
 function defaultContacts(): BrevoContact[] {
@@ -80,6 +84,7 @@ describe("CRM connections — Brevo (e2e)", () => {
 
   beforeEach(() => {
     mockContacts = defaultContacts();
+    brevoTruncated = false;
   });
 
   async function signUp(): Promise<{ token: string; accountId: string }> {
@@ -157,6 +162,23 @@ describe("CRM connections — Brevo (e2e)", () => {
     const ada = list.items.find((r) => r.firstName === "Ada");
     expect(ada?.externalId).toBe("1");
     expect(ada?.dateOfBirth).not.toBeNull();
+  });
+
+  it("a list past the paging cap records a partial sync, not ok", async () => {
+    // The Brevo half of the same defect: the contacts that fit still land, but
+    // the connection must stop telling the customer the import was complete.
+    const { token, accountId } = await signUp();
+    await connect(token).expect(201);
+    brevoTruncated = true;
+
+    const sync = await request(app.getHttpServer())
+      .post("/integrations/connections/brevo/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect(syncResultSchema.parse(sync.body).truncated).toBe(true);
+    const stored = await prisma.crmConnection.findFirstOrThrow({ where: { accountId } });
+    expect(stored.lastSyncStatus).toMatch(/partial/i);
   });
 
   it("re-syncing updates matched contacts instead of duplicating", async () => {

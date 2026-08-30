@@ -64,6 +64,25 @@ describe("CatalogPublisherService", () => {
     expect(headers["x-catalog-revalidate-secret"]).toBe("s3cret");
   });
 
+  it("bounds every request with the publish deadline, purge and warms alike", async () => {
+    // An AbortSignal exposes no deadline to read back, so watch it being armed:
+    // this pins that the publish timeout is the one applied to all three legs,
+    // not the longer platform default. See ADR 0209.
+    const timeoutSpy = jest.spyOn(AbortSignal, "timeout");
+    fetchMock.mockResolvedValue(okResponse());
+
+    await makeService(CONFIGURED).publish();
+
+    expect(timeoutSpy).toHaveBeenCalledTimes(3);
+    for (const [ms] of timeoutSpy.mock.calls) {
+      expect(ms).toBe(10_000);
+    }
+    for (let i = 0; i < 3; i += 1) {
+      expect(callInit(i).signal).toBeInstanceOf(AbortSignal);
+    }
+    timeoutSpy.mockRestore();
+  });
+
   it("warms /cards in a second request, after the purge has landed", async () => {
     fetchMock.mockResolvedValue(okResponse());
 

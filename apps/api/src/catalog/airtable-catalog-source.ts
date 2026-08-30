@@ -1,4 +1,5 @@
 import { Logger } from "@nestjs/common";
+import { httpRequest } from "../common/http-request";
 import type {
   CatalogCardRecord,
   CatalogFieldMapping,
@@ -33,6 +34,10 @@ const PAGE_SIZE = 100;
 // Airtable rate-limits at 5 req/s per base; a page fetch is well under that,
 // but a hard cap on pages stops a misconfiguration from looping forever.
 const MAX_PAGES = 100;
+/** The record list is a read and the whole nightly catalog sync depends on it —
+ * `hintFor(429)` has always told the operator to wait and try again, so do that
+ * here rather than making a person do it. */
+const LIST_ATTEMPTS = 4;
 
 /**
  * Field-name aliases per logical field, matched case-insensitively (see
@@ -227,7 +232,11 @@ export class AirtableCatalogSource implements CatalogSource {
         url.searchParams.set("offset", offset);
       }
 
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+      const response = await httpRequest(
+        url,
+        { headers: { Authorization: `Bearer ${apiKey}` } },
+        { maxAttempts: LIST_ATTEMPTS, label: "Airtable records" },
+      );
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         // A 403/404 here is almost always a wrong TABLE name (Airtable folds
@@ -261,7 +270,7 @@ export class AirtableCatalogSource implements CatalogSource {
    */
   private async describeTables(apiKey: string, baseId: string): Promise<string> {
     try {
-      const response = await fetch(`${AIRTABLE_API_BASE}/meta/bases/${baseId}/tables`, {
+      const response = await httpRequest(`${AIRTABLE_API_BASE}/meta/bases/${baseId}/tables`, {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       if (!response.ok) {

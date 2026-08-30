@@ -1,11 +1,17 @@
 import { BadGatewayException, UnauthorizedException } from "@nestjs/common";
+import { httpRequest } from "../../common/http-request";
+import type { CrmContactsResult } from "../crm-contacts-result";
 import type { BrevoClient, BrevoContact } from "./brevo-client";
 
 const BREVO_BASE_URL = "https://api.brevo.com/v3";
-const PAGE_SIZE = 500;
-/** Safety bound so a huge Brevo list can't spin forever — the plan recipient
- * cap limits what we actually keep anyway. */
-const MAX_PAGES = 20;
+export const BREVO_PAGE_SIZE = 500;
+/** Safety bound so a huge Brevo list can't hold the nightly sync open forever.
+ * It is a real limit, not a formality — a list past it imports partially, and
+ * `truncated` on the result is what makes that visible. */
+export const BREVO_MAX_PAGES = 20;
+/** Contact pages are reads: safe to repeat, and a single rate-limited page is
+ * not a reason to abandon a whole list's import. */
+const CONTACTS_ATTEMPTS = 4;
 
 interface BrevoContactsResponse {
   contacts: BrevoContact[];
@@ -16,9 +22,11 @@ interface BrevoContactsResponse {
  * overridden with a mock) — see the provider. */
 export class HttpBrevoClient implements BrevoClient {
   async verifyKey(apiKey: string): Promise<void> {
-    const response = await fetch(`${BREVO_BASE_URL}/contacts?limit=1`, {
-      headers: { "api-key": apiKey, accept: "application/json" },
-    });
+    const response = await httpRequest(
+      `${BREVO_BASE_URL}/contacts?limit=1`,
+      { headers: { "api-key": apiKey, accept: "application/json" } },
+      { maxAttempts: CONTACTS_ATTEMPTS, label: "Brevo key check" },
+    );
     if (response.status === 401) {
       throw new UnauthorizedException("Brevo rejected the API key");
     }
@@ -27,13 +35,15 @@ export class HttpBrevoClient implements BrevoClient {
     }
   }
 
-  async fetchContacts(apiKey: string): Promise<BrevoContact[]> {
-    const all: BrevoContact[] = [];
-    for (let page = 0; page < MAX_PAGES; page += 1) {
-      const url = `${BREVO_BASE_URL}/contacts?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`;
-      const response = await fetch(url, {
-        headers: { "api-key": apiKey, accept: "application/json" },
-      });
+  async fetchContacts(apiKey: string): Promise<CrmContactsResult<BrevoContact>> {
+    const contacts: BrevoContact[] = [];
+    for (let page = 0; page < BREVO_MAX_PAGES; page += 1) {
+      const offset = page * BREVO_PAGE_SIZE;
+      const response = await httpRequest(
+        `${BREVO_BASE_URL}/contacts?limit=${BREVO_PAGE_SIZE}&offset=${offset}`,
+        { headers: { "api-key": apiKey, accept: "application/json" } },
+        { maxAttempts: CONTACTS_ATTEMPTS, label: "Brevo contacts" },
+      );
 
       if (response.status === 401) {
         throw new UnauthorizedException("Brevo rejected the API key");
@@ -43,12 +53,15 @@ export class HttpBrevoClient implements BrevoClient {
       }
 
       const body = (await response.json()) as BrevoContactsResponse;
-      const contacts = body.contacts ?? [];
-      all.push(...contacts);
-      if (contacts.length < PAGE_SIZE || all.length >= body.count) {
-        break;
+      const batch = body.contacts ?? [];
+      contacts.push(...batch);
+      // A short page, or having everything Brevo says exists, is the real end
+      // of the list — reaching either means nothing was left behind.
+      if (batch.length < BREVO_PAGE_SIZE || contacts.length >= body.count) {
+        return { contacts, truncated: false };
       }
     }
-    return all;
+    // The cap ran out with Brevo still reporting more contacts than we hold.
+    return { contacts, truncated: true };
   }
 }

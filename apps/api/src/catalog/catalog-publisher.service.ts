@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { httpRequest } from "../common/http-request";
 import { ConfigService } from "@nestjs/config";
 import type { EnvConfig } from "../config/env.schema";
 
@@ -51,11 +52,11 @@ export class CatalogPublisherService {
     const url = `${webAppUrl.replace(/\/$/, "")}/api/revalidate-catalog`;
 
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "x-catalog-revalidate-secret": secret },
-        signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS),
-      });
+      const response = await httpRequest(
+        url,
+        { method: "POST", headers: { "x-catalog-revalidate-secret": secret } },
+        { timeoutMs: PUBLISH_TIMEOUT_MS, label: "catalog revalidate" },
+      );
 
       if (!response.ok) {
         // The route explains itself in the body (unset secret, mismatch); pass
@@ -107,7 +108,7 @@ export class CatalogPublisherService {
   private async warmCatalogPage(webAppUrl: string): Promise<void> {
     const url = `${webAppUrl.replace(/\/$/, "")}/cards`;
     const get = async (): Promise<void> => {
-      const response = await fetch(url, { signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS) });
+      const response = await httpRequest(url, {}, { timeoutMs: PUBLISH_TIMEOUT_MS });
       // Reading the body to the end is the whole point, not tidiness: `fetch`
       // resolves as soon as the headers land, and a Next page streams its HTML
       // — so returning here would mean moving on while the render we're paying

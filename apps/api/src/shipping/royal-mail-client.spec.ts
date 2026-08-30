@@ -105,6 +105,21 @@ describe("HttpRoyalMailClient.getTrackingStatus", () => {
     expect(result).toEqual({ status: "unknown", deliveredAt: null, rawStatus: null });
   });
 
+  it("retries a rate-limited tracking read rather than losing the update", async () => {
+    fetchSpy = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(fakeResponse({ ok: false, status: 429, text: "slow down" }))
+      .mockResolvedValueOnce(
+        fakeResponse({ ok: true, status: 200, json: { status: "Delivered" } }),
+      );
+    const client = new HttpRoyalMailClient("secret-key", "https://api.parcel.royalmail.com");
+
+    const result = await client.getTrackingStatus("RM123GB");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe("delivered");
+  });
+
   it("throws on a real HTTP failure so the operator sees it", async () => {
     fetchSpy = jest
       .spyOn(globalThis, "fetch")
@@ -112,5 +127,49 @@ describe("HttpRoyalMailClient.getTrackingStatus", () => {
     const client = new HttpRoyalMailClient("secret-key", "https://api.parcel.royalmail.com");
 
     await expect(client.getTrackingStatus("RM000GB")).rejects.toThrow(/500/);
+  });
+});
+
+/**
+ * Booking a shipment is not safe to repeat: Royal Mail may have created it and
+ * failed to answer, and a retry would book a second one — a second card in the
+ * post at our cost. Reads retry; this create does not. See ADR 0209.
+ */
+describe("HttpRoyalMailClient.createShipment", () => {
+  let fetchSpy: jest.SpyInstance;
+
+  afterEach(() => fetchSpy?.mockRestore());
+
+  const input = {
+    orderReference: "ORD-1",
+    recipientName: "Ada Lovelace",
+    addressLine1: "1 Test Street",
+    addressLine2: null,
+    city: "London",
+    postcode: "SW1A 1AA",
+    country: "GB",
+    postageClass: "first_class" as const,
+  };
+
+  it("makes exactly one attempt on a 503, and surfaces the failure", async () => {
+    fetchSpy = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(fakeResponse({ ok: false, status: 503, text: "upstream down" }));
+    const client = new HttpRoyalMailClient("secret-key", "https://api.parcel.royalmail.com");
+
+    await expect(client.createShipment(input)).rejects.toThrow(/503/);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the booking a deadline", async () => {
+    fetchSpy = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(fakeResponse({ ok: true, status: 200, json: { trackingNumber: "RM1" } }));
+    const client = new HttpRoyalMailClient("secret-key", "https://api.parcel.royalmail.com");
+
+    await client.createShipment(input);
+
+    const call = fetchSpy.mock.calls.at(-1) as [string, RequestInit];
+    expect(call[1].signal).toBeInstanceOf(AbortSignal);
   });
 });

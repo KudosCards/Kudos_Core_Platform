@@ -1,3 +1,4 @@
+import type { CrmContactsResult } from "../crm-contacts-result";
 import type { OAuthTokens } from "../oauth-crm-client";
 
 /**
@@ -38,5 +39,8 @@ export interface GoHighLevelClient {
   refreshTokens(refreshToken: string): Promise<OAuthTokens>;
   /** Fetches every contact in the given location the token can see. Paginated
    * internally. The locationId is required — GoHighLevel scopes contacts to it. */
-  fetchContacts(accessToken: string, locationId: string): Promise<GoHighLevelContact[]>;
+  fetchContacts(
+    accessToken: string,
+    locationId: string,
+  ): Promise<CrmContactsResult<GoHighLevelContact>>;
 }

@@ -1,4 +1,6 @@
 import { BadGatewayException, UnauthorizedException } from "@nestjs/common";
+import { httpRequest } from "../../common/http-request";
+import type { CrmContactsResult } from "../crm-contacts-result";
 import type { OAuthTokens } from "../oauth-crm-client";
 import type { GoHighLevelClient, GoHighLevelContact } from "./gohighlevel-client";
 
@@ -6,10 +8,14 @@ const GOHIGHLEVEL_TOKEN_URL = "https://services.leadconnectorhq.com/oauth/token"
 const GOHIGHLEVEL_CONTACTS_URL = "https://services.leadconnectorhq.com/contacts/";
 /** GoHighLevel API v2 requires this date-stamped version header on every call. */
 const GOHIGHLEVEL_API_VERSION = "2021-07-28";
-const PAGE_SIZE = 100;
-/** Safety bound so a huge location can't spin forever — the plan recipient cap
- * limits what we actually keep anyway. */
-const MAX_PAGES = 100;
+export const GOHIGHLEVEL_PAGE_SIZE = 100;
+/** Safety bound so a huge location can't hold the nightly sync open forever. It
+ * is a real limit, not a formality — a location past it imports partially, and
+ * `truncated` on the result is what makes that visible. */
+export const GOHIGHLEVEL_MAX_PAGES = 100;
+/** Contact pages are reads: safe to repeat, and a single rate-limited page is
+ * not a reason to abandon a whole location's import. */
+const CONTACTS_ATTEMPTS = 4;
 
 interface GoHighLevelTokenResponse {
   access_token: string;
@@ -59,11 +65,21 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
   }
 
   private async requestTokens(params: Record<string, string>): Promise<OAuthTokens> {
-    const response = await fetch(GOHIGHLEVEL_TOKEN_URL, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-      body: new URLSearchParams(params).toString(),
-    });
+    // Deliberately no retry: an authorization code is single-use and a refresh
+    // rotates the stored token, so repeating a request the upstream may already
+    // have processed can burn the credential we are trying to obtain.
+    const response = await httpRequest(
+      GOHIGHLEVEL_TOKEN_URL,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          accept: "application/json",
+        },
+        body: new URLSearchParams(params).toString(),
+      },
+      { label: "GoHighLevel token" },
+    );
 
     if (response.status === 400 || response.status === 401 || response.status === 403) {
       throw new UnauthorizedException("GoHighLevel rejected the authorization");
@@ -81,19 +97,26 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
     };
   }
 
-  async fetchContacts(accessToken: string, locationId: string): Promise<GoHighLevelContact[]> {
-    const all: GoHighLevelContact[] = [];
-    const first = new URLSearchParams({ locationId, limit: String(PAGE_SIZE) });
+  async fetchContacts(
+    accessToken: string,
+    locationId: string,
+  ): Promise<CrmContactsResult<GoHighLevelContact>> {
+    const contacts: GoHighLevelContact[] = [];
+    const first = new URLSearchParams({ locationId, limit: String(GOHIGHLEVEL_PAGE_SIZE) });
     let nextUrl: string | null = `${GOHIGHLEVEL_CONTACTS_URL}?${first.toString()}`;
 
-    for (let page = 0; page < MAX_PAGES && nextUrl; page += 1) {
-      const response: Response = await fetch(nextUrl, {
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-          Version: GOHIGHLEVEL_API_VERSION,
-          accept: "application/json",
+    for (let page = 0; page < GOHIGHLEVEL_MAX_PAGES && nextUrl; page += 1) {
+      const response: Response = await httpRequest(
+        nextUrl,
+        {
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            Version: GOHIGHLEVEL_API_VERSION,
+            accept: "application/json",
+          },
         },
-      });
+        { maxAttempts: CONTACTS_ATTEMPTS, label: "GoHighLevel contacts" },
+      );
 
       if (response.status === 401) {
         throw new UnauthorizedException("GoHighLevel rejected the access token");
@@ -104,11 +127,13 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
 
       const body = (await response.json()) as GoHighLevelContactsPage;
       const batch = body.contacts ?? [];
-      all.push(...batch);
+      contacts.push(...batch);
       // GoHighLevel returns the fully-formed URL for the next page (with its
-      // cursor) when there is one; a null/absent value means we're done.
+      // cursor) when there is one; a null/absent value means we're done. An
+      // empty page is its real end-of-list, cursor or not.
       nextUrl = batch.length > 0 ? (body.meta?.nextPageUrl ?? null) : null;
     }
-    return all;
+    // A cursor still outstanding means the cap, not the location, ended the run.
+    return { contacts, truncated: nextUrl !== null };
   }
 }
