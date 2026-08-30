@@ -1,5 +1,6 @@
 export * from "./enums";
 export * from "./dispatch";
+export * from "./next-birthday";
 export * from "./london-time";
 export * from "./account";
 export * from "./recipient";

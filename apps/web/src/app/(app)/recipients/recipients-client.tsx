@@ -1,6 +1,7 @@
 "use client";
 
 import type { Recipient, RecipientListSummary } from "@kudos/shared-types";
+import { nextBirthdayOccurrence, startOfUtcDay } from "@kudos/shared-types";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
@@ -67,18 +68,31 @@ export interface Paginated<T> {
 
 type SortKey = "recent" | "name_asc" | "name_desc" | "dob_asc" | "dob_desc";
 
-/** The recipient's next upcoming birthday (year-agnostic) + a friendly countdown,
- * or null when no date of birth is set. */
+/**
+ * The recipient's next upcoming birthday (year-agnostic) + a friendly
+ * countdown, or null when no date of birth is set.
+ *
+ * The date itself comes from `nextBirthdayOccurrence`, the same rule the API
+ * schedules the card with. This used to compute its own, with local-time
+ * getters on a UTC value and `new Date(year, month, day)` — which turns
+ * 29 February into 1 March in a non-leap year. The list said 1 March all year
+ * while the card was scheduled for 28 February. See ADR 0204.
+ *
+ * Rendered in UTC too: the value is a UTC-midnight date, and formatting it in a
+ * local timezone west of Greenwich would print the day before.
+ */
 function nextBirthday(dob: string | Date | null): { label: string; countdown: string } | null {
   if (!dob) return null;
   const d = new Date(dob);
   if (Number.isNaN(d.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const next = new Date(today.getFullYear(), d.getMonth(), d.getDate());
-  if (next.getTime() < today.getTime()) next.setFullYear(today.getFullYear() + 1);
+  const today = startOfUtcDay(new Date());
+  const next = nextBirthdayOccurrence(d, today);
   const inDays = Math.round((next.getTime() - today.getTime()) / 86_400_000);
-  const label = next.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const label = next.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
   const countdown = inDays === 0 ? "Today" : inDays === 1 ? "Tomorrow" : `In ${inDays} days`;
   return { label, countdown };
 }

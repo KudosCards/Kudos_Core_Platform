@@ -335,3 +335,58 @@ describe("RecipientsClient — a slower earlier response", () => {
     expect((filter as HTMLSelectElement).value).toBe("3");
   });
 });
+
+/**
+ * A contact born on 29 February. The server schedules their card for 28 Feb in
+ * a non-leap year — the conventional choice, and what `nextBirthdayOccurrence`
+ * has always done. The Contacts list computed its own answer with local-time
+ * getters on a UTC value and `new Date(year, 1, 29)`, which JavaScript rolls
+ * over to **1 March**.
+ *
+ * So the list said 1 March all year while the card was scheduled for 28 Feb —
+ * two screens describing the same contact, a day apart, with no way to tell
+ * which was right. Two live contacts are in exactly this state. See ADR 0204.
+ */
+describe("RecipientsClient — a 29 February birthday", () => {
+  const leapling = {
+    id: "r-leap",
+    firstName: "Haidar",
+    lastName: "Leapling",
+    status: "active",
+    source: "manual",
+    dateOfBirth: "2016-02-29",
+    addressLine1: "1 Test Street",
+    addressLine2: null,
+    addressCity: "London",
+    addressPostcode: "SW1A 1AA",
+    email: null,
+    createdAt: new Date().toISOString(),
+  } as never;
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes("/recipient-lists")) return Promise.resolve([]);
+      return Promise.resolve({ items: [], total: 0, page: 1 });
+    });
+    // Pinned so the answer is stable: from 30 Aug 2026 the next 29 February
+    // falls in 2027, which is not a leap year.
+    jest.useFakeTimers({ doNotFake: ["setTimeout", "clearTimeout"] });
+    jest.setSystemTime(new Date("2026-08-30T12:00:00Z"));
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it("shows 28 Feb, the date the card is actually scheduled for", () => {
+    render(
+      <RecipientsClient
+        initialRecipients={[leapling]}
+        initialTotal={1}
+        initialPage={1}
+        initialLists={[]}
+      />,
+    );
+
+    expect(screen.getAllByText(/28 Feb/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/1 Mar/)).not.toBeInTheDocument();
+  });
+});
