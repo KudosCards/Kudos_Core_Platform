@@ -444,6 +444,103 @@ describe("Support ticketing (e2e)", () => {
     expect(supportTicketDetailSchema.parse(reopened.body).status).toBe("open");
   });
 
+  it("keeps resolvedAt when a resolved ticket is then closed", async () => {
+    const { token } = await signUp();
+    const ops = await opsToken();
+    const ticket = await raiseTicket(token);
+    const patch = (status: string) =>
+      request(app.getHttpServer())
+        .patch(`/admin/support/${ticket.id}`)
+        .set("Authorization", `Bearer ${ops.token}`)
+        .send({ status })
+        .expect(200);
+
+    // The documented happy path: open → resolved → closed. Nulling resolvedAt
+    // on the way through `closed` loses time-to-resolution for every ticket
+    // that ends the normal way — the only tickets whose resolution time is
+    // worth measuring.
+    await patch("resolved");
+    const resolved = await prisma.supportTicket.findUniqueOrThrow({ where: { id: ticket.id } });
+    expect(resolved.resolvedAt).not.toBeNull();
+
+    await patch("closed");
+    const closed = await prisma.supportTicket.findUniqueOrThrow({ where: { id: ticket.id } });
+    expect(closed.closedAt).not.toBeNull();
+    expect(closed.resolvedAt?.getTime()).toBe(resolved.resolvedAt?.getTime());
+  });
+
+  it("stamps on the move into a status, not on every write of it", async () => {
+    const { token } = await signUp();
+    const ops = await opsToken();
+    const ticket = await raiseTicket(token);
+    await request(app.getHttpServer())
+      .patch(`/admin/support/${ticket.id}`)
+      .set("Authorization", `Bearer ${ops.token}`)
+      .send({ status: "resolved" })
+      .expect(200);
+
+    // Backdate it, then re-send the status it already has. An operator
+    // re-saving a ticket must not silently reset when it was resolved.
+    const resolvedAt = new Date(Date.now() - 3 * 86_400_000);
+    await prisma.supportTicket.update({ where: { id: ticket.id }, data: { resolvedAt } });
+
+    await request(app.getHttpServer())
+      .patch(`/admin/support/${ticket.id}`)
+      .set("Authorization", `Bearer ${ops.token}`)
+      .send({ status: "resolved", priority: "high" })
+      .expect(200);
+
+    const after = await prisma.supportTicket.findUniqueOrThrow({ where: { id: ticket.id } });
+    expect(after.resolvedAt?.getTime()).toBe(resolvedAt.getTime());
+    expect(after.priority).toBe("high");
+  });
+
+  it("clears closedAt when a closed ticket is moved back to resolved", async () => {
+    const { token } = await signUp();
+    const ops = await opsToken();
+    const ticket = await raiseTicket(token);
+    const patch = (status: string) =>
+      request(app.getHttpServer())
+        .patch(`/admin/support/${ticket.id}`)
+        .set("Authorization", `Bearer ${ops.token}`)
+        .send({ status })
+        .expect(200);
+
+    await patch("resolved");
+    await patch("closed");
+    await patch("resolved");
+
+    // Each stamp says the ticket reached that state and has not gone back
+    // behind it. A ticket sitting at `resolved` is not closed, so a closure
+    // time left over from a previous pass describes nothing.
+    const after = await prisma.supportTicket.findUniqueOrThrow({ where: { id: ticket.id } });
+    expect(after.closedAt).toBeNull();
+    expect(after.resolvedAt).not.toBeNull();
+  });
+
+  it("clears both stamps when a closed ticket is reopened", async () => {
+    const { token } = await signUp();
+    const ops = await opsToken();
+    const ticket = await raiseTicket(token);
+    const patch = (status: string) =>
+      request(app.getHttpServer())
+        .patch(`/admin/support/${ticket.id}`)
+        .set("Authorization", `Bearer ${ops.token}`)
+        .send({ status })
+        .expect(200);
+
+    await patch("resolved");
+    await patch("closed");
+    await patch("open");
+
+    // Reopening is the one move that clears them: the ticket is live again, so
+    // a resolution or closure time would describe something that no longer
+    // happened.
+    const after = await prisma.supportTicket.findUniqueOrThrow({ where: { id: ticket.id } });
+    expect(after.resolvedAt).toBeNull();
+    expect(after.closedAt).toBeNull();
+  });
+
   it("customer can close a ticket, after which replies are refused on both sides", async () => {
     const { token } = await signUp();
     const ops = await opsToken();
