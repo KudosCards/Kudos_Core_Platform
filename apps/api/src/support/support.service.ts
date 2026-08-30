@@ -115,6 +115,37 @@ interface ThreadMessageRow {
  */
 const ATTACHMENT_URL_TTL_SECONDS = 60 * 60;
 
+/**
+ * The resolution/closure stamps a move *into* `status` writes.
+ *
+ * Each stamp records that the ticket reached that state and has not gone back
+ * behind it, so:
+ *
+ *   - resolving stamps `resolvedAt` and clears `closedAt` (it is no longer closed);
+ *   - closing stamps `closedAt` and **leaves `resolvedAt` alone** — a ticket
+ *     resolved and then closed was still resolved, and that is exactly the
+ *     ticket whose time-to-resolution is worth measuring;
+ *   - reopening clears both, because the ticket is live again and neither
+ *     describes anything that still holds.
+ *
+ * A ticket closed without ever being resolved simply keeps `resolvedAt` null,
+ * which is the honest answer rather than a gap.
+ */
+function stampsForTransitionInto(status: SupportTicketStatus): {
+  resolvedAt?: Date | null;
+  closedAt?: Date | null;
+} {
+  switch (status) {
+    case "resolved":
+      return { resolvedAt: new Date(), closedAt: null };
+    case "closed":
+      return { closedAt: new Date() };
+    case "open":
+    case "awaiting_customer":
+      return { resolvedAt: null, closedAt: null };
+  }
+}
+
 @Injectable()
 export class SupportService {
   private readonly logger = new Logger(SupportService.name);
@@ -414,13 +445,20 @@ export class SupportService {
    * Ops ticket management: change status and/or priority, and (un)assign to the
    * acting operator. Resolving/closing stamps the corresponding timestamp;
    * reopening (back to open/awaiting_customer) clears the resolved/closed stamps.
+   *
+   * The stamps move only on a transition *into* a status. Written as
+   * "set mine, null the other" it read as though it were doing what the line
+   * above says, and instead erased `resolvedAt` on the way through `closed` —
+   * on the documented happy path, so every ticket that ended normally lost its
+   * time-to-resolution. Re-saving a status a ticket already held also reset the
+   * stamp. See ADR 0196.
    */
   async updateTicket(
     admin: { userId: string },
     id: string,
     dto: UpdateSupportTicketDto,
   ): Promise<SupportTicketOpsDetailView> {
-    await this.requireTicket({ id });
+    const ticket = await this.requireTicket({ id });
 
     const data: Prisma.SupportTicketUpdateInput = {};
     if (dto.priority !== undefined) {
@@ -429,11 +467,9 @@ export class SupportService {
     if (dto.assign !== undefined) {
       data.assignedToUserId = dto.assign === "me" ? admin.userId : null;
     }
-    if (dto.status !== undefined) {
-      const { status } = dto;
-      data.status = status;
-      data.resolvedAt = status === "resolved" ? new Date() : null;
-      data.closedAt = status === "closed" ? new Date() : null;
+    if (dto.status !== undefined && dto.status !== ticket.status) {
+      data.status = dto.status;
+      Object.assign(data, stampsForTransitionInto(dto.status));
     }
 
     await this.prisma.$transaction(async (tx) => {
