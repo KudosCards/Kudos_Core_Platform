@@ -200,5 +200,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0189 — A recovery link should not outlive the recovery](./0189-a-recovery-link-should-not-outlive-the-recovery.md)
 - [0190 — An unfinished payment is still a payment](./0190-an-unfinished-payment-is-still-a-payment.md)
 - [0191 — An occasion that has moved on must not be dragged back](./0191-an-occasion-that-has-moved-on-must-not-be-dragged-back.md)
+- [0192 — A read-then-write outside a transaction is not a check](./0192-a-read-then-write-outside-a-transaction-is-not-a-check.md)
 
 <!-- adr-index:end -->

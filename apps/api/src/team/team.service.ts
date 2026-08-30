@@ -15,6 +15,7 @@ import { AuditService } from "../audit/audit.service";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { escapeHtml, renderBrandedEmail } from "../email/email-layout";
 import { generateInviteToken, INVITE_TTL_DAYS } from "../common/generate-invite-token";
+import { runSerializable } from "../common/run-serializable";
 import type { EnvConfig } from "../config/env.schema";
 import type { AuthenticatedUser } from "../auth/types";
 import { verifiedEmailFromToken } from "../auth/types";
@@ -143,61 +144,78 @@ export class TeamService {
 
     const email = dto.email.trim().toLowerCase();
 
-    // Already a member? Nothing to invite.
-    const existingMember = await this.prisma.membership.findFirst({
-      where: { accountId, email: { equals: email, mode: "insensitive" } },
-    });
-    if (existingMember) {
-      throw new ConflictException("That person is already on your team");
-    }
-
-    // Seat hard-block: refuse a new invite once members + pending invites fill
-    // the paid seat count. Re-inviting an already-pending email is a resend, not
-    // a new seat, so it's exempt. They must add a seat (£5/mo) to invite more.
-    // See docs/adr/0035-seat-based-billing.md.
-    const existingInvite = await this.prisma.invite.findUnique({
-      where: { accountId_email: { accountId, email } },
-      select: { status: true },
-    });
-    const isResend = existingInvite?.status === "pending";
-    if (!isResend) {
-      const [memberCount, pendingInviteCount] = await Promise.all([
-        this.prisma.membership.count({ where: { accountId } }),
-        this.prisma.invite.count({ where: { accountId, status: "pending" } }),
-      ]);
-      const limit = entitlement.includedSeats + (await this.accountExtraSeats(accountId));
-      if (memberCount + pendingInviteCount >= limit) {
-        throw new ForbiddenException(
-          `You've used all ${limit} of your seats. Add a seat to invite more people.`,
-        );
-      }
-    }
-
+    // Minted outside the transaction on purpose: a serialization retry re-runs
+    // the callback, and a token that changed between attempts would be a fresh
+    // secret for each losing attempt for no reason.
     const token = generateInviteToken();
     const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
 
-    // Re-inviting the same email replaces the previous (pending/revoked) invite
-    // with a fresh token and expiry, rather than erroring on the unique key.
-    const invite = await this.prisma.invite.upsert({
-      where: { accountId_email: { accountId, email } },
-      create: {
-        accountId,
-        email,
-        role: dto.role,
-        token,
-        status: "pending",
-        invitedByUserId: actor.id,
-        expiresAt,
-      },
-      update: {
-        role: dto.role,
-        token,
-        status: "pending",
-        invitedByUserId: actor.id,
-        expiresAt,
-        acceptedAt: null,
-      },
-      select: SAFE_INVITE_SELECT,
+    // Serializable, like every other paid-resource gate in this codebase
+    // (wallet debits, the recipient cap, auto-send). The seat check is a
+    // read-then-write, and read-then-write outside a transaction is not a check:
+    // an admin bulk-inviting from the UI fires the requests together, all of
+    // them read the same "seats in use" before any has written, and every one
+    // passes a gate that should have stopped all but the last. The account then
+    // holds seats it never paid for, and setExtraSeats refuses to reduce below
+    // seats in use — so only manual intervention recovers it. The unique key on
+    // (accountId, email) does not help here: the racing invites are for
+    // different people.
+    const invite = await runSerializable(this.prisma, async (tx) => {
+      // Already a member? Nothing to invite. Inside the transaction because an
+      // invite being accepted concurrently is the same race in another guise.
+      const existingMember = await tx.membership.findFirst({
+        where: { accountId, email: { equals: email, mode: "insensitive" } },
+      });
+      if (existingMember) {
+        throw new ConflictException("That person is already on your team");
+      }
+
+      // Seat hard-block: refuse a new invite once members + pending invites fill
+      // the paid seat count. Re-inviting an already-pending email is a resend, not
+      // a new seat, so it's exempt. They must add a seat (£5/mo) to invite more.
+      // See docs/adr/0035-seat-based-billing.md.
+      const existingInvite = await tx.invite.findUnique({
+        where: { accountId_email: { accountId, email } },
+        select: { status: true },
+      });
+      const isResend = existingInvite?.status === "pending";
+      if (!isResend) {
+        const [memberCount, pendingInviteCount, account] = await Promise.all([
+          tx.membership.count({ where: { accountId } }),
+          tx.invite.count({ where: { accountId, status: "pending" } }),
+          tx.account.findUniqueOrThrow({ where: { id: accountId }, select: { extraSeats: true } }),
+        ]);
+        const limit = entitlement.includedSeats + account.extraSeats;
+        if (memberCount + pendingInviteCount >= limit) {
+          throw new ForbiddenException(
+            `You've used all ${limit} of your seats. Add a seat to invite more people.`,
+          );
+        }
+      }
+
+      // Re-inviting the same email replaces the previous (pending/revoked) invite
+      // with a fresh token and expiry, rather than erroring on the unique key.
+      return tx.invite.upsert({
+        where: { accountId_email: { accountId, email } },
+        create: {
+          accountId,
+          email,
+          role: dto.role,
+          token,
+          status: "pending",
+          invitedByUserId: actor.id,
+          expiresAt,
+        },
+        update: {
+          role: dto.role,
+          token,
+          status: "pending",
+          invitedByUserId: actor.id,
+          expiresAt,
+          acceptedAt: null,
+        },
+        select: SAFE_INVITE_SELECT,
+      });
     });
 
     await this.sendInviteEmail(accountId, email, dto.role, token);
