@@ -15,6 +15,29 @@ import type { AuthenticatedUser } from "./types";
 interface SupabaseJwtPayload extends JWTPayload {
   sub: string;
   email?: string;
+  /** Supabase mirrors the confirmation state into the user's metadata. */
+  user_metadata?: { email_verified?: unknown };
+  /** Some GoTrue versions/providers put it at the top level as well. */
+  email_verified?: unknown;
+}
+
+/**
+ * Whether the token asserts the address has been confirmed.
+ *
+ * Both places Supabase writes it are checked, and only a literal `true` counts —
+ * an absent claim is treated as unverified, so a token minted by something that
+ * does not say is refused rather than assumed.
+ *
+ * Worth being precise about what this buys, because it is easy to overstate:
+ * `user_metadata` is writable by the user it belongs to, so this is a guard
+ * against an *honest* session carrying an unconfirmed address — an OAuth
+ * provider that asserts an email it never checked, or a session minted before
+ * confirmation — not against a determined attacker with an account. Where
+ * nothing else binds the request, an authoritative lookup is used instead. See
+ * ADR 0188.
+ */
+function assertsEmailVerified(payload: SupabaseJwtPayload): boolean {
+  return payload.user_metadata?.email_verified === true || payload.email_verified === true;
 }
 
 function isSupabaseJwtPayload(payload: JWTPayload): payload is SupabaseJwtPayload {
@@ -52,7 +75,8 @@ export class JwtAuthGuard implements CanActivate {
     const payload = await this.verify(token);
     const authUser: AuthenticatedUser = {
       id: payload.sub,
-      email: payload.email ?? null,
+      unverifiedEmail: payload.email ?? null,
+      emailVerified: assertsEmailVerified(payload),
     };
     request.authUser = authUser;
     return true;

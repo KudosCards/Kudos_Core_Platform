@@ -97,25 +97,38 @@ export class AdminTeamService {
   }
 
   /**
-   * The operator's normalised email for the allow-list check. Prefers the
-   * verified JWT `email` claim, but falls back to the authoritative Supabase
-   * user record (keyed on the JWT-verified user id) when the claim is absent —
-   * some sessions minted from an invite/recovery link don't populate it, which
-   * would otherwise dead-end a validly-invited operator at "not a Kudos
-   * operator". Returns null only if neither source yields an email.
+   * The operator's normalised email for the allow-list check — from the
+   * **authoritative Supabase user record**, keyed on the JWT-verified user id,
+   * and only when that record says the address is confirmed.
+   *
+   * This route is the one that cannot fall back on a capability token. An
+   * invite acceptance and a guest claim both carry a secret emailed to the
+   * intended address, and the email match is their second factor. Operator
+   * provisioning has no such token: `PlatformAdminInvite` is looked up **by
+   * email**, so an address alone decides whether someone becomes a Kudos
+   * operator with cross-tenant access. It used to take that address from the
+   * token's claim, which is asserted rather than proven — and `user_metadata`,
+   * where Supabase mirrors the confirmation flag, is writable by the user it
+   * belongs to. So the highest-privilege decision in the system asks the record
+   * instead. One extra round-trip, on sign-in only. See ADR 0188.
    */
   private async resolveOperatorEmail(user: AuthenticatedUser): Promise<string | null> {
-    const fromToken = user.email?.trim().toLowerCase();
-    if (fromToken) {
-      return fromToken;
-    }
     try {
       const { data, error } = await this.supabaseAdmin.auth.admin.getUserById(user.id);
       if (error) {
         this.logger.warn(`Could not resolve email for operator ${user.id}: ${error.message}`);
         return null;
       }
-      return data.user?.email?.trim().toLowerCase() ?? null;
+      // `email_confirmed_at` is GoTrue's own record of confirmation. Absent
+      // means unconfirmed, and an unconfirmed address must not provision an
+      // operator however plausible it looks.
+      if (!data.user?.email_confirmed_at) {
+        this.logger.warn(
+          `Operator access refused for user ${user.id}: email is not confirmed in Supabase`,
+        );
+        return null;
+      }
+      return data.user.email?.trim().toLowerCase() ?? null;
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown error";
       this.logger.warn(`Email lookup failed for operator ${user.id}: ${reason}`);
@@ -126,7 +139,9 @@ export class AdminTeamService {
   /** The signed-in operator (after PlatformAdminGuard). Keeps the stored email fresh. */
   async me(user: AuthenticatedUser): Promise<AdminIdentity> {
     const admin = await this.prisma.platformAdmin.findUniqueOrThrow({ where: { userId: user.id } });
-    const email = user.email?.trim().toLowerCase() ?? admin.email;
+    // Display only — this refreshes the operator's stored address for the team
+    // screen and authorizes nothing, so the token's claim is good enough here.
+    const email = user.unverifiedEmail?.trim().toLowerCase() ?? admin.email;
     if (email && admin.email !== email) {
       await this.prisma.platformAdmin.update({ where: { userId: user.id }, data: { email } });
     }

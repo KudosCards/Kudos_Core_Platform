@@ -9,6 +9,7 @@ import { SAFE_ACCOUNT_SELECT, type SafeAccount } from "../accounts/accounts.serv
 import { MarketingContactsService } from "../marketing/marketing-contacts.service";
 import { OpsActivityService } from "../ops-activity/ops-activity.service";
 import type { AuthenticatedUser } from "../auth/types";
+import { verifiedEmailFromToken } from "../auth/types";
 
 /** Turn a guest buyer's email into a friendly default account name. */
 function deriveAccountName(email: string): string {
@@ -50,10 +51,13 @@ export class GuestClaimService {
    * Single-use: the token is cleared on success.
    */
   async claim(user: AuthenticatedUser, token: string): Promise<SafeAccount> {
-    if (!user.email) {
-      throw new ForbiddenException("Your login has no email address");
+    // Verified only, for the same reason as an invite: the claim token is what
+    // binds this request, and matching the buyer's address is the second factor
+    // that stops a forwarded link handing over a paid order. See ADR 0188.
+    const email = verifiedEmailFromToken(user);
+    if (!email) {
+      throw new ForbiddenException("Confirm your email address before claiming this order");
     }
-    const email = user.email;
 
     const claimed = await this.prisma.$transaction(async (tx) => {
       const account = await tx.account.findFirst({

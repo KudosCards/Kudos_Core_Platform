@@ -25,7 +25,11 @@ export class AccountsController {
   /** No MembershipGuard here — this is what creates the user's first Membership. */
   @Post()
   signup(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateAccountDto): Promise<Account> {
-    return this.accountsService.signup(user.id, dto, user.email);
+    // The signer's own account, so the address is contact detail rather than an
+    // authorization input — the claim is the right source. It becomes the
+    // account's contactEmail, which a later guest claim compares against; that
+    // comparison is made against a *confirmed* address on the other side. ADR 0188.
+    return this.accountsService.signup(user.id, dto, user.unverifiedEmail);
   }
 
   /** Toggle birthday-reminder emails (opt-out). */
