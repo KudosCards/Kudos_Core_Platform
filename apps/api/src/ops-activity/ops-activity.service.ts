@@ -83,6 +83,50 @@ export class OpsActivityService {
   }
 
   /**
+   * Cards that were refunded but are still sitting in Royal Mail's Click & Drop
+   * queue, because the delete was rejected or unreachable. Royal Mail will print
+   * and post them unless an operator removes them by hand, and the customer's
+   * money has already gone back — so this is a genuine escalation, not routine
+   * activity, and goes to super admins only (the `dispatch_escalation` pattern).
+   *
+   * Not idempotency-keyed on the order: a second failed attempt on the same
+   * order is new information (the first alert was not acted on, or the cards
+   * changed), and a suppressed duplicate here would mean a card quietly posts.
+   */
+  async clickAndDropCancelFailed(
+    batchOrderId: string,
+    failures: { orderIdentifier: string; reason: string }[],
+  ): Promise<void> {
+    if (failures.length === 0) return;
+    try {
+      const order = await this.prisma.batchOrder.findUnique({
+        where: { id: batchOrderId },
+        select: { orderNumber: true, account: { select: { name: true } } },
+      });
+      const reference = order ? `ORD-${order.orderNumber}` : batchOrderId;
+      const cards = failures.length;
+      await this.platformNotifications.notifyAllAdmins(
+        {
+          kind: "click_and_drop_cancel_failed",
+          title: `Refunded ${reference} — ${cards} card${cards === 1 ? "" : "s"} still in Click & Drop`,
+          body:
+            `The refund went through, but Royal Mail would not delete ${cards === 1 ? "this order" : "these orders"}: ` +
+            `${failures.map((f) => `${f.orderIdentifier} (${f.reason})`).join("; ")}. ` +
+            `Remove ${cards === 1 ? "it" : "them"} in Click & Drop or the card${cards === 1 ? "" : "s"} will be posted.`,
+          href: `/admin/orders/${batchOrderId}`,
+          entityType: "BatchOrder",
+        },
+        { role: "super_admin" },
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(
+        `Click & Drop cancel-failure alert for ${batchOrderId} could not be raised: ${reason}`,
+      );
+    }
+  }
+
+  /**
    * Somebody signed up. Called from both routes into an account with a login:
    * a normal signup, and a guest one-off buyer later claiming the account they
    * bought from (ADR 0025).

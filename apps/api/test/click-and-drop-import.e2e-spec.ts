@@ -25,14 +25,16 @@ describe("Click & Drop import (e2e)", () => {
   let stripe: Stripe;
   let webhookSecret: string;
   let createOrder: jest.Mock;
+  let cancelOrders: jest.Mock;
   let service: ClickAndDropService;
 
   beforeAll(async () => {
     createOrder = jest.fn((input: ClickAndDropOrderInput) =>
       Promise.resolve({ orderIdentifier: `cnd_${input.orderReference}` }),
     );
+    cancelOrders = jest.fn((ids: string[]) => Promise.resolve({ cancelled: ids, failed: [] }));
     app = await createTestApp([
-      { provide: CLICK_AND_DROP_CLIENT, useValue: { enabled: true, createOrder } },
+      { provide: CLICK_AND_DROP_CLIENT, useValue: { enabled: true, createOrder, cancelOrders } },
     ]);
     prisma = app.get(PrismaService);
     service = app.get(ClickAndDropService);
@@ -293,6 +295,106 @@ describe("Click & Drop import (e2e)", () => {
     const sample = status.recentErrors.find((s) => s.jobId === jobId);
     expect(sample).toBeDefined();
     expect(sample!.error).toContain("bad postcode");
+  });
+
+  /**
+   * The sweep pushes a paid card into Royal Mail's queue within five minutes,
+   * while the job is still `pending` — and `pending` is exactly the state a
+   * self-serve refund is allowed from. So a refund almost always lands on a card
+   * Royal Mail is already holding, and unless it is pulled back out, the
+   * customer gets their money AND the card.
+   */
+  describe("refunding a card that is already in Click & Drop", () => {
+    /** A paid, swept (imported) card, paid from the wallet so the refund never
+     * needs Stripe. Returns the batch order and the Click & Drop identifier. */
+    async function importedWalletPaidOrder(
+      token: string,
+    ): Promise<{ batchOrderId: string; clickAndDropOrderId: string }> {
+      const jobId = await createPaidJob(token);
+      await service.sweep();
+      const job = await prisma.fulfillmentJob.findUniqueOrThrow({
+        where: { id: jobId },
+        include: { orderRecipient: { select: { batchOrderId: true } } },
+      });
+      expect(job.clickAndDropOrderId).not.toBeNull();
+      const batchOrderId = job.orderRecipient.batchOrderId;
+      await prisma.batchOrder.update({
+        where: { id: batchOrderId },
+        data: { paymentMethod: "wallet" },
+      });
+      return { batchOrderId, clickAndDropOrderId: job.clickAndDropOrderId! };
+    }
+
+    it("deletes the Royal Mail order so the refunded card is never posted", async () => {
+      const token = await signUp();
+      const { batchOrderId, clickAndDropOrderId } = await importedWalletPaidOrder(token);
+      cancelOrders.mockClear();
+
+      await request(app.getHttpServer())
+        .post(`/batch-orders/${batchOrderId}/cancel-refund`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+
+      expect(cancelOrders).toHaveBeenCalledTimes(1);
+      expect(cancelOrders).toHaveBeenCalledWith([clickAndDropOrderId]);
+    });
+
+    it("keeps the refund and escalates when Royal Mail will not delete the order", async () => {
+      const superAdminUserId = randomUUID();
+      await prisma.platformAdmin.create({
+        data: { userId: superAdminUserId, role: "super_admin" },
+      });
+      const token = await signUp();
+      const { batchOrderId, clickAndDropOrderId } = await importedWalletPaidOrder(token);
+      cancelOrders.mockImplementationOnce((ids: string[]) =>
+        Promise.resolve({
+          cancelled: [],
+          failed: ids.map((orderIdentifier) => ({
+            orderIdentifier,
+            reason: "Order has already been despatched",
+          })),
+        }),
+      );
+
+      // The money is already out the door by the time the delete is attempted,
+      // so a Royal Mail refusal must not fail the refund.
+      await request(app.getHttpServer())
+        .post(`/batch-orders/${batchOrderId}/cancel-refund`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+      const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+      expect(order.status).toBe("cancelled");
+
+      // ...but a human has to be told, or Royal Mail posts a card that was paid back.
+      const alert = await prisma.platformNotification.findFirst({
+        where: { kind: "click_and_drop_cancel_failed", userId: superAdminUserId },
+      });
+      expect(alert).not.toBeNull();
+      expect(alert!.body).toContain(clickAndDropOrderId);
+      expect(alert!.body).toContain("already been despatched");
+    });
+
+    it("does not call Royal Mail when nothing was imported", async () => {
+      const token = await signUp();
+      const jobId = await createPaidJob(token);
+      const job = await prisma.fulfillmentJob.findUniqueOrThrow({
+        where: { id: jobId },
+        include: { orderRecipient: { select: { batchOrderId: true } } },
+      });
+      expect(job.clickAndDropOrderId).toBeNull();
+      await prisma.batchOrder.update({
+        where: { id: job.orderRecipient.batchOrderId },
+        data: { paymentMethod: "wallet" },
+      });
+      cancelOrders.mockClear();
+
+      await request(app.getHttpServer())
+        .post(`/batch-orders/${job.orderRecipient.batchOrderId}/cancel-refund`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+
+      expect(cancelOrders).not.toHaveBeenCalled();
+    });
   });
 
   it("requires platform-admin auth for the import-status readout", async () => {

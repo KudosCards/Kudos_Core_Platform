@@ -45,6 +45,7 @@ import {
 import { MessagesService } from "../messages/messages.service";
 import { RecipientsService } from "../recipients/recipients.service";
 import { OpsActivityService } from "../ops-activity/ops-activity.service";
+import { ClickAndDropService } from "../shipping/click-and-drop.service";
 import { UK_POSTCODE_REGEX } from "../common/uk-postcode";
 import type { CreateBatchOrderDto, CreateBatchOrderLineDto } from "./dto/create-batch-order.dto";
 import type { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
@@ -191,6 +192,7 @@ export class BatchOrdersService {
     private readonly messages: MessagesService,
     private readonly recipients: RecipientsService,
     private readonly opsActivity: OpsActivityService,
+    private readonly clickAndDrop: ClickAndDropService,
   ) {}
 
   /**
@@ -1395,6 +1397,11 @@ export class BatchOrdersService {
         paymentMethod: "card",
         stripePaymentIntentId:
           typeof session.payment_intent === "string" ? session.payment_intent : null,
+        // Which session the order is *now* waiting on. A resume overwrites the
+        // abandoned one's id, which is what lets the webhook handlers tell an
+        // expiry that matters from one for a session nobody is using any more.
+        // See ADR 0179.
+        stripeCheckoutSessionId: session.id,
       },
     });
 
@@ -1750,18 +1757,37 @@ export class BatchOrdersService {
       );
     }
 
+    let importedClickAndDropIds: string[];
     if (order.paymentMethod === "wallet") {
-      await this.refundWalletAndRelease(accountId, id, order.totalMinor);
+      importedClickAndDropIds = await this.refundWalletAndRelease(accountId, id, order.totalMinor);
     } else if (order.walletAppliedMinor > 0) {
       // A split order: Stripe took the remainder and the wallet took the rest,
       // so both have to come back. The Stripe refund goes first — it is the leg
       // that can fail, and it is idempotency-keyed, so a retry after a partial
       // failure re-attempts the same single refund rather than double-crediting
       // the wallet.
-      await this.refundCardAndRelease(accountId, id, order.stripePaymentIntentId);
+      importedClickAndDropIds = await this.refundCardAndRelease(
+        accountId,
+        id,
+        order.stripePaymentIntentId,
+      );
       await this.creditWalletPortion(accountId, id, order.walletAppliedMinor);
     } else {
-      await this.refundCardAndRelease(accountId, id, order.stripePaymentIntentId);
+      importedClickAndDropIds = await this.refundCardAndRelease(
+        accountId,
+        id,
+        order.stripePaymentIntentId,
+      );
+    }
+
+    // Pull the cards back out of Royal Mail's queue. AFTER the release commits,
+    // never inside it: an HTTP call has no place in a transaction, and the money
+    // is already refunded, so a Royal Mail outage must not unwind any of it. A
+    // card we could not delete is Royal Mail's to print unless a human stops it,
+    // so anything left over is escalated rather than logged and forgotten.
+    const cancelResult = await this.clickAndDrop.cancelImported(importedClickAndDropIds);
+    if (cancelResult.failed.length > 0) {
+      await this.opsActivity.clickAndDropCancelFailed(id, cancelResult.failed);
     }
 
     await this.audit.record({
@@ -1770,7 +1796,12 @@ export class BatchOrdersService {
       action: "cancel_refund",
       targetType: "BatchOrder",
       targetId: id,
-      metadata: { totalMinor: order.totalMinor, paymentMethod: order.paymentMethod },
+      metadata: {
+        totalMinor: order.totalMinor,
+        paymentMethod: order.paymentMethod,
+        clickAndDropCancelled: cancelResult.cancelled,
+        clickAndDropStillLive: cancelResult.failed.map((f) => f.orderIdentifier),
+      },
     });
 
     return this.prisma.batchOrder.findUniqueOrThrow({
@@ -1786,7 +1817,7 @@ export class BatchOrdersService {
     accountId: string,
     id: string,
     paymentIntentId: string | null,
-  ): Promise<void> {
+  ): Promise<string[]> {
     if (!paymentIntentId) {
       throw new ConflictException(
         "This order has no card payment on record to refund — please contact support.",
@@ -1797,17 +1828,17 @@ export class BatchOrdersService {
       { idempotencyKey: `refund:${id}` },
     );
 
-    await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.batchOrder.updateMany({
         where: { id, accountId, status: { in: ["paid", "fulfilling"] } },
         data: { status: "cancelled" },
       });
       // count === 0 → a concurrent request already released this order; by the
       // shared idempotency key it shares the same single refund, so there is
-      // nothing more to do.
-      if (count > 0) {
-        await this.releaseRecipientsAndOccasions(tx, id, accountId);
-      }
+      // nothing more to do — including the Click & Drop cancel, which the
+      // request that actually claimed the release is responsible for.
+      if (count === 0) return [];
+      return this.releaseRecipientsAndOccasions(tx, id, accountId);
     });
   }
 
@@ -1941,8 +1972,8 @@ export class BatchOrdersService {
     accountId: string,
     id: string,
     totalMinor: number,
-  ): Promise<void> {
-    await runSerializable(this.prisma, async (tx) => {
+  ): Promise<string[]> {
+    return runSerializable(this.prisma, async (tx) => {
       const { count } = await tx.batchOrder.updateMany({
         where: { id, accountId, status: { in: ["paid", "fulfilling"] } },
         data: { status: "cancelled" },
@@ -1950,7 +1981,7 @@ export class BatchOrdersService {
       if (count === 0) {
         // Already released by a concurrent request, which wrote the single refund
         // entry — writing another here would double-credit the wallet.
-        return;
+        return [];
       }
       const { _sum } = await tx.walletLedgerEntry.aggregate({
         where: { accountId },
@@ -1966,18 +1997,26 @@ export class BatchOrdersService {
           reference: `refund:${id}`,
         },
       });
-      await this.releaseRecipientsAndOccasions(tx, id, accountId);
+      return this.releaseRecipientsAndOccasions(tx, id, accountId);
     });
   }
 
   /** Shared release once a refund is committed: drop the pending print jobs
    * (nothing will be posted now), mark every card `cancelled`, and skip each
-   * settled occasion so it never re-triggers a send. */
+   * settled occasion so it never re-triggers a send.
+   *
+   * Returns the Click & Drop order identifiers of the jobs it dropped, because
+   * dropping the row is not the end of the story: the sweep pushes a paid card
+   * into Royal Mail's queue within five minutes, while it is still `pending`,
+   * which is the very state a refund is allowed from. Deleting the row throws
+   * away the only record that Royal Mail is holding that card, so the caller
+   * has to be handed the identifiers *here*, inside the transaction, and cancel
+   * them upstream once it commits. See ADR 0179. */
   private async releaseRecipientsAndOccasions(
     tx: Prisma.TransactionClient,
     batchOrderId: string,
     accountId: string,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const orderRecipients = await tx.orderRecipient.findMany({
       where: { batchOrderId },
       select: { id: true, occasionId: true },
@@ -1987,6 +2026,14 @@ export class BatchOrdersService {
       .map((r) => r.occasionId)
       .filter((occasionId): occasionId is string => occasionId !== null);
 
+    const importedJobs = await tx.fulfillmentJob.findMany({
+      where: {
+        orderRecipientId: { in: orderRecipientIds },
+        status: "pending",
+        clickAndDropOrderId: { not: null },
+      },
+      select: { clickAndDropOrderId: true },
+    });
     await tx.fulfillmentJob.deleteMany({
       where: { orderRecipientId: { in: orderRecipientIds }, status: "pending" },
     });
@@ -2003,5 +2050,7 @@ export class BatchOrdersService {
         data: { status: "skipped" },
       });
     }
+
+    return importedJobs.map((job) => job.clickAndDropOrderId as string);
   }
 }
