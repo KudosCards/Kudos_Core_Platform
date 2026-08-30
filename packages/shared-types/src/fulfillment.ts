@@ -15,6 +15,18 @@ import type { FulfillmentJobStatus } from "./enums";
  * printed cards due today read "Due today 0" under a banner saying "5 cards to
  * post today". See ADR 0108 §5.
  */
+/**
+ * Every fulfilment status, in the order the print/post team works them — which
+ * is also the order the queue's tabs appear in.
+ *
+ * One list, because the queue had two: the client rendered a tab per status
+ * while the server page validated the `status` query param against a
+ * hand-written six that omitted `returned_to_sender`. An operator saw
+ * "returned to sender 7", clicked it, and silently landed on Pending. See
+ * ADR 0202.
+ */
+export const FULFILLMENT_STATUSES = fulfillmentJobStatusSchema.options;
+
 export const OPEN_FULFILLMENT_STATUSES = [
   "pending",
   "in_progress",

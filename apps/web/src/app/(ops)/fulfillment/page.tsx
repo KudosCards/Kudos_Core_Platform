@@ -1,5 +1,5 @@
 import type { CardSize, DueFilter, FulfillmentCounts } from "@kudos/shared-types";
-import { DEFAULT_CARD_SIZE, DUE_FILTERS } from "@kudos/shared-types";
+import { DEFAULT_CARD_SIZE, DUE_FILTERS, FULFILLMENT_STATUSES } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import {
   FulfillmentClient,
@@ -14,14 +14,11 @@ interface Paginated<T> {
   perPage: number;
 }
 
-const VALID_STATUSES: FulfillmentStatus[] = [
-  "pending",
-  "in_progress",
-  "printed",
-  "posted",
-  "delivered",
-  "failed",
-];
+/** Every status the queue offers a tab for — the same list the client renders
+ * from, so a tab can never point at a status this page then refuses. It used to
+ * be written out here as well, and the two disagreed: `returned_to_sender` had a
+ * tab with a live count and no way through. See ADR 0202. */
+const VALID_STATUSES: readonly FulfillmentStatus[] = FULFILLMENT_STATUSES;
 
 export default async function FulfillmentPage({
   searchParams,

@@ -13,6 +13,7 @@ import type {
 } from "@kudos/shared-types";
 import {
   applyMergeTokens,
+  FULFILLMENT_STATUSES,
   OPEN_FULFILLMENT_STATUSES,
   royalMailTrackingUrl,
 } from "@kudos/shared-types";
@@ -112,15 +113,9 @@ const NEXT_STEP: Partial<Record<FulfillmentStatus, { to: FulfillmentStatus; labe
   posted: { to: "delivered", label: "Mark delivered" },
 };
 
-const STATUS_TABS: FulfillmentStatus[] = [
-  "pending",
-  "in_progress",
-  "printed",
-  "posted",
-  "delivered",
-  "returned_to_sender",
-  "failed",
-];
+/** The tabs, in the order the print/post team works them. Shared with the server
+ * page's validator so a tab can never point somewhere the page won't go. */
+const STATUS_TABS: readonly FulfillmentStatus[] = FULFILLMENT_STATUSES;
 
 /** The statuses a card can still be posted from — the ones a dispatch deadline
  * is still a live question for. The same list the API and the ops cockpit use,
