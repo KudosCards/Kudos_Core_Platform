@@ -127,3 +127,152 @@ describe("FulfillmentClient — the tracking prompt before posting", () => {
     });
   });
 });
+
+/**
+ * The calendar drill-in and the deadline view both list every still-open card —
+ * pending, in progress and printed — with no status filter at all. `advance()`
+ * removed the row regardless, on the strength of a comment claiming "the job
+ * leaves the current status filter's view".
+ *
+ * An operator drills into Friday to work twelve cards, marks each printed, and
+ * each vanishes. After twelve clicks the screen reads "Nothing in this queue",
+ * though all twelve are still printed-but-unposted and still due Friday. They
+ * have lost the working list of exactly the cards they now need to post.
+ * See ADR 0203.
+ */
+describe("FulfillmentClient — advancing inside a deadline view", () => {
+  const pendingJob: FulfillmentJob = {
+    id: "job-2",
+    status: "pending",
+    trackingReference: null,
+    labelUrl: null,
+    printedAt: null,
+    postedAt: null,
+    deliveredAt: null,
+    dueDate: new Date().toISOString(),
+    workingDaysUntilDue: 0,
+    clickAndDropOrderId: null,
+    clickAndDropError: null,
+    orderRecipient: {
+      shippingAddressCity: "London",
+      shippingAddressPostcode: "SW1A 1AA",
+      dispatchOption: "asap",
+      postageClass: "second_class",
+      recipient: { firstName: "Grace", lastName: "Hopper" },
+      savedDesign: { id: "d1", name: "Happy Birthday" },
+      occasion: { type: "birthday", occasionDate: new Date().toISOString() },
+    },
+  };
+
+  const COUNTS = {
+    status: { pending: 1, in_progress: 0, printed: 0, posted: 0, delivered: 0 },
+    due: { overdue: 0, today: 1, dueSoon: 0, upcoming: 0, noDate: 0 },
+    clickAndDropErrors: 0,
+  } as never;
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes("import-status")) {
+        return Promise.resolve({
+          enabled: false,
+          imported: 0,
+          errored: 0,
+          awaiting: 0,
+          recentImports: [],
+          recentErrors: [],
+        });
+      }
+      if (String(url).includes("/transition")) {
+        return Promise.resolve({
+          ...pendingJob,
+          status: "printed",
+          printedAt: new Date().toISOString(),
+        });
+      }
+      if (String(url).includes("status")) return Promise.resolve({ enabled: false });
+      return Promise.resolve({});
+    });
+  });
+
+  /** A calendar drill-in: one deadline day, every open status, no tab pinned. */
+  function setupDrillIn() {
+    render(
+      <FulfillmentClient
+        initialJobs={[pendingJob]}
+        status={null}
+        due={null}
+        counts={COUNTS}
+        dueOn="2026-09-04"
+        defaultPrintSize={"a5" as never}
+      />,
+    );
+  }
+
+  it("keeps a card that is still open after it is marked printed", async () => {
+    setupDrillIn();
+    await userEvent.click(screen.getByRole("button", { name: "Mark printed" }));
+
+    // Printed is still an open status, so the card is still due that day and
+    // still on the operator's list — now showing its new state.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Mark posted" })).toBeVisible());
+    expect(screen.getByText("Grace Hopper")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing in this queue.")).not.toBeInTheDocument();
+  });
+
+  it("removes a card from a pinned tab even when its new status is still open", async () => {
+    render(
+      <FulfillmentClient
+        initialJobs={[pendingJob]}
+        status="pending"
+        due={null}
+        counts={COUNTS}
+        dueOn={null}
+        defaultPrintSize={"a5" as never}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Mark printed" }));
+
+    // Printed is an open status, but this view is the Pending tab: a printed
+    // card does not belong in it. "Still open" and "still in this view" are
+    // different questions, and only the second one decides.
+    await waitFor(() => expect(screen.getByText("Nothing in this queue.")).toBeInTheDocument());
+  });
+
+  it("removes a card once it is genuinely out of the view", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes("import-status")) {
+        return Promise.resolve({
+          enabled: false,
+          imported: 0,
+          errored: 0,
+          awaiting: 0,
+          recentImports: [],
+          recentErrors: [],
+        });
+      }
+      if (String(url).includes("/transition")) {
+        return Promise.resolve({ ...pendingJob, status: "posted" });
+      }
+      if (String(url).includes("status")) return Promise.resolve({ enabled: false });
+      return Promise.resolve({});
+    });
+    jest.spyOn(window, "prompt").mockReturnValue("");
+    render(
+      <FulfillmentClient
+        initialJobs={[{ ...pendingJob, status: "printed", printedAt: new Date().toISOString() }]}
+        status={null}
+        due={null}
+        counts={COUNTS}
+        dueOn="2026-09-04"
+        defaultPrintSize={"a5" as never}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Mark posted" }));
+
+    // Posted is not an open status: the card has left this view for real.
+    await waitFor(() => expect(screen.getByText("Nothing in this queue.")).toBeInTheDocument());
+  });
+});
