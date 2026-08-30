@@ -9,6 +9,7 @@ import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { renderBrandedEmail, escapeHtml } from "../email/email-layout";
 import type { EnvConfig } from "../config/env.schema";
 import { generateSlug } from "../common/generate-slug";
+import { cleanMessageHtml } from "../common/sanitize-message-html";
 import { MessagePageEventsService } from "./message-page-events.service";
 import type { UpdateMessagePageDto } from "./dto/update-message-page.dto";
 import type { SubmitMessageReplyDto } from "./dto/submit-message-reply.dto";
@@ -373,7 +374,12 @@ export class MessagesService {
     return {
       available: true,
       title: page.title,
-      message: page.message,
+      // Cleaned on the way out as well as in. The write-side fix cannot reach a
+      // row already written by the unsanitised path, and there is no migration
+      // that can (sanitising is not expressible in SQL) — so the public read,
+      // which is the only place this HTML is ever executed, does it too.
+      // Idempotent, so a row cleaned at write time is unchanged here.
+      message: cleanMessageHtml(page.message),
       emoji: page.emoji,
       videoType: page.videoType,
       embedUrl,
@@ -562,7 +568,11 @@ export class MessagesService {
     const { count } = await this.prisma.messagePage.updateMany({
       where: { id, accountId },
       data: {
-        ...(dto.message !== undefined && { message: dto.message }),
+        // Sanitised on the way in, exactly like PATCH /message-pages/:id. This
+        // body is rendered as HTML on the public, unauthenticated card page, so
+        // the audience for anything that gets through is not the author — it is
+        // every recipient who scans a printed card. See ADR 0181.
+        ...(dto.message !== undefined && { message: cleanMessageHtml(dto.message) }),
         ...(dto.emoji !== undefined && { emoji: dto.emoji }),
         ...(dto.videoUrl !== undefined && { videoUrl: dto.videoUrl }),
       },

@@ -20,7 +20,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import type { EnvConfig } from "../config/env.schema";
 import { generateSlug } from "../common/generate-slug";
-import { sanitizeMessageHtml } from "../common/sanitize-message-html";
+import { cleanMessageHtml } from "../common/sanitize-message-html";
 import type { CreateMessagePageDto } from "./dto/create-message-page.dto";
 import type { UpdateMessagePageDto } from "./dto/update-message-page.dto";
 
@@ -128,12 +128,6 @@ export class MessagePagesService {
     }
   }
 
-  private cleanMessage(message: string | null | undefined): string | null {
-    if (!message) return null;
-    const cleaned = sanitizeMessageHtml(message);
-    return cleaned.length > 0 ? cleaned : null;
-  }
-
   async create(
     accountId: string,
     userId: string,
@@ -152,7 +146,7 @@ export class MessagePagesService {
           accountId,
           createdByUserId: userId,
           title: dto.title,
-          message: this.cleanMessage(dto.message),
+          message: cleanMessageHtml(dto.message),
           emoji: dto.emoji ?? null,
           videoType: video.videoType,
           videoUrl: video.videoUrl,
@@ -218,7 +212,7 @@ export class MessagePagesService {
 
     const data: Prisma.MessagePageUpdateInput = {};
     if (dto.title !== undefined) data.title = dto.title;
-    if (dto.message !== undefined) data.message = this.cleanMessage(dto.message);
+    if (dto.message !== undefined) data.message = cleanMessageHtml(dto.message);
     if (dto.emoji !== undefined) data.emoji = dto.emoji;
     if (dto.allowReplies !== undefined) data.allowReplies = dto.allowReplies;
     if (dto.recipientName !== undefined) data.recipientName = dto.recipientName;

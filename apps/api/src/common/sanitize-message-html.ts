@@ -22,3 +22,22 @@ export function sanitizeMessageHtml(input: string): string {
     disallowedTagsMode: "discard",
   }).trim();
 }
+
+/**
+ * The storage form of a message body: sanitised, with an empty result collapsed
+ * to `null` so "cleared" and "cleaned away to nothing" are the same state.
+ *
+ * Lives here rather than in a service because *both* write paths onto
+ * `MessagePage.message` must use it. They did not: `PATCH /message-pages/:id`
+ * sanitised and `PATCH /messages/:id` did not, which is the whole of ADR 0181.
+ * One lock, not two doors.
+ *
+ * Idempotent — sanitising already-clean HTML returns it unchanged — so it is
+ * also safe to apply on the way out, which is how already-stored rows from
+ * before the fix are neutralised without a migration.
+ */
+export function cleanMessageHtml(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const cleaned = sanitizeMessageHtml(input);
+  return cleaned.length > 0 ? cleaned : null;
+}
