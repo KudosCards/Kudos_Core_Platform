@@ -399,10 +399,42 @@ export class WebhooksService {
     });
   }
 
+  /**
+   * The where-clause that releases an order back to `draft` because a Checkout
+   * Session came to nothing — shared by the expiry and async-failure handlers.
+   *
+   * The session bound is the point. An order can outlive several sessions: the
+   * buyer abandons the first, comes back, and "Resume checkout" mints a second.
+   * Stripe still expires the first on its own 24-hour clock, and that event
+   * carries the same `batchOrderId` — so without this bound, a session nobody is
+   * using releases an order the buyer is *mid-payment* on. The payment then
+   * lands against a `draft` order, the status guard on the completed handler
+   * refuses it, and the buyer has been charged for cards nobody will print.
+   * Only the session the order is actually waiting on may release it.
+   *
+   * A null `stripeCheckoutSessionId` matches on purpose: orders already in
+   * `pending_payment` when the column shipped have a live session whose id was
+   * never recorded, and orders that never reached Stripe have none at all.
+   * Both fall back to the status guard alone — the behaviour that existed
+   * before this bound — so nothing is ever stranded in `pending_payment`
+   * with no route out. See ADR 0179.
+   */
+  private static releasableBySession(
+    batchOrderId: string,
+    session: Stripe.Checkout.Session,
+  ): Prisma.BatchOrderWhereInput {
+    return {
+      id: batchOrderId,
+      status: "pending_payment",
+      OR: [{ stripeCheckoutSessionId: null }, { stripeCheckoutSessionId: session.id }],
+    };
+  }
+
   /** Stripe expires an unpaid Checkout Session (default: 24h after creation)
    * if the customer never completes or abandons it. Hands the order back to
    * "draft" so it isn't stuck in "pending_payment" forever with no route to
-   * retry other than the manual cancel endpoint. */
+   * retry other than the manual cancel endpoint — but only when the expiring
+   * session is the one the order is waiting on (see releasableBySession). */
   private async handleCheckoutSessionExpired(session: Stripe.Checkout.Session): Promise<void> {
     const batchOrderId = session.metadata?.batchOrderId;
     if (!batchOrderId) {
@@ -410,10 +442,13 @@ export class WebhooksService {
     }
 
     const { count } = await this.prisma.batchOrder.updateMany({
-      where: { id: batchOrderId, status: "pending_payment" },
+      where: WebhooksService.releasableBySession(batchOrderId, session),
       data: { status: "draft" },
     });
     if (count === 0) {
+      this.logger.log(
+        `Checkout session ${session.id} expired but did not release batch order ${batchOrderId} — the order has moved on (paid, cancelled, or waiting on a newer session)`,
+      );
       return;
     }
 
@@ -452,10 +487,13 @@ export class WebhooksService {
     }
 
     const { count } = await this.prisma.batchOrder.updateMany({
-      where: { id: batchOrderId, status: "pending_payment" },
+      where: WebhooksService.releasableBySession(batchOrderId, session),
       data: { status: "draft" },
     });
     if (count === 0) {
+      this.logger.log(
+        `Async payment failed on session ${session.id} but did not release batch order ${batchOrderId} — the order has moved on (paid, cancelled, or waiting on a newer session)`,
+      );
       return;
     }
 

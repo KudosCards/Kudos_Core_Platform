@@ -81,6 +81,13 @@ function buildLine(occasionId: string) {
   };
 }
 
+/** The Checkout Session id behind a `{ checkoutUrl }` response — the mocked
+ * Stripe session puts its own id in the URL, exactly as the real one does. */
+function sessionIdFromUrl(body: unknown): string {
+  const { checkoutUrl } = body as { checkoutUrl: string };
+  return checkoutUrl.split("/pay/")[1]!;
+}
+
 describe("Batch orders (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
@@ -827,6 +834,10 @@ describe("Batch orders (e2e)", () => {
     const stored = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.id } });
     expect(stored.status).toBe("pending_payment");
     expect(stored.stripePaymentIntentId).toMatch(/^pi_test_/);
+    // Which session the order is waiting on. The webhook handlers read this to
+    // ignore an expiry for a session the order has since superseded — without
+    // it recorded here there is nothing for them to compare against. ADR 0179.
+    expect(stored.stripeCheckoutSessionId).toBe(sessionIdFromUrl(checkoutResponse.body));
   });
 
   it("accepts an empty optional shippingAddressLine2 (blank → not provided)", async () => {
@@ -882,6 +893,12 @@ describe("Batch orders (e2e)", () => {
 
     const stored = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.id } });
     expect(stored.status).toBe("pending_payment");
+    // The order is now waiting on the SECOND session. The first one still has
+    // its own 24-hour expiry clock running at Stripe, and when that fires the
+    // webhook must recognise it as stale rather than release an order the buyer
+    // may be paying for right now. That only works if the resume moved this
+    // column on. See ADR 0179.
+    expect(stored.stripeCheckoutSessionId).toBe(sessionIdFromUrl(resume.body));
   });
 
   it("rejects re-checkout of a pending_payment order without an explicit resume intent", async () => {

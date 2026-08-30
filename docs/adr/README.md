@@ -187,5 +187,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0176 — No HTML entities in JSX text: they eat a space](./0176-no-html-entities-in-jsx-text.md)
 - [0177 — One word for a group of contacts: "Lists"](./0177-one-word-for-a-group-of-contacts.md)
 - [0178 — A date that went by is not a date you skipped](./0178-a-date-that-went-by-is-not-a-date-you-skipped.md)
+- [0179 — A payment is not cancelled by an older session, and a refund is not a card](./0179-a-payment-is-not-cancelled-by-an-older-session.md)
 
 <!-- adr-index:end -->

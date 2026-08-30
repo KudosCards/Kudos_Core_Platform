@@ -539,6 +539,126 @@ describe("Webhooks (e2e)", () => {
     expect(order.status).toBe("draft");
   });
 
+  /**
+   * A resumed checkout: the buyer abandons the first Checkout Session, comes
+   * back, and pays on a second one. Stripe still expires the first session on
+   * its own 24-hour clock, and that event carries the SAME batchOrderId — so
+   * without knowing which session the order is actually waiting on, the expiry
+   * of a session nobody is using releases an order that is mid-payment.
+   */
+  describe("a superseded Checkout Session", () => {
+    /** Puts the order in the state a resume leaves behind: pending_payment, with
+     * the SECOND session recorded as the live one. */
+    async function orderResumedOnSecondSession(token: string): Promise<{
+      batchOrderId: string;
+      firstSessionId: string;
+      secondSessionId: string;
+    }> {
+      const { batchOrderId } = await createPendingPaymentBatchOrder(token);
+      const firstSessionId = `cs_test_${randomUUID()}`;
+      const secondSessionId = `cs_test_${randomUUID()}`;
+      await prisma.batchOrder.update({
+        where: { id: batchOrderId },
+        data: { stripeCheckoutSessionId: secondSessionId },
+      });
+      return { batchOrderId, firstSessionId, secondSessionId };
+    }
+
+    it("ignores the expiry of a session the order has moved on from", async () => {
+      const { token } = await signUp();
+      const { batchOrderId, firstSessionId } = await orderResumedOnSecondSession(token);
+
+      await postWebhook(
+        buildStripeEventPayload("checkout.session.expired", {
+          id: firstSessionId,
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+
+      const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+      expect(order.status).toBe("pending_payment");
+    });
+
+    it("still fulfils the payment that lands after the old session expires", async () => {
+      const { token } = await signUp();
+      const { batchOrderId, firstSessionId, secondSessionId } =
+        await orderResumedOnSecondSession(token);
+
+      // The abandoned session times out first...
+      await postWebhook(
+        buildStripeEventPayload("checkout.session.expired", {
+          id: firstSessionId,
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+      // ...and only then does the buyer finish paying on the live one.
+      await postWebhook(
+        buildStripeEventPayload("checkout.session.completed", {
+          id: secondSessionId,
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+
+      // The money is real, so the cards must be real too.
+      const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+      expect(order.status).toBe("paid");
+      const jobs = await prisma.fulfillmentJob.findMany({
+        where: { orderRecipient: { batchOrderId } },
+      });
+      expect(jobs).toHaveLength(1);
+    });
+
+    it("ignores an async payment failure on a session the order has moved on from", async () => {
+      const { token } = await signUp();
+      const { batchOrderId, firstSessionId } = await orderResumedOnSecondSession(token);
+
+      await postWebhook(
+        buildStripeEventPayload("checkout.session.async_payment_failed", {
+          id: firstSessionId,
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+
+      const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+      expect(order.status).toBe("pending_payment");
+    });
+
+    it("still releases the order when its OWN live session expires", async () => {
+      const { token } = await signUp();
+      const { batchOrderId, secondSessionId } = await orderResumedOnSecondSession(token);
+
+      await postWebhook(
+        buildStripeEventPayload("checkout.session.expired", {
+          id: secondSessionId,
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+
+      const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+      expect(order.status).toBe("draft");
+    });
+
+    it("still releases an order that checked out before the session was recorded", async () => {
+      // Orders already in pending_payment when the column shipped carry no
+      // session id. They must keep expiring the way they always did, or a
+      // checkout in flight across the deploy would be stranded forever.
+      const { token } = await signUp();
+      const { batchOrderId } = await createPendingPaymentBatchOrder(token);
+      const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+      expect(order.stripeCheckoutSessionId).toBeNull();
+
+      await postWebhook(
+        buildStripeEventPayload("checkout.session.expired", {
+          id: `cs_test_${randomUUID()}`,
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+
+      const after = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+      expect(after.status).toBe("draft");
+    });
+  });
+
   it("ignores an unrecognized Stripe event type", async () => {
     const payload = buildStripeEventPayload("customer.created", { id: "cus_test_irrelevant" });
     await postWebhook(payload).expect(201);

@@ -3,7 +3,11 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CLICK_AND_DROP_CLIENT } from "./click-and-drop-client.provider";
-import type { ClickAndDropClient, ClickAndDropProbeResult } from "./click-and-drop-client";
+import type {
+  ClickAndDropCancelResult,
+  ClickAndDropClient,
+  ClickAndDropProbeResult,
+} from "./click-and-drop-client";
 
 /** Everything needed to build one Click & Drop order from a fulfillment job. */
 const IMPORT_SELECT = {
@@ -244,6 +248,60 @@ export class ClickAndDropService {
     if (job.clickAndDropOrderId) return;
     const error = await this.pushOne(job);
     if (error !== null) throw new Error(error);
+  }
+
+  /**
+   * Pull cards back out of the Click & Drop queue after their order was
+   * refunded. The undo for `sweep`.
+   *
+   * This exists because the sweep pushes a card into Click & Drop within five
+   * minutes of payment, while it is still `pending` — and `pending` is exactly
+   * the state a self-serve refund is allowed from. So by the time a customer
+   * cancels, Royal Mail is usually already holding the order. Deleting our
+   * FulfillmentJob row and saying nothing left them refunded *and* posted.
+   *
+   * Never throws, and never reports a partial success as a success. The refund
+   * has already been paid out before this runs, so failing here must not
+   * unwind it — the honest outcome is to hand the caller the identifiers that
+   * are still live so a human can pull them in the dashboard.
+   */
+  async cancelImported(orderIdentifiers: string[]): Promise<ClickAndDropCancelResult> {
+    const identifiers = [...new Set(orderIdentifiers.filter((id) => id.length > 0))];
+    if (identifiers.length === 0) return { cancelled: [], failed: [] };
+    if (!this.client.enabled) {
+      // Import is off, so nothing of ours is in Click & Drop to pull. Anything
+      // holding an identifier was imported while it was on, which is worth a
+      // log line rather than silence.
+      this.logger.warn(
+        `Click & Drop is disabled, so ${identifiers.length} imported order(s) were not cancelled: ${identifiers.join(", ")}`,
+      );
+      return { cancelled: [], failed: [] };
+    }
+
+    let result: ClickAndDropCancelResult;
+    try {
+      result = await this.client.cancelOrders(identifiers);
+    } catch (error) {
+      // The contract says cancelOrders never throws, but a refund is not the
+      // place to find out otherwise.
+      const reason = error instanceof Error ? error.message : String(error);
+      result = {
+        cancelled: [],
+        failed: identifiers.map((orderIdentifier) => ({ orderIdentifier, reason })),
+      };
+    }
+
+    if (result.cancelled.length > 0) {
+      this.logger.log(
+        `Click & Drop: cancelled ${result.cancelled.length} refunded order(s) — ${result.cancelled.join(", ")}`,
+      );
+    }
+    for (const { orderIdentifier, reason } of result.failed) {
+      this.logger.error(
+        `Click & Drop order ${orderIdentifier} was refunded but could NOT be cancelled — it may still be printed and posted: ${reason}`,
+      );
+    }
+    return result;
   }
 
   /** Push one card. Returns null on success, or the error message on failure

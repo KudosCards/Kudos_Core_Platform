@@ -63,10 +63,32 @@ export interface ClickAndDropProbeResult {
   error?: string;
 }
 
+/**
+ * The outcome of asking Click & Drop to delete some orders. Partial success is
+ * the normal case, not an edge case — Royal Mail rejects a delete once the order
+ * has been despatched — so this reports per-identifier rather than throwing.
+ * Every identifier passed in comes back in exactly one of the two lists.
+ */
+export interface ClickAndDropCancelResult {
+  /** Identifiers Royal Mail confirmed are gone from the dashboard queue. */
+  cancelled: string[];
+  /** Identifiers still sitting in Click & Drop, each with Royal Mail's reason. */
+  failed: { orderIdentifier: string; reason: string }[];
+}
+
 export interface ClickAndDropClient {
   /** True when a real, credentialled client is wired (vs the no-op). */
   readonly enabled: boolean;
   createOrder(input: ClickAndDropOrderInput): Promise<ClickAndDropOrderResult>;
+  /**
+   * Delete orders from the Click & Drop dashboard queue — the undo for
+   * `createOrder`, used when a card is refunded before it is posted. Without it
+   * a refunded card stays in the operator's queue and Royal Mail prints and
+   * posts it anyway, with the customer's money already returned. Never throws:
+   * a rejection for one identifier is reported in `failed`, not raised, so one
+   * un-deletable card can't strand the rest. See ADR 0179.
+   */
+  cancelOrders(orderIdentifiers: string[]): Promise<ClickAndDropCancelResult>;
   /** A live read-only call to validate connectivity + auth (never creates an order). */
   probe(): Promise<ClickAndDropProbeResult>;
 }
@@ -82,6 +104,12 @@ export class NoopClickAndDropClient implements ClickAndDropClient {
     return Promise.reject(
       new Error("Click & Drop import is not configured (CLICK_AND_DROP_API_KEY unset)"),
     );
+  }
+  /** Nothing was ever imported, so nothing needs deleting. Unlike createOrder
+   * this resolves rather than rejects: a refund must not fail because order
+   * import happens to be switched off. */
+  cancelOrders(): Promise<ClickAndDropCancelResult> {
+    return Promise.resolve({ cancelled: [], failed: [] });
   }
   probe(): Promise<ClickAndDropProbeResult> {
     return Promise.resolve({
@@ -190,6 +218,83 @@ export function describeFailedOrder(
   return raw && raw !== "{}" ? raw.slice(0, 400) : "unknown error";
 }
 
+/** How many order identifiers go into one DELETE. They travel as a
+ * comma-separated URL path segment, so the request line has to stay a sane
+ * length however many cards a refunded order had. */
+const CANCEL_BATCH_SIZE = 50;
+
+/** The envelope of a Click & Drop delete response. Royal Mail documents
+ * `deletedOrders` (identifiers) and `errors` (per-identifier reasons); as with
+ * the create response the exact naming varies by account/version, so this is
+ * loose on purpose and anything unrecognised falls through to "not confirmed
+ * deleted". */
+export interface ClickAndDropDeleteResponse {
+  deletedOrders?: (number | string)[];
+  errors?: {
+    orderIdentifier?: number | string;
+    code?: string | number;
+    message?: string;
+    errorCode?: string | number;
+    errorMessage?: string;
+  }[];
+}
+
+/**
+ * Split a delete response into confirmed-gone and still-there, always covering
+ * every identifier that was asked for.
+ *
+ * The default is *failure*: an identifier is only reported cancelled when the
+ * response names it in `deletedOrders`. An unreadable body, a shape we don't
+ * recognise, or a silently-dropped identifier therefore surfaces as a card an
+ * operator must check — never as a card quietly assumed to be pulled.
+ */
+export function parseCancelResponse(
+  rawBody: string,
+  requested: string[],
+): ClickAndDropCancelResult {
+  let data: ClickAndDropDeleteResponse = {};
+  try {
+    data = (rawBody ? JSON.parse(rawBody) : {}) as ClickAndDropDeleteResponse;
+  } catch {
+    const reason = `Click & Drop returned an unreadable delete response: ${rawBody.slice(0, 300) || "(empty body)"}`;
+    return {
+      cancelled: [],
+      failed: requested.map((orderIdentifier) => ({ orderIdentifier, reason })),
+    };
+  }
+
+  const deleted = new Set((data.deletedOrders ?? []).map((id) => String(id)));
+  const reasonById = new Map<string, string>();
+  for (const error of data.errors ?? []) {
+    if (error.orderIdentifier === undefined || error.orderIdentifier === null) continue;
+    const message = firstNonEmpty(error.errorMessage, error.message);
+    const code = firstNonEmpty(error.errorCode, error.code);
+    const reason = message
+      ? code
+        ? `${message} (${code})`
+        : message
+      : code
+        ? `error code ${code}`
+        : "Click & Drop rejected the delete without giving a reason";
+    reasonById.set(String(error.orderIdentifier), reason);
+  }
+
+  const cancelled: string[] = [];
+  const failed: { orderIdentifier: string; reason: string }[] = [];
+  for (const orderIdentifier of requested) {
+    if (deleted.has(orderIdentifier)) {
+      cancelled.push(orderIdentifier);
+    } else {
+      failed.push({
+        orderIdentifier,
+        reason:
+          reasonById.get(orderIdentifier) ?? "Click & Drop did not confirm this order was deleted",
+      });
+    }
+  }
+  return { cancelled, failed };
+}
+
 /**
  * Real Click & Drop Orders API client. Posts a single order per call to
  * `/api/v1/orders`. The auth key is passed in the Authorization header exactly
@@ -246,6 +351,55 @@ export class HttpClickAndDropClient implements ClickAndDropClient {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  /**
+   * Delete orders from the Click & Drop queue — `DELETE /api/v1/orders/{ids}`,
+   * which takes a comma-separated list and answers with the identifiers it
+   * removed plus a per-identifier reason for the ones it wouldn't.
+   *
+   * Batched at CANCEL_BATCH_SIZE because the path is a URL segment: a refunded
+   * 500-card order would otherwise build a URL no proxy would carry.
+   *
+   * Whatever goes wrong — a rejected identifier, a 500, DNS failure — comes back
+   * in `failed` rather than as a throw. The caller has already refunded the
+   * customer by the time it gets here, so its job is to tell an operator which
+   * cards to pull by hand, and it can only do that if it is handed a list.
+   *
+   * IMPORTANT: the same "verify against the live API after deploy" caveat as the
+   * rest of this file. Any identifier the response does not explicitly confirm
+   * deleted is treated as still live, which is the safe direction to be wrong in
+   * — it raises an alert about a card that may already be gone, rather than
+   * staying quiet about one Royal Mail is about to post.
+   */
+  async cancelOrders(orderIdentifiers: string[]): Promise<ClickAndDropCancelResult> {
+    const cancelled: string[] = [];
+    const failed: { orderIdentifier: string; reason: string }[] = [];
+
+    for (let i = 0; i < orderIdentifiers.length; i += CANCEL_BATCH_SIZE) {
+      const batch = orderIdentifiers.slice(i, i + CANCEL_BATCH_SIZE);
+      const endpoint = `${this.ordersUrl()}/${batch.map(encodeURIComponent).join(",")}`;
+      try {
+        const response = await fetch(endpoint, {
+          method: "DELETE",
+          headers: { Authorization: this.authHeader(), Accept: "application/json" },
+        });
+        const rawBody = await response.text().catch(() => "");
+        if (!response.ok) {
+          const reason = `Click & Drop delete failed — DELETE ${endpoint} (${response.status}): ${rawBody.slice(0, 300)}`;
+          for (const orderIdentifier of batch) failed.push({ orderIdentifier, reason });
+          continue;
+        }
+        const parsed = parseCancelResponse(rawBody, batch);
+        cancelled.push(...parsed.cancelled);
+        failed.push(...parsed.failed);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        for (const orderIdentifier of batch) failed.push({ orderIdentifier, reason });
+      }
+    }
+
+    return { cancelled, failed };
   }
 
   async createOrder(input: ClickAndDropOrderInput): Promise<ClickAndDropOrderResult> {

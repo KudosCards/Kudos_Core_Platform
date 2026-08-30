@@ -7,6 +7,7 @@ import { BillingModule } from "../billing/billing.module";
 import { MessagesModule } from "../messages/messages.module";
 import { RecipientsModule } from "../recipients/recipients.module";
 import { OpsActivityModule } from "../ops-activity/ops-activity.module";
+import { ShippingModule } from "../shipping/shipping.module";
 
 @Module({
   imports: [
@@ -18,6 +19,9 @@ import { OpsActivityModule } from "../ops-activity/ops-activity.module";
     // A full-wallet checkout settles the order here rather than through Stripe,
     // so this is the only place that can tell Kudos HQ about it.
     OpsActivityModule,
+    // A refund has to pull the card back out of Royal Mail's Click & Drop queue,
+    // where the 5-minute sweep has usually already put it. See ADR 0179.
+    ShippingModule,
   ],
   controllers: [BatchOrdersController],
   providers: [BatchOrdersService],
