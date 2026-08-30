@@ -36,11 +36,25 @@ describe("Team / invites (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
   let sendTransactional: jest.Mock;
+  /** Set by a test to hold each seat-count read; null the rest of the time. */
+  let holdAfterPendingInviteCount: (() => Promise<void>) | null = null;
 
   beforeAll(async () => {
     sendTransactional = jest.fn().mockResolvedValue(undefined);
     app = await createTestApp([{ provide: EMAIL_CLIENT, useValue: { sendTransactional } }]);
     prisma = app.get(PrismaService);
+
+    // Prisma middleware sees every query, including those issued through a
+    // transaction client, which is what makes it usable to pin a race in code
+    // that runs inside a transaction. Installed once (middleware cannot be
+    // removed) and inert unless a test sets the hook.
+    prisma.$use(async (params, next) => {
+      const result: unknown = await next(params);
+      if (params.model === "Invite" && params.action === "count" && holdAfterPendingInviteCount) {
+        await holdAfterPendingInviteCount();
+      }
+      return result;
+    });
   });
 
   afterAll(async () => {
@@ -68,6 +82,38 @@ describe("Team / invites (e2e)", () => {
       await prisma.account.update({ where: { id: accountId }, data: { planId: "centre" } });
     }
     return { token, accountId, userId };
+  }
+
+  /**
+   * A gate that holds each caller until `n` of them have arrived, then stays
+   * open. Used to pin a read-then-write race to the one interleaving that
+   * exposes it, rather than firing requests and hoping.
+   *
+   * Stays open afterwards so a serialization retry re-reads instead of blocking
+   * on a gate nobody else will reach. `arrivals` is exposed so a test can assert
+   * the interleaving actually happened — without that, a gate wired to the wrong
+   * call site passes silently and proves nothing.
+   */
+  function barrier(n: number): { wait: () => Promise<void>; arrivals: () => number } {
+    let arrived = 0;
+    let open = false;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return {
+      arrivals: () => arrived,
+      wait: async () => {
+        arrived += 1;
+        if (open) return;
+        if (arrived >= n) {
+          open = true;
+          release();
+          return;
+        }
+        await gate;
+      },
+    };
   }
 
   /** Read an invite's secret token straight from the DB (never returned by API). */
@@ -102,6 +148,60 @@ describe("Team / invites (e2e)", () => {
       .send({ email: "staff@centre.test", role: "staff" })
       .expect(403);
     expect(sendTransactional).not.toHaveBeenCalled();
+  });
+
+  it("hard-blocks concurrent invites too, not just sequential ones", async () => {
+    const owner = await signUpOwner({ centre: true });
+    // Centre includes 3 seats and the owner holds one, so exactly 2 remain.
+    // An admin bulk-inviting from the UI fires these together: every request
+    // reads `used = 1` before any of them has written, so a read-then-write
+    // outside a transaction lets all four through and the account ends up with
+    // seats it never paid for. setExtraSeats then refuses to reduce below the
+    // seats in use, so only manual intervention recovers it.
+    //
+    // Left to chance this reproduces only sometimes — the four requests have to
+    // interleave just so. The barrier removes the chance: each request is held
+    // after it has counted the seats in use, and released once all four have.
+    // It is hooked through Prisma middleware rather than a spy on
+    // prisma.invite.count because the fix reads that count through a
+    // transaction client: a spy on the top-level delegate would simply stop
+    // firing, and the test would pass while proving nothing.
+    const allFourHaveRead = barrier(4);
+    holdAfterPendingInviteCount = allFourHaveRead.wait;
+
+    let responses: request.Response[];
+    try {
+      responses = await Promise.all(
+        ["a", "b", "c", "d"].map((name) =>
+          request(app.getHttpServer())
+            .post("/team/invites")
+            .set("Authorization", `Bearer ${owner.token}`)
+            .send({ email: `${name}@centre.test`, role: "staff" }),
+        ),
+      );
+    } finally {
+      holdAfterPendingInviteCount = null;
+    }
+
+    // The interleaving happened: all four counted the seats in use before any of
+    // them wrote. Without this the test could pass on a gate that never fired.
+    expect(allFourHaveRead.arrivals()).toBeGreaterThanOrEqual(4);
+
+    const created = responses.filter((r) => r.status === 201).length;
+    // A loser may be refused outright (403) or lose the serialization race and
+    // be told to retry (503) — both are correct, and which one depends on
+    // whether it read before or after the winner committed.
+    for (const response of responses) {
+      expect([201, 403, 503]).toContain(response.status);
+    }
+    expect(created).toBe(2);
+
+    // The invariant that actually matters: seats in use never exceed seats paid for.
+    const [memberCount, pendingInvites] = await Promise.all([
+      prisma.membership.count({ where: { accountId: owner.accountId } }),
+      prisma.invite.count({ where: { accountId: owner.accountId, status: "pending" } }),
+    ]);
+    expect(memberCount + pendingInvites).toBe(3);
   });
 
   it("hard-blocks inviting past the paid seat count, and adding a seat unblocks it", async () => {
