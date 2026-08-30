@@ -41,6 +41,7 @@ import {
   type OccasionRedateCard,
   type OccasionRedateSummary,
   type PreflightIssue,
+  OPEN_OCCASION_STATUSES,
 } from "@kudos/shared-types";
 import { MessagesService } from "../messages/messages.service";
 import { RecipientsService } from "../recipients/recipients.service";
@@ -169,8 +170,6 @@ function notBeforeToday(dispatchDate: Date): Date {
 function usesOccasionDates(dto: BulkSendDto): boolean {
   return dto.useOccasionDates ?? !dto.deliverBy;
 }
-
-const RECONCILABLE_OCCASION_STATUSES = ["scheduled", "pending_approval", "approved"] as const;
 
 /** A card can only be posted to a contact with a complete, valid UK address. */
 function hasMailableAddress(recipient: Prisma.RecipientGetPayload<object>): boolean {
@@ -460,7 +459,7 @@ export class BatchOrdersService {
             where: {
               id: { in: ids },
               accountId,
-              status: { in: [...RECONCILABLE_OCCASION_STATUSES] },
+              status: { in: [...OPEN_OCCASION_STATUSES] },
             },
             data: {
               savedDesignId: savedDesign.id,
@@ -483,7 +482,7 @@ export class BatchOrdersService {
               await tx.occasion.findMany({
                 where: {
                   id: { in: [...reconciledByRecipient.values()].map((r) => r.occasionId) },
-                  status: { in: [...RECONCILABLE_OCCASION_STATUSES] },
+                  status: { in: [...OPEN_OCCASION_STATUSES] },
                 },
                 select: { id: true },
               })
@@ -846,7 +845,7 @@ export class BatchOrdersService {
         accountId,
         recipientId: { in: recipientIds },
         source: { not: "one_off_campaign" },
-        status: { in: [...RECONCILABLE_OCCASION_STATUSES] },
+        status: { in: [...OPEN_OCCASION_STATUSES] },
         occasionDate: { gte: startOfUtcDay(new Date()) },
       },
       orderBy: { occasionDate: "asc" },
@@ -886,7 +885,7 @@ export class BatchOrdersService {
         id: { in: requested.map((r) => r.occasionId) },
         recipientId: { in: requested.map((r) => r.recipientId) },
         source: { not: "one_off_campaign" },
-        status: { in: [...RECONCILABLE_OCCASION_STATUSES] },
+        status: { in: [...OPEN_OCCASION_STATUSES] },
       },
       // occasionDate drives the reused occasion's own post-by date (the birthday),
       // so a segment send stays timed to each person's date. See ADR 0160.
@@ -958,7 +957,7 @@ export class BatchOrdersService {
         .filter((id): id is string => id !== null);
       if (supersededIds.length > 0) {
         await tx.occasion.updateMany({
-          where: { id: { in: supersededIds }, status: { in: [...RECONCILABLE_OCCASION_STATUSES] } },
+          where: { id: { in: supersededIds }, status: { in: [...OPEN_OCCASION_STATUSES] } },
           data: { status: "skipped" },
         });
       }
@@ -1646,7 +1645,7 @@ export class BatchOrdersService {
         // card on the same day. Status-guarded so an occasion that has since
         // moved on is never dragged back.
         await tx.occasion.updateMany({
-          where: { id: match.occasionId, status: { in: [...RECONCILABLE_OCCASION_STATUSES] } },
+          where: { id: match.occasionId, status: { in: [...OPEN_OCCASION_STATUSES] } },
           data: { status: "skipped" },
         });
         if (line.fulfillmentJob) {

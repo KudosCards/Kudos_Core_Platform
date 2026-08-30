@@ -29,7 +29,7 @@ import { buildScheduledBirthdayOccasion, startOfUtcDay } from "../occasions/birt
 import { realignBirthdayOccasion, type RealignResult } from "../occasions/realign-birthday.util";
 import { promoteDueOccasions } from "../occasions/promote-due-occasions.util";
 import { buildScheduledKeyDateOccasion } from "../occasions/key-date-occasion.util";
-import { keyDateTypeSchema } from "@kudos/shared-types";
+import { keyDateTypeSchema, OPEN_OCCASION_STATUSES } from "@kudos/shared-types";
 import type { UpsertKeyDateDto } from "./dto/upsert-key-date.dto";
 
 export type { Paginated };
@@ -938,21 +938,49 @@ export class RecipientsService {
     const anchor = new Date(`${dto.date}T00:00:00.000Z`);
     const label = dto.label?.trim() || null;
 
-    const keyDate = await this.prisma.recipientKeyDate.upsert({
-      where: { recipient_key_date_type: { recipientId, type } },
-      create: { accountId, recipientId, type, date: anchor, label },
-      update: { date: anchor, label },
-    });
+    const occasion = buildScheduledKeyDateOccasion(
+      { accountId, recipientId, type, date: anchor, label },
+      startOfUtcDay(new Date()),
+    );
 
-    await this.prisma.occasion.deleteMany({ where: { recipientId, type, status: "scheduled" } });
-    await this.prisma.occasion.createMany({
-      data: [
-        buildScheduledKeyDateOccasion(
-          { accountId, recipientId, type, date: anchor, label },
-          startOfUtcDay(new Date()),
-        ),
-      ],
-      skipDuplicates: true,
+    // One transaction: the delete and the create are two halves of "re-point
+    // this key date". Run apart, a failure between them leaves the contact with
+    // a key date and no occasion — nothing to approve, nothing to send, and
+    // nothing on any screen to say something is missing.
+    const keyDate = await this.prisma.$transaction(async (tx) => {
+      const saved = await tx.recipientKeyDate.upsert({
+        where: { recipient_key_date_type: { recipientId, type } },
+        create: { accountId, recipientId, type, date: anchor, label },
+        update: { date: anchor, label },
+      });
+
+      // Clear this key date's occasions for any *other* date — the customer has
+      // just told us that date is wrong. Only ones nothing has been spent on:
+      // a queued or posted card is a real card and its occasion stays put.
+      //
+      // The occasion for the new date is deliberately left alone rather than
+      // deleted and recreated: it may already be approved, and re-creating it
+      // would silently throw that decision away and put it back in the queue.
+      // Previously this deleted only `scheduled` occasions, which was enough
+      // when promotion happened overnight and wrong the moment it became eager
+      // — a re-dated key date would have left its old occasion sitting in
+      // Approvals asking for a card on a date already corrected.
+      await tx.occasion.deleteMany({
+        where: {
+          recipientId,
+          type,
+          status: { in: [...OPEN_OCCASION_STATUSES] },
+          occasionDate: { not: occasion.occasionDate as Date },
+        },
+      });
+      await tx.occasion.createMany({ data: [occasion], skipDuplicates: true });
+
+      // …and it lands in Approvals now if it is already inside the window,
+      // rather than waiting for the 06:00 sweep — which, for a key date set
+      // inside the window, promotes it a day after its post-by date. Same rule
+      // and same reason as create(), update() and ensureScheduledBirthdays().
+      await promoteDueOccasions(tx, accountId);
+      return saved;
     });
 
     await this.audit.record({
@@ -975,8 +1003,16 @@ export class RecipientsService {
   ): Promise<void> {
     await this.assertRecipient(accountId, recipientId);
     const type = this.parseKeyDateType(rawType);
-    await this.prisma.recipientKeyDate.deleteMany({ where: { recipientId, accountId, type } });
-    await this.prisma.occasion.deleteMany({ where: { recipientId, type, status: "scheduled" } });
+    // Whatever stage the occasion has reached, short of a card actually being
+    // paid for: removing the key date removes its occasion. Scoped to `scheduled`
+    // this silently left a promoted occasion in Approvals for a date the
+    // customer had just deleted.
+    await this.prisma.$transaction([
+      this.prisma.recipientKeyDate.deleteMany({ where: { recipientId, accountId, type } }),
+      this.prisma.occasion.deleteMany({
+        where: { recipientId, type, status: { in: [...OPEN_OCCASION_STATUSES] } },
+      }),
+    ]);
     await this.audit.record({
       accountId,
       actorUserId,
