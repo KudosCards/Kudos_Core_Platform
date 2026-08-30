@@ -83,7 +83,8 @@ export const UK_BANK_HOLIDAYS: ReadonlySet<string> = new Set([
 /**
  * A seasonal window that changes how cards are dispatched — extra lead days for
  * the post rush, and optionally a nudge toward First Class. Matched on the
- * occasion's month/day (year-agnostic) so one rule covers every year.
+ * month/day (year-agnostic) of the date the card is *posted*, so one rule covers
+ * every year — see ADR 0195 for why the posting date and not the occasion's.
  */
 export interface SeasonalDispatchRule {
   /** Human label, shown in the First-Class nudge and recorded in audit. */
@@ -92,9 +93,9 @@ export interface SeasonalDispatchRule {
   from: { month: number; day: number };
   /** Inclusive window end. May be "earlier" than `from` to wrap over year-end. */
   to: { month: number; day: number };
-  /** Extra working days of lead for occasions dated inside the window. */
+  /** Extra working days of lead for cards *posted* inside the window. */
   extraLeadDays: number;
-  /** Whether to suggest First Class for occasions inside the window. */
+  /** Whether to suggest First Class for cards posted inside the window. */
   suggestFirstClass: boolean;
 }
 
@@ -225,12 +226,19 @@ function monthDayKey(month: number, day: number): number {
   return month * 100 + day;
 }
 
-/** The first seasonal rule whose window contains this occasion date, or null. */
+/**
+ * The first seasonal rule whose window contains this date, or null.
+ *
+ * Deliberately named `date`, not `occasionDate`: the windows describe when the
+ * postal network is slow, so the date that matters is the one the card is
+ * *posted*. Passing the occasion date instead is the mistake this parameter used
+ * to invite, and it applied the Christmas rush backwards. See ADR 0195.
+ */
 export function seasonalDispatchRuleFor(
-  occasionDate: Date,
+  date: Date,
   rules: readonly SeasonalDispatchRule[] = activeSeasonalRules,
 ): SeasonalDispatchRule | null {
-  const cur = monthDayKey(occasionDate.getUTCMonth() + 1, occasionDate.getUTCDate());
+  const cur = monthDayKey(date.getUTCMonth() + 1, date.getUTCDate());
   for (const rule of rules) {
     const lo = monthDayKey(rule.from.month, rule.from.day);
     const hi = monthDayKey(rule.to.month, rule.to.day);
@@ -240,11 +248,35 @@ export function seasonalDispatchRuleFor(
   return null;
 }
 
+/** Count `days` working days back from a date, skipping weekends and holidays. */
+function workingDaysBefore(from: Date, days: number, holidays: ReadonlySet<string>): Date {
+  const dispatch = startOfUtcDay(from);
+  let remaining = days;
+  while (remaining > 0) {
+    dispatch.setUTCDate(dispatch.getUTCDate() - 1);
+    if (isWorkingDay(dispatch, holidays)) remaining--;
+  }
+  return dispatch;
+}
+
 /**
  * The dispatch date for an occasion: `leadDays` working days before the
  * occasion (skipping weekends and bank holidays), plus any seasonal extra lead.
  * The returned date is always itself a working day, so a card is never
  * scheduled to post on a day nothing ships.
+ *
+ * The seasonal rule is matched against the date the card would be **posted**,
+ * not the occasion's own date. `extraLeadDays` exists because Royal Mail is
+ * slower during the rush — a property of the transit window. Matched on the
+ * occasion date it was applied backwards: a card for New Year's Day posted on
+ * 23 December, the busiest posting day of the year, got base lead only, while a
+ * card for 1 December posted on 19 November — clear of the rush — was granted
+ * the extra three days. See ADR 0195.
+ *
+ * Two passes, not a loop to a fixed point: the base dispatch date decides which
+ * rule applies, and the extra lead is then added once. Re-checking the extended
+ * date could oscillate, and "posted in the window" is a question about when the
+ * card would ordinarily go, not about the answer's own answer.
  */
 export function computeDispatchDate(
   occasionDate: Date,
@@ -252,15 +284,10 @@ export function computeDispatchDate(
   options: DispatchDateOptions = {},
 ): Date {
   const holidays = options.holidays ?? UK_BANK_HOLIDAYS;
-  const rule = seasonalDispatchRuleFor(occasionDate, options.seasonalRules);
-  let remaining = leadDays + (rule?.extraLeadDays ?? 0);
-
-  const dispatch = startOfUtcDay(occasionDate);
-  while (remaining > 0) {
-    dispatch.setUTCDate(dispatch.getUTCDate() - 1);
-    if (isWorkingDay(dispatch, holidays)) remaining--;
-  }
-  return dispatch;
+  const base = workingDaysBefore(occasionDate, leadDays, holidays);
+  const rule = seasonalDispatchRuleFor(base, options.seasonalRules);
+  if (!rule?.extraLeadDays) return base;
+  return workingDaysBefore(occasionDate, leadDays + rule.extraLeadDays, holidays);
 }
 
 /**
@@ -353,20 +380,28 @@ export interface FirstClassSuggestion {
 }
 
 /**
- * Should we suggest First Class for a card timed to this occasion? True inside a
- * seasonal window flagged `suggestFirstClass` (the Christmas post rush), so the
- * UI can prompt "Royal Mail is slower now — consider First Class" at the point
- * postage is chosen.
+ * Should we suggest First Class for a card timed to this occasion? True when the
+ * card would be *posted* inside a seasonal window flagged `suggestFirstClass`,
+ * so the UI can prompt at the point postage is chosen.
+ *
+ * Matched on the posting date for the same reason the extra lead is, and so the
+ * two always agree: a nudge saying the post is slow beside a schedule computed
+ * as though it isn't would be the platform contradicting itself. Both postage
+ * classes share the send-by-5 lead (they are equal by design), so the default is
+ * the right one to derive the posting date from here.
  */
 export function suggestFirstClass(
   occasionDate: Date,
   options: { seasonalRules?: readonly SeasonalDispatchRule[] } = {},
 ): FirstClassSuggestion {
-  const rule = seasonalDispatchRuleFor(occasionDate, options.seasonalRules);
+  const posting = computeDispatchDate(occasionDate, DEFAULT_POSTAGE_LEAD_DAYS, {
+    seasonalRules: options.seasonalRules,
+  });
+  const rule = seasonalDispatchRuleFor(posting, options.seasonalRules);
   if (rule?.suggestFirstClass) {
     return {
       suggested: true,
-      reason: `${rule.label}: Royal Mail is slower now — First Class helps it arrive on time.`,
+      reason: `${rule.label}: this card posts while Royal Mail is at its slowest — First Class helps it arrive on time.`,
     };
   }
   return { suggested: false };

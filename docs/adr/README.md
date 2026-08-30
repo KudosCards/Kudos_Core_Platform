@@ -203,5 +203,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0192 — A read-then-write outside a transaction is not a check](./0192-a-read-then-write-outside-a-transaction-is-not-a-check.md)
 - [0193 — A date set inside the window belongs in the queue now](./0193-a-date-set-inside-the-window-belongs-in-the-queue-now.md)
 - [0194 — Write the exclusion, not the list](./0194-write-the-exclusion-not-the-list.md)
+- [0195 — The rush is when the card is posted](./0195-the-rush-is-when-the-card-is-posted.md)
 
 <!-- adr-index:end -->

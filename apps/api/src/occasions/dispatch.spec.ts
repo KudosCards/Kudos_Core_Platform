@@ -111,6 +111,34 @@ describe("seasonal override", () => {
     expect(seasonal).toEqual(utc(2026, 11, 8));
   });
 
+  it("grants the rush lead to a card *posted* in the window, not one merely dated in it", () => {
+    // New Year's Day 2027. Base lead alone posts it on Wed 23 Dec 2026 — the
+    // busiest posting week of the year — and matching the rule on the occasion
+    // date finds January, so no extra lead was granted at all. The rush is a
+    // property of the transit window, not of the occasion's own date.
+    const newYear = computeDispatchDate(utc(2027, 0, 4), 5);
+    expect(newYear).toEqual(utc(2026, 11, 18));
+  });
+
+  it("withholds it from a card posted clear of the window", () => {
+    // An occasion on 1 Dec posts on 24 Nov with base lead — a week before the
+    // rush starts. It used to be granted the extra 3 days for being "in
+    // December", posting it on 19 Nov, nearly a fortnight early.
+    expect(computeDispatchDate(utc(2026, 11, 1), 5)).toEqual(utc(2026, 10, 24));
+  });
+
+  it("never posts later than the send-by-5 SLA, whichever way the rule falls", () => {
+    // The seasonal rule only ever *adds* to the base lead, so no card loses the
+    // send-by-5 guarantee because a window did or didn't match. Both of the
+    // dates above are still at least 5 working days before their occasion.
+    for (const [occasion, dispatch] of [
+      [utc(2027, 0, 4), utc(2026, 11, 18)],
+      [utc(2026, 11, 1), utc(2026, 10, 24)],
+    ] as const) {
+      expect(workingDaysUntil(occasion, dispatch)).toBeGreaterThanOrEqual(5);
+    }
+  });
+
   it("honours an injected custom rule set", () => {
     const rules: SeasonalDispatchRule[] = [
       {
@@ -131,6 +159,15 @@ describe("suggestFirstClass", () => {
     const result = suggestFirstClass(utc(2026, 11, 12));
     expect(result.suggested).toBe(true);
     expect(result.reason).toContain("First Class");
+  });
+
+  it("follows the same posting-date rule as the lead calculation", () => {
+    // The nudge and the extra lead must agree, or the platform tells the
+    // customer Royal Mail is slow while scheduling as though it is not. A card
+    // for 4 Jan posts on 23 Dec: nudge it. A card for 1 Dec posts on 24 Nov:
+    // don't.
+    expect(suggestFirstClass(utc(2027, 0, 4)).suggested).toBe(true);
+    expect(suggestFirstClass(utc(2026, 11, 1)).suggested).toBe(false);
   });
 
   it("does not suggest outside a busy window", () => {
