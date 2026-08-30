@@ -197,5 +197,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0186 — One bad contact is not a failed sync](./0186-one-bad-contact-is-not-a-failed-sync.md)
 - [0187 — A secret in the path is a secret in the log](./0187-a-secret-in-the-path-is-a-secret-in-the-log.md)
 - [0188 — An asserted email is not an identity](./0188-an-asserted-email-is-not-an-identity.md)
+- [0189 — A recovery link should not outlive the recovery](./0189-a-recovery-link-should-not-outlive-the-recovery.md)
 
 <!-- adr-index:end -->

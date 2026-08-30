@@ -1126,6 +1126,11 @@ model ReturnCase {
   /// address and recover the card without logging in. Never returned by the
   /// account-scoped API; only embedded in the email. See ADR 0039.
   publicToken      String?          @unique @map("public_token")
+  /// When that token stops working. Every sibling bearer token here is bounded
+  /// (invites 14 days, guest claims 30) and this one was not, so a forwarded or
+  /// archived RTS link stayed live for ever. Nulled outright when the case
+  /// closes; see ADR 0189.
+  publicTokenExpiresAt DateTime?    @map("public_token_expires_at")
   returnedAt       DateTime         @default(now()) @map("returned_at")
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")

@@ -7,7 +7,7 @@ import { BatchOrdersService } from "../batch-orders/batch-orders.service";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { renderBrandedEmail, escapeHtml } from "../email/email-layout";
-import { generateRtsToken } from "../common/generate-rts-token";
+import { generateRtsToken, rtsTokenExpiresAt } from "../common/generate-rts-token";
 import type { EnvConfig } from "../config/env.schema";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
@@ -199,8 +199,10 @@ export class ReturnsService {
           reason: dto.reason,
           status: "awaiting_address",
           markedByUserId: actorUserId,
-          // The secret that authorises the self-serve email link (no login).
+          // The secret that authorises the self-serve email link (no login),
+          // and the date it stops working. See ADR 0189.
           publicToken: generateRtsToken(),
+          publicTokenExpiresAt: rtsTokenExpiresAt(),
         },
       });
 
@@ -404,7 +406,14 @@ export class ReturnsService {
     await this.prisma.$transaction(async (tx) => {
       const closed = await tx.returnCase.updateMany({
         where: { id, status: { in: ["awaiting_address", "awaiting_resend"] } },
-        data: { status: "archived", resolvedAt: new Date(), resolution: "archived" },
+        // Archived is closed too — the link stops working here as well.
+        data: {
+          status: "archived",
+          resolvedAt: new Date(),
+          resolution: "archived",
+          publicToken: null,
+          publicTokenExpiresAt: null,
+        },
       });
       if (closed.count === 0) {
         throw new ConflictException("This return has already been resolved");
@@ -457,11 +466,20 @@ export class ReturnsService {
     return this.archive(accountId, PUBLIC_RTS_ACTOR, id);
   }
 
-  /** Resolve the email-link token to its case. A bad/expired token is a 404 —
-   * the same response as an unknown case, so nothing is leaked about validity. */
+  /**
+   * Resolve the email-link token to its case. A bad/expired token is a 404 —
+   * the same response as an unknown case, so nothing is leaked about validity.
+   *
+   * The expiry is now real. This message has always said "or has expired" while
+   * matching on the token alone, so a link forwarded, left in a shared mailbox,
+   * or sitting in an ex-employee's inbox worked for ever: it reads the case
+   * (recipient name, business, occasion, order number) and, while the case is
+   * open, rewrites the contact's stored postal address — which is where every
+   * future automatic card goes. See ADR 0189.
+   */
   private async resolveToken(token: string): Promise<{ accountId: string; id: string }> {
     const found = await this.prisma.returnCase.findFirst({
-      where: { publicToken: token },
+      where: { publicToken: token, publicTokenExpiresAt: { gt: new Date() } },
       select: { id: true, accountId: true },
     });
     if (!found) {
@@ -501,7 +519,16 @@ export class ReturnsService {
       // us to it, count is 0 and we abort before creating a second free order.
       const claimed = await tx.returnCase.updateMany({
         where: { id: found.id, freeRecoveryUsed: false, status: "awaiting_resend" },
-        data: { freeRecoveryUsed: true, status: "resolved", resolvedAt: new Date(), resolution },
+        // The case is closed, so its recovery link has nothing left to do —
+        // give the credential up rather than leave it live. See ADR 0189.
+        data: {
+          freeRecoveryUsed: true,
+          status: "resolved",
+          resolvedAt: new Date(),
+          resolution,
+          publicToken: null,
+          publicTokenExpiresAt: null,
+        },
       });
       if (claimed.count === 0) {
         // send_business is allowed from awaiting_address too — retry that case.
@@ -511,7 +538,14 @@ export class ReturnsService {
             freeRecoveryUsed: false,
             status: "awaiting_address",
           },
-          data: { freeRecoveryUsed: true, status: "resolved", resolvedAt: new Date(), resolution },
+          data: {
+            freeRecoveryUsed: true,
+            status: "resolved",
+            resolvedAt: new Date(),
+            resolution,
+            publicToken: null,
+            publicTokenExpiresAt: null,
+          },
         });
         if (claimedEarly.count === 0) {
           throw new ConflictException("This return has already been recovered");
