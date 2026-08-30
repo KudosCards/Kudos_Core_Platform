@@ -18,6 +18,47 @@ export const subscriptionSchema = z.object({
 });
 export type Subscription = z.infer<typeof subscriptionSchema>;
 
+/**
+ * Statuses where the customer is, or should be, paying us. These entitle the
+ * account and are what "has a subscription" means to the product.
+ */
+export const PAYING_SUBSCRIPTION_STATUSES = ["active", "trialing", "past_due"] as const;
+
+/**
+ * Not paid yet — but Stripe may still complete it on its own.
+ *
+ * `incomplete` is what a subscription becomes when its first payment needs
+ * SCA/3DS. If the customer abandons the challenge it sits here, and their bank
+ * can auto-complete the open invoice within Stripe's 23-hour window. It is
+ * therefore not a dead row: it is a billing relationship that has not made up
+ * its mind. See ADR 0190.
+ */
+export const SETTLING_SUBSCRIPTION_STATUSES = ["incomplete"] as const;
+
+/**
+ * Anything that could still result in money moving — paying now, or able to
+ * start on its own.
+ *
+ * This is the set that must block a *second* subscription, and the set that must
+ * be cancelled before an account is deleted. Using the paying set for either
+ * question misses `incomplete`, which is precisely the status a half-finished
+ * checkout leaves behind.
+ */
+export const CHARGEABLE_SUBSCRIPTION_STATUSES = [
+  ...PAYING_SUBSCRIPTION_STATUSES,
+  ...SETTLING_SUBSCRIPTION_STATUSES,
+] as const;
+
+export type ChargeableSubscriptionStatus = (typeof CHARGEABLE_SUBSCRIPTION_STATUSES)[number];
+
+/** Narrowing helper for call sites holding a wider status (e.g. the Prisma
+ * enum), so the chargeable set is asked rather than re-listed. */
+export function isChargeableSubscriptionStatus(
+  status: string,
+): status is ChargeableSubscriptionStatus {
+  return (CHARGEABLE_SUBSCRIPTION_STATUSES as readonly string[]).includes(status);
+}
+
 export const walletLedgerEntrySchema = z.object({
   id: z.string().uuid(),
   accountId: z.string().uuid(),

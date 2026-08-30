@@ -4,10 +4,15 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { MembershipRole } from "@prisma/client";
+import {
+  CHARGEABLE_SUBSCRIPTION_STATUSES,
+  PAYING_SUBSCRIPTION_STATUSES,
+} from "@kudos/shared-types";
 import Stripe from "stripe";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
@@ -35,6 +40,8 @@ export interface SeatSummary {
 
 @Injectable()
 export class SubscriptionsService {
+  private readonly logger = new Logger(SubscriptionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -69,11 +76,25 @@ export class SubscriptionsService {
     // Changing plans in-place isn't built yet, so the safe behaviour for now
     // is to block a second subscription rather than silently create one.
     const existingSubscription = await this.prisma.subscription.findFirst({
-      where: { accountId, status: { in: ["active", "trialing", "past_due"] } },
+      where: { accountId, status: { in: [...CHARGEABLE_SUBSCRIPTION_STATUSES] } },
     });
     if (existingSubscription) {
-      throw new ConflictException(
-        "This account already has an active subscription — contact us to change plans",
+      // A subscription that is genuinely paying blocks outright — changing plans
+      // in-place isn't built, so a second one would double-bill.
+      if (existingSubscription.status !== "incomplete") {
+        throw new ConflictException(
+          "This account already has an active subscription — contact us to change plans",
+        );
+      }
+      // `incomplete` is different: the customer abandoned an SCA/3DS challenge
+      // and is now trying again. Blocking would strand them behind a
+      // subscription they never completed; letting them past would leave it free
+      // to auto-complete inside Stripe's 23-hour window and bill them twice. So
+      // it is cancelled first, and only then do we mint a new checkout.
+      await this.cancelStrandedSubscription(
+        accountId,
+        actorUserId,
+        existingSubscription.stripeSubscriptionId,
       );
     }
 
@@ -115,6 +136,44 @@ export class SubscriptionsService {
   ): string | null {
     const envKey = planId === "pro" ? "STRIPE_PRICE_ID_PRO" : "STRIPE_PRICE_ID_CENTRE";
     return this.config.get(envKey, { infer: true }) ?? seededPriceId ?? null;
+  }
+
+  /** Cancel a subscription the customer abandoned mid-SCA (`incomplete`) so it
+   * can't auto-complete and bill alongside the checkout they're about to start.
+   * Refuses the retry if the cancel doesn't land: a failed cancel means the old
+   * subscription is still free to settle, and letting a second one through would
+   * be exactly the double-billing this exists to prevent. */
+  private async cancelStrandedSubscription(
+    accountId: string,
+    actorUserId: string,
+    stripeSubscriptionId: string,
+  ): Promise<void> {
+    try {
+      await this.stripe.subscriptions.cancel(stripeSubscriptionId);
+    } catch (error) {
+      // Already gone on Stripe's side — nothing left to double-bill, so the
+      // retry is safe to continue.
+      if (!(error instanceof Stripe.errors.StripeError && error.code === "resource_missing")) {
+        this.logger.error(
+          `Failed to cancel incomplete subscription ${stripeSubscriptionId} for account ${accountId}: ${String(error)}`,
+        );
+        throw new ConflictException(
+          "Couldn't clear your previous payment attempt just now. Please try again in a moment.",
+        );
+      }
+    }
+    await this.prisma.subscription.updateMany({
+      where: { stripeSubscriptionId, status: "incomplete" },
+      data: { status: "canceled" },
+    });
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: "subscription_incomplete_cancelled",
+      targetType: "Subscription",
+      targetId: stripeSubscriptionId,
+      metadata: { reason: "superseded_by_new_checkout" },
+    });
   }
 
   /** Read the account's current seat position (no mutation). Shared by the team
@@ -183,7 +242,10 @@ export class SubscriptionsService {
     }
 
     const subscription = await this.prisma.subscription.findFirst({
-      where: { accountId, status: { in: ["active", "trialing", "past_due"] } },
+      // Paying only, deliberately. Seats on a subscription that has not settled
+      // would be billed only if it later completes, and refusing is the honest
+      // answer: there is nothing to add them to yet.
+      where: { accountId, status: { in: [...PAYING_SUBSCRIPTION_STATUSES] } },
     });
     if (!subscription) {
       throw new ConflictException("This account has no active subscription to add seats to");

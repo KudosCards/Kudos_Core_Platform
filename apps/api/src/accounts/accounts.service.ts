@@ -9,6 +9,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import type { Account, MembershipRole } from "@prisma/client";
+import { isChargeableSubscriptionStatus } from "@kudos/shared-types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
 import { PrismaService } from "../prisma/prisma.service";
@@ -151,7 +152,11 @@ export class AccountsService {
     // Stop the billing relationship first — never delete an account we might keep
     // charging. A subscription already gone on Stripe's side is fine.
     for (const sub of account.subscriptions) {
-      if (!["active", "trialing", "past_due"].includes(sub.status)) continue;
+      // Chargeable, not just paying: an `incomplete` subscription is one whose
+      // SCA challenge is still open, and Stripe will settle and bill it if the
+      // customer completes it inside the 23-hour window. Leaving it behind would
+      // charge an account that no longer exists.
+      if (!isChargeableSubscriptionStatus(sub.status)) continue;
       try {
         await this.stripe.subscriptions.cancel(sub.stripeSubscriptionId);
       } catch (error) {
