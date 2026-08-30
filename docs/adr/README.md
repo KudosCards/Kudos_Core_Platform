@@ -209,5 +209,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0198 — A report nobody sees is not a report](./0198-a-report-nobody-sees-is-not-a-report.md)
 - [0199 — One selection, one meaning](./0199-one-selection-one-meaning.md)
 - [0200 — An emptied field is an instruction](./0200-an-emptied-field-is-an-instruction.md)
+- [0201 — A promise resolving does not mean it is still wanted](./0201-a-promise-resolving-does-not-mean-it-is-still-wanted.md)
 
 <!-- adr-index:end -->

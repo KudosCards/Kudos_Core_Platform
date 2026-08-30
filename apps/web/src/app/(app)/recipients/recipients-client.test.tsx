@@ -268,3 +268,70 @@ describe("RecipientsClient — bulk actions across pages", () => {
     });
   });
 });
+
+/**
+ * Pick "January" in the birthday-month filter, then "March" a beat later. If
+ * January is slower its response lands second and overwrites the March results:
+ * the select says March, the table shows January, and total/page are desynced
+ * with it. See ADR 0201.
+ */
+describe("RecipientsClient — a slower earlier response", () => {
+  const named = (name: string) =>
+    ({
+      id: `r-${name}`,
+      firstName: name,
+      lastName: "Contact",
+      status: "active",
+      source: "manual",
+      dateOfBirth: null,
+      addressLine1: "1 Test Street",
+      addressLine2: null,
+      addressCity: "London",
+      addressPostcode: "SW1A 1AA",
+      email: null,
+      createdAt: new Date().toISOString(),
+    }) as never;
+
+  beforeEach(() => fetchMock.mockReset());
+
+  it("keeps the newer results when the older request lands last", async () => {
+    // Hold January open; let March answer immediately. Nothing here depends on
+    // timing luck — the order is the one the bug needs, made explicit.
+    let releaseJanuary!: (value: unknown) => void;
+    const january = new Promise((resolve) => {
+      releaseJanuary = resolve;
+    });
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes("/recipient-lists")) return Promise.resolve([]);
+      if (String(url).includes("birthMonth=1")) return january;
+      if (String(url).includes("birthMonth=3")) {
+        return Promise.resolve({ items: [named("March")], total: 1, page: 1 });
+      }
+      return Promise.resolve({ items: [], total: 0, page: 1 });
+    });
+
+    render(
+      <RecipientsClient
+        initialRecipients={[]}
+        initialTotal={0}
+        initialPage={1}
+        initialLists={[]}
+      />,
+    );
+    const filter = screen.getByLabelText("Filter by birthday month");
+    await userEvent.selectOptions(filter, "1");
+    await userEvent.selectOptions(filter, "3");
+    // The row's checkbox is labelled with the exact name; the visible name node
+    // also carries the address, so an exact-text query would not match it.
+    const shown = (name: string) => screen.queryAllByLabelText(`Select ${name} Contact`);
+    await waitFor(() => expect(shown("March").length).toBeGreaterThan(0));
+
+    releaseJanuary({ items: [named("January")], total: 1, page: 1 });
+    await january;
+
+    // The filter still says March, so the table must too.
+    await waitFor(() => expect(shown("January")).toHaveLength(0));
+    expect(shown("March").length).toBeGreaterThan(0);
+    expect((filter as HTMLSelectElement).value).toBe("3");
+  });
+});
