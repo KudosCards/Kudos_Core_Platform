@@ -13,6 +13,7 @@ import { OPEN_FULFILLMENT_STATUSES, royalMailTrackingUrl } from "@kudos/shared-t
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
+import { promptTrackingReference } from "@/lib/tracking-prompt";
 import { PrintRunOverlay, type PrintRunCard } from "@/app/(ops)/fulfillment/print-run-overlay";
 
 const JOB_STATUS_LABELS: Record<FulfillmentJobStatus, string> = {
@@ -183,8 +184,11 @@ export function OrderCockpit({
     try {
       const body: Record<string, unknown> = { toStatus: step.to };
       if (step.to === "posted") {
-        const tracking = window.prompt("Tracking reference (optional):") ?? "";
-        if (tracking.trim()) body.trackingReference = tracking.trim();
+        const tracking = promptTrackingReference();
+        // Backed out — Cancel or Escape. Posting is one-way, so a cancelled
+        // prompt must cancel the transition, not fall through to it.
+        if (!tracking) return;
+        Object.assign(body, tracking);
       }
       await clientApiFetch(`/fulfillment/jobs/${line.jobId}/transition`, {
         method: "POST",
