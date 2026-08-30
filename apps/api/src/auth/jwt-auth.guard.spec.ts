@@ -64,11 +64,65 @@ describe("JwtAuthGuard", () => {
   }
 
   it("accepts a validly signed token and attaches the user to the request", async () => {
-    const token = await sign({ sub: USER_ID, email: "andrew@example.com", aud: "authenticated" });
+    const token = await sign({
+      sub: USER_ID,
+      email: "andrew@example.com",
+      aud: "authenticated",
+      user_metadata: { email_verified: true },
+    });
     const { context, getRequest } = buildContext(`Bearer ${token}`);
 
     await expect(buildGuard().canActivate(context)).resolves.toBe(true);
-    expect(getRequest().authUser).toEqual({ id: USER_ID, email: "andrew@example.com" });
+    expect(getRequest().authUser).toEqual({
+      id: USER_ID,
+      unverifiedEmail: "andrew@example.com",
+      emailVerified: true,
+    });
+  });
+
+  /**
+   * The address is a claim the token makes, not something the token proves — so
+   * the guard records whether it was asserted as confirmed and leaves the
+   * decision to the caller. See ADR 0188.
+   */
+  describe("the email verification claim", () => {
+    it("is false when the token says nothing about it", async () => {
+      const token = await sign({ sub: USER_ID, email: "a@b.test", aud: "authenticated" });
+      const { context, getRequest } = buildContext(`Bearer ${token}`);
+
+      await expect(buildGuard().canActivate(context)).resolves.toBe(true);
+      expect(getRequest().authUser).toMatchObject({
+        unverifiedEmail: "a@b.test",
+        emailVerified: false,
+      });
+    });
+
+    it("is false when the claim is present but not literally true", async () => {
+      // A string "true", a 1, a null — none of them are a confirmation.
+      const token = await sign({
+        sub: USER_ID,
+        email: "a@b.test",
+        aud: "authenticated",
+        user_metadata: { email_verified: "true" },
+      });
+      const { context, getRequest } = buildContext(`Bearer ${token}`);
+
+      await expect(buildGuard().canActivate(context)).resolves.toBe(true);
+      expect(getRequest().authUser).toMatchObject({ emailVerified: false });
+    });
+
+    it("reads it from the top level too, where some providers put it", async () => {
+      const token = await sign({
+        sub: USER_ID,
+        email: "a@b.test",
+        aud: "authenticated",
+        email_verified: true,
+      });
+      const { context, getRequest } = buildContext(`Bearer ${token}`);
+
+      await expect(buildGuard().canActivate(context)).resolves.toBe(true);
+      expect(getRequest().authUser).toMatchObject({ emailVerified: true });
+    });
   });
 
   it("rejects a missing Authorization header", async () => {
