@@ -231,6 +231,126 @@ describe("Occasion lifecycle (e2e)", () => {
     expect(iso(live[0]!.occasionDate)).toBe(iso(dayFromNow(70)));
   });
 
+  /**
+   * Only one row may hold a given (recipient, type, date). The realign moves the
+   * live birthday onto the corrected date — but it only ever *looked* at live
+   * rows, and a `skipped`, `missed` or already-ordered birthday can be sitting
+   * on that very date. The move then hits the unique key.
+   *
+   * This is not a corner: a contact who skipped a birthday last month, or whose
+   * past date was retired as `missed`, is carrying exactly such a row. See ADR
+   * 0185.
+   */
+  describe("correcting onto a date another birthday already holds", () => {
+    /** A contact with a live birthday on one date and a closed one on another. */
+    async function contactWithClosedBirthdayOn(
+      token: string,
+      closedStatus: "skipped" | "missed" | "queued",
+      closedDaysAhead: number,
+    ): Promise<{ id: string; closedDate: Date }> {
+      const id = await addContact(token, dobFalling(5));
+      const closedDate = dayFromNow(closedDaysAhead);
+      closedDate.setUTCHours(0, 0, 0, 0);
+      const account = await prisma.recipient.findUniqueOrThrow({ where: { id } });
+      await prisma.occasion.create({
+        data: {
+          accountId: account.accountId,
+          recipientId: id,
+          type: "birthday",
+          source: "recurring_per_recipient",
+          occasionDate: closedDate,
+          status: closedStatus,
+        },
+      });
+      return { id, closedDate };
+    }
+
+    it("does not 500 when a skipped birthday already holds the corrected date", async () => {
+      const token = await signUp();
+      const { id } = await contactWithClosedBirthdayOn(token, "skipped", 40);
+
+      await request(app.getHttpServer())
+        .patch(`/recipients/${id}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ dateOfBirth: dobFalling(40) })
+        .expect(200);
+    });
+
+    it("respects a skip the customer already made on that date", async () => {
+      // The customer said "no card for this date". Correcting the date of birth
+      // onto it does not undo that: the date is already represented, so the live
+      // row is surplus and gives way rather than resurrecting a send that was
+      // declined. What must NOT survive is a live birthday on the old, wrong
+      // date — that is the actual harm.
+      const token = await signUp();
+      const { id } = await contactWithClosedBirthdayOn(token, "skipped", 40);
+
+      await request(app.getHttpServer())
+        .patch(`/recipients/${id}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ dateOfBirth: dobFalling(40) })
+        .expect(200);
+
+      const rows = await birthdays(id);
+      const skipped = rows.filter((r) => r.status === "skipped");
+      expect(skipped).toHaveLength(1);
+      expect(iso(skipped[0]!.occasionDate)).toBe(iso(dayFromNow(40)));
+
+      // No live row left stranded on the old date. Unskipping is one click away
+      // if the customer does want the card after all.
+      const liveOnWrongDate = rows.filter(
+        (r) =>
+          !["skipped", "missed"].includes(r.status) && iso(r.occasionDate) !== iso(dayFromNow(40)),
+      );
+      expect(liveOnWrongDate).toHaveLength(0);
+    });
+
+    it("does not 500 when the date is held by a card already in production", async () => {
+      // The committed row must stay exactly where it is — the money is spent —
+      // so the live birthday cannot take that date and has to give way instead.
+      const token = await signUp();
+      const { id } = await contactWithClosedBirthdayOn(token, "queued", 40);
+
+      await request(app.getHttpServer())
+        .patch(`/recipients/${id}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ dateOfBirth: dobFalling(40) })
+        .expect(200);
+
+      const rows = await birthdays(id);
+      // The queued card is untouched.
+      expect(rows.filter((r) => r.status === "queued")).toHaveLength(1);
+      // And the contact is not left with a live birthday on the wrong date.
+      const stale = rows.filter(
+        (r) =>
+          !["skipped", "missed", "queued"].includes(r.status) &&
+          iso(r.occasionDate) !== iso(dayFromNow(40)),
+      );
+      expect(stale).toHaveLength(0);
+    });
+
+    it("does not destroy the contact's other birthdays on the way to failing", async () => {
+      // The realign retires the losing rows *before* it moves the keeper, and
+      // none of it is in a transaction. A throw at the move therefore committed
+      // the destruction and left the keeper on the old date — a correction that
+      // makes things worse and fails identically on every retry.
+      const token = await signUp();
+      const { id } = await contactWithClosedBirthdayOn(token, "missed", 40);
+      const before = await birthdays(id);
+
+      await request(app.getHttpServer())
+        .patch(`/recipients/${id}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ dateOfBirth: dobFalling(40) })
+        .expect(200);
+
+      const after = await birthdays(id);
+      expect(after.length).toBeGreaterThanOrEqual(before.length - 1);
+      // Whatever else happened, the contact has a birthday on the right date.
+      expect(after.map((r) => iso(r.occasionDate))).toContain(iso(dayFromNow(40)));
+    });
+  });
+
   it("refuses a date of birth nobody could have been born on", async () => {
     const token = await signUp();
     const body = (dateOfBirth: string) => ({

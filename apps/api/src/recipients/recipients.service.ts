@@ -353,10 +353,16 @@ export class RecipientsService {
     // correction. See realign-birthday.util.ts.
     let realigned: RealignResult | null = null;
     if (dto.dateOfBirth !== undefined) {
-      realigned = await realignBirthdayOccasion(
-        this.prisma,
-        { accountId, recipientId: id, dateOfBirth: recipient.dateOfBirth },
-        new Date(),
+      // In a transaction: the realign retires the losing rows before it moves
+      // the keeper, so a failure part-way through used to commit the destruction
+      // and leave the keeper on the old date — a correction that made things
+      // worse and then failed identically on every retry. See ADR 0185.
+      realigned = await this.prisma.$transaction((tx) =>
+        realignBirthdayOccasion(
+          tx,
+          { accountId, recipientId: id, dateOfBirth: recipient.dateOfBirth },
+          new Date(),
+        ),
       );
       // A corrected date of birth can move a birthday into the approval window
       // as well as out of it, so re-run the same rule here too.
@@ -387,6 +393,7 @@ export class RecipientsService {
                 retired: realigned.retired,
                 discarded: realigned.discarded,
                 created: realigned.created,
+                blocked: realigned.blocked,
               }
             : null,
         }),
