@@ -48,9 +48,12 @@ describe("Admin billing — in-app seat-price provisioning (e2e)", () => {
     await prisma.platformSetting.deleteMany({});
   });
 
-  async function createOpsAdmin(): Promise<string> {
+  /** Provisioning the seat price is a platform setting, so it is super-admin
+   * only (ADR 0040/0187). This fixture used to omit the role, which defaults to
+   * `ops` — so these tests passed against a route that should have refused them. */
+  async function createSuperAdmin(): Promise<string> {
     const userId = randomUUID();
-    await prisma.platformAdmin.create({ data: { userId } });
+    await prisma.platformAdmin.create({ data: { userId, role: "super_admin" } });
     return mintToken(userId);
   }
 
@@ -76,7 +79,7 @@ describe("Admin billing — in-app seat-price provisioning (e2e)", () => {
   }
 
   it("reports unconfigured before provisioning", async () => {
-    const ops = await createOpsAdmin();
+    const ops = await createSuperAdmin();
     const res = await request(app.getHttpServer())
       .get("/admin/billing/seat-price")
       .set("Authorization", `Bearer ${ops}`)
@@ -85,7 +88,7 @@ describe("Admin billing — in-app seat-price provisioning (e2e)", () => {
   });
 
   it("creates the Stripe seat price and stores it — no env var, no redeploy", async () => {
-    const ops = await createOpsAdmin();
+    const ops = await createSuperAdmin();
     pricesList.mockResolvedValue({ data: [] }); // none exists yet
     pricesCreate.mockResolvedValue({ id: "price_seat_created" });
 
@@ -113,7 +116,7 @@ describe("Admin billing — in-app seat-price provisioning (e2e)", () => {
   });
 
   it("is idempotent — a second call reuses the stored id without creating again", async () => {
-    const ops = await createOpsAdmin();
+    const ops = await createSuperAdmin();
     pricesList.mockResolvedValue({ data: [] });
     pricesCreate.mockResolvedValue({ id: "price_seat_created" });
 
@@ -130,7 +133,7 @@ describe("Admin billing — in-app seat-price provisioning (e2e)", () => {
   });
 
   it("reuses an existing Stripe price found by lookup_key (e.g. from the script)", async () => {
-    const ops = await createOpsAdmin();
+    const ops = await createSuperAdmin();
     pricesList.mockResolvedValue({ data: [{ id: "price_seat_existing" }] });
 
     const res = await request(app.getHttpServer())
@@ -143,7 +146,7 @@ describe("Admin billing — in-app seat-price provisioning (e2e)", () => {
   });
 
   it("lets a Centre account buy a seat afterwards using the stored price — proving the DB path drives billing", async () => {
-    const ops = await createOpsAdmin();
+    const ops = await createSuperAdmin();
     pricesList.mockResolvedValue({ data: [] });
     pricesCreate.mockResolvedValue({ id: "price_seat_created" });
     await request(app.getHttpServer())

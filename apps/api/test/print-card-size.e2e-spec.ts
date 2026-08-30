@@ -27,7 +27,10 @@ describe("Print card size config (e2e)", () => {
 
   async function opsToken(): Promise<string> {
     const userId = randomUUID();
-    await prisma.platformAdmin.create({ data: { userId } });
+    // Changing this is a platform setting, so it is super-admin only
+    // (ADR 0040/0187). The role used to be omitted, which defaults to `ops` —
+    // so this suite passed against a route that should have refused it.
+    await prisma.platformAdmin.create({ data: { userId, role: "super_admin" } });
     return mintToken(userId);
   }
 
