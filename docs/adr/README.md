@@ -202,5 +202,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0191 — An occasion that has moved on must not be dragged back](./0191-an-occasion-that-has-moved-on-must-not-be-dragged-back.md)
 - [0192 — A read-then-write outside a transaction is not a check](./0192-a-read-then-write-outside-a-transaction-is-not-a-check.md)
 - [0193 — A date set inside the window belongs in the queue now](./0193-a-date-set-inside-the-window-belongs-in-the-queue-now.md)
+- [0194 — Write the exclusion, not the list](./0194-write-the-exclusion-not-the-list.md)
 
 <!-- adr-index:end -->
