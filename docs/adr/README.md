@@ -191,5 +191,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0180 — The guard that counts runs after the refund, not before it](./0180-the-guard-that-counts-runs-after-the-refund.md)
 - [0181 — One lock, not two doors, on the message body](./0181-one-lock-not-two-doors-on-the-message-body.md)
 - [0182 — A backup that didn't happen is not a backup](./0182-a-backup-that-did-not-happen-is-not-a-backup.md)
+- [0183 — Remind against the deadline, not the date](./0183-remind-against-the-deadline-not-the-date.md)
 
 <!-- adr-index:end -->
