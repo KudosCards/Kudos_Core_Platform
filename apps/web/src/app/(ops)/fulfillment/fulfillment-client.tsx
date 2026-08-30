@@ -528,6 +528,26 @@ export function FulfillmentClient({
     }
   }
 
+  /**
+   * Whether a card in `to` still belongs in the view currently on screen.
+   *
+   * With a tab pinned, the view is that one status and any transition leaves
+   * it. The calendar drill-in and the deadline view pin no tab and list every
+   * still-open card, so pending → printed stays put and only the move out of
+   * the open statuses removes it. `advance()` used to remove the row either
+   * way, on a comment asserting "the job leaves the current status filter's
+   * view" — untrue in the two views this same file builds without one. See
+   * ADR 0203.
+   */
+  function stillInView(to: FulfillmentStatus): boolean {
+    return status ? to === status : OPEN_STATUS_TABS.includes(to);
+  }
+
+  /** Replace a row in place, keeping its position in the working list. */
+  function replaceJob(updated: FulfillmentJob) {
+    setJobs((current) => current.map((j) => (j.id === updated.id ? updated : j)));
+  }
+
   function removeJob(id: string) {
     setJobs((current) => current.filter((j) => j.id !== id));
     setSelected((current) => {
@@ -560,12 +580,16 @@ export function FulfillmentClient({
         if (!tracking) return;
         Object.assign(body, tracking);
       }
-      await clientApiFetch(`/fulfillment/jobs/${job.id}/transition`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      // The job leaves the current status filter's view.
-      removeJob(job.id);
+      const updated = await clientApiFetch<FulfillmentJob>(
+        `/fulfillment/jobs/${job.id}/transition`,
+        { method: "POST", body: JSON.stringify(body) },
+      );
+      // Only drop the row when it has genuinely left the view. Otherwise show
+      // its new state where it is: the operator is working a list, and taking
+      // rows out of it as they work is how a full day's drill-in empties itself
+      // into "Nothing in this queue".
+      if (stillInView(step.to)) replaceJob(updated);
+      else removeJob(job.id);
     } catch (advanceError) {
       setError(advanceError instanceof ApiError ? advanceError.message : "Could not update job");
     } finally {
@@ -621,6 +645,11 @@ export function FulfillmentClient({
         body: JSON.stringify({ jobIds: [...selected], toStatus: bulkStep.to }),
       });
       const done = selected;
+      // Removal is unconditional here, and correct: `bulkStep` is undefined
+      // unless a status tab is pinned, so the bulk button does not exist in the
+      // calendar drill-in or the deadline view. Every card this can move really
+      // does leave the view it was moved from. The review named this as a second
+      // site of the single-card bug; it isn't reachable. See ADR 0203.
       setJobs((current) => current.filter((j) => !done.has(j.id)));
       setSelected(new Set());
     } catch (bulkError) {
