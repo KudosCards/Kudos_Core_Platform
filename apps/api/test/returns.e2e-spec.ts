@@ -326,5 +326,91 @@ describe("Returns / RTS (e2e)", () => {
     it("rejects an unknown token with 404", async () => {
       await request(app.getHttpServer()).get("/rts/not-a-real-token").expect(404);
     });
+
+    /**
+     * The token is the sole credential on five unauthenticated routes, and it
+     * had no expiry and was never revoked — while the 404 message has always
+     * said "invalid or has expired". A link that is forwarded, sits in a shared
+     * mailbox, or stays in an ex-employee's inbox therefore worked for ever: it
+     * reads the case, and while the case is open it rewrites the contact's
+     * stored postal address — which is where every future automatic card goes.
+     * Both sibling bearer tokens here are bounded (invites 14 days, guest claims
+     * 30). See ADR 0189.
+     */
+    describe("the link does not last for ever", () => {
+      /** A marked-returned card, and the token from its RTS email. */
+      async function openCase(): Promise<{ caseId: string; token: string }> {
+        const ops = await opsToken();
+        const { accountId } = await signUp();
+        const { jobId } = await postedCard(accountId, { occasionDate: new Date() });
+        const marked = await request(app.getHttpServer())
+          .post("/admin/returns")
+          .set("Authorization", `Bearer ${ops}`)
+          .send({ fulfillmentJobId: jobId, reason: "moved" })
+          .expect(201);
+        const caseId = (marked.body as ReturnCase).id;
+        const row = await prisma.returnCase.findUniqueOrThrow({
+          where: { id: caseId },
+          select: { publicToken: true },
+        });
+        return { caseId, token: row.publicToken as string };
+      }
+
+      it("mints the token with an expiry", async () => {
+        const { caseId } = await openCase();
+        const row = await prisma.returnCase.findUniqueOrThrow({
+          where: { id: caseId },
+          select: { publicTokenExpiresAt: true },
+        });
+        expect(row.publicTokenExpiresAt).not.toBeNull();
+        expect(row.publicTokenExpiresAt!.getTime()).toBeGreaterThan(Date.now());
+      });
+
+      it("refuses a token whose expiry has passed", async () => {
+        const { caseId, token } = await openCase();
+        await prisma.returnCase.update({
+          where: { id: caseId },
+          data: { publicTokenExpiresAt: new Date(Date.now() - 1000) },
+        });
+
+        await request(app.getHttpServer()).get(`/rts/${token}`).expect(404);
+        // And crucially, the address rewrite is refused too — that is the one
+        // that redirects the contact's future cards.
+        await request(app.getHttpServer())
+          .post(`/rts/${token}/address`)
+          .send({ addressLine1: "1 Hostile Way", addressCity: "York", addressPostcode: "YO1 9AA" })
+          .expect(404);
+      });
+
+      it("gives the token up when the case is recovered", async () => {
+        const { caseId, token } = await openCase();
+        await request(app.getHttpServer())
+          .post(`/rts/${token}/address`)
+          .send({ addressLine1: "9 New Street", addressCity: "York", addressPostcode: "YO1 9AA" })
+          .expect(201);
+        await request(app.getHttpServer()).post(`/rts/${token}/resend`).expect(201);
+
+        const row = await prisma.returnCase.findUniqueOrThrow({
+          where: { id: caseId },
+          select: { publicToken: true, status: true },
+        });
+        expect(row.status).toBe("resolved");
+        expect(row.publicToken).toBeNull();
+        // The link in the email is now inert.
+        await request(app.getHttpServer()).get(`/rts/${token}`).expect(404);
+      });
+
+      it("gives the token up when the case is archived", async () => {
+        const { caseId, token } = await openCase();
+        await request(app.getHttpServer()).post(`/rts/${token}/archive`).expect(201);
+
+        const row = await prisma.returnCase.findUniqueOrThrow({
+          where: { id: caseId },
+          select: { publicToken: true },
+        });
+        expect(row.publicToken).toBeNull();
+        await request(app.getHttpServer()).get(`/rts/${token}`).expect(404);
+      });
+    });
   });
 });
