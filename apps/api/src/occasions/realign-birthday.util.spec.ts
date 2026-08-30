@@ -1,0 +1,85 @@
+import { realignBirthdayOccasion } from "./realign-birthday.util";
+
+/**
+ * The race path, which no end-to-end test can reach: something claims the
+ * corrected date between the read that checks for a blocker and the write that
+ * moves the row onto it. The blocker check covers every row it read, so this is
+ * the residue — and correcting a date of birth must not 500 on it. See ADR 0185.
+ */
+describe("realignBirthdayOccasion under a concurrent claim", () => {
+  const RECIPIENT = { accountId: "acc-1", recipientId: "rec-1" };
+
+  /** A birthday whose next occurrence is a fixed distance from `now`. */
+  const now = new Date("2026-09-15T09:00:00.000Z");
+  const dateOfBirth = new Date("1996-10-23T00:00:00.000Z");
+
+  function prismaStub(overrides: {
+    rows: { id: string; status: string; occasionDate: Date }[];
+    onUpdate: () => never | void;
+  }) {
+    const deleted: string[][] = [];
+    const retired: string[][] = [];
+    const client = {
+      occasion: {
+        findMany: () => Promise.resolve(overrides.rows),
+        update: () => Promise.resolve(overrides.onUpdate()),
+        updateMany: ({ where }: { where: { id: { in: string[] } } }) => {
+          retired.push(where.id.in);
+          return Promise.resolve({ count: where.id.in.length });
+        },
+        deleteMany: ({ where }: { where: { id: { in: string[] } } }) => {
+          deleted.push(where.id.in);
+          return Promise.resolve({ count: where.id.in.length });
+        },
+        createMany: () => Promise.resolve({ count: 1 }),
+      },
+    };
+    return { client, deleted, retired };
+  }
+
+  it("gives the row up instead of throwing when the date is claimed mid-write", async () => {
+    const { client, deleted } = prismaStub({
+      // One live row, on the wrong date, and nothing blocking the target — so
+      // the move is attempted.
+      rows: [
+        { id: "keeper", status: "approved", occasionDate: new Date("2026-11-01T00:00:00.000Z") },
+      ],
+      onUpdate: () => {
+        const error: Error & { code?: string } = new Error("Unique constraint failed");
+        error.code = "P2002";
+        throw error;
+      },
+    });
+
+    const result = await realignBirthdayOccasion(
+      client as unknown as Parameters<typeof realignBirthdayOccasion>[0],
+      { ...RECIPIENT, dateOfBirth },
+      now,
+    );
+
+    expect(result).toMatchObject({ moved: false, blocked: true });
+    // The row that could not move is cleared rather than left on the old date.
+    expect(deleted.flat()).toContain("keeper");
+  });
+
+  it("still surfaces an error that is not a unique-key collision", async () => {
+    // Swallowing everything here would hide a real database failure behind a
+    // silently unchanged birthday.
+    const { client } = prismaStub({
+      rows: [
+        { id: "keeper", status: "scheduled", occasionDate: new Date("2026-11-01T00:00:00.000Z") },
+      ],
+      onUpdate: () => {
+        throw new Error("connection reset");
+      },
+    });
+
+    await expect(
+      realignBirthdayOccasion(
+        client as unknown as Parameters<typeof realignBirthdayOccasion>[0],
+        { ...RECIPIENT, dateOfBirth },
+        now,
+      ),
+    ).rejects.toThrow("connection reset");
+  });
+});

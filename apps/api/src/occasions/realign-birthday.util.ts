@@ -15,6 +15,12 @@ export interface RealignResult {
   discarded: number;
   /** A fresh `scheduled` occasion was created because none could be moved. */
   created: boolean;
+  /**
+   * The corrected date was already held by a row this must not disturb — a card
+   * already in production, or a birthday the customer skipped — so the live row
+   * gave way instead of moving onto it. See ADR 0185.
+   */
+  blocked: boolean;
 }
 
 /**
@@ -97,26 +103,47 @@ export async function realignBirthdayOccasion(
 ): Promise<RealignResult> {
   const today = startOfUtcDay(now);
 
-  const live = await prisma.occasion.findMany({
+  // Every birthday row, not just the movable ones. Only one row may hold a
+  // given (recipient, type, date), so deciding where the live row can go means
+  // knowing what else is already sitting on that date — and the rows that block
+  // it are exactly the ones this used not to read: a card already in production,
+  // a birthday the customer skipped, a past date retired as missed.
+  const all = await prisma.occasion.findMany({
     where: {
       recipientId: input.recipientId,
       accountId: input.accountId,
       type: "birthday",
-      status: { in: [...LIVE_ORDER] },
     },
     select: { id: true, status: true, occasionDate: true },
   });
+  const isLive = (status: string): boolean => (LIVE_ORDER as readonly string[]).includes(status);
+  const live = all.filter((o) => isLive(o.status));
 
   // No date of birth any more: there is no birthday to hold, so every live row
   // goes. (A committed card is untouched by the filter above.)
   if (!input.dateOfBirth) {
-    if (live.length === 0) return { moved: false, retired: 0, discarded: 0, created: false };
+    if (live.length === 0) {
+      return { moved: false, retired: 0, discarded: 0, created: false, blocked: false };
+    }
     const { retired, discarded } = await discardLosers(prisma, live, today);
-    return { moved: false, retired, discarded, created: false };
+    return { moved: false, retired, discarded, created: false, blocked: false };
   }
 
   const target = nextBirthdayOccurrence(input.dateOfBirth, today);
   const targetTime = target.getTime();
+
+  // Something that is not ours to move is already sitting on the corrected
+  // date: a card in production, a birthday the customer skipped, a past date
+  // retired as missed. Only one row may hold it, so the live row cannot go
+  // there — and trying was a P2002, a 500, and (because none of this ran in a
+  // transaction) the losing rows already destroyed. The date is represented; the
+  // live row is surplus and gives way. See ADR 0185.
+  const blocker = all.find((o) => o.occasionDate.getTime() === targetTime && !isLive(o.status));
+  if (blocker) {
+    const { retired, discarded } =
+      live.length > 0 ? await discardLosers(prisma, live, today) : { retired: 0, discarded: 0 };
+    return { moved: false, retired, discarded, created: false, blocked: true };
+  }
 
   // Already correct: nothing to do beyond clearing any duplicates.
   const onTarget = live.filter((o) => o.occasionDate.getTime() === targetTime);
@@ -148,18 +175,41 @@ export async function realignBirthdayOccasion(
       ],
       skipDuplicates: true,
     });
-    return { moved: false, retired, discarded, created: true };
+    return { moved: false, retired, discarded, created: true, blocked: false };
   }
 
   if (keeper.occasionDate.getTime() === targetTime) {
-    return { moved: false, retired, discarded, created: false };
+    return { moved: false, retired, discarded, created: false, blocked: false };
   }
 
-  await prisma.occasion.update({
-    where: { id: keeper.id },
-    data: { occasionDate: target, dispatchDate: computeDispatchDate(target) },
-  });
-  return { moved: true, retired, discarded, created: false };
+  try {
+    await prisma.occasion.update({
+      where: { id: keeper.id },
+      data: { occasionDate: target, dispatchDate: computeDispatchDate(target) },
+    });
+  } catch (error) {
+    // The blocker check above covers every row this read, so reaching here means
+    // something claimed the date between that read and this write. Correcting a
+    // date of birth must not 500 on a race: fall back to the same answer the
+    // blocker branch gives — the date is taken, so the live row gives way.
+    if (!isUniqueViolation(error)) throw error;
+    const { retired: r2, discarded: d2 } = await discardLosers(prisma, [keeper], today);
+    return {
+      moved: false,
+      retired: retired + r2,
+      discarded: discarded + d2,
+      created: false,
+      blocked: true,
+    };
+  }
+  return { moved: true, retired, discarded, created: false, blocked: false };
+}
+
+/** Prisma's "unique constraint failed" — the occasion idempotency key, here. */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2002"
+  );
 }
 
 /** Statuses a birthday occasion can be in and still be moved. Exported so the
