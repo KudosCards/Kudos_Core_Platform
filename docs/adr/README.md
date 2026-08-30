@@ -214,5 +214,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0203 — Leaving a status is not leaving the view](./0203-leaving-a-status-is-not-leaving-the-view.md)
 - [0204 — Two screens, one birthday](./0204-two-screens-one-birthday.md)
 - [0205 — The view should follow the work](./0205-the-view-should-follow-the-work.md)
+- [0206 — Every route needs a way out](./0206-every-route-needs-a-way-out.md)
 
 <!-- adr-index:end -->
