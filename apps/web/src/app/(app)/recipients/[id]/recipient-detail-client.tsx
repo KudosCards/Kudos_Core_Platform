@@ -169,15 +169,23 @@ export function RecipientDetailClient({
       firstName: str("firstName"),
       lastName: str("lastName"),
     };
-    // PATCH is a merge, so only send these when set (blank = leave unchanged).
-    for (const key of ["dateOfBirth", "email"]) {
-      const value = str(key);
-      if (value) body[key] = value;
-    }
-    // Address is always sent so it can be *cleared*, not just added — a blank
-    // field nulls the column (the API accepts null and flags the contact as
-    // needing an address). See docs/adr/0067.
-    for (const key of ["addressLine1", "addressLine2", "addressCity", "addressPostcode"]) {
+    // Every optional field is always sent, and a blank one nulls the column.
+    //
+    // Date of birth and email used to be omitted when blank, on the reasoning
+    // that PATCH is a merge — but "leave unchanged" is not what an emptied field
+    // means. Clearing a date of birth reported success and changed nothing, and
+    // because a date of birth is what schedules a birthday card, the wrong-dated
+    // card kept being generated and, on an auto-send account, paid for. The
+    // address fields on the very next line already did it the right way round.
+    // See ADR 0200 and docs/adr/0067.
+    for (const key of [
+      "dateOfBirth",
+      "email",
+      "addressLine1",
+      "addressLine2",
+      "addressCity",
+      "addressPostcode",
+    ]) {
       const value = str(key);
       body[key] = value === "" ? null : value;
     }
