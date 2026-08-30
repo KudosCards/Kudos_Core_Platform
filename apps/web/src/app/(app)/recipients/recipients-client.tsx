@@ -6,7 +6,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { AddressFields } from "@/components/address-fields";
-import { CsvImport, downloadSampleCsv } from "@/components/csv-import";
+import { CsvImport, downloadSampleCsv, type ImportSummary } from "@/components/csv-import";
+import { ImportReport } from "@/components/import-report";
 import { Modal } from "@/components/modal";
 import { NameDialog } from "@/components/name-dialog";
 
@@ -163,6 +164,9 @@ export function RecipientsClient({
   // dialogs so the contact list is the primary focus (see ADR 0097).
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  /** Kept after the import dialog is closed, so a run that dropped rows leaves
+   * a trace on the page rather than only inside a dialog now dismissed. */
+  const [importReport, setImportReport] = useState<ImportSummary | null>(null);
   // "Needs address" worklist filter. Kept in a ref too so the shared reload()
   // can read it without every call site having to thread it through.
   const [missingOnly, setMissingOnly] = useState(initialMissingOnly);
@@ -375,8 +379,17 @@ export function RecipientsClient({
 
   // After a CSV import completes, surface the just-added contacts: jump to the
   // main (non-archived) list, clear filters/search, and refresh table + counts.
-  function handleImported() {
-    setImportOpen(false);
+  //
+  // The dialog stays open. It used to close here, which unmounted CsvImport in
+  // the same commit — Modal renders nothing when closed — and took the report
+  // with it: every rejected row and the reason it was rejected, built and then
+  // destroyed before it could paint. A school importing 500 contacts saw the
+  // count read 380 and nothing at all about the 120 that were dropped, and
+  // found out weeks later when those birthdays never produced a card. The
+  // refresh below still runs, so the table behind the dialog is already correct
+  // when they close it themselves. See ADR 0198.
+  function handleImported(summary: ImportSummary) {
+    setImportReport(summary.rejected.length > 0 || summary.warnings.length > 0 ? summary : null);
     setActiveListId(null);
     setSearch("");
     setDebouncedSearch("");
@@ -629,6 +642,22 @@ export function RecipientsClient({
       </div>
 
       {error && <p className="notice notice-danger">{error}</p>}
+
+      {/* The same report the dialog shows, kept on the page after it is closed:
+          a run that dropped rows should not stop existing because a dialog was
+          dismissed. Only shown when there is something to act on. */}
+      {importReport && (
+        <div className="flex flex-col gap-2">
+          <ImportReport summary={importReport} />
+          <button
+            type="button"
+            onClick={() => setImportReport(null)}
+            className="self-start text-xs text-muted underline hover:text-foreground"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {added && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-success/30 bg-success-soft px-4 py-3 text-sm">
