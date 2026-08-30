@@ -5,7 +5,10 @@ import request from "supertest";
 import { accountSchema } from "@kudos/shared-types";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { DESIGN_ASSET_STORAGE_CLIENT } from "../src/storage/design-asset-storage.provider";
-import type { ReapSummary } from "../src/storage-maintenance/storage-reaper.service";
+import {
+  REAPER_PAGE_SIZE,
+  type ReapSummary,
+} from "../src/storage-maintenance/storage-reaper.service";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
 
@@ -139,6 +142,52 @@ describe("Storage reaper (e2e)", () => {
     expect(summary.deleted).toBe(1);
     expect(summary.dryRun).toBe(false);
     expect(removedPaths).toEqual([orphan]);
+  });
+
+  it("keeps a referenced object recorded beyond the first page of designs", async () => {
+    // The reaper deletes storage objects, so a row it fails to read is a live
+    // asset deleted. It read every DesignAsset, CardDesign and SavedDesign on
+    // the platform in one unbounded query each — two of them pulling whole JSON
+    // documents — which is what made paging necessary; paging is only safe if
+    // nothing on a later page is missed.
+    const account = await prisma.account.create({
+      data: { type: "organisation", name: `Centre ${randomUUID()}` },
+    });
+    const referenced = `${account.id}/on-a-later-page.png`;
+
+    // Ids are assigned explicitly so the ordering is not left to chance: the
+    // scan pages by primary key, and with random uuids the row "after the first
+    // page" lands wherever it happens to sort. The filler sorts lowest, the
+    // asset that matters sorts last of everything in the table — so if paging
+    // stops early, loses its place, or reads unordered, this row is the one it
+    // misses.
+    await prisma.designAsset.createMany({
+      data: Array.from({ length: REAPER_PAGE_SIZE }, (_, i) => ({
+        id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+        accountId: account.id,
+        url: publicUrl(`${account.id}/filler-${i}.png`),
+        fileName: `filler-${i}.png`,
+      })),
+    });
+    await prisma.designAsset.create({
+      data: {
+        id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        accountId: account.id,
+        url: publicUrl(referenced),
+        fileName: "on-a-later-page.png",
+      },
+    });
+
+    storageObjects = [{ path: referenced, createdAt: OLD }];
+
+    const token = await opsToken();
+    const res = await request(app.getHttpServer())
+      .post("/storage-maintenance/reap?dryRun=false")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect((res.body as ReapSummary).deleted).toBe(0);
+    expect(removedPaths).toEqual([]);
   });
 
   it("defaults to a dry run that deletes nothing", async () => {
