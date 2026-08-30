@@ -79,6 +79,17 @@ export const ABANDONED_OCCASION_STATUSES = ["skipped", "missed"] as const;
  * the occasion's date must never be moved out from under it. */
 export const COMMITTED_OCCASION_STATUSES = ["queued", "printed", "posted", "delivered"] as const;
 
+/**
+ * Statuses where nothing has been paid for and nothing has been abandoned: the
+ * occasion is still live and can be re-dated, consumed by a send, or withdrawn.
+ *
+ * The complement of COMMITTED and ABANDONED, named because it is asked in
+ * several unrelated places — which order may reuse an occasion, which occasions
+ * a corrected key date supersedes — and three separate literal lists is how the
+ * answers drift apart.
+ */
+export const OPEN_OCCASION_STATUSES = ["scheduled", "pending_approval", "approved"] as const;
+
 export const dispatchOptionSchema = z.enum(["asap", "auto_send"]);
 export type DispatchOption = z.infer<typeof dispatchOptionSchema>;
 
