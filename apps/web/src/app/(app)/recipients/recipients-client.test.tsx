@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RecipientsClient } from "./recipients-client";
 
@@ -117,5 +117,154 @@ describe("RecipientsClient — the CSV import report", () => {
     await waitFor(() => expect(screen.getAllByText(/Imported 500 new/)).toHaveLength(1));
     await userEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByText(/Imported 500 new/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The bulk-action bar counts every tick across every page, and the "Send a card
+ * to N" link genuinely carries all of them — but Export and Archive quietly
+ * intersected the selection with the rendered page. Same toolbar, same
+ * selection, two different meanings. See ADR 0199.
+ */
+describe("RecipientsClient — bulk actions across pages", () => {
+  const person = (i: number) =>
+    ({
+      id: `r-${i}`,
+      firstName: "Child",
+      lastName: `Number${i}`,
+      status: "active",
+      source: "manual",
+      dateOfBirth: null,
+      addressLine1: "1 Test Street",
+      addressLine2: null,
+      addressCity: "London",
+      addressPostcode: "SW1A 1AA",
+      email: null,
+      createdAt: new Date().toISOString(),
+    }) as never;
+
+  // A full page, then a short second one — the shape that makes the two
+  // meanings of "selected" diverge.
+  const PAGE_ONE = Array.from({ length: 30 }, (_, i) => person(i + 1));
+  const PAGE_TWO = [person(31), person(32)];
+  const TOTAL = 32;
+
+  let capturedCsv: string | null;
+
+  beforeEach(() => {
+    capturedCsv = null;
+    fetchMock.mockReset();
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes("/recipient-lists")) return Promise.resolve([]);
+      if (String(url).includes("page=2")) {
+        return Promise.resolve({ items: PAGE_TWO, total: TOTAL, page: 2 });
+      }
+      if (String(url).startsWith("/recipients?")) {
+        return Promise.resolve({ items: PAGE_ONE, total: TOTAL, page: 1 });
+      }
+      return Promise.resolve({});
+    });
+    // jsdom has no object-URL plumbing, and its Blob has no text(). Read the
+    // CSV out of the constructor instead.
+    const RealBlob = global.Blob;
+    jest
+      .spyOn(global, "Blob")
+      .mockImplementation((parts?: BlobPart[], options?: BlobPropertyBag) => {
+        capturedCsv = String(parts?.[0] ?? "");
+        return new RealBlob(parts, options);
+      });
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: () => "blob:stub",
+    });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: () => {} });
+  });
+
+  /** The table and the phone card-list both render a checkbox per contact, so
+   * both are in the DOM under jsdom. Either drives the same state; take one. */
+  const tickAllOnPage = async () =>
+    userEvent.click(screen.getAllByLabelText("Select all on this page")[0]!);
+
+  /** The bulk-action bar, found via its own counter — per-row buttons share
+   * these labels. */
+  const bulkBar = () => screen.getByText(/^\d+ selected$/).closest("div")!.parentElement!;
+
+  async function selectAcrossBothPages(lists: never[] = []) {
+    render(
+      <RecipientsClient
+        initialRecipients={PAGE_ONE}
+        initialTotal={TOTAL}
+        initialPage={1}
+        initialLists={lists}
+      />,
+    );
+    await tickAllOnPage();
+    expect(screen.getByText("30 selected")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findAllByText("Child Number31");
+    await tickAllOnPage();
+
+    // The counter has always told the truth about how many are ticked.
+    expect(screen.getByText("32 selected")).toBeInTheDocument();
+  }
+
+  it("exports every ticked contact, not just the ones still on screen", async () => {
+    await selectAcrossBothPages();
+    await userEvent.click(within(bulkBar()).getByRole("button", { name: "Export" }));
+
+    await waitFor(() => expect(capturedCsv).not.toBeNull());
+    const csv = capturedCsv!;
+    const rows = csv.trim().split("\n").slice(1);
+    expect(rows).toHaveLength(32);
+    expect(csv).toContain("Number1");
+    expect(csv).toContain("Number32");
+  });
+
+  it("carries every ticked id to the send flow", async () => {
+    await selectAcrossBothPages();
+
+    // This link always worked across pages — it is the reason the toolbar's
+    // count and its actions disagreed. It is asserted here because changing the
+    // selection's shape is exactly how a working link quietly stops working:
+    // spreading a Map yields [key, value] pairs, and `.join(",")` accepts that
+    // without a word from the type checker.
+    const href = within(bulkBar())
+      .getByRole("link", { name: /Send a card to 32/ })
+      .getAttribute("href");
+    expect(href).toBe(
+      `/send?recipients=${Array.from({ length: 32 }, (_, i) => `r-${i + 1}`).join(",")}`,
+    );
+  });
+
+  it("adds every ticked contact to a list", async () => {
+    const list = { id: "l-1", name: "Year 6", memberCount: 0, sample: [] } as unknown as never;
+    await selectAcrossBothPages([list]);
+
+    await userEvent.selectOptions(
+      within(bulkBar()).getByLabelText("Add selected to a list"),
+      "l-1",
+    );
+
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(([url]) => String(url).includes("/members"));
+      expect(post).toBeDefined();
+      const body = JSON.parse((post![1] as { body: string }).body) as { recipientIds: string[] };
+      // Contents, not just the count: spreading a Map gives 32 [key, value]
+      // pairs, which passes a length check and sends nonsense to the API.
+      expect(body.recipientIds).toEqual(Array.from({ length: 32 }, (_, i) => `r-${i + 1}`));
+    });
+  });
+
+  it("archives every ticked contact, not just the ones still on screen", async () => {
+    await selectAcrossBothPages();
+    await userEvent.click(within(bulkBar()).getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => {
+      const deletes = fetchMock.mock.calls.filter(
+        ([, init]) => (init as { method?: string } | undefined)?.method === "DELETE",
+      );
+      expect(deletes).toHaveLength(32);
+    });
   });
 });
