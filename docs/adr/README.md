@@ -188,5 +188,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0177 — One word for a group of contacts: "Lists"](./0177-one-word-for-a-group-of-contacts.md)
 - [0178 — A date that went by is not a date you skipped](./0178-a-date-that-went-by-is-not-a-date-you-skipped.md)
 - [0179 — A payment is not cancelled by an older session, and a refund is not a card](./0179-a-payment-is-not-cancelled-by-an-older-session.md)
+- [0180 — The guard that counts runs after the refund, not before it](./0180-the-guard-that-counts-runs-after-the-refund.md)
 
 <!-- adr-index:end -->

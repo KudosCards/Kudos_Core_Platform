@@ -1107,6 +1107,88 @@ describe("Batch orders (e2e)", () => {
       expect(jobs).toHaveLength(0);
     });
 
+    /**
+     * The refund guard reads "every card is still pending", then hands off to
+     * Stripe — a network round-trip. An operator working the queue during that
+     * round-trip can move a card into production, and the guard is never asked
+     * again. The Stripe mock advances the card mid-call, which is exactly the
+     * window and the only way to sit inside it deterministically.
+     */
+    it("stops a card an operator picked up while the Stripe refund was in flight", async () => {
+      const { token } = await signUp();
+      const { orderId, recipientLineIds, occasionId } = await paidOrderWithPendingJobs(
+        token,
+        "card",
+      );
+
+      refundsCreate.mockImplementationOnce(async () => {
+        // Mid-refund: the operator claims the card and prints it.
+        await prisma.fulfillmentJob.updateMany({
+          where: { orderRecipientId: { in: recipientLineIds } },
+          data: { status: "printed", printedAt: new Date() },
+        });
+        return { id: `re_test_${randomUUID()}`, status: "succeeded" };
+      });
+
+      await request(app.getHttpServer())
+        .post(`/batch-orders/${orderId}/cancel-refund`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+
+      // The money went back, so nothing may go out. A card left in the queue is
+      // one an operator will post — refunded and delivered.
+      const jobs = await prisma.fulfillmentJob.findMany({
+        where: { orderRecipientId: { in: recipientLineIds } },
+      });
+      expect(jobs).toHaveLength(0);
+
+      const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: orderId } });
+      expect(order.status).toBe("cancelled");
+      const occasion = await prisma.occasion.findUniqueOrThrow({ where: { id: occasionId } });
+      expect(occasion.status).toBe("skipped");
+    });
+
+    it("escalates a card that reached posted during the refund, and keeps the refund", async () => {
+      const superAdminUserId = randomUUID();
+      await prisma.platformAdmin.create({
+        data: { userId: superAdminUserId, role: "super_admin" },
+      });
+      const { token } = await signUp();
+      const { orderId, recipientLineIds } = await paidOrderWithPendingJobs(token, "card");
+
+      refundsCreate.mockImplementationOnce(async () => {
+        // The worst case: it went in the post before the refund came back.
+        await prisma.fulfillmentJob.updateMany({
+          where: { orderRecipientId: { in: recipientLineIds } },
+          data: { status: "posted", postedAt: new Date() },
+        });
+        return { id: `re_test_${randomUUID()}`, status: "succeeded" };
+      });
+
+      await request(app.getHttpServer())
+        .post(`/batch-orders/${orderId}/cancel-refund`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+
+      // A posted card is beyond recall, so it stays on the books rather than
+      // being quietly deleted — and somebody is told.
+      const jobs = await prisma.fulfillmentJob.findMany({
+        where: { orderRecipientId: { in: recipientLineIds } },
+      });
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]!.status).toBe("posted");
+
+      const alert = await prisma.platformNotification.findFirst({
+        where: { kind: "refund_raced_fulfillment", userId: superAdminUserId },
+      });
+      expect(alert).not.toBeNull();
+      // The operator has to learn two things: it is beyond recall, and the
+      // customer will receive a card they have already been refunded for.
+      expect(alert!.body.toLowerCase()).toContain("already posted");
+      expect(alert!.body.toLowerCase()).toContain("beyond recall");
+      expect(alert!.body).toContain("still receive");
+    });
+
     it("refunds a paid wallet order to the ledger and never calls Stripe", async () => {
       const { token, accountId } = await signUp();
       const { orderId } = await paidOrderWithPendingJobs(token, "wallet");
