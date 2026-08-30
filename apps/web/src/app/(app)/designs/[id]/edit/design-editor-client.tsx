@@ -412,10 +412,14 @@ export function DesignEditorClient({
     selectElement(element.id);
   }
 
-  /** How many elements the active page already holds — drives the cascade offset
-   * so a freshly-added element doesn't land exactly on the previous one. */
+  /** How many elements a page already holds — drives the cascade offset so a
+   * freshly-added element doesn't land exactly on the previous one. */
+  function pageElementCount(page: DesignPage["name"]) {
+    return document_.pages.find((p) => p.name === page)?.elements.length ?? 0;
+  }
+
   function activePageElementCount() {
-    return document_.pages.find((p) => p.name === activePage)?.elements.length ?? 0;
+    return pageElementCount(activePage);
   }
 
   function addQrElement() {
@@ -661,7 +665,23 @@ export function DesignEditorClient({
   /** Place an image element on the active page, sized to preserve its aspect
    * ratio (natural dimensions when known, else a square fallback). Shared by a
    * fresh upload and the "Your uploads" library picker. */
-  function insertImage(url: string, naturalW: number | null, naturalH: number | null) {
+  /**
+   * Place an image on `page`, defaulting to the face on screen.
+   *
+   * An upload takes seconds, and the face can change in that time. The image
+   * belongs on the face it was added from — that is what was asked for — so the
+   * caller passes the page it captured before awaiting, and the editor is
+   * brought back to it. Reading `activePage` here instead put the image on the
+   * face the person had left, selected an id not on the visible page, and said
+   * nothing: the panel read "Nothing selected" and the photo was nowhere on
+   * screen. See ADR 0205.
+   */
+  function insertImage(
+    url: string,
+    naturalW: number | null,
+    naturalH: number | null,
+    page: DesignPage["name"] = activePage,
+  ) {
     const { width, height } = fitWithinBox(
       { width: naturalW ?? IMAGE_INSERT_MAX, height: naturalH ?? IMAGE_INSERT_MAX },
       IMAGE_INSERT_MAX,
@@ -670,12 +690,13 @@ export function DesignEditorClient({
       kind: "image",
       id: crypto.randomUUID(),
       assetUrl: url,
-      ...placedOrigin({ width, height }, activePageElementCount()),
+      ...placedOrigin({ width, height }, pageElementCount(page)),
       width,
       height,
       rotation: 0,
     };
-    updatePage(activePage, (p) => ({ ...p, elements: [...p.elements, element] }));
+    updatePage(page, (p) => ({ ...p, elements: [...p.elements, element] }));
+    setActivePage(page);
     selectElement(element.id);
   }
 
@@ -688,6 +709,11 @@ export function DesignEditorClient({
   async function handleImageUpload(file: File) {
     setError(null);
     setUploading(true);
+    // The face this image was asked for, captured before the first await. An
+    // upload is slow enough to switch face during, and everything below runs
+    // against a render that may be several faces out of date by the time it
+    // resumes.
+    const targetPage = activePage;
     try {
       const signed = await clientApiFetch<SignedUpload>("/uploads/design-assets", {
         method: "POST",
@@ -707,7 +733,7 @@ export function DesignEditorClient({
         throw new Error(uploadError.message);
       }
 
-      insertImage(signed.publicUrl, naturalSize.width, naturalSize.height);
+      insertImage(signed.publicUrl, naturalSize.width, naturalSize.height, targetPage);
 
       // Record it in the reusable-uploads library so it can be placed again
       // later without re-uploading (#16). Non-fatal if it fails — the image is
