@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PostageClass, Prisma } from "@prisma/client";
+import type { FulfillmentJobStatus } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { PrismaService } from "../prisma/prisma.service";
@@ -180,6 +181,22 @@ function hasMailableAddress(recipient: Prisma.RecipientGetPayload<object>): bool
     UK_POSTCODE_REGEX.test(recipient.addressPostcode)
   );
 }
+
+/**
+ * What releasing a refunded order actually found and did. `raced` is the point:
+ * the pre-Stripe guard said every card was still `pending`, and by the time the
+ * money came back these ones were not. See ADR 0180.
+ */
+interface OrderReleaseResult {
+  /** Click & Drop identifiers of the cards that were stopped — cancel upstream. */
+  clickAndDropOrderIds: string[];
+  /** Cards that had left `pending` by the time the release ran. `stopped` is
+   * false only for a card already `posted`, which nothing can recall. */
+  raced: { jobId: string; status: FulfillmentJobStatus; stopped: boolean }[];
+}
+
+/** Nothing claimed, so nothing found and nothing to undo. */
+const EMPTY_RELEASE: OrderReleaseResult = { clickAndDropOrderIds: [], raced: [] };
 
 @Injectable()
 export class BatchOrdersService {
@@ -1757,27 +1774,19 @@ export class BatchOrdersService {
       );
     }
 
-    let importedClickAndDropIds: string[];
+    let release: OrderReleaseResult;
     if (order.paymentMethod === "wallet") {
-      importedClickAndDropIds = await this.refundWalletAndRelease(accountId, id, order.totalMinor);
+      release = await this.refundWalletAndRelease(accountId, id, order.totalMinor);
     } else if (order.walletAppliedMinor > 0) {
       // A split order: Stripe took the remainder and the wallet took the rest,
       // so both have to come back. The Stripe refund goes first — it is the leg
       // that can fail, and it is idempotency-keyed, so a retry after a partial
       // failure re-attempts the same single refund rather than double-crediting
       // the wallet.
-      importedClickAndDropIds = await this.refundCardAndRelease(
-        accountId,
-        id,
-        order.stripePaymentIntentId,
-      );
+      release = await this.refundCardAndRelease(accountId, id, order.stripePaymentIntentId);
       await this.creditWalletPortion(accountId, id, order.walletAppliedMinor);
     } else {
-      importedClickAndDropIds = await this.refundCardAndRelease(
-        accountId,
-        id,
-        order.stripePaymentIntentId,
-      );
+      release = await this.refundCardAndRelease(accountId, id, order.stripePaymentIntentId);
     }
 
     // Pull the cards back out of Royal Mail's queue. AFTER the release commits,
@@ -1785,9 +1794,16 @@ export class BatchOrdersService {
     // is already refunded, so a Royal Mail outage must not unwind any of it. A
     // card we could not delete is Royal Mail's to print unless a human stops it,
     // so anything left over is escalated rather than logged and forgotten.
-    const cancelResult = await this.clickAndDrop.cancelImported(importedClickAndDropIds);
+    const cancelResult = await this.clickAndDrop.cancelImported(release.clickAndDropOrderIds);
     if (cancelResult.failed.length > 0) {
       await this.opsActivity.clickAndDropCancelFailed(id, cancelResult.failed);
+    }
+
+    // The pre-Stripe guard said every card was still pending; these ones were
+    // not by the time the money came back. Stopped or not, somebody needs to
+    // know a refunded order had cards in production. See ADR 0180.
+    if (release.raced.length > 0) {
+      await this.opsActivity.refundRacedFulfillment(id, release.raced);
     }
 
     await this.audit.record({
@@ -1801,6 +1817,7 @@ export class BatchOrdersService {
         paymentMethod: order.paymentMethod,
         clickAndDropCancelled: cancelResult.cancelled,
         clickAndDropStillLive: cancelResult.failed.map((f) => f.orderIdentifier),
+        racedCards: release.raced,
       },
     });
 
@@ -1817,7 +1834,7 @@ export class BatchOrdersService {
     accountId: string,
     id: string,
     paymentIntentId: string | null,
-  ): Promise<string[]> {
+  ): Promise<OrderReleaseResult> {
     if (!paymentIntentId) {
       throw new ConflictException(
         "This order has no card payment on record to refund — please contact support.",
@@ -1837,7 +1854,7 @@ export class BatchOrdersService {
       // shared idempotency key it shares the same single refund, so there is
       // nothing more to do — including the Click & Drop cancel, which the
       // request that actually claimed the release is responsible for.
-      if (count === 0) return [];
+      if (count === 0) return EMPTY_RELEASE;
       return this.releaseRecipientsAndOccasions(tx, id, accountId);
     });
   }
@@ -1972,7 +1989,7 @@ export class BatchOrdersService {
     accountId: string,
     id: string,
     totalMinor: number,
-  ): Promise<string[]> {
+  ): Promise<OrderReleaseResult> {
     return runSerializable(this.prisma, async (tx) => {
       const { count } = await tx.batchOrder.updateMany({
         where: { id, accountId, status: { in: ["paid", "fulfilling"] } },
@@ -1981,7 +1998,7 @@ export class BatchOrdersService {
       if (count === 0) {
         // Already released by a concurrent request, which wrote the single refund
         // entry — writing another here would double-credit the wallet.
-        return [];
+        return EMPTY_RELEASE;
       }
       const { _sum } = await tx.walletLedgerEntry.aggregate({
         where: { accountId },
@@ -2001,22 +2018,35 @@ export class BatchOrdersService {
     });
   }
 
-  /** Shared release once a refund is committed: drop the pending print jobs
-   * (nothing will be posted now), mark every card `cancelled`, and skip each
-   * settled occasion so it never re-triggers a send.
+  /** Shared release once a refund is committed: stop every card that can still
+   * be stopped, mark each one `cancelled`, and skip each settled occasion so it
+   * never re-triggers a send.
    *
-   * Returns the Click & Drop order identifiers of the jobs it dropped, because
-   * dropping the row is not the end of the story: the sweep pushes a paid card
-   * into Royal Mail's queue within five minutes, while it is still `pending`,
-   * which is the very state a refund is allowed from. Deleting the row throws
-   * away the only record that Royal Mail is holding that card, so the caller
-   * has to be handed the identifiers *here*, inside the transaction, and cancel
-   * them upstream once it commits. See ADR 0179. */
+   * **This is the guard that counts.** `cancelAndRefund` checks "every card is
+   * still pending" before it calls Stripe, and a card can leave `pending` during
+   * that round-trip — an operator claims it, prints it, bulk-advances a batch.
+   * Deleting only the still-`pending` rows left the raced card live in the ops
+   * queue on a fully refunded order, where it would be posted. So the release
+   * stops everything short of `posted`, and reports what it found.
+   *
+   * `posted` is the one state it will not touch. That card is in Royal Mail's
+   * hands: deleting the row would only erase the tracking reference and the
+   * delivery poll that follow it. It is reported instead, for a human to act on.
+   *
+   * The delete is bounded on `status: { not: "posted" }` rather than trusting
+   * the ids just read, so a card that reaches `posted` between the read and the
+   * delete survives rather than being silently dropped.
+   *
+   * The Click & Drop identifiers come back for the reason ADR 0179 records: the
+   * sweep pushes a paid card into Royal Mail's queue within five minutes, so
+   * deleting the row throws away the only record that Royal Mail holds it. They
+   * have to be captured *here*, inside the transaction, and cancelled upstream
+   * once it commits. See ADR 0180. */
   private async releaseRecipientsAndOccasions(
     tx: Prisma.TransactionClient,
     batchOrderId: string,
     accountId: string,
-  ): Promise<string[]> {
+  ): Promise<OrderReleaseResult> {
     const orderRecipients = await tx.orderRecipient.findMany({
       where: { batchOrderId },
       select: { id: true, occasionId: true },
@@ -2026,17 +2056,22 @@ export class BatchOrdersService {
       .map((r) => r.occasionId)
       .filter((occasionId): occasionId is string => occasionId !== null);
 
-    const importedJobs = await tx.fulfillmentJob.findMany({
-      where: {
-        orderRecipientId: { in: orderRecipientIds },
-        status: "pending",
-        clickAndDropOrderId: { not: null },
-      },
-      select: { clickAndDropOrderId: true },
+    const jobs = await tx.fulfillmentJob.findMany({
+      where: { orderRecipientId: { in: orderRecipientIds } },
+      select: { id: true, status: true, clickAndDropOrderId: true },
     });
     await tx.fulfillmentJob.deleteMany({
-      where: { orderRecipientId: { in: orderRecipientIds }, status: "pending" },
+      where: { orderRecipientId: { in: orderRecipientIds }, status: { not: "posted" } },
     });
+    // Whatever is still here escaped: it reached `posted` before the delete
+    // could reach it. Re-read rather than infer, so the report names what is
+    // real even if the race ran on during the transaction.
+    const survivors = await tx.fulfillmentJob.findMany({
+      where: { orderRecipientId: { in: orderRecipientIds } },
+      select: { id: true },
+    });
+    const survivorIds = new Set(survivors.map((job) => job.id));
+
     await tx.orderRecipient.updateMany({
       where: { batchOrderId },
       data: { status: "cancelled" },
@@ -2051,6 +2086,15 @@ export class BatchOrdersService {
       });
     }
 
-    return importedJobs.map((job) => job.clickAndDropOrderId as string);
+    return {
+      // Only the cards actually stopped: a posted card's Click & Drop order is
+      // spent, and asking Royal Mail to delete it would fail anyway.
+      clickAndDropOrderIds: jobs
+        .filter((job) => !survivorIds.has(job.id) && job.clickAndDropOrderId !== null)
+        .map((job) => job.clickAndDropOrderId as string),
+      raced: jobs
+        .filter((job) => job.status !== "pending")
+        .map((job) => ({ jobId: job.id, status: job.status, stopped: !survivorIds.has(job.id) })),
+    };
   }
 }

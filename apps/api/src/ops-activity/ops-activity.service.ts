@@ -127,6 +127,67 @@ export class OpsActivityService {
   }
 
   /**
+   * A self-serve refund found cards already in production. The customer's
+   * "Cancel & refund" button checks that every card is still `pending` before
+   * calling Stripe, and a card can leave `pending` during that round-trip — an
+   * operator claims it, prints it, bulk-advances a batch. The money is refunded
+   * either way, so this reports what the release found rather than trying to
+   * undo it.
+   *
+   * `stopped: false` means the card was already `posted` and is beyond recall —
+   * a refunded card that will arrive anyway, which support needs to know about
+   * before the customer rings. `stopped: true` means it was pulled out of the
+   * queue in time, but somebody printed a card for nothing.
+   *
+   * Super admins only, and not idempotency-keyed: each occurrence is a distinct
+   * incident, and a suppressed duplicate here would be a card nobody chased.
+   */
+  async refundRacedFulfillment(
+    batchOrderId: string,
+    raced: { jobId: string; status: string; stopped: boolean }[],
+  ): Promise<void> {
+    if (raced.length === 0) return;
+    try {
+      const order = await this.prisma.batchOrder.findUnique({
+        where: { id: batchOrderId },
+        select: { orderNumber: true, account: { select: { name: true } } },
+      });
+      const reference = order ? `ORD-${order.orderNumber}` : batchOrderId;
+      const escaped = raced.filter((card) => !card.stopped);
+      const stopped = raced.filter((card) => card.stopped);
+      const parts = [
+        `${raced.length} card${raced.length === 1 ? " was" : "s were"} already in production when the refund landed` +
+          `${order ? ` for ${order.account.name}` : ""}.`,
+      ];
+      if (stopped.length > 0) {
+        parts.push(
+          `Pulled from the queue in time: ${stopped.map((c) => c.status).join(", ")}.` +
+            ` Printed stock may need writing off.`,
+        );
+      }
+      if (escaped.length > 0) {
+        parts.push(
+          `ALREADY POSTED and beyond recall: ${escaped.length}.` +
+            ` The customer has been refunded and will still receive ${escaped.length === 1 ? "a card" : "cards"} — tell support before they ring.`,
+        );
+      }
+      await this.platformNotifications.notifyAllAdmins(
+        {
+          kind: "refund_raced_fulfillment",
+          title: `Refunded ${reference} — ${raced.length} card${raced.length === 1 ? "" : "s"} were already being worked`,
+          body: parts.join(" "),
+          href: `/admin/orders/${batchOrderId}`,
+          entityType: "BatchOrder",
+        },
+        { role: "super_admin" },
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Refund-race alert for ${batchOrderId} could not be raised: ${reason}`);
+    }
+  }
+
+  /**
    * Somebody signed up. Called from both routes into an account with a login:
    * a normal signup, and a guest one-off buyer later claiming the account they
    * bought from (ADR 0025).
