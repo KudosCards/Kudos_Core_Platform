@@ -25,6 +25,7 @@ describe("Subscriptions (e2e)", () => {
   let customersCreate: jest.Mock;
   let subscriptionsRetrieve: jest.Mock;
   let subscriptionsUpdate: jest.Mock;
+  let subscriptionsCancel: jest.Mock;
   let portalConfigCreate: jest.Mock;
   let portalSessionCreate: jest.Mock;
 
@@ -33,12 +34,17 @@ describe("Subscriptions (e2e)", () => {
     customersCreate = jest.fn();
     subscriptionsRetrieve = jest.fn();
     subscriptionsUpdate = jest.fn();
+    subscriptionsCancel = jest.fn(() => Promise.resolve({ status: "canceled" }));
     portalConfigCreate = jest.fn();
     portalSessionCreate = jest.fn();
     const mockStripe = {
       checkout: { sessions: { create: checkoutSessionsCreate } },
       customers: { create: customersCreate },
-      subscriptions: { retrieve: subscriptionsRetrieve, update: subscriptionsUpdate },
+      subscriptions: {
+        retrieve: subscriptionsRetrieve,
+        update: subscriptionsUpdate,
+        cancel: subscriptionsCancel,
+      },
       billingPortal: {
         configurations: { create: portalConfigCreate },
         sessions: { create: portalSessionCreate },
@@ -241,6 +247,128 @@ describe("Subscriptions (e2e)", () => {
         data: { stripePriceId: null },
       });
     }
+  });
+
+  /**
+   * `incomplete` is what a subscription becomes when its first payment needs
+   * SCA/3DS. The guard blocked on active/trialing/past_due only, so:
+   *
+   *   1. the customer abandons the 3DS challenge — sub_A sits `incomplete`
+   *   2. they retry checkout — the guard sees nothing and lets them through
+   *   3. sub_B goes active
+   *   4. their bank auto-completes sub_A's open invoice inside Stripe's
+   *      23-hour window
+   *
+   * Two live subscriptions billing monthly, and `Account.planId` overwritten by
+   * whichever webhook lands last — the ordering guard is per-subscription, so it
+   * cannot arbitrate between two. See ADR 0190.
+   */
+  describe("an abandoned 3DS challenge", () => {
+    /** Configure both plans for checkout, run `body`, then put them back. */
+    async function withPricedPlans(body: () => Promise<void>): Promise<void> {
+      await prisma.planEntitlement.update({
+        where: { planId: "pro" },
+        data: { stripePriceId: "price_test_pro" },
+      });
+      await prisma.planEntitlement.update({
+        where: { planId: "centre" },
+        data: { stripePriceId: "price_test_centre" },
+      });
+      try {
+        await body();
+      } finally {
+        await prisma.planEntitlement.update({
+          where: { planId: "pro" },
+          data: { stripePriceId: null },
+        });
+        await prisma.planEntitlement.update({
+          where: { planId: "centre" },
+          data: { stripePriceId: null },
+        });
+      }
+    }
+
+    async function incompleteSubscription(accountId: string): Promise<string> {
+      const stripeSubscriptionId = `sub_incomplete_${randomUUID()}`;
+      await prisma.subscription.create({
+        data: {
+          accountId,
+          planId: "pro",
+          stripeSubscriptionId,
+          status: "incomplete",
+          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+      return stripeSubscriptionId;
+    }
+
+    it("cancels the stranded subscription in Stripe before starting another", async () => {
+      const { token, accountId } = await signUp();
+      await withPricedPlans(async () => {
+        const stranded = await incompleteSubscription(accountId);
+        subscriptionsCancel.mockClear();
+        checkoutSessionsCreate.mockClear();
+
+        await request(app.getHttpServer())
+          .post("/subscriptions/checkout")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ planId: "centre" })
+          .expect(201);
+
+        // The stranded one can no longer complete and start billing...
+        expect(subscriptionsCancel).toHaveBeenCalledWith(stranded);
+        const row = await prisma.subscription.findFirstOrThrow({
+          where: { stripeSubscriptionId: stranded },
+        });
+        expect(row.status).toBe("canceled");
+        // ...and the customer got their new checkout rather than a dead end.
+        expect(checkoutSessionsCreate).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it("refuses the new checkout when the stranded one cannot be cancelled", async () => {
+      // Proceeding here is exactly the double-billing this exists to stop, so a
+      // failed cancel has to block rather than press on.
+      const { token, accountId } = await signUp();
+      await withPricedPlans(async () => {
+        await incompleteSubscription(accountId);
+        subscriptionsCancel.mockRejectedValueOnce(new Error("Stripe is down"));
+        checkoutSessionsCreate.mockClear();
+
+        await request(app.getHttpServer())
+          .post("/subscriptions/checkout")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ planId: "centre" })
+          .expect(409);
+        expect(checkoutSessionsCreate).not.toHaveBeenCalled();
+      });
+    });
+
+    it("still blocks outright when a subscription is genuinely paying", async () => {
+      const { token, accountId } = await signUp();
+      await withPricedPlans(async () => {
+        await prisma.subscription.create({
+          data: {
+            accountId,
+            planId: "pro",
+            stripeSubscriptionId: `sub_active_${randomUUID()}`,
+            status: "active",
+            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
+        });
+        subscriptionsCancel.mockClear();
+        checkoutSessionsCreate.mockClear();
+
+        await request(app.getHttpServer())
+          .post("/subscriptions/checkout")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ planId: "centre" })
+          .expect(409);
+        // A paying subscription is never cancelled out from under the customer.
+        expect(subscriptionsCancel).not.toHaveBeenCalled();
+        expect(checkoutSessionsCreate).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe("team seats", () => {

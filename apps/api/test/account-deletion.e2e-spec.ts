@@ -60,6 +60,44 @@ describe("Account deletion (e2e)", () => {
     return { token, userId, accountId: accountSchema.parse(response.body).id, name };
   }
 
+  it("cancels a subscription still stuck mid-payment, but not one already dead", async () => {
+    const { token, accountId, name } = await signUp();
+
+    // `incomplete` = the first payment needs SCA and the challenge is still
+    // open. Stripe can settle it on its own inside its 23-hour window, so it
+    // must be cancelled — otherwise a deleted account gets charged.
+    const incompleteId = `sub_${randomUUID()}`;
+    // `canceled` is genuinely dead and must be left alone.
+    const deadId = `sub_${randomUUID()}`;
+    await prisma.subscription.createMany({
+      data: [
+        {
+          accountId,
+          planId: "pro",
+          stripeSubscriptionId: incompleteId,
+          status: "incomplete",
+          currentPeriodEnd: new Date(Date.now() + 86_400_000),
+        },
+        {
+          accountId,
+          planId: "pro",
+          stripeSubscriptionId: deadId,
+          status: "canceled",
+          currentPeriodEnd: new Date(Date.now() - 86_400_000),
+        },
+      ],
+    });
+
+    await request(app.getHttpServer())
+      .delete("/accounts/me")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ confirmName: name })
+      .expect(204);
+
+    expect(subscriptionsCancel).toHaveBeenCalledWith(incompleteId);
+    expect(subscriptionsCancel).not.toHaveBeenCalledWith(deadId);
+  });
+
   it("rejects deletion when the typed name doesn't match", async () => {
     const { token } = await signUp();
     await request(app.getHttpServer())

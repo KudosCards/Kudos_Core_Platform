@@ -198,5 +198,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0187 — A secret in the path is a secret in the log](./0187-a-secret-in-the-path-is-a-secret-in-the-log.md)
 - [0188 — An asserted email is not an identity](./0188-an-asserted-email-is-not-an-identity.md)
 - [0189 — A recovery link should not outlive the recovery](./0189-a-recovery-link-should-not-outlive-the-recovery.md)
+- [0190 — An unfinished payment is still a payment](./0190-an-unfinished-payment-is-still-a-payment.md)
 
 <!-- adr-index:end -->
