@@ -23,6 +23,7 @@ import {
 } from "./catalog-source";
 import { buildCardDocument } from "./card-document.util";
 import { CatalogPublisherService, type CatalogPublishResult } from "./catalog-publisher.service";
+import { mapWithConcurrency } from "../common/map-with-concurrency";
 
 export interface CatalogSyncSummary {
   fetched: number;
@@ -436,18 +437,3 @@ function extensionFor(filename: string | null, contentType: string): string {
  * workers pulls from a shared cursor — simple, no dependency, and keeps memory
  * flat regardless of how large the catalog grows.
  */
-async function mapWithConcurrency<T>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0;
-  const worker = async (): Promise<void> => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      await fn(items[index]!);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
-}
