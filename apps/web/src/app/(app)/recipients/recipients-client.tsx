@@ -189,7 +189,13 @@ export function RecipientsClient({
   // Lists state.
   const [lists, setLists] = useState<RecipientListSummary[]>(initialLists);
   const [activeListId, setActiveListId] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Keyed by id and holding the full record, so a ticked contact keeps its
+  // details when it is no longer on the rendered page — the same shape the send
+  // picker uses, and for the same reason. As a Set of ids, Export and Archive
+  // had to intersect with the rendered page to find anything to work with, so
+  // the toolbar counted every tick while two of its four actions silently acted
+  // on one page. See ADR 0199.
+  const [selected, setSelected] = useState<Map<string, Recipient>>(new Map());
   const [listBusy, setListBusy] = useState(false);
   const [newListOpen, setNewListOpen] = useState(false);
   const [newListError, setNewListError] = useState<string | null>(null);
@@ -281,25 +287,25 @@ export function RecipientsClient({
 
   function changeSearch(value: string) {
     setSearch(value);
-    setSelected(new Set());
+    setSelected(new Map());
   }
 
   function changeSort(key: SortKey) {
     setSort(key);
-    setSelected(new Set());
+    setSelected(new Map());
   }
 
   function changeBirthMonth(value: string) {
     setBirthMonth(value);
     birthMonthRef.current = value;
-    setSelected(new Set());
+    setSelected(new Map());
     void reload(1, activeListId, debouncedSearch, sort);
   }
 
   function changeSource(value: string) {
     setSource(value);
     sourceRef.current = value;
-    setSelected(new Set());
+    setSelected(new Map());
     void reload(1, activeListId, debouncedSearch, sort);
   }
 
@@ -307,20 +313,20 @@ export function RecipientsClient({
     if (next === archivedView) return;
     setArchivedView(next);
     archivedViewRef.current = next;
-    setSelected(new Set());
+    setSelected(new Map());
     void reload(1, activeListId, debouncedSearch, sort);
   }
 
   function setMissingFilter(next: boolean) {
     setMissingOnly(next);
     missingOnlyRef.current = next;
-    setSelected(new Set());
+    setSelected(new Map());
     void reload(1, activeListId, debouncedSearch, sort);
   }
 
   function selectList(listId: string | null) {
     setActiveListId(listId);
-    setSelected(new Set());
+    setSelected(new Map());
     void reload(1, listId, debouncedSearch, sort);
   }
 
@@ -419,9 +425,9 @@ export function RecipientsClient({
     try {
       const updated = await clientApiFetch<RecipientListSummary>(
         `/recipient-lists/${listId}/members`,
-        { method: "POST", body: JSON.stringify({ recipientIds: [...selected] }) },
+        { method: "POST", body: JSON.stringify({ recipientIds: [...selected.keys()] }) },
       );
-      setSelected(new Set());
+      setSelected(new Map());
       await reloadLists();
       // The old version cleared the ticks and said nothing at all, so there was
       // no way to tell an add from a no-op — and no way to reach the list you
@@ -465,11 +471,11 @@ export function RecipientsClient({
     }
   }
 
-  function toggleSelect(id: string) {
+  function toggleSelect(recipient: Recipient) {
     setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const next = new Map(current);
+      if (next.has(recipient.id)) next.delete(recipient.id);
+      else next.set(recipient.id, recipient);
       return next;
     });
   }
@@ -477,9 +483,9 @@ export function RecipientsClient({
   const allOnPageSelected = recipients.length > 0 && recipients.every((r) => selected.has(r.id));
   function toggleSelectAll() {
     setSelected((current) => {
-      const next = new Set(current);
+      const next = new Map(current);
       if (allOnPageSelected) recipients.forEach((r) => next.delete(r.id));
-      else recipients.forEach((r) => next.add(r.id));
+      else recipients.forEach((r) => next.set(r.id, r));
       return next;
     });
   }
@@ -490,7 +496,7 @@ export function RecipientsClient({
     setRecipients((current) => current.filter((r) => r.id !== id));
     setSelected((current) => {
       if (!current.has(id)) return current;
-      const next = new Set(current);
+      const next = new Map(current);
       next.delete(id);
       return next;
     });
@@ -528,7 +534,11 @@ export function RecipientsClient({
 
   /** Bulk archive (Active view) or restore (Archived view) the selection. */
   async function bulkArchiveOrRestore() {
-    const ids = recipients.filter((r) => selected.has(r.id)).map((r) => r.id);
+    // Every ticked contact, not the ones that happen to be rendered. This read
+    // `recipients.filter(...)`, so ticking three pages and pressing Archive
+    // archived the last page and cleared the ticks as though all three were
+    // done. See ADR 0199.
+    const ids = [...selected.keys()];
     if (ids.length === 0) return;
     setError(null);
     setListBusy(true);
@@ -544,7 +554,7 @@ export function RecipientsClient({
         }
         dropFromView(id);
       }
-      setSelected(new Set());
+      setSelected(new Map());
       void refreshMeta();
     } catch (bulkError) {
       setError(bulkError instanceof ApiError ? bulkError.message : "Could not update the contacts");
@@ -553,9 +563,10 @@ export function RecipientsClient({
     }
   }
 
-  /** Export the selected recipients (current page) to a CSV file. */
+  /** Export every selected contact to a CSV file — across pages, not just the
+   * rendered one. */
   function exportSelected() {
-    const rows = recipients.filter((r) => selected.has(r.id));
+    const rows = [...selected.values()];
     if (rows.length === 0) return;
     const header = [
       "First name",
@@ -843,7 +854,7 @@ export function RecipientsClient({
             <span className="font-medium">{selected.size} selected</span>
             <button
               type="button"
-              onClick={() => setSelected(new Set())}
+              onClick={() => setSelected(new Map())}
               className="text-background/70 hover:text-background"
             >
               Clear
@@ -883,7 +894,7 @@ export function RecipientsClient({
               {archivedView ? "Restore" : "Archive"}
             </button>
             <Link
-              href={`/send?recipients=${[...selected].join(",")}`}
+              href={`/send?recipients=${[...selected.keys()].join(",")}`}
               className="rounded-md bg-accent px-3 py-1 font-semibold text-white hover:bg-accent-hover"
             >
               Send a card to {selected.size} →
@@ -950,7 +961,7 @@ export function RecipientsClient({
                       <input
                         type="checkbox"
                         checked={selected.has(recipient.id)}
-                        onChange={() => toggleSelect(recipient.id)}
+                        onChange={() => toggleSelect(recipient)}
                         aria-label={`Select ${recipient.firstName} ${recipient.lastName}`}
                       />
                     </td>
@@ -1069,7 +1080,7 @@ export function RecipientsClient({
                       <input
                         type="checkbox"
                         checked={selected.has(recipient.id)}
-                        onChange={() => toggleSelect(recipient.id)}
+                        onChange={() => toggleSelect(recipient)}
                         aria-label={`Select ${recipient.firstName} ${recipient.lastName}`}
                       />
                     </label>
