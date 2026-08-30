@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { ROLLING_OCCASION_SOURCES } from "@kudos/shared-types";
 import { startOfUtcDay } from "./birthday-occasion.util";
 
 /** Anything that can run the update: the PrismaService or a transaction client. */
@@ -18,9 +19,10 @@ type PrismaLike = Pick<PrismaClient, "occasion"> | Prisma.TransactionClient;
  *      and then never ordered. Nothing retired it, so it kept a green badge
  *      reading "Ready to send" on a birthday five weeks past. One real contact
  *      had a card approved three days *after* the birthday had already gone.
- *   3. **A hand-added event.** Only birthdays, renewals and anniversaries are
- *      promoted on a timer, so a graduation or a leaver's date sat "Scheduled"
- *      for ever with a live "Prepare card" button beside it.
+ *   3. **A hand-added event, or a shared one.** Only birthdays, renewals and
+ *      anniversaries are promoted on a timer, so a graduation, a leaver's date,
+ *      or a whole Results Day cohort sat "Scheduled" for ever with a live
+ *      "Prepare card" button beside it.
  *
  * All three become `missed`, not `skipped`. `skipped` is a person's decision and
  * carries an audit entry naming them; `missed` is a date that went by. Telling a
@@ -64,13 +66,20 @@ export async function retirePastOccasions(
   // `scheduled` recurring occasions are not swept: the scheduler rolls a
   // birthday forward to next year's date rather than leaving last year's
   // behind, so a past `scheduled` birthday is a transient state between the
-  // date passing and the next nightly run — not a dead row. A one-off event is
+  // date passing and the next nightly run — not a dead row. Everything else is
   // the opposite: nothing ever moves it, so its date passing is terminal.
+  //
+  // Expressed as "not the rolling ones" rather than a list of the sources to
+  // retire. As a list it read `source: "one_off_campaign"` and silently missed
+  // every shared-event cohort — 40 members of a Results Day nobody ordered for,
+  // still reading "Scheduled" a year later with a "Prepare card" button that
+  // only throws. Case 3 above described that exact situation while the query
+  // beneath it excluded them.
   const { count: events } = await prisma.occasion.updateMany({
     where: {
       ...scope,
       status: "scheduled",
-      source: "one_off_campaign",
+      source: { notIn: [...ROLLING_OCCASION_SOURCES] },
       occasionDate: before,
     },
     data: { status: "missed" },

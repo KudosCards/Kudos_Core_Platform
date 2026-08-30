@@ -45,6 +45,21 @@ export const occasionSourceSchema = z.enum([
 ]);
 export type OccasionSource = z.infer<typeof occasionSourceSchema>;
 
+/**
+ * Sources the scheduler regenerates each year from a dated anchor — a date of
+ * birth or a RecipientKeyDate. Their occasions roll forward on their own, so a
+ * past-dated one is a transient state between the date passing and the next
+ * nightly run rather than a dead row.
+ *
+ * Named, and used as an exclusion, so that the *other* sources — the ones
+ * created once for a date that will never come round again — are swept by
+ * default. Written the other way up, as a list of sources to retire, adding
+ * `shared_event` to the schema silently left every shared-event cohort sitting
+ * "Scheduled" for ever, because nothing made anyone update the list. See
+ * docs/adr/0194.
+ */
+export const ROLLING_OCCASION_SOURCES = ["recurring_per_recipient"] as const;
+
 export const occasionStatusSchema = z.enum([
   "scheduled",
   "pending_approval",

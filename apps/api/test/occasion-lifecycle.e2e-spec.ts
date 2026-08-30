@@ -459,6 +459,72 @@ describe("Occasion lifecycle (e2e)", () => {
     expect(after.status).toBe("missed");
   });
 
+  it("retires a shared event's occasions too, not just a hand-added one", async () => {
+    const token = await signUp();
+    const members = [await addContact(token, null), await addContact(token, null)];
+    await request(app.getHttpServer())
+      .post("/events")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Results Day",
+        type: "achievement",
+        eventDate: iso(dayFromNow(-4)),
+        recipientIds: members,
+      })
+      .expect(201);
+
+    const summary = await scheduler.scheduleBirthdayOccasions();
+    expect(summary.missedEvents).toBeGreaterThanOrEqual(2);
+
+    // A cohort nobody ordered for is exactly the case the sweep exists for: no
+    // timer promotes a shared event, so its date passing is terminal. Left
+    // `scheduled`, all forty members read "Scheduled" on the calendar a year
+    // later, each with a "Prepare card" button that only throws.
+    const occasions = await prisma.occasion.findMany({
+      where: { recipientId: { in: members }, source: "shared_event" },
+    });
+    expect(occasions).toHaveLength(2);
+    expect(occasions.map((o) => o.status)).toEqual(["missed", "missed"]);
+  });
+
+  it("leaves a past-dated scheduled birthday alone — the scheduler rolls those", async () => {
+    const token = await signUp();
+    const id = await addContact(token, dobFalling(5));
+    const occasion = await prisma.occasion.findFirstOrThrow({ where: { recipientId: id } });
+    // A recurring occasion that is past and still `scheduled` is a transient
+    // state between the date passing and the next run rolling it forward — not
+    // a dead row. Sweeping it would put "missed" on the calendar for a date the
+    // scheduler is about to replace. Only the sources nothing ever moves are
+    // retired, which is why the filter is expressed as an exclusion.
+    await prisma.occasion.update({
+      where: { id: occasion.id },
+      data: { status: "scheduled", occasionDate: dayFromNow(-30), dispatchDate: dayFromNow(-35) },
+    });
+
+    await scheduler.scheduleBirthdayOccasions();
+
+    const after = await prisma.occasion.findUniqueOrThrow({ where: { id: occasion.id } });
+    expect(after.status).toBe("scheduled");
+  });
+
+  it("leaves an approval dated today alone — sending late is the customer's call", async () => {
+    const token = await signUp();
+    const id = await addContact(token, dobFalling(5));
+    const occasion = await prisma.occasion.findFirstOrThrow({ where: { recipientId: id } });
+    await prisma.occasion.update({
+      where: { id: occasion.id },
+      data: { status: "approved", occasionDate: dayFromNow(0), dispatchDate: dayFromNow(-5) },
+    });
+
+    await scheduler.scheduleBirthdayOccasions();
+
+    // Strictly before today, not on or before. It is too late for the card to
+    // arrive on the day, but whether to send it anyway belongs to the customer
+    // — retiring it takes the choice away without asking.
+    const after = await prisma.occasion.findUniqueOrThrow({ where: { id: occasion.id } });
+    expect(after.status).toBe("approved");
+  });
+
   it("won't prepare a card for a date that has already passed", async () => {
     const token = await signUp();
     const id = await addContact(token, null);
