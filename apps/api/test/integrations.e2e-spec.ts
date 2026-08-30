@@ -171,6 +171,150 @@ describe("Integrations (e2e)", () => {
     expect(list.items[0]?.email).toBe("grace@navy.mil");
   });
 
+  /**
+   * The refresh loop writes every column of the dedupe key — first name, last
+   * name, postcode, date of birth — so an edit in the source CRM can make one
+   * contact collide with another. The create path above it absorbs exactly that
+   * with `skipDuplicates`, "instead of a raw P2002 aborting the whole ingest";
+   * the update path had no such guard, no transaction and no try/catch, so one
+   * collision aborted the loop and every contact behind it was skipped. The
+   * nightly sweep then repeated it, identically, for ever. See ADR 0186.
+   */
+  describe("a contact that collides with another during refresh", () => {
+    const POSTCODE = "SW1A 1AA";
+    const DOB = "1990-01-01";
+
+    it("keeps going, and still updates the contacts behind the collision", async () => {
+      const { token } = await signUp();
+      const apiKey = await createApiKey(token);
+
+      // Two distinct people, plus a third to sit behind the collision.
+      await request(app.getHttpServer())
+        .post("/integrations/contacts")
+        .set("x-api-key", apiKey)
+        .send({
+          contacts: [
+            {
+              externalId: "a",
+              firstName: "Ada",
+              lastName: "Lovelace",
+              addressPostcode: POSTCODE,
+              dateOfBirth: DOB,
+            },
+            {
+              externalId: "b",
+              firstName: "Grace",
+              lastName: "Hopper",
+              addressPostcode: POSTCODE,
+              dateOfBirth: DOB,
+            },
+            {
+              externalId: "c",
+              firstName: "Katherine",
+              lastName: "Johnson",
+              addressPostcode: POSTCODE,
+              dateOfBirth: DOB,
+            },
+          ],
+        })
+        .expect(201);
+
+      // In the CRM, "b" is renamed to the same person as "a" — now their name,
+      // postcode and date of birth all match, which is the dedupe key.
+      const response = await request(app.getHttpServer())
+        .post("/integrations/contacts")
+        .set("x-api-key", apiKey)
+        .send({
+          contacts: [
+            {
+              externalId: "b",
+              firstName: "Ada",
+              lastName: "Lovelace",
+              addressPostcode: POSTCODE,
+              dateOfBirth: DOB,
+            },
+            {
+              externalId: "c",
+              firstName: "Katherine",
+              lastName: "Johnson",
+              addressPostcode: POSTCODE,
+              dateOfBirth: DOB,
+              email: "katherine@nasa.gov",
+            },
+          ],
+        })
+        .expect(201);
+
+      // The collision is reported against the contact that caused it...
+      const body = response.body as {
+        updated: number;
+        skipped: number;
+        errors: { externalId: string; reason: string }[];
+      };
+      expect(body.errors.map((e) => e.externalId)).toContain("b");
+      expect(body.errors.find((e) => e.externalId === "b")?.reason).toMatch(
+        /match another contact already on file/i,
+      );
+
+      // ...and "c", which was queued behind it, was still updated.
+      expect(body.updated).toBe(1);
+      const list = paginatedRecipientsSchema.parse((await listRecipients(token)).body);
+      const katherine = list.items.find((r) => r.firstName === "Katherine");
+      expect(katherine?.email).toBe("katherine@nasa.gov");
+    });
+
+    it("does not fail the whole sync, so tomorrow night is not a repeat", async () => {
+      const { token } = await signUp();
+      const apiKey = await createApiKey(token);
+      await request(app.getHttpServer())
+        .post("/integrations/contacts")
+        .set("x-api-key", apiKey)
+        .send({
+          contacts: [
+            {
+              externalId: "a",
+              firstName: "Ada",
+              lastName: "Lovelace",
+              addressPostcode: POSTCODE,
+              dateOfBirth: DOB,
+            },
+            {
+              externalId: "b",
+              firstName: "Grace",
+              lastName: "Hopper",
+              addressPostcode: POSTCODE,
+              dateOfBirth: DOB,
+            },
+          ],
+        })
+        .expect(201);
+
+      // A 201 rather than a 500 is the whole point: the caller records
+      // lastSyncStatus "ok" with the per-contact problem reported, instead of a
+      // raw Prisma constraint string shown to the customer every night.
+      await request(app.getHttpServer())
+        .post("/integrations/contacts")
+        .set("x-api-key", apiKey)
+        .send({
+          contacts: [
+            {
+              externalId: "b",
+              firstName: "Ada",
+              lastName: "Lovelace",
+              addressPostcode: POSTCODE,
+              dateOfBirth: DOB,
+            },
+          ],
+        })
+        .expect(201);
+
+      // The colliding contact keeps the values it had — a refusal, not a
+      // partial write.
+      const list = paginatedRecipientsSchema.parse((await listRecipients(token)).body);
+      expect(list.items.filter((r) => r.firstName === "Grace")).toHaveLength(1);
+    });
+  });
+
   it("rejects a missing, invalid, or revoked API key with 401", async () => {
     const { token } = await signUp();
     const apiKey = await createApiKey(token);

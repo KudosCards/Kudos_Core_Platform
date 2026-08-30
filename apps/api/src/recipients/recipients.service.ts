@@ -89,6 +89,16 @@ export interface IngestResult {
 
 const UNIQUE_CONSTRAINT_VIOLATION = "P2002";
 
+/** The dedupe key refusing a write: same name, postcode and date of birth as a
+ * recipient already on file. Shared so the paths that *report* it and the path
+ * that *maps* it to a 409 agree on what it looks like. */
+function isUniqueConstraintViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === UNIQUE_CONSTRAINT_VIOLATION
+  );
+}
+
 /**
  * Same key shape as the recipient_dedupe_key unique index. Only meaningful when
  * the row has at least one of postcode/dateOfBirth — see importCsv, which never
@@ -726,17 +736,45 @@ export class RecipientsService {
     // Refresh matched recipients — merge, don't clear: only overwrite fields the
     // incoming contact actually provides, so a CRM that doesn't carry an address
     // can't wipe one the customer added by hand.
+    //
+    // One contact at a time, and a failure on one is reported rather than
+    // thrown. toUpdateInput writes every column of the dedupe key (name,
+    // postcode, date of birth), so an edit in the source CRM can make one
+    // contact collide with another — and this loop used to abort on it, leaving
+    // every contact behind it unsynced and the whole request a 500. The nightly
+    // sweep then repeated that, identically, for ever. The create path above
+    // already absorbs the same collision with `skipDuplicates`; this is the
+    // matching guard on the way in. See ADR 0186.
+    const updateErrors: { externalId: string; reason: string }[] = [];
+    let updatedCount = 0;
     for (const contact of toUpdate) {
-      await this.prisma.recipient.update({
-        where: { id: idByExternalId.get(contact.externalId) },
-        data: this.toUpdateInput(contact),
-      });
+      try {
+        await this.prisma.recipient.update({
+          where: { id: idByExternalId.get(contact.externalId) },
+          data: this.toUpdateInput(contact),
+        });
+        updatedCount += 1;
+      } catch (error) {
+        if (!isUniqueConstraintViolation(error)) throw error;
+        // Not a system failure: the incoming values make this contact the same
+        // person as one already on file. Left exactly as it was — a refusal,
+        // not a partial write — and named so the customer can fix it at source.
+        updateErrors.push({
+          externalId: contact.externalId,
+          reason:
+            "Skipped: these details now match another contact already on file " +
+            "(same name, postcode and date of birth)",
+        });
+      }
     }
 
-    const errors = capSkippedIds.map((externalId) => ({
-      externalId,
-      reason: `Plan recipient cap (${entitlement.recipientCap}) reached`,
-    }));
+    const errors = [
+      ...capSkippedIds.map((externalId) => ({
+        externalId,
+        reason: `Plan recipient cap (${entitlement.recipientCap}) reached`,
+      })),
+      ...updateErrors,
+    ];
     // Anything neither created nor updated nor cap-blocked collided with an
     // existing recipient's name+postcode+DOB dedupe key (a same-person match
     // from another source) — counted as skipped without a per-id reason.
@@ -747,7 +785,7 @@ export class RecipientsService {
     // calendar because only the nightly cron created birthday occasions. Now a
     // sync schedules them immediately — for both freshly-created contacts and
     // ones whose update just added a DOB. Idempotent, so a re-sync is a no-op.
-    if (createdCount > 0 || toUpdate.length > 0) {
+    if (createdCount > 0 || updatedCount > 0) {
       await this.ensureScheduledBirthdays(accountId);
     }
 
@@ -757,10 +795,10 @@ export class RecipientsService {
       action: "ingest",
       targetType: "Recipient",
       targetId: accountId,
-      metadata: { source, created: createdCount, updated: toUpdate.length, skipped },
+      metadata: { source, created: createdCount, updated: updatedCount, skipped },
     });
 
-    return { created: createdCount, updated: toUpdate.length, skipped, errors };
+    return { created: createdCount, updated: updatedCount, skipped, errors };
   }
 
   private toCreateInput(
@@ -861,10 +899,7 @@ export class RecipientsService {
   }
 
   private mapWriteError(error: unknown): Error {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === UNIQUE_CONSTRAINT_VIOLATION
-    ) {
+    if (isUniqueConstraintViolation(error)) {
       return new ConflictException(
         "A recipient with the same name, postcode, and date of birth already exists",
       );
