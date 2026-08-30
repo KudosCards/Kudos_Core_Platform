@@ -194,5 +194,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0183 — Remind against the deadline, not the date](./0183-remind-against-the-deadline-not-the-date.md)
 - [0184 — The cut-off is a question about the time of day](./0184-the-cut-off-is-a-question-about-the-time-of-day.md)
 - [0185 — A correction must not make things worse](./0185-a-correction-must-not-make-things-worse.md)
+- [0186 — One bad contact is not a failed sync](./0186-one-bad-contact-is-not-a-failed-sync.md)
 
 <!-- adr-index:end -->
