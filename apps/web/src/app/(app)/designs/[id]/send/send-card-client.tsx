@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { useLatestOnly } from "@/lib/use-latest-only";
 import { SendTimingPicker, timingDeliverBy, type SendTiming } from "@/components/send-timing";
 
 /** Card price and postage in pence, for the on-screen estimate. The server is
@@ -128,6 +129,7 @@ export function SendCardClient({
   // Only runs while adding a new contact (no selection) and with 2+ characters.
   // All state updates live inside the timeout so none run synchronously in the
   // effect body (which would risk cascading renders).
+  const claimSearch = useLatestOnly();
   useEffect(() => {
     const q = query.trim();
     const active = !selectedContactId && q.length >= 2;
@@ -138,25 +140,32 @@ export function SendCardClient({
           setSearching(false);
           return;
         }
+        // Claimed before the request, checked after it: the debounce delays the
+        // *next* request but does nothing about the one already in flight, so a
+        // slow answer for "ab" used to land after "abc" and repopulate the
+        // dropdown with results the sender had already typed past. See ADR 0201.
+        const isLatest = claimSearch();
         setSearching(true);
         void (async () => {
           try {
             const data = await clientApiFetch<{ items: ContactResult[] }>(
               `/recipients?search=${encodeURIComponent(q)}&perPage=6`,
             );
+            if (!isLatest()) return;
             setResults(data.items);
             setShowResults(true);
           } catch {
+            if (!isLatest()) return;
             setResults([]);
           } finally {
-            setSearching(false);
+            if (isLatest()) setSearching(false);
           }
         })();
       },
       active ? 250 : 0,
     );
     return () => clearTimeout(handle);
-  }, [query, selectedContactId]);
+  }, [claimSearch, query, selectedContactId]);
 
   function selectContact(contact: ContactResult) {
     setSelectedContactId(contact.id);

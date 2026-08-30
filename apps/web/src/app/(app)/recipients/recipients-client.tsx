@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { useLatestOnly } from "@/lib/use-latest-only";
 import { AddressFields } from "@/components/address-fields";
 import { CsvImport, downloadSampleCsv, type ImportSummary } from "@/components/csv-import";
 import { ImportReport } from "@/components/import-report";
@@ -227,8 +228,13 @@ export function RecipientsClient({
     }
   }, []);
 
+  // reload() is called from six places — search, three filters, sort, and the
+  // pager — and any of them can fire again before the last one has answered.
+  const claimReload = useLatestOnly();
+
   const reload = useCallback(
     async (targetPage: number, listId: string | null, searchTerm: string, sortKey: SortKey) => {
+      const isLatest = claimReload();
       setPaginating(true);
       try {
         const params = new URLSearchParams({
@@ -245,17 +251,23 @@ export function RecipientsClient({
         const result = await clientApiFetch<Paginated<Recipient>>(
           `/recipients?${params.toString()}`,
         );
+        // Superseded while this was in flight: another filter or page has been
+        // chosen since, and writing now would put its results under the newer
+        // choice's label, with total and page desynced from both.
+        if (!isLatest()) return;
         setRecipients(result.items);
         setTotal(result.total);
         setPage(targetPage);
         setError(null);
       } catch (reloadError) {
+        if (!isLatest()) return;
         setError(reloadError instanceof ApiError ? reloadError.message : "Could not load contacts");
       } finally {
-        setPaginating(false);
+        // The spinner belongs to the newest request, so only it may clear it.
+        if (isLatest()) setPaginating(false);
       }
     },
-    [],
+    [claimReload],
   );
 
   useEffect(() => {
