@@ -21,6 +21,7 @@ import { clientApiFetch } from "@/lib/api.client";
 import { Modal } from "@/components/modal";
 import { PrintRunOverlay, type PrintRunCard } from "./print-run-overlay";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
+import { promptTrackingReference } from "@/lib/tracking-prompt";
 
 const CardFacePreview = dynamic(
   () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
@@ -558,8 +559,11 @@ export function FulfillmentClient({
     try {
       const body: Record<string, unknown> = { toStatus: step.to };
       if (step.to === "posted") {
-        const tracking = window.prompt("Tracking reference (optional):") ?? "";
-        if (tracking.trim()) body.trackingReference = tracking.trim();
+        const tracking = promptTrackingReference();
+        // Backed out — Cancel or Escape. Posting is one-way, so a cancelled
+        // prompt must cancel the transition, not fall through to it.
+        if (!tracking) return;
+        Object.assign(body, tracking);
       }
       await clientApiFetch(`/fulfillment/jobs/${job.id}/transition`, {
         method: "POST",
