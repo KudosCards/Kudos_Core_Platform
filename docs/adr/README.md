@@ -192,5 +192,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0181 — One lock, not two doors, on the message body](./0181-one-lock-not-two-doors-on-the-message-body.md)
 - [0182 — A backup that didn't happen is not a backup](./0182-a-backup-that-did-not-happen-is-not-a-backup.md)
 - [0183 — Remind against the deadline, not the date](./0183-remind-against-the-deadline-not-the-date.md)
+- [0184 — The cut-off is a question about the time of day](./0184-the-cut-off-is-a-question-about-the-time-of-day.md)
 
 <!-- adr-index:end -->

@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { PostageClass, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { FulfillmentJobStatus } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
@@ -27,7 +27,6 @@ import {
   computeDispatchDate,
   designDocumentSchema,
   computePricingBreakdown,
-  deliverByWindow,
   isoDay,
   reservedFooterViolation,
   sendNowDispatchDate,
@@ -47,6 +46,7 @@ import { MessagesService } from "../messages/messages.service";
 import { RecipientsService } from "../recipients/recipients.service";
 import { OpsActivityService } from "../ops-activity/ops-activity.service";
 import { ClickAndDropService } from "../shipping/click-and-drop.service";
+import { resolveSendSchedule } from "./send-schedule.util";
 import { UK_POSTCODE_REGEX } from "../common/uk-postcode";
 import type { CreateBatchOrderDto, CreateBatchOrderLineDto } from "./dto/create-batch-order.dto";
 import type { ListBatchOrdersQueryDto } from "./dto/list-batch-orders-query.dto";
@@ -259,36 +259,6 @@ export class BatchOrdersService {
    * post date isn't already in the past. Pure-ish (reads `new Date()`). See
    * docs/adr/0130-scheduled-sends.md.
    */
-  private resolveSendSchedule(
-    deliverBy: string | undefined,
-    postageClass: PostageClass,
-  ): { occasionDate: Date; dispatchDate: Date; scheduled: boolean } {
-    const today = startOfUtcDay(new Date());
-    if (!deliverBy) {
-      // "Send now" posts today only if we're still before the same-day cut-off on
-      // a working day; after it (or on a weekend/holiday) it posts the next
-      // working day, so the ops queue reads it as due then rather than as
-      // overdue-today for a collection that has already gone. See ADR 0160.
-      return { occasionDate: today, dispatchDate: sendNowDispatchDate(), scheduled: false };
-    }
-    const arriveBy = startOfUtcDay(new Date(`${deliverBy}T00:00:00.000Z`));
-    if (Number.isNaN(arriveBy.getTime())) {
-      throw new BadRequestException("Invalid delivery date");
-    }
-    const { earliest, latest } = deliverByWindow(postageClass, today);
-    if (arriveBy.getTime() > startOfUtcDay(latest).getTime()) {
-      throw new BadRequestException("That delivery date is too far ahead to schedule.");
-    }
-    const dispatchDate = computeDispatchDate(arriveBy, POSTAGE_LEAD_DAYS[postageClass]);
-    if (dispatchDate.getTime() < today.getTime()) {
-      const soonest = startOfUtcDay(earliest).toISOString().slice(0, 10);
-      throw new BadRequestException(
-        `That delivery date is too soon — the earliest we can schedule for is ${soonest}.`,
-      );
-    }
-    return { occasionDate: arriveBy, dispatchDate, scheduled: true };
-  }
-
   /** Create the recipient + approved one-off occasion for a single guided-send
    * card, returning the order line that consumes it. Shared by quickSend and
    * quickSendMany so the single- and multi-card paths can never drift. */
@@ -344,7 +314,7 @@ export class BatchOrdersService {
     // "Send now" ships today; a scheduled send back-computes its post-by date
     // from the chosen arrive-by so the ops queue holds it until due (rather than
     // reading as overdue). See docs/adr/0119 and 0130.
-    const schedule = this.resolveSendSchedule(dto.deliverBy, dto.postageClass);
+    const schedule = resolveSendSchedule(dto.deliverBy, dto.postageClass, new Date());
     const occasion = await this.prisma.occasion.create({
       data: {
         accountId,
@@ -445,7 +415,7 @@ export class BatchOrdersService {
     // as due now rather than overdue (ADR 0119). A scheduled send back-computes
     // its post-by date from the chosen arrive-by so it's paid now but held until
     // due (ADR 0130).
-    const schedule = this.resolveSendSchedule(dto.deliverBy, dto.postageClass);
+    const schedule = resolveSendSchedule(dto.deliverBy, dto.postageClass, new Date());
     const occasionIdByRecipient = new Map<string, string>();
 
     // Reconciled recipients: reuse the matched natural occasion. Attach the
@@ -1694,7 +1664,7 @@ export class BatchOrdersService {
 
       for (const line of order.orderRecipients) {
         if (!line.occasion) continue;
-        const schedule = this.resolveSendSchedule(deliverBy, line.occasion.postageClass);
+        const schedule = resolveSendSchedule(deliverBy, line.occasion.postageClass, new Date());
         await tx.occasion.update({
           where: { id: line.occasion.id },
           data: {
