@@ -29,6 +29,7 @@ import {
   reorderElement,
 } from "@kudos/shared-types";
 import { FontPreloader } from "@/lib/editor-fonts";
+import { clearDraft, readDraft, writeDraft, type DesignDraft } from "@/lib/design-draft";
 import { STICKERS, STICKER_INSERT_SIZE } from "@/lib/stickers";
 import { CLIPART_CATEGORIES } from "@/lib/clipart";
 import dynamic from "next/dynamic";
@@ -57,54 +58,6 @@ const FONT_GROUPS = FONT_CATEGORY_ORDER.map(({ category, label }) => ({
 
 /** Longest side (in design units) a freshly-inserted image is scaled to fit. */
 const IMAGE_INSERT_MAX = 200;
-
-// --- Local draft autosave -------------------------------------------------
-// The editor mirrors unsaved edits into localStorage (debounced) so a session
-// timeout, a crash, an accidental Back, or a failed save can never lose work —
-// on the next visit we offer to restore. Cleared once the design is saved to
-// the server. See docs/adr/0143.
-const DRAFT_KEY_PREFIX = "kudos:design-draft:";
-const draftKey = (designId: string): string => `${DRAFT_KEY_PREFIX}${designId}`;
-
-interface DesignDraft {
-  name: string;
-  document: DesignDocument;
-  /** When the local edit was captured (ms epoch). */
-  ts: number;
-}
-
-/** Parse the stored draft for a design, tolerating absence, corruption, or a
- * browser that blocks storage (private mode) — always returns null rather than
- * throwing so the editor never breaks over a bad draft. */
-function readDraft(designId: string): DesignDraft | null {
-  try {
-    const raw = window.localStorage.getItem(draftKey(designId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<DesignDraft>;
-    if (!parsed || typeof parsed.name !== "string" || typeof parsed.document !== "object") {
-      return null;
-    }
-    return parsed as DesignDraft;
-  } catch {
-    return null;
-  }
-}
-
-function writeDraft(designId: string, draft: DesignDraft): void {
-  try {
-    window.localStorage.setItem(draftKey(designId), JSON.stringify(draft));
-  } catch {
-    /* Storage full or blocked — a best-effort backup, never fatal. */
-  }
-}
-
-function clearDraft(designId: string): void {
-  try {
-    window.localStorage.removeItem(draftKey(designId));
-  } catch {
-    /* ignore */
-  }
-}
 
 interface SignedUpload {
   path: string;
@@ -287,6 +240,11 @@ export function DesignEditorClient({
   // whether the member's work is backed up on this device — no effect-synced
   // boolean, so the "backed up" chip stays a pure function of state.
   const [backedUpSnapshot, setBackedUpSnapshot] = useState<string | null>(null);
+  // The last mirror attempt was refused by the browser (storage full, or blocked
+  // in private mode). Distinct from "not backed up yet": there is no later point
+  // at which this edit becomes safe on its own, so the member is told plainly
+  // rather than left with a chip that never changes.
+  const [backupBlocked, setBackupBlocked] = useState(false);
   // When on (the default), resizing an image keeps its aspect ratio so it can't
   // be stretched out of shape; turn it off for deliberate stretching (#11).
   const [lockImageAspect, setLockImageAspect] = useState(true);
@@ -345,8 +303,11 @@ export function DesignEditorClient({
   // only until the debounced autosave has mirrored them to localStorage. Once
   // the work is backed up on this device (and restorable on return), the harsh
   // native "leave site?" prompt is redundant, so we drop it: adding an image no
-  // longer nags a second later. The brief pre-autosave window (and a storage-
-  // blocked browser, where locallyBackedUp never becomes true) still gets it.
+  // longer nags a second later. The brief pre-autosave window still gets it —
+  // and so does a storage-blocked browser, which is what this comment always
+  // claimed and the code did not do until ADR 0182: `setBackedUpSnapshot` ran
+  // whether or not the write had thrown, so `locallyBackedUp` went true anyway
+  // and the guard came off.
   // The in-app "Back to designs" link is guarded separately below; "Send this
   // card" saves first, so it won't warn.
   useEffect(() => {
@@ -380,8 +341,13 @@ export function DesignEditorClient({
     if (!isDirty) return;
     const snapshot = currentSnapshot;
     const timer = window.setTimeout(() => {
-      writeDraft(savedDesign.id, { name, document: document_, ts: Date.now() });
-      setBackedUpSnapshot(snapshot);
+      const written = writeDraft(savedDesign.id, { name, document: document_, ts: Date.now() });
+      // Only claim a backup that actually happened. This used to be
+      // unconditional, so a quota-full or storage-blocked browser reported the
+      // work safe, dropped both leave-guards, and then had nothing to restore.
+      // See ADR 0182.
+      setBackedUpSnapshot(written ? snapshot : null);
+      setBackupBlocked(!written);
     }, 1000);
     return () => window.clearTimeout(timer);
   }, [isDirty, currentSnapshot, name, document_, savedDesign.id]);
@@ -792,12 +758,15 @@ export function DesignEditorClient({
     setSavedAt(new Date());
     // Safely on the server now — the local backup is no longer needed.
     clearDraft(savedDesign.id);
+    setBackupBlocked(false);
     setSaveError(null);
   }
 
   /** Turn any save/send failure into a persistent, actionable banner. A 401
-   * means the session timed out; the member's work is still backed up locally,
-   * so we reassure + point them to re-authenticate rather than dead-end them. */
+   * means the session timed out, so we point them at re-authenticating rather
+   * than dead-ending them. Whether we can also reassure them that the work is
+   * safe depends on whether the local mirror actually took — the banner reads
+   * `locallyBackedUp` rather than assuming it. See ADR 0182. */
   function reportSaveFailure(err: unknown, fallback: string): void {
     const authExpired = err instanceof ApiError && err.status === 401;
     const message = authExpired
@@ -886,8 +855,18 @@ export function DesignEditorClient({
           />
           <div className="flex items-center gap-3">
             {isDirty ? (
-              <span className="text-xs text-foreground/50">
-                {locallyBackedUp ? "Unsaved · backed up on this device" : "Unsaved changes"}
+              <span
+                className={
+                  backupBlocked && !locallyBackedUp
+                    ? "text-xs font-medium text-amber-700"
+                    : "text-xs text-foreground/50"
+                }
+              >
+                {locallyBackedUp
+                  ? "Unsaved · backed up on this device"
+                  : backupBlocked
+                    ? "Unsaved · can’t back up on this device — save now"
+                    : "Unsaved changes"}
               </span>
             ) : savedAt ? (
               <span className="text-xs text-foreground/50">
@@ -957,12 +936,27 @@ export function DesignEditorClient({
       {saveError && (
         <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
           <p className="font-medium">{saveError.message}</p>
-          <p className="mt-1 text-red-700">
-            Your work is backed up on this device, so nothing is lost
-            {saveError.authExpired
-              ? " — sign in again in another tab, then come back and press Save."
-              : "."}
-          </p>
+          {/* Only promise the local backup when there actually is one. A failed
+              save is the moment this reassurance carries the most weight, and
+              the moment it is most damaging if untrue: it tells the member not
+              to worry while their only copy is in a tab they may well close.
+              See ADR 0182. */}
+          {locallyBackedUp ? (
+            <p className="mt-1 text-red-700">
+              Your work is backed up on this device, so nothing is lost
+              {saveError.authExpired
+                ? " — sign in again in another tab, then come back and press Save."
+                : "."}
+            </p>
+          ) : (
+            <p className="mt-1 font-medium text-red-700">
+              This browser wouldn’t let us keep a local copy, so these edits only exist on this
+              screen — keep this tab open
+              {saveError.authExpired
+                ? " and sign in again in another tab, then come back and press Save."
+                : " and try again."}
+            </p>
+          )}
           <button
             type="button"
             disabled={saving || sending}
