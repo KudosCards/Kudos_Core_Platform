@@ -206,5 +206,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0195 — The rush is when the card is posted](./0195-the-rush-is-when-the-card-is-posted.md)
 - [0196 — A stamp records a transition, not a write](./0196-a-stamp-records-a-transition-not-a-write.md)
 - [0197 — Cancel must cancel](./0197-cancel-must-cancel.md)
+- [0198 — A report nobody sees is not a report](./0198-a-report-nobody-sees-is-not-a-report.md)
 
 <!-- adr-index:end -->

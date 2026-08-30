@@ -9,6 +9,7 @@ import {
 } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { ImportReport } from "./import-report";
 
 export interface ImportSummary {
   created: number;
@@ -143,51 +144,8 @@ export function CsvImport({ onImported }: { onImported?: (summary: ImportSummary
         />
         {busy && <p className="text-sm text-muted">Reading your file…</p>}
         {error && <p className="notice notice-danger">{error}</p>}
-        {summary && (
-          <div className="flex flex-col gap-2">
-            <p className="rounded-lg bg-success-soft px-4 py-2 text-sm font-medium text-success">
-              Imported {summary.created} new, updated {summary.updated}
-              {summary.warnings.length > 0 && `, ${summary.warnings.length} with a field skipped`}
-              {summary.rejected.length > 0 && `, skipped ${summary.rejected.length}`}.
-            </p>
-            {summary.rejected.length > 0 && (
-              <details className="rounded-lg border border-border px-4 py-2 text-sm">
-                <summary className="cursor-pointer font-medium text-accent">
-                  {summary.rejected.length} row{summary.rejected.length === 1 ? "" : "s"} couldn’t
-                  be imported — see why
-                </summary>
-                <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-xs text-muted">
-                  {summary.rejected.slice(0, 20).map((r) => (
-                    <li key={`r-${r.row}`}>
-                      Row {r.row}: {r.reason}
-                    </li>
-                  ))}
-                  {summary.rejected.length > 20 && (
-                    <li>…and {summary.rejected.length - 20} more</li>
-                  )}
-                </ul>
-              </details>
-            )}
-            {summary.warnings.length > 0 && (
-              <details className="rounded-lg border border-border px-4 py-2 text-sm">
-                <summary className="cursor-pointer font-medium">
-                  {summary.warnings.length} contact{summary.warnings.length === 1 ? "" : "s"}{" "}
-                  imported with a field skipped — see details
-                </summary>
-                <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-xs text-muted">
-                  {summary.warnings.slice(0, 20).map((w, i) => (
-                    <li key={`w-${w.row}-${i}`}>
-                      Row {w.row}: {w.message}
-                    </li>
-                  ))}
-                  {summary.warnings.length > 20 && (
-                    <li>…and {summary.warnings.length - 20} more</li>
-                  )}
-                </ul>
-              </details>
-            )}
-          </div>
-        )}
+        {summary && <ImportReport summary={summary} />}
+
         <button
           type="button"
           onClick={downloadSampleCsv}
