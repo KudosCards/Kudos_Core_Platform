@@ -4,6 +4,7 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { LoggerModule } from "nestjs-pino";
 import { validateEnv } from "./config/env.schema";
+import { loggerOptions } from "./common/logger.options";
 import { PrismaModule } from "./prisma/prisma.module";
 import { HealthModule } from "./health/health.module";
 import { AuthModule } from "./auth/auth.module";
@@ -64,13 +65,7 @@ import { PlatformNotificationsModule } from "./platform-notifications/platform-n
     // for a single instance; to keep limits accurate across multiple instances,
     // swap in a shared store here (e.g. Redis) — see ADR 0133.
     ThrottlerModule.forRoot([{ name: "default", ttl: 60_000, limit: 30 }]),
-    LoggerModule.forRoot({
-      pinoHttp: {
-        level: process.env.NODE_ENV === "production" ? "info" : "debug",
-        transport: process.env.NODE_ENV === "production" ? undefined : { target: "pino-pretty" },
-        redact: ["req.headers.authorization", 'req.headers["x-api-key"]'],
-      },
-    }),
+    LoggerModule.forRoot(loggerOptions()),
     PrismaModule,
     HealthModule,
     AuthModule,

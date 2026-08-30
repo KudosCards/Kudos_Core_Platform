@@ -243,6 +243,7 @@ export class AdminController {
    * exist and stores its id, so seat billing turns on with no dashboard, env
    * var, or redeploy. Idempotent. See docs/adr/0037-in-app-price-provisioning.md.
    */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
   @Post("billing/seat-price")
   ensureSeatPrice(): Promise<SeatPriceStatus> {
     return this.seatBilling.ensureSeatPrice();
@@ -263,6 +264,7 @@ export class AdminController {
 
   /** Replace the seasonal dispatch windows. Applied immediately + persisted, so
    * dispatch timing changes with no redeploy. See docs/adr/0059. */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
   @Put("dispatch/seasonal-rules")
   async updateSeasonalRules(
     @Body() dto: UpdateSeasonalRulesDto,
@@ -285,6 +287,7 @@ export class AdminController {
 
   /** Replace the reminder config. Applied on the next run + persisted, so the
    * dispatch reminder changes with no redeploy. See docs/adr/0117. */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
   @Put("dispatch/reminder-config")
   async updateReminderConfig(
     @Body() dto: UpdateReminderConfigDto,
@@ -305,6 +308,7 @@ export class AdminController {
 
   /** Set the default print card size. Persisted, so the print run's default
    * changes with no redeploy. See docs/adr/0138. */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
   @Put("print/card-size")
   async updatePrintCardSize(@Body() dto: UpdatePrintCardSizeDto): Promise<{ size: CardSize }> {
     return { size: await this.cardSizeConfig.setDefaultSize(dto.size) };

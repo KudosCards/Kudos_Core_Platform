@@ -106,9 +106,14 @@ describe("Admin — super admin dashboard (e2e)", () => {
     return { token, accountId: accountSchema.parse(response.body).id };
   }
 
-  async function createAdmin(): Promise<string> {
+  /** A super admin, which is what the privileged routes in this suite need. The
+   * role used to be omitted — defaulting to `ops` — which is how the seasonal
+   * rules test passed against a mutation that should have refused it. That an
+   * `ops` operator can still *read* these settings is covered in
+   * admin-platform-settings.e2e-spec.ts. See ADR 0187. */
+  async function createAdmin(role: "super_admin" | "ops" = "super_admin"): Promise<string> {
     const userId = randomUUID();
-    await prisma.platformAdmin.create({ data: { userId } });
+    await prisma.platformAdmin.create({ data: { userId, role } });
     return mintToken(userId);
   }
 
