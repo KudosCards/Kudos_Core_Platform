@@ -96,8 +96,13 @@ export function FontPreloader({ only }: { only?: string[] }) {
         pointerEvents: "none",
       }}
     >
-      {families.map((family) => (
-        <span key={family}>
+      {families.map((family, index) => (
+        // Keyed by position, not by the resolved CSS family: `next/font` hands
+        // back an opaque generated family name, and under a test runner that
+        // stubs next/font every entry resolves to the same string — duplicate
+        // keys for a list that is fixed-length and never reordered. Position is
+        // the honest identity here.
+        <span key={index}>
           <span style={{ fontFamily: family }}>Aa</span>
           <span style={{ fontFamily: family, fontWeight: 700 }}>Aa</span>
           <span style={{ fontFamily: family, fontStyle: "italic" }}>Aa</span>
