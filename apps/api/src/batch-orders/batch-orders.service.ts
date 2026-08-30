@@ -441,18 +441,60 @@ export class BatchOrdersService {
         ids.push(occasionId);
         idsByDispatch.set(key, ids);
       }
-      for (const [dispatchTime, ids] of idsByDispatch) {
-        await this.prisma.occasion.updateMany({
-          where: { id: { in: ids }, accountId },
-          data: {
-            savedDesignId: savedDesign.id,
-            dispatchOption: "asap",
-            postageClass: dto.postageClass,
-            dispatchDate: new Date(dispatchTime),
-            status: "approved",
-          },
-        });
-      }
+      // Status-guarded, like every other write to an occasion in this file, and
+      // for the reason the re-date repair spells out: an occasion that has since
+      // moved on must never be dragged back. Unguarded, this write set
+      // `status: "approved"` on whatever it found — so a sibling request that
+      // had already checked one of these out (approved → queued) had it pulled
+      // back under it, create()'s own guard then passed, and two orders booked
+      // the same occasion. The contact received two identical cards.
+      //
+      // All the dispatch groups go in one transaction so a refusal leaves no
+      // half-applied send behind: without it, the groups written before the
+      // short one would keep the design and, worse, a `pending_approval`
+      // occasion would have been silently approved by a send that never happened.
+      await this.prisma.$transaction(async (tx) => {
+        let updated = 0;
+        for (const [dispatchTime, ids] of idsByDispatch) {
+          const { count } = await tx.occasion.updateMany({
+            where: {
+              id: { in: ids },
+              accountId,
+              status: { in: [...RECONCILABLE_OCCASION_STATUSES] },
+            },
+            data: {
+              savedDesignId: savedDesign.id,
+              dispatchOption: "asap",
+              postageClass: dto.postageClass,
+              dispatchDate: new Date(dispatchTime),
+              status: "approved",
+            },
+          });
+          updated += count;
+        }
+        if (updated !== reconciledByRecipient.size) {
+          // Which ones we lost, not just how many: a 500-card send needs to name
+          // the handful to deselect. Anything no longer in a reconcilable status
+          // (moved on, or deleted outright) is one of them — the ones this write
+          // did land on are now `approved`, which is reconcilable, so they don't
+          // appear here.
+          const stillOurs = new Set(
+            (
+              await tx.occasion.findMany({
+                where: {
+                  id: { in: [...reconciledByRecipient.values()].map((r) => r.occasionId) },
+                  status: { in: [...RECONCILABLE_OCCASION_STATUSES] },
+                },
+                select: { id: true },
+              })
+            ).map((o) => o.id),
+          );
+          const lost = [...reconciledByRecipient]
+            .filter(([, { occasionId }]) => !stillOurs.has(occasionId))
+            .map(([recipientId]) => recipientId);
+          throw new ConflictException(this.lostOccasionsMessage(lost, byId));
+        }
+      });
     }
 
     // Every other recipient gets a fresh approved one-off occasion carrying the
@@ -760,6 +802,25 @@ export class BatchOrdersService {
       result.set(recipientId, match);
     }
     return result;
+  }
+
+  /** Name the contacts whose occasion was booked by another order while this
+   * send was being assembled, so the sender can deselect them and try again
+   * rather than read "conflict" and guess. Deliberately names people, not
+   * occasion ids — the same choice the missing-address guard makes. */
+  private lostOccasionsMessage(
+    lostRecipientIds: string[],
+    byId: Map<string, { firstName: string; lastName: string }>,
+  ): string {
+    const names = lostRecipientIds
+      .map((id) => byId.get(id))
+      .filter((r): r is { firstName: string; lastName: string } => !!r)
+      .map((r) => `${r.firstName} ${r.lastName}`);
+    const who = names.length > 0 ? `: ${names.join(", ")}` : "";
+    return (
+      `A card was booked by another order for ${names.length === 1 ? "this contact" : "these contacts"}` +
+      `${who}. Nothing has been charged — deselect them and send again.`
+    );
   }
 
   /**

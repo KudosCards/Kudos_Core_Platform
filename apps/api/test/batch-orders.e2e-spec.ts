@@ -12,6 +12,7 @@ import request from "supertest";
 import type Stripe from "stripe";
 import { z } from "zod";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { BatchOrdersService } from "../src/batch-orders/batch-orders.service";
 import { STRIPE_CLIENT } from "../src/billing/stripe-client.provider";
 import { createTestApp } from "./util/create-test-app";
 import { mintToken } from "./util/test-jwks";
@@ -91,6 +92,7 @@ function sessionIdFromUrl(body: unknown): string {
 describe("Batch orders (e2e)", () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
+  let batchOrders: BatchOrdersService;
   let checkoutSessionsCreate: jest.Mock;
   let refundsCreate: jest.Mock;
 
@@ -104,6 +106,7 @@ describe("Batch orders (e2e)", () => {
 
     app = await createTestApp([{ provide: STRIPE_CLIENT, useValue: mockStripe }]);
     prisma = app.get(PrismaService);
+    batchOrders = app.get(BatchOrdersService);
   });
 
   afterAll(async () => {
@@ -1946,6 +1949,156 @@ describe("Batch orders (e2e)", () => {
       expect(sent.dispatchDate?.getTime()).toBe(
         computeDispatchDate(birthdayDate, POSTAGE_LEAD_DAYS.second_class).getTime(),
       );
+    });
+
+    it("refuses the send when a reconciled occasion is checked out mid-request", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const contactId = await createRecipientWithAddress(token);
+
+      const birthdayDate = new Date();
+      birthdayDate.setUTCDate(birthdayDate.getUTCDate() + 20);
+      const birthday = await prisma.occasion.create({
+        data: {
+          accountId,
+          recipientId: contactId,
+          type: "birthday",
+          source: "recurring_per_recipient",
+          occasionDate: birthdayDate,
+          dispatchDate: birthdayDate,
+          status: "scheduled",
+          dispatchOption: "auto_send",
+          postageClass: "second_class",
+        },
+      });
+
+      // Two admins bulk-send to the birthday segment at the same time. This
+      // request reads the occasion while it is still reconcilable; the other
+      // request consumes it (approved → queued) before this one gets to its own
+      // write. Spying on resolveReconcile is how that interleaving is pinned
+      // down deterministically — real code runs on both sides of it, and the
+      // only thing the spy adds is the concurrent write landing in the window.
+      /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
+      const readReconcile = (batchOrders as any).resolveReconcile.bind(batchOrders);
+      const resolveReconcile = jest
+        .spyOn(batchOrders as any, "resolveReconcile")
+        .mockImplementation(async (...args: any[]) => {
+          const result = await readReconcile(...args);
+          await prisma.occasion.update({
+            where: { id: birthday.id },
+            data: { status: "queued" },
+          });
+          return result;
+        });
+      /* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
+
+      try {
+        await request(app.getHttpServer())
+          .post("/batch-orders/bulk-send")
+          .set("Authorization", `Bearer ${token}`)
+          .send({
+            savedDesignId,
+            recipientIds: [contactId],
+            postageClass: "second_class",
+            reconcile: [{ recipientId: contactId, occasionId: birthday.id }],
+          })
+          .expect(409);
+      } finally {
+        resolveReconcile.mockRestore();
+      }
+
+      // The occasion stays consumed by the other order — it is NOT dragged back
+      // to `approved`, which is what would let this send book it a second time
+      // and post the contact two identical cards.
+      const after = await prisma.occasion.findUniqueOrThrow({ where: { id: birthday.id } });
+      expect(after.status).toBe("queued");
+      expect(after.savedDesignId).toBeNull();
+
+      // And nothing was created: no order, and no fresh one-off occasion that
+      // would have been a second card by another route.
+      expect(await prisma.batchOrder.count({ where: { accountId } })).toBe(0);
+      expect(await prisma.occasion.count({ where: { accountId } })).toBe(1);
+    });
+
+    it("leaves the other contacts' occasions untouched when one is lost mid-send", async () => {
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const raced = await createRecipientWithAddress(token, { firstName: "Ada" });
+      const safe = await createRecipientWithAddress(token, { firstName: "Grace" });
+
+      // Two birthdays on different dates, so they are written as two separate
+      // dispatch groups — the shape a birthday-segment send actually takes.
+      async function birthdayIn(days: number, recipientId: string) {
+        const date = new Date();
+        date.setUTCDate(date.getUTCDate() + days);
+        return prisma.occasion.create({
+          data: {
+            accountId,
+            recipientId,
+            type: "birthday",
+            source: "recurring_per_recipient",
+            occasionDate: date,
+            dispatchDate: date,
+            // `pending_approval`, not `scheduled`: the status that makes a
+            // partial write actually harmful. A send that never happened must
+            // not leave an occasion approved behind it.
+            status: "pending_approval",
+            dispatchOption: "auto_send",
+            postageClass: "second_class",
+          },
+        });
+      }
+      const racedBirthday = await birthdayIn(20, raced);
+      const safeBirthday = await birthdayIn(40, safe);
+
+      /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
+      const readReconcile = (batchOrders as any).resolveReconcile.bind(batchOrders);
+      const resolveReconcile = jest
+        .spyOn(batchOrders as any, "resolveReconcile")
+        .mockImplementation(async (...args: any[]) => {
+          const result = await readReconcile(...args);
+          await prisma.occasion.update({
+            where: { id: racedBirthday.id },
+            data: { status: "queued" },
+          });
+          return result;
+        });
+      /* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
+
+      let body: { message?: string } = {};
+      try {
+        const response = await request(app.getHttpServer())
+          .post("/batch-orders/bulk-send")
+          .set("Authorization", `Bearer ${token}`)
+          .send({
+            savedDesignId,
+            recipientIds: [raced, safe],
+            postageClass: "second_class",
+            reconcile: [
+              { recipientId: raced, occasionId: racedBirthday.id },
+              { recipientId: safe, occasionId: safeBirthday.id },
+            ],
+          })
+          .expect(409);
+        body = response.body as { message?: string };
+      } finally {
+        resolveReconcile.mockRestore();
+      }
+
+      // The refusal names only the contact actually lost — a 500-card send has
+      // to say who to deselect, not just that something conflicted.
+      expect(body.message).toContain("Ada");
+      expect(body.message).not.toContain("Grace");
+
+      // The send did not happen, so the surviving occasion must look exactly as
+      // it did: still awaiting approval, still carrying no design.
+      const untouched = await prisma.occasion.findUniqueOrThrow({
+        where: { id: safeBirthday.id },
+      });
+      expect(untouched.status).toBe("pending_approval");
+      expect(untouched.savedDesignId).toBeNull();
+      expect(untouched.dispatchOption).toBe("auto_send");
+      expect(await prisma.batchOrder.count({ where: { accountId } })).toBe(0);
     });
 
     it("blocks the send and names contacts missing a postal address (no order created)", async () => {
