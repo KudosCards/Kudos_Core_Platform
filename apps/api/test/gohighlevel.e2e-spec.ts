@@ -65,7 +65,10 @@ const ghlMock: GoHighLevelClient = {
       accessToken: "ghl-access-1",
       refreshToken: "ghl-refresh-1",
       expiresInSeconds: 86399,
-      externalAccountId: LOCATION_ID,
+      // An agency-scoped grant carries no single location. GoHighLevel's consent
+      // screen offers both, and picking the agency is what a real customer did
+      // five times over five weeks. See ADR 0213.
+      ...(code === "agency-code" ? {} : { externalAccountId: LOCATION_ID }),
     });
   },
   refreshTokens: () => {
@@ -176,6 +179,88 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
       .expect(200);
     expect(JSON.stringify(list.body)).not.toContain("ghl-access-1");
     expect(JSON.stringify(list.body)).not.toContain("ghl-refresh-1");
+  });
+
+  /**
+   * A grant with no location cannot ever sync — GoHighLevel scopes contacts to
+   * one. Storing it as a working connection and then telling the customer to
+   * "reconnect" sends them round a loop that cannot succeed. See ADR 0213.
+   */
+  describe("a grant with no location", () => {
+    it("is refused at the callback, storing nothing", async () => {
+      const { token, accountId } = await signUp();
+      const state = await startAndGetState(token);
+
+      await request(app.getHttpServer())
+        .get("/integrations/oauth/leadconnector/callback")
+        .query({ code: "agency-code", state })
+        .expect(302);
+
+      const stored = await prisma.crmConnection.findFirst({ where: { accountId } });
+      expect(stored).toBeNull();
+    });
+
+    it("sends the customer back with a reason the page can act on", async () => {
+      const { token } = await signUp();
+      const state = await startAndGetState(token);
+
+      const res = await request(app.getHttpServer())
+        .get("/integrations/oauth/leadconnector/callback")
+        .query({ code: "agency-code", state })
+        .expect(302);
+
+      const location = res.headers.location as string;
+      expect(location).toContain("error=gohighlevel");
+      // Not just "it failed" — which of the two choices to make next time.
+      expect(location).toContain("reason=no_location");
+    });
+
+    it("leaves a working connection alone rather than breaking it", async () => {
+      // Reconnecting and picking the agency by mistake must not destroy a
+      // connection that was already syncing.
+      const { token, accountId } = await signUp();
+      await connectGoHighLevel(token);
+      const before = await prisma.crmConnection.findFirstOrThrow({ where: { accountId } });
+      expect(before.externalAccountId).toBe(LOCATION_ID);
+
+      const state = await startAndGetState(token);
+      await request(app.getHttpServer())
+        .get("/integrations/oauth/leadconnector/callback")
+        .query({ code: "agency-code", state })
+        .expect(302);
+
+      const after = await prisma.crmConnection.findFirstOrThrow({ where: { accountId } });
+      expect(after.externalAccountId).toBe(LOCATION_ID);
+      expect(after.encryptedAccessToken).toBe(before.encryptedAccessToken);
+    });
+
+    it("tells an already-stored agency connection which choice to make", async () => {
+      // Rows stored before the callback started refusing these still exist.
+      const { token, accountId } = await signUp();
+      await connectGoHighLevel(token);
+      await prisma.crmConnection.updateMany({
+        where: { accountId, provider: "gohighlevel" },
+        data: { externalAccountId: null },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post("/integrations/connections/gohighlevel/sync")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(400);
+
+      const message = (res.body as { message: string }).message;
+      expect(message).toMatch(/sub-account/i);
+      // Not the bare "reconnect it" that sent a customer round five times.
+      expect(message).toMatch(/agency/i);
+    });
+
+    it("still connects normally when a sub-account is chosen", async () => {
+      const { token, accountId } = await signUp();
+      await connectGoHighLevel(token);
+
+      const stored = await prisma.crmConnection.findFirstOrThrow({ where: { accountId } });
+      expect(stored.externalAccountId).toBe(LOCATION_ID);
+    });
   });
 
   it("rejects a forged/invalid state — no connection is created", async () => {

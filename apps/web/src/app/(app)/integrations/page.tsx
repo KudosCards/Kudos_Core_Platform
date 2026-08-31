@@ -6,7 +6,7 @@ import { IntegrationsClient } from "./integrations-client";
 export default async function IntegrationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ connected?: string; error?: string }>;
+  searchParams: Promise<{ connected?: string; error?: string; reason?: string }>;
 }) {
   const [params, keys, connections] = await Promise.all([
     searchParams,
@@ -21,6 +21,7 @@ export default async function IntegrationsPage({
       apiBaseUrl={env.NEXT_PUBLIC_API_URL}
       connectedProvider={params.connected ?? null}
       errorProvider={params.error ?? null}
+      errorReason={params.reason ?? null}
     />
   );
 }

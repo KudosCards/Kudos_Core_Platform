@@ -37,11 +37,49 @@ describe("IntegrationsClient — a partial import says so", () => {
         apiBaseUrl="https://api.test"
         connectedProvider={null}
         errorProvider={null}
+        errorReason={null}
       />,
     );
   }
 
   beforeEach(() => fetchMock.mockReset());
+
+  /**
+   * A grant with no location is refused at the callback now, and the page has to
+   * say which of GoHighLevel's two choices went wrong. "Please try again" is
+   * what sent one customer round the same failing loop five times. See ADR 0213.
+   */
+  it("names the wrong choice when a grant came back without a location", () => {
+    render(
+      <IntegrationsClient
+        initialKeys={[]}
+        initialConnections={[]}
+        apiBaseUrl="https://api.test"
+        connectedProvider={null}
+        errorProvider="gohighlevel"
+        errorReason="no_location"
+      />,
+    );
+
+    const banner = screen.getByText(/agency rather than one of its sub-accounts/i);
+    expect(banner).toHaveTextContent(/choose the sub-account/i);
+    expect(banner).not.toHaveTextContent(/Please try again/i);
+  });
+
+  it("falls back to the general message when we do not know what went wrong", () => {
+    render(
+      <IntegrationsClient
+        initialKeys={[]}
+        initialConnections={[]}
+        apiBaseUrl="https://api.test"
+        connectedProvider={null}
+        errorProvider="gohighlevel"
+        errorReason={null}
+      />,
+    );
+
+    expect(screen.getByText(/We couldn't connect GoHighLevel/i)).toBeInTheDocument();
+  });
 
   it("warns that contacts were left behind when the pull was truncated", async () => {
     fetchMock.mockResolvedValue({
