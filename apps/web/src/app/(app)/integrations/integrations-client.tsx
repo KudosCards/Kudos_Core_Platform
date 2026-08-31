@@ -97,17 +97,38 @@ function SyncSummary({ result }: { result: CrmSyncResult }) {
     result.skipped > 0 ? `, ${result.skipped} skipped` : ""
   } (of ${result.fetched} fetched).`;
 
-  if (!result.truncated) {
-    return (
-      <p className="rounded-lg bg-success-soft px-4 py-2 text-sm font-medium text-success">
-        {counts}
-      </p>
-    );
-  }
+  // A card needs a birthday to know when and an address to know where. Both are
+  // optional in every CRM we read, so "imported 500" can mean twelve people will
+  // actually get one. Say how many, and which field is missing. See ADR 0214.
+  const { total, withDateOfBirth, withPostalAddress, sendable } = result.readiness;
+  const noDob = total - withDateOfBirth;
+  const noAddress = total - withPostalAddress;
+  const missing = [
+    noDob > 0 ? `${noDob} without a date of birth` : null,
+    noAddress > 0 ? `${noAddress} without a postal address` : null,
+  ].filter((part): part is string => part !== null);
+
+  // Green only when everything came across and everything can be used. An
+  // import nobody can send a card from is not a success.
+  const clean = !result.truncated && missing.length === 0;
   return (
-    <p className="rounded-lg border border-warning/30 bg-warning-soft px-4 py-2 text-sm font-medium text-warning">
-      {counts} This was a partial import — there were more contacts than one sync can read. Run it
-      again, or narrow what you sync, to bring across the rest.
+    <p
+      className={
+        clean
+          ? "rounded-lg bg-success-soft px-4 py-2 text-sm font-medium text-success"
+          : "rounded-lg border border-warning/30 bg-warning-soft px-4 py-2 text-sm font-medium text-warning"
+      }
+    >
+      {counts}
+      {result.truncated
+        ? " This was a partial import — there were more contacts than one sync can read. Run it again, or narrow what you sync, to bring across the rest."
+        : ""}
+      {total > 0
+        ? ` ${sendable} of ${total} ${sendable === 1 ? "contact is" : "contacts are"} ready to be sent a card` +
+          (missing.length > 0
+            ? ` — ${missing.join(", ")}. Add those in your CRM and sync again, or fill them in on the Contacts page.`
+            : ".")
+        : ""}
     </p>
   );
 }

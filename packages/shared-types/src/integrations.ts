@@ -31,12 +31,30 @@ export const ingestContactsInputSchema = z.object({
 });
 export type IngestContactsInput = z.infer<typeof ingestContactsInputSchema>;
 
+/**
+ * How much of what was imported can actually be used.
+ *
+ * A card needs a date of birth to know when and a postal address to know where,
+ * and both are optional in every CRM we read. Without this an import can report
+ * five hundred new contacts and leave the customer with a dozen they can
+ * actually send anything to. See ADR 0214.
+ */
+export const ingestReadinessSchema = z.object({
+  total: z.number().int().nonnegative(),
+  withDateOfBirth: z.number().int().nonnegative(),
+  withPostalAddress: z.number().int().nonnegative(),
+  /** Both — the only ones a birthday card can reach. */
+  sendable: z.number().int().nonnegative(),
+});
+export type IngestReadiness = z.infer<typeof ingestReadinessSchema>;
+
 /** The result summary the ingest endpoint returns. */
 export const ingestResultSchema = z.object({
   created: z.number().int().nonnegative(),
   updated: z.number().int().nonnegative(),
   skipped: z.number().int().nonnegative(),
   errors: z.array(z.object({ externalId: z.string(), reason: z.string() })),
+  readiness: ingestReadinessSchema,
 });
 export type IngestResult = z.infer<typeof ingestResultSchema>;
 

@@ -89,6 +89,12 @@ describe("IntegrationsClient — a partial import says so", () => {
       skipped: 100,
       errors: [],
       truncated: true,
+      readiness: {
+        total: 5000,
+        withDateOfBirth: 5000,
+        withPostalAddress: 5000,
+        sendable: 5000,
+      },
     });
     renderClient();
 
@@ -103,6 +109,58 @@ describe("IntegrationsClient — a partial import says so", () => {
     await waitFor(() => expect(screen.getByText(/partial: some contacts/i)).toBeInTheDocument());
   });
 
+  /**
+   * A card needs a birthday and a postal address, and both are optional in every
+   * CRM we read — so "Imported 500" can mean twelve people get a card. The
+   * summary says how many are actually reachable, and which field is missing.
+   * See ADR 0214.
+   */
+  it("says how many of the imported contacts can actually be sent a card", async () => {
+    fetchMock.mockResolvedValue({
+      fetched: 500,
+      created: 500,
+      updated: 0,
+      skipped: 0,
+      errors: [],
+      truncated: false,
+      readiness: {
+        total: 500,
+        withDateOfBirth: 38,
+        withPostalAddress: 20,
+        sendable: 12,
+      },
+    });
+    renderClient();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sync now" }));
+
+    const summary = await screen.findByText(/12 of 500/);
+    expect(summary).toHaveTextContent(/ready to be sent a card/i);
+    expect(summary).toHaveTextContent(/462 without a date of birth/);
+    expect(summary).toHaveTextContent(/480 without a postal address/);
+    // "Imported 500 new" in green would be a lie when 12 can be reached.
+    expect(summary.className).not.toContain("success");
+  });
+
+  it("names only the field that is actually missing", async () => {
+    fetchMock.mockResolvedValue({
+      fetched: 10,
+      created: 10,
+      updated: 0,
+      skipped: 0,
+      errors: [],
+      truncated: false,
+      readiness: { total: 10, withDateOfBirth: 10, withPostalAddress: 4, sendable: 4 },
+    });
+    renderClient();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sync now" }));
+
+    const summary = await screen.findByText(/4 of 10/);
+    expect(summary).toHaveTextContent(/6 without a postal address/);
+    expect(summary).not.toHaveTextContent(/without a date of birth/);
+  });
+
   it("still reports a complete pull as a clean success", async () => {
     fetchMock.mockResolvedValue({
       fetched: 42,
@@ -111,6 +169,7 @@ describe("IntegrationsClient — a partial import says so", () => {
       skipped: 0,
       errors: [],
       truncated: false,
+      readiness: { total: 42, withDateOfBirth: 42, withPostalAddress: 42, sendable: 42 },
     });
     renderClient();
 
