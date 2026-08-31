@@ -102,11 +102,37 @@ export interface NormalizedContact {
   addressCountry: string | null;
 }
 
+/**
+ * How much of what came in can actually be used.
+ *
+ * Kudos posts physical birthday cards, which needs two things per contact: a
+ * date of birth to know when, and a postal address to know where. Both are
+ * optional in every CRM we read, so an import can report five hundred new
+ * contacts and leave a customer with a dozen they can send anything to — and the
+ * counts above would call that a complete success.
+ *
+ * Measured on what is stored after the ingest, not on the incoming payload:
+ * updates merge rather than clear, so someone the customer completed by hand is
+ * sendable even when the CRM carries nothing for them. See ADR 0214.
+ */
+export interface IngestReadiness {
+  /** Contacts on file from this source. A sync is a full pull, so this is the
+   * whole picture rather than just the rows this run touched. */
+  total: number;
+  withDateOfBirth: number;
+  /** Enough of an address to post to — the same definition the contacts list
+   * and the dashboard "needs address" count use. */
+  withPostalAddress: number;
+  /** Both. The only ones a birthday card can actually reach. */
+  sendable: number;
+}
+
 export interface IngestResult {
   created: number;
   updated: number;
   skipped: number;
   errors: { externalId: string; reason: string }[];
+  readiness: IngestReadiness;
 }
 
 const UNIQUE_CONSTRAINT_VIOLATION = "P2002";
@@ -843,7 +869,37 @@ export class RecipientsService {
       metadata: { source, created: createdCount, updated: updatedCount, skipped },
     });
 
-    return { created: createdCount, updated: updatedCount, skipped, errors };
+    return {
+      created: createdCount,
+      updated: updatedCount,
+      skipped,
+      errors,
+      readiness: await this.readinessFor(accountId, source),
+    };
+  }
+
+  /**
+   * How many contacts from a source can actually be sent a card.
+   *
+   * Three indexed counts rather than reading the rows: a full sync can carry ten
+   * thousand contacts, and this runs on every one of them.
+   *
+   * `NOT MISSING_ADDRESS_WHERE` rather than a fresh set of null checks, so this
+   * agrees with the contacts list filter and the dashboard "needs address" count
+   * — one definition of postable, in one place (ADR 0067).
+   */
+  private async readinessFor(accountId: string, source: string): Promise<IngestReadiness> {
+    const from = { accountId, source, status: "active" as const };
+    const postable = { NOT: MISSING_ADDRESS_WHERE };
+    const hasDob = { dateOfBirth: { not: null } };
+
+    const [total, withDateOfBirth, withPostalAddress, sendable] = await this.prisma.$transaction([
+      this.prisma.recipient.count({ where: from }),
+      this.prisma.recipient.count({ where: { ...from, ...hasDob } }),
+      this.prisma.recipient.count({ where: { ...from, ...postable } }),
+      this.prisma.recipient.count({ where: { ...from, ...hasDob, ...postable } }),
+    ]);
+    return { total, withDateOfBirth, withPostalAddress, sendable };
   }
 
   private toCreateInput(

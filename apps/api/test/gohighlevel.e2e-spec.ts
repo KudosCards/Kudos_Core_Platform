@@ -335,6 +335,143 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
     expect(stored.lastSyncStatus).toMatch(/partial/i);
   });
 
+  /**
+   * Kudos posts physical birthday cards. That needs a date of birth and a postal
+   * address, and GoHighLevel makes both optional — so an import can report 500
+   * new contacts in green while a dozen of them can actually be sent anything.
+   * The sync says how many arrived usable. See ADR 0214.
+   */
+  it("reports how many imported contacts can actually be sent a card", async () => {
+    const { token } = await signUp();
+    await connectGoHighLevel(token);
+    const address = { address1: "1 Test Street", city: "London", postalCode: "SW1A 1AA" };
+    ghlContacts = [
+      // Complete — a card can be sent.
+      { id: "c1", firstName: "Ada", lastName: "Lovelace", dateOfBirth: "2015-06-01", ...address },
+      { id: "c2", firstName: "Alan", lastName: "Turing", dateOfBirth: "2016-03-04", ...address },
+      // Has a birthday but nowhere to post to.
+      { id: "c3", firstName: "Grace", lastName: "Hopper", dateOfBirth: "2014-12-09" },
+      // Postable, but we don't know when to send.
+      { id: "c4", firstName: "Katherine", lastName: "Johnson", ...address },
+      // Neither.
+      { id: "c5", firstName: "Mary", lastName: "Jackson" },
+    ];
+
+    const res = await request(app.getHttpServer())
+      .post("/integrations/connections/gohighlevel/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const body = res.body as {
+      created: number;
+      readiness: {
+        total: number;
+        withDateOfBirth: number;
+        withPostalAddress: number;
+        sendable: number;
+      };
+    };
+    expect(body.created).toBe(5);
+    expect(body.readiness).toEqual({
+      total: 5,
+      withDateOfBirth: 3, // c1, c2, c3
+      withPostalAddress: 3, // c1, c2, c4
+      sendable: 2, // only c1 and c2 can be posted a birthday card
+    });
+  });
+
+  it("counts only this CRM's contacts, not everyone on the account", async () => {
+    // The sentence is about the import that just ran. A customer with hundreds
+    // of hand-added contacts would otherwise see a reassuring number that says
+    // nothing about what GoHighLevel actually delivered.
+    const { token, accountId } = await signUp();
+    await connectGoHighLevel(token);
+    await prisma.recipient.create({
+      data: {
+        accountId,
+        firstName: "Hand",
+        lastName: "Added",
+        source: "manual",
+        dateOfBirth: new Date(Date.UTC(2015, 0, 1)),
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
+      },
+    });
+    ghlContacts = [{ id: "c1", firstName: "Ada", lastName: "Lovelace" }];
+
+    const res = await request(app.getHttpServer())
+      .post("/integrations/connections/gohighlevel/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const { readiness } = res.body as {
+      readiness: { total: number; sendable: number };
+    };
+    // One GoHighLevel contact, not two — and it is not sendable.
+    expect(readiness.total).toBe(1);
+    expect(readiness.sendable).toBe(0);
+  });
+
+  it("leaves archived contacts out — nothing is being sent to them", async () => {
+    const { token, accountId } = await signUp();
+    await connectGoHighLevel(token);
+    const address = { address1: "1 Test Street", city: "London", postalCode: "SW1A 1AA" };
+    ghlContacts = [
+      { id: "c1", firstName: "Ada", lastName: "Lovelace", dateOfBirth: "2015-06-01", ...address },
+      { id: "c2", firstName: "Alan", lastName: "Turing", dateOfBirth: "2016-03-04", ...address },
+    ];
+    await request(app.getHttpServer())
+      .post("/integrations/connections/gohighlevel/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    // The customer archives one. It stays in GoHighLevel, so it keeps arriving.
+    await prisma.recipient.updateMany({
+      where: { accountId, externalId: "c2" },
+      data: { status: "archived" },
+    });
+
+    const res = await request(app.getHttpServer())
+      .post("/integrations/connections/gohighlevel/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const { readiness } = res.body as { readiness: { total: number; sendable: number } };
+    expect(readiness.total).toBe(1);
+    expect(readiness.sendable).toBe(1);
+  });
+
+  it("counts a contact the CRM left blank but the customer completed by hand", async () => {
+    // Updates merge rather than clear, so someone already complete in Kudos is
+    // still sendable even when GoHighLevel carries nothing for them. Counting
+    // the payload instead of the stored state would understate this.
+    const { token, accountId } = await signUp();
+    await connectGoHighLevel(token);
+    ghlContacts = [{ id: "c1", firstName: "Ada", lastName: "Lovelace" }];
+    await request(app.getHttpServer())
+      .post("/integrations/connections/gohighlevel/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    await prisma.recipient.updateMany({
+      where: { accountId, externalId: "c1" },
+      data: {
+        dateOfBirth: new Date(Date.UTC(2015, 5, 1)),
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .post("/integrations/connections/gohighlevel/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect((res.body as { readiness: { sendable: number } }).readiness.sendable).toBe(1);
+  });
+
   it("re-syncing the same contacts dedupes instead of duplicating", async () => {
     const { token, accountId } = await signUp();
     await connectGoHighLevel(token);
