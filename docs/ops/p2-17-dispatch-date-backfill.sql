@@ -1,13 +1,48 @@
 -- P2-17 backfill — recompute stored dispatch dates under the posting-date
 -- seasonal rule (ADR 0195).
 --
--- WHY THIS IS NEEDED
+-- ===========================================================================
+-- APPLIED TO PRODUCTION — 31 August 2026. This script is spent.
+--
+-- Do not run Step 3 again. Steps 0-2, 4 and 5 are read-only and safe to re-run
+-- if you want to confirm the state.
+--
+-- What happened, in order:
+--   Step 0  no rows            - seasonal rules never edited, so the mapping
+--                                below was generated against the rules
+--                                production actually uses
+--   Step 1  111 occasions      - forecast, itemised across 15 dates
+--   Step 2  nothing unexpected - no pinned or hand-edited rows in scope
+--   Step 3  UPDATE 111         - matched Step 1 on every one of the 15 dates,
+--                                no duplicates, every row still `scheduled`
+--                                (none had reached an operator's approval)
+--   Step 4  no rows            - nothing left holding an old value
+--   Step 5  0                  - nothing beyond the bank-holiday horizon
+--
+-- The 62 January occasions came off the Christmas peak: they had been set to
+-- post 23-31 December on base lead only, 26 of them during the skeleton service
+-- between the bank holidays. They now post 18-24 December. The 49 December
+-- occasions moved 3-5 days later, from 19-25 November to 24-30 November, and
+-- keep the full send-by-5 - they had simply been going out earlier than needed.
+--
+-- Posting load moved with them. Fri 18 Dec 2026 now carries 30 cards and Mon
+-- 30 Nov 2026 carries 20. The 30-card spike did not disappear; it relocated off
+-- Wed 23 Dec onto a safer day.
+--
+-- NOT NEEDED AGAIN NEXT YEAR. The 2027-12 and 2028-01 rows in the mapping
+-- matched nothing because those occasions did not exist yet. Rows created after
+-- the ADR 0195 deploy use the fixed rule and are correct when written; only the
+-- already-stored ones were stale. Kept in the mapping so a re-run stays honest
+-- if any turn up from another path.
+-- ===========================================================================
+--
+-- WHY THIS WAS NEEDED
 -- `dispatch_date` is computed once and stored on the Occasion row, and the
 -- nightly scheduler writes with skipDuplicates, so existing rows keep whatever
--- date they were given under the old rule. A contact whose birthday is 4 January
--- may already hold dispatch_date = 2026-12-23, computed when the seasonal window
+-- date they were given under the old rule. A contact whose birthday was 4 January
+-- held dispatch_date = 2026-12-23, computed when the seasonal window
 -- was matched against the occasion date instead of the posting date. Nothing in
--- the running system will move it.
+-- the running system would ever have moved it, which is why this script exists.
 --
 -- HOW THIS FILE WAS BUILT
 -- The mapping below is not a re-implementation of the rule in SQL. Every row is

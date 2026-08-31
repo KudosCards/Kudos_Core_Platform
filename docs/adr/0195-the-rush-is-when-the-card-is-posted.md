@@ -83,7 +83,21 @@ _adds_ to the base lead, so losing it still leaves five working days. Swept
 across two years of occasion dates, the minimum working-day gap between dispatch
 and occasion is exactly 5.
 
-### This one needs a backfill
+### This one needed a backfill — applied 31 August 2026
+
+`docs/ops/p2-17-dispatch-date-backfill.sql` carries the script, the evidence and
+the result: 111 occasions moved, matching the sizing forecast on every one of
+the 15 affected dates. 62 January occasions came off the 23-31 December peak;
+49 December occasions stopped posting earlier than they needed to. It does not
+need running again — occasions written after this change use the fixed rule.
+
+Note for anyone reading the sizing query below: it is narrower than the real
+exposure turned out to be. It looks only at January and stops at day 8, so it
+misses the 1-7 December occasions entirely and truncates the 2028 January range.
+The ops script has the full mapping, generated from the engine rather than
+written by hand.
+
+### The original note
 
 Unlike most of the fixes in this review, the change is not self-healing.
 `dispatchDate` is computed once and stored on the Occasion row, and the nightly
