@@ -223,5 +223,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0212 — Say what the upstream said](./0212-say-what-the-upstream-said.md)
 - [0213 — A grant that cannot sync is not a connection](./0213-a-grant-that-cannot-sync-is-not-a-connection.md)
 - [0214 — An import that cannot send a card is not a success](./0214-an-import-that-cannot-send-a-card-is-not-a-success.md)
+- [0215 — Two defects found auditing the weekend’s PRs](./0215-two-defects-found-auditing-the-weekend.md)
 
 <!-- adr-index:end -->

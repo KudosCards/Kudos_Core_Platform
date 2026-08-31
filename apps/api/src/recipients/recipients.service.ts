@@ -605,7 +605,7 @@ export class RecipientsService {
     >();
     const candidateNewRows: { rowNumber: number; recipient: Prisma.RecipientCreateManyInput }[] =
       [];
-    const toUpdate: { id: string; email: string | null }[] = [];
+    const toUpdate: { id: string; email: string | null; row: number }[] = [];
 
     for (const { rowNumber, parsed } of parsedRows) {
       const hasDistinguishingInfo = parsed.addressPostcode !== null || parsed.dateOfBirth !== null;
@@ -618,7 +618,7 @@ export class RecipientsService {
 
       const existing = hasDistinguishingInfo ? existingByKey.get(key) : undefined;
       if (existing) {
-        toUpdate.push({ id: existing.id, email: parsed.email ?? existing.email });
+        toUpdate.push({ id: existing.id, email: parsed.email ?? existing.email, row: rowNumber });
         summary.updated += 1;
         continue;
       }
@@ -712,9 +712,26 @@ export class RecipientsService {
     // matches. Two thousand simultaneous updates exhaust the connection pool
     // and stall every other request on the instance; they do not finish sooner.
     // See ADR 0207.
-    await mapWithConcurrency(toUpdate, RECIPIENT_UPDATE_CONCURRENCY, async ({ id, email }) => {
-      await this.prisma.recipient.update({ where: { id }, data: { email } });
+    //
+    // One failure must not abandon the rest. The creates above have already
+    // committed, so a rejection here would leave the customer with a 500 and a
+    // half-applied import — the shape of finding 9, whose sibling path
+    // (ingestFromSource) has caught per-row since ADR 0186. Reachable when a
+    // matched contact is deleted between the lookup and this write.
+    const emailFailures: { row: number; message: string }[] = [];
+    await mapWithConcurrency(toUpdate, RECIPIENT_UPDATE_CONCURRENCY, async ({ id, email, row }) => {
+      try {
+        await this.prisma.recipient.update({ where: { id }, data: { email } });
+      } catch (error) {
+        emailFailures.push({
+          row,
+          message: `Contact matched an existing one, but its email couldn't be updated (${
+            error instanceof Error ? error.message : "unknown error"
+          })`,
+        });
+      }
     });
+    summary.warnings.push(...emailFailures);
 
     // Newly imported recipients with a DOB get their birthday on the calendar
     // straight away, without waiting for the nightly scheduler.

@@ -42,6 +42,9 @@ describe("Recipients (e2e)", () => {
   /** Set by a test to inspect every Recipient.findMany the request issues. */
   /** Set by a test to measure how many Recipient.update calls overlap. */
   let watchRecipientUpdate: { enter: () => void; leave: () => void } | null = null;
+  /** Set by a test to make the Nth Recipient.update fail, the way a row deleted
+   * between the dedupe lookup and the write would. */
+  let failRecipientUpdates: number | null = null;
   let watchRecipientFindMany:
     ((args: { take?: number; where?: unknown } | undefined) => void) | null = null;
 
@@ -57,6 +60,15 @@ describe("Recipients (e2e)", () => {
       }
       if (watchRecipientFindMany && params.model === "Recipient" && params.action === "findMany") {
         watchRecipientFindMany(params.args as { take?: number; where?: unknown } | undefined);
+      }
+      if (
+        failRecipientUpdates !== null &&
+        failRecipientUpdates > 0 &&
+        params.model === "Recipient" &&
+        params.action === "update"
+      ) {
+        failRecipientUpdates -= 1;
+        throw Object.assign(new Error("Record to update not found."), { code: "P2025" });
       }
       if (watchRecipientUpdate && params.model === "Recipient" && params.action === "update") {
         const watcher = watchRecipientUpdate;
@@ -302,6 +314,48 @@ describe("Recipients (e2e)", () => {
 
     expect(peak).toBeGreaterThan(0);
     expect(peak).toBeLessThanOrEqual(8);
+  });
+
+  /**
+   * One failed row must not abandon the rest. The creates have already
+   * committed by this point, so a rejection here leaves the customer with a 500
+   * and a half-applied import — the shape of finding 9, which the CRM path has
+   * caught per-row since ADR 0186. See ADR 0215.
+   */
+  it("finishes a CSV import when one row's email update fails", async () => {
+    const { token } = await signUp();
+    const header = "firstName,lastName,postcode,email\n";
+    const rows = [0, 1, 2].map((i) => `Fail${i},Contact,SW2A ${i}AA,fail${i}@example.com`);
+    await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(header + rows.join("\n") + "\n"), "contacts.csv")
+      .expect(201);
+
+    // Re-upload with new emails so every row is an update, and break one.
+    failRecipientUpdates = 1;
+    try {
+      const changed = rows.map((row) => row.replace("@example.com", "@changed.test"));
+      const res = await request(app.getHttpServer())
+        .post("/recipients/import")
+        .set("Authorization", `Bearer ${token}`)
+        .attach("file", Buffer.from(header + changed.join("\n") + "\n"), "contacts.csv")
+        .expect(201);
+
+      const body = res.body as { warnings: { row: number; message: string }[] };
+      // The import completes and names the row whose email didn't refresh.
+      expect(body.warnings.some((w) => /email couldn't be updated/i.test(w.message))).toBe(true);
+    } finally {
+      failRecipientUpdates = null;
+    }
+
+    // And the other two did refresh — the failure was isolated, not fatal.
+    const listed = await request(app.getHttpServer())
+      .get("/recipients?perPage=50")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const emails = (listed.body as { items: { email: string | null }[] }).items.map((i) => i.email);
+    expect(emails.filter((e) => e?.endsWith("@changed.test"))).toHaveLength(2);
   });
 
   it("does not count a duplicate row within the file as an updated contact", async () => {

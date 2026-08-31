@@ -482,6 +482,7 @@ export class BatchOrdersService {
               await tx.occasion.findMany({
                 where: {
                   id: { in: [...reconciledByRecipient.values()].map((r) => r.occasionId) },
+                  accountId,
                   status: { in: [...OPEN_OCCASION_STATUSES] },
                 },
                 select: { id: true },
