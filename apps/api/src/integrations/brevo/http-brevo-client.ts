@@ -1,6 +1,7 @@
 import { BadGatewayException, UnauthorizedException } from "@nestjs/common";
 import { httpRequest } from "../../common/http-request";
 import type { CrmContactsResult } from "../crm-contacts-result";
+import { upstreamDetail, withUpstreamDetail } from "../upstream-detail";
 import type { BrevoClient, BrevoContact } from "./brevo-client";
 
 const BREVO_BASE_URL = "https://api.brevo.com/v3";
@@ -27,11 +28,14 @@ export class HttpBrevoClient implements BrevoClient {
       { headers: { "api-key": apiKey, accept: "application/json" } },
       { maxAttempts: CONTACTS_ATTEMPTS, label: "Brevo key check" },
     );
-    if (response.status === 401) {
-      throw new UnauthorizedException("Brevo rejected the API key");
-    }
     if (!response.ok) {
-      throw new BadGatewayException(`Brevo request failed (${response.status})`);
+      const detail = await upstreamDetail(response, { secrets: [apiKey] });
+      if (response.status === 401) {
+        throw new UnauthorizedException(withUpstreamDetail("Brevo rejected the API key", detail));
+      }
+      throw new BadGatewayException(
+        withUpstreamDetail(`Brevo request failed (${response.status})`, detail),
+      );
     }
   }
 
@@ -45,11 +49,14 @@ export class HttpBrevoClient implements BrevoClient {
         { maxAttempts: CONTACTS_ATTEMPTS, label: "Brevo contacts" },
       );
 
-      if (response.status === 401) {
-        throw new UnauthorizedException("Brevo rejected the API key");
-      }
       if (!response.ok) {
-        throw new BadGatewayException(`Brevo request failed (${response.status})`);
+        const detail = await upstreamDetail(response, { secrets: [apiKey] });
+        if (response.status === 401) {
+          throw new UnauthorizedException(withUpstreamDetail("Brevo rejected the API key", detail));
+        }
+        throw new BadGatewayException(
+          withUpstreamDetail(`Brevo request failed (${response.status})`, detail),
+        );
       }
 
       const body = (await response.json()) as BrevoContactsResponse;

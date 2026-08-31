@@ -83,6 +83,84 @@ describe("HttpGoHighLevelClient.fetchContacts", () => {
     expect(initOf(fetchSpy).signal).toBeInstanceOf(AbortSignal);
   });
 
+  /**
+   * The reason the upstream gave is the whole point of the error. A GoHighLevel
+   * connection failed nightly for five weeks saying only "rejected the access
+   * token" while the real cause — a Marketplace app sitting Disapproved — sat
+   * unread in the response body. See ADR 0212.
+   */
+  describe("says what GoHighLevel said", () => {
+    function errorResponse(status: number, body: string): Response {
+      return {
+        ok: false,
+        status,
+        headers: { get: () => null },
+        text: () => Promise.resolve(body),
+        json: () => Promise.resolve({}),
+      } as unknown as Response;
+    }
+
+    it("carries the upstream reason on a rejected contacts call", async () => {
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          errorResponse(401, '{"message":"This app is not authorised for this location"}'),
+        );
+
+      await expect(client.fetchContacts("token", "loc-1")).rejects.toThrow(
+        /not authorised for this location/i,
+      );
+    });
+
+    it("still says which of ours failed, so the line reads on its own", async () => {
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(errorResponse(401, '{"message":"app not live"}'));
+
+      await expect(client.fetchContacts("token", "loc-1")).rejects.toThrow(
+        /GoHighLevel rejected the access token/,
+      );
+    });
+
+    it("carries the reason on a non-401 failure too", async () => {
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(errorResponse(403, '{"message":"contacts.readonly scope missing"}'));
+
+      await expect(client.fetchContacts("token", "loc-1")).rejects.toThrow(
+        /contacts\.readonly scope missing/,
+      );
+    });
+
+    it("carries the reason when the authorization is refused", async () => {
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(errorResponse(400, '{"message":"invalid_grant: code expired"}'));
+
+      await expect(client.exchangeCode("code")).rejects.toThrow(/code expired/);
+    });
+
+    it("never echoes the access token back into the message", async () => {
+      // If the upstream quotes what we sent, that must not reach the customer's
+      // integrations page or the stored status.
+      const token = "ghl-access-token-abcdefghijklmnop";
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(errorResponse(401, `{"message":"Bad token ${token} supplied"}`));
+
+      await expect(client.fetchContacts(token, "loc-1")).rejects.toThrow(/\[redacted\]/);
+      await expect(client.fetchContacts(token, "loc-1")).rejects.not.toThrow(new RegExp(token));
+    });
+
+    it("falls back to the bare summary when there is no body to quote", async () => {
+      fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(errorResponse(401, ""));
+
+      await expect(client.fetchContacts("token", "loc-1")).rejects.toThrow(
+        /^GoHighLevel rejected the access token$/,
+      );
+    });
+  });
+
   it("retries a rate-limited page rather than failing the whole sync", async () => {
     fetchSpy = jest
       .spyOn(globalThis, "fetch")

@@ -1,6 +1,7 @@
 import { BadGatewayException, UnauthorizedException } from "@nestjs/common";
 import { httpRequest } from "../../common/http-request";
 import type { CrmContactsResult } from "../crm-contacts-result";
+import { upstreamDetail, withUpstreamDetail } from "../upstream-detail";
 import type { HubSpotClient, HubSpotContact, HubSpotTokens } from "./hubspot-client";
 
 const HUBSPOT_TOKEN_URL = "https://api.hubapi.com/oauth/v1/token";
@@ -72,12 +73,21 @@ export class HttpHubSpotClient implements HubSpotClient {
       { label: "HubSpot token" },
     );
 
-    if (response.status === 400 || response.status === 401 || response.status === 403) {
-      // HubSpot returns 400 for an invalid/expired code or refresh token.
-      throw new UnauthorizedException("HubSpot rejected the authorization");
-    }
     if (!response.ok) {
-      throw new BadGatewayException(`HubSpot token request failed (${response.status})`);
+      // Redacted: our own request carried these, and an upstream that quotes the
+      // request back would otherwise put them in a status the customer reads.
+      const detail = await upstreamDetail(response, {
+        secrets: [params.client_secret, params.refresh_token, params.code],
+      });
+      if (response.status === 400 || response.status === 401 || response.status === 403) {
+        // HubSpot returns 400 for an invalid/expired code or refresh token.
+        throw new UnauthorizedException(
+          withUpstreamDetail("HubSpot rejected the authorization", detail),
+        );
+      }
+      throw new BadGatewayException(
+        withUpstreamDetail(`HubSpot token request failed (${response.status})`, detail),
+      );
     }
 
     const body = (await response.json()) as HubSpotTokenResponse;
@@ -110,11 +120,16 @@ export class HttpHubSpotClient implements HubSpotClient {
         { maxAttempts: CONTACTS_ATTEMPTS, label: "HubSpot contacts" },
       );
 
-      if (response.status === 401) {
-        throw new UnauthorizedException("HubSpot rejected the access token");
-      }
       if (!response.ok) {
-        throw new BadGatewayException(`HubSpot contacts request failed (${response.status})`);
+        const detail = await upstreamDetail(response, { secrets: [accessToken] });
+        if (response.status === 401) {
+          throw new UnauthorizedException(
+            withUpstreamDetail("HubSpot rejected the access token", detail),
+          );
+        }
+        throw new BadGatewayException(
+          withUpstreamDetail(`HubSpot contacts request failed (${response.status})`, detail),
+        );
       }
 
       const body = (await response.json()) as HubSpotContactsPage;
