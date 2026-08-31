@@ -212,6 +212,113 @@ describe("DispatchReminderService", () => {
     expect(result.adminsEmailed).toBe(2);
   });
 
+  /**
+   * The reminder dedupes on a day key: one entry per day, and whoever writes it
+   * first is the one that emails. That key has to be the London day, because
+   * this is a London-scheduled job for a UK business — and for the seven months
+   * of BST a London day starts at 23:00 the previous day in UTC. See ADR 0211.
+   */
+  describe("the day the reminder is for", () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    /** Every notification payload a run handed to the notification centre. */
+    function payloads(spy: jest.Mock): { kind: string; entityId: string }[] {
+      return spy.mock.calls.map((call) => (call as [{ kind: string; entityId: string }])[0]);
+    }
+
+    /** Freeze the clock at an instant and run the reminder, returning the day
+     * key it recorded the run under. */
+    async function keyAt(instant: string): Promise<string> {
+      jest.useFakeTimers().setSystemTime(new Date(instant));
+      const { service, notifyAllAdmins } = build(busySummary, ["ops@kudos.test"]);
+      await service.runDispatchReminder();
+      return payloads(notifyAllAdmins)[0]!.entityId;
+    }
+
+    it("keys on the London day, not the UTC one, during BST", async () => {
+      // 23:30 UTC on 15 June is 00:30 on 16 June in London. The run belongs to
+      // the 16th — that is the working day whose cards it is chasing.
+      expect(await keyAt("2026-06-15T23:30:00.000Z")).toBe("2026-06-16");
+    });
+
+    it("keys the same as UTC in winter, when London is GMT", async () => {
+      expect(await keyAt("2026-01-15T23:30:00.000Z")).toBe("2026-01-15");
+      expect(await keyAt("2026-01-15T07:00:00.000Z")).toBe("2026-01-15");
+    });
+
+    it("does not suppress a run because a neighbouring London day shares its UTC date", async () => {
+      // The harm, end to end. A reminder late on one London evening and the
+      // next morning's are different days to everyone in the UK — but during
+      // BST they are the same UTC date, so a UTC key made the second one look
+      // like a repeat of the first. `notifyAllAdmins` returns false for a
+      // repeat, and the service then emails nobody at all.
+      const seen = new Set<string>();
+      const runAt = async (instant: string): Promise<boolean> => {
+        jest.useFakeTimers().setSystemTime(new Date(instant));
+        const { service, sendTransactional, notifyAllAdmins } = build(busySummary, [
+          "ops@kudos.test",
+        ]);
+        // Stand in for the real dedupe: a key already recorded wins.
+        notifyAllAdmins.mockImplementation((payload: { entityId: string }) => {
+          if (seen.has(payload.entityId)) return Promise.resolve(false);
+          seen.add(payload.entityId);
+          return Promise.resolve(true);
+        });
+        await service.runDispatchReminder();
+        return sendTransactional.mock.calls.length > 0;
+      };
+
+      // London Sunday 23:00 (an on-demand run), then London Monday 00:00.
+      expect(await runAt("2026-06-14T22:00:00.000Z")).toBe(true);
+      expect(await runAt("2026-06-14T23:00:00.000Z")).toBe(true);
+      expect([...seen].sort()).toEqual(["2026-06-14", "2026-06-15"]);
+    });
+
+    it("keys the super-admin escalation on the same London day", async () => {
+      // The escalation dedupes on its own entityId, so it needs the same day or
+      // it goes quiet on exactly the runs the digest does — and this is the
+      // louder of the two alerts.
+      jest.useFakeTimers().setSystemTime(new Date("2026-06-15T23:30:00.000Z"));
+      const { service, notifyAllAdmins } = build(
+        busySummary,
+        [{ email: "boss@kudos.test", role: "super_admin" }],
+        { escalateAfterWorkingDays: 2 },
+      );
+
+      const result = await service.runDispatchReminder();
+
+      expect(result.escalated).toBe(true);
+      const escalation = payloads(notifyAllAdmins).find(
+        (payload) => payload.kind === "dispatch_escalation",
+      );
+      expect(escalation?.entityId).toBe("2026-06-16");
+    });
+
+    it("still suppresses a genuine repeat within the same London day", async () => {
+      const seen = new Set<string>();
+      const runAt = async (instant: string): Promise<boolean> => {
+        jest.useFakeTimers().setSystemTime(new Date(instant));
+        const { service, sendTransactional, notifyAllAdmins } = build(busySummary, [
+          "ops@kudos.test",
+        ]);
+        notifyAllAdmins.mockImplementation((payload: { entityId: string }) => {
+          if (seen.has(payload.entityId)) return Promise.resolve(false);
+          seen.add(payload.entityId);
+          return Promise.resolve(true);
+        });
+        await service.runDispatchReminder();
+        return sendTransactional.mock.calls.length > 0;
+      };
+
+      expect(await runAt("2026-06-15T06:00:00.000Z")).toBe(true);
+      // Two hours later, same London day — the second must stay quiet.
+      expect(await runAt("2026-06-15T08:00:00.000Z")).toBe(false);
+      expect([...seen]).toEqual(["2026-06-15"]);
+    });
+  });
+
   it("the cron gate skips the run when disabled", async () => {
     const { service, mustShip } = build(busySummary, ["ops@kudos.test"], { enabled: false });
     await service.scheduledReminder();

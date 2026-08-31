@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
-import { londonHour, type DispatchReminderConfig } from "@kudos/shared-types";
+import { londonDay, londonHour, type DispatchReminderConfig } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
@@ -87,7 +87,15 @@ export class DispatchReminderService {
     // email. The `created` flag is a "first run wins" guard: if another API
     // instance already recorded today's entry, it also already emailed, so we
     // stop here to avoid duplicate sends.
-    const isoToday = new Date().toISOString().slice(0, 10);
+    //
+    // The day has to be London's, not UTC's — same reason as the send hour
+    // above. Through BST a London day begins at 23:00 the previous day in UTC,
+    // so a UTC key names the wrong day for seven months, and any two runs that
+    // straddle 23:00 UTC are told apart by the calendar everyone in the UK is
+    // reading while sharing one key here. When that happens the second run
+    // looks like a repeat: `notifyAllAdmins` answers false and the digest goes
+    // to nobody. See ADR 0211.
+    const today = londonDay(new Date());
     let created = true;
     try {
       created = await this.platformNotifications.notifyAllAdmins({
@@ -96,7 +104,7 @@ export class DispatchReminderService {
         body: this.notificationBody(summary, cfg),
         href: "/fulfillment",
         entityType: "dispatch_reminder",
-        entityId: isoToday,
+        entityId: today,
       });
     } catch (error) {
       // Losing the dedupe guard is better than losing the alert — fall through
@@ -119,7 +127,7 @@ export class DispatchReminderService {
         : 0;
     const escalationEmails = critical > 0 ? await this.adminEmails("super_admin") : [];
     const escalationsSent =
-      critical > 0 ? await this.escalate(summary, critical, cfg, isoToday, escalationEmails) : 0;
+      critical > 0 ? await this.escalate(summary, critical, cfg, today, escalationEmails) : 0;
 
     const allEmails = await this.adminEmails();
     if (allEmails.length === 0) {
@@ -187,7 +195,7 @@ export class DispatchReminderService {
     summary: MustShipSummary,
     critical: number,
     cfg: DispatchReminderConfig,
-    isoToday: string,
+    today: string,
     emails: string[],
   ): Promise<number> {
     try {
@@ -198,7 +206,7 @@ export class DispatchReminderService {
           body: `Overdue by ${cfg.escalateAfterWorkingDays}+ working days — needs attention now.`,
           href: "/fulfillment",
           entityType: "dispatch_escalation",
-          entityId: isoToday,
+          entityId: today,
         },
         { role: "super_admin" },
       );
