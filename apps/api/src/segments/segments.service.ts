@@ -44,11 +44,27 @@ const RECONCILABLE_STATUSES = ["scheduled", "pending_approval", "approved"] as c
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
+import { mapWithConcurrency } from "../common/map-with-concurrency";
 import { MISSING_ADDRESS_WHERE } from "../recipients/recipients.service";
 import { SEGMENT_PRESETS } from "./segment-presets";
 
 /** How many members to show in a segment's preview. */
 const SAMPLE_SIZE = 8;
+
+/**
+ * How many segment resolves the overview may have in flight at once.
+ *
+ * Each resolve is a transaction holding a pool connection, so this is how much
+ * of the pool one page load can take from everything else on the instance.
+ *
+ * Measured on a 40-saved-list account (45 resolves, 91 queries), warm, three
+ * runs each: unbounded peaks at 90 concurrent queries in ~46ms; at 24 it peaks
+ * at 48 in ~45ms; at 12, 24 in ~42ms; at 6, 12 in ~45ms; at 4, 8 in ~55ms.
+ * Wall-clock is flat from 6 upward — the parallelism above that was buying
+ * nothing and costing the pool everything. 6 sits at the point where the curve
+ * flattens.
+ */
+export const RESOLVE_CONCURRENCY = 6;
 
 /** Occasion-type display labels for the member preview line (server-side copy of
  * the web's OCCASION_TYPE_LABELS — kept tiny; only the recurring types appear). */
@@ -101,43 +117,71 @@ export class SegmentsService {
     private readonly entitlements: EntitlementsService,
   ) {}
 
-  /** Suggested presets + the account's saved segments, each resolved live. */
+  /**
+   * Suggested presets + the account's saved smart lists, each resolved live.
+   *
+   * Every resolve is its own database transaction, so the number of them in
+   * flight at once is the number of pool connections this one page load asks
+   * for. Unbounded, an account with 40 saved lists demanded 45 transactions —
+   * measured at 90 concurrent queries — and a handful of such loads is enough to
+   * saturate a pgBouncer transaction pool and time out requests that have
+   * nothing to do with this page. Bounded, the same load peaks at 12 and
+   * finishes in the same wall-clock; the parallelism was buying nothing.
+   *
+   * Presets and saved lists share one pass rather than two, so the ceiling is
+   * the ceiling — two bounded batches running concurrently would be twice it.
+   * See ADR 0210.
+   */
   async overview(accountId: string): Promise<SegmentsOverview> {
-    const [suggested, savedRows] = await Promise.all([
-      Promise.all(
-        SEGMENT_PRESETS.map(async (preset) => {
-          const { count, sample } = await this.resolve(accountId, preset.definition);
-          return {
-            id: null,
-            key: preset.key,
-            name: preset.name,
-            description: preset.description,
-            definition: preset.definition,
-            count,
-            sample,
-            suggested: true,
-          } satisfies SegmentSummary;
-        }),
-      ),
-      this.prisma.segment.findMany({ where: { accountId }, orderBy: { createdAt: "desc" } }),
-    ]);
+    // The row read is one indexed query over small rows; it is the resolving
+    // that costs, so this stays whole. The page needs every saved list anyway:
+    // it filters them client-side, counts them, and diffs them against the
+    // suggestions to decide which are still worth offering.
+    const savedRows = await this.prisma.segment.findMany({
+      where: { accountId },
+      orderBy: { createdAt: "desc" },
+    });
 
-    const saved = await Promise.all(
-      savedRows.map(async (row) => {
-        const definition = segmentDefinitionSchema.parse(row.definition);
-        const { count, sample } = await this.resolve(accountId, definition);
-        return {
-          id: row.id,
-          key: row.id,
-          name: row.name,
-          description: null,
-          definition,
-          count,
-          sample,
-          suggested: false,
-        } satisfies SegmentSummary;
-      }),
+    const jobs: { row: (typeof savedRows)[number] | null; definition: SegmentDefinition }[] = [
+      ...SEGMENT_PRESETS.map((preset) => ({ row: null, definition: preset.definition })),
+      ...savedRows.map((row) => ({
+        row,
+        definition: segmentDefinitionSchema.parse(row.definition),
+      })),
+    ];
+
+    const resolved = await mapWithConcurrency(jobs, RESOLVE_CONCURRENCY, (job) =>
+      this.resolve(accountId, job.definition),
     );
+
+    const suggested = SEGMENT_PRESETS.map((preset, index) => {
+      const { count, sample } = resolved[index]!;
+      return {
+        id: null,
+        key: preset.key,
+        name: preset.name,
+        description: preset.description,
+        definition: preset.definition,
+        count,
+        sample,
+        suggested: true,
+      } satisfies SegmentSummary;
+    });
+
+    const saved = savedRows.map((row, index) => {
+      const job = jobs[SEGMENT_PRESETS.length + index]!;
+      const { count, sample } = resolved[SEGMENT_PRESETS.length + index]!;
+      return {
+        id: row.id,
+        key: row.id,
+        name: row.name,
+        description: null,
+        definition: job.definition,
+        count,
+        sample,
+        suggested: false,
+      } satisfies SegmentSummary;
+    });
 
     return { suggested, saved };
   }
