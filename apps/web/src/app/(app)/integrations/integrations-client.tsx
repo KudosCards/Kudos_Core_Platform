@@ -451,12 +451,14 @@ export function IntegrationsClient({
   apiBaseUrl,
   connectedProvider,
   errorProvider,
+  errorReason,
 }: {
   initialKeys: AccountApiKey[];
   initialConnections: CrmConnection[];
   apiBaseUrl: string;
   connectedProvider: string | null;
   errorProvider: string | null;
+  errorReason: string | null;
 }) {
   const [keys, setKeys] = useState<AccountApiKey[]>(initialKeys);
   const [connections, setConnections] = useState<CrmConnection[]>(initialConnections);
@@ -479,7 +481,12 @@ export function IntegrationsClient({
     if (errorProvider) {
       return {
         tone: "bad",
-        text: `We couldn't connect ${labelFor(errorProvider)}. Please try again.`,
+        // A generic "please try again" is what sent one customer round the same
+        // failing loop five times. When we know which choice went wrong, say so.
+        text:
+          errorReason === "no_location"
+            ? `${labelFor(errorProvider)} gave us access to an agency rather than one of its sub-accounts, and an agency has no contacts to import. Connect again and choose the sub-account you want contacts from.`
+            : `We couldn't connect ${labelFor(errorProvider)}. Please try again.`,
       };
     }
     return null;

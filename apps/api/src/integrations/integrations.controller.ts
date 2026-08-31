@@ -34,6 +34,7 @@ import { ApiKeyGuard } from "./api-key.guard";
 import { ApiKeyThrottlerGuard } from "./api-key-throttler.guard";
 import {
   CrmConnectionsService,
+  UnusableGrantException,
   type CrmConnectionView,
   type CrmSyncResult,
 } from "./crm-connections.service";
@@ -224,8 +225,11 @@ export class IntegrationsController {
     // to our internal provider key before anything downstream uses it.
     const provider = OAUTH_CALLBACK_SLUG_ALIASES[providerParam] ?? providerParam;
     const webAppUrl = (this.config.get("WEB_APP_URL", { infer: true }) ?? "").replace(/\/$/, "");
-    const back = (status: string) =>
-      `${webAppUrl}/integrations?${status}=${encodeURIComponent(provider)}`;
+    // `reason` is optional and only set when we know something the page can act
+    // on — "which of the two choices to make next time" beats "it failed".
+    const back = (status: string, reason?: string) =>
+      `${webAppUrl}/integrations?${status}=${encodeURIComponent(provider)}` +
+      (reason ? `&reason=${encodeURIComponent(reason)}` : "");
 
     if (error || !code || !state) {
       res.redirect(back("error"));
@@ -242,7 +246,12 @@ export class IntegrationsController {
           callbackError instanceof Error ? callbackError.message : "unknown error"
         }`,
       );
-      res.redirect(back("error"));
+      res.redirect(
+        back(
+          "error",
+          callbackError instanceof UnusableGrantException ? callbackError.reason : undefined,
+        ),
+      );
     }
   }
 

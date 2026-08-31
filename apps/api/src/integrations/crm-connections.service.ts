@@ -54,13 +54,31 @@ type AuthType = "api_key" | "oauth";
 /** The CRMs we support and how each authenticates. Adding a provider is an entry
  * here plus its client + mapper — the ingest funnel is shared. */
 export const CRM_PROVIDERS = {
-  brevo: { authType: "api_key" },
-  hubspot: { authType: "oauth" },
-  gohighlevel: { authType: "oauth" },
-} as const satisfies Record<string, { authType: AuthType }>;
+  brevo: { authType: "api_key", needsExternalAccount: false },
+  hubspot: { authType: "oauth", needsExternalAccount: false },
+  // GoHighLevel scopes contacts to one location, so a grant without a locationId
+  // can never sync. Its consent screen offers the agency as well as the
+  // sub-accounts, and picking the agency yields exactly that. See ADR 0213.
+  gohighlevel: { authType: "oauth", needsExternalAccount: true },
+} as const satisfies Record<string, { authType: AuthType; needsExternalAccount: boolean }>;
 
 export type CrmProvider = keyof typeof CRM_PROVIDERS;
 export const SUPPORTED_PROVIDERS = Object.keys(CRM_PROVIDERS) as CrmProvider[];
+
+/**
+ * A grant that completed but cannot be used — the customer chose something the
+ * integration can't work with, and the only useful thing to tell them is which
+ * choice to make instead. Carries a `reason` so the callback redirect can send
+ * the page something better than "it failed".
+ */
+export class UnusableGrantException extends BadRequestException {
+  constructor(
+    readonly reason: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 /** How long a signed OAuth `state` stays valid (CSRF window). */
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -302,6 +320,19 @@ export class CrmConnectionsService {
     }
 
     const tokens = await this.oauthDescriptor(provider).client.exchangeCode(code);
+
+    // Refuse here rather than storing something that can never sync. The grant
+    // is real — tokens and all — but without the account it is scoped to there
+    // is nothing to fetch, and the old behaviour stored it as a healthy
+    // connection that failed every night with "please reconnect it": advice to
+    // repeat the very action that had just failed.
+    if (CRM_PROVIDERS[provider].needsExternalAccount && !tokens.externalAccountId) {
+      throw new UnusableGrantException(
+        "no_location",
+        `${provider} granted access to an agency rather than a sub-account, which has no contacts to import`,
+      );
+    }
+
     const tokenExpiresAt = new Date(Date.now() + tokens.expiresInSeconds * 1000);
 
     const connection = await this.prisma.crmConnection.upsert({
@@ -466,8 +497,12 @@ export class CrmConnectionsService {
     // persisted that locationId as externalAccountId at connect time.
     const locationId = connection.externalAccountId;
     if (!locationId) {
+      // Connections stored before the callback started refusing these. The old
+      // wording said only "please reconnect it", which is the action that had
+      // just failed — say which of the two choices to make instead.
       throw new BadRequestException(
-        "GoHighLevel connection is missing its location — please reconnect it",
+        "This GoHighLevel connection is to an agency, which has no contacts to import. " +
+          "Disconnect, connect again, and choose the sub-account you want contacts from.",
       );
     }
     const accessToken = await this.validAccessToken("gohighlevel", connection);

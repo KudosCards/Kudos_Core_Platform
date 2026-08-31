@@ -221,5 +221,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0210 — One page load should not take the whole pool](./0210-one-page-load-should-not-take-the-whole-pool.md)
 - [0211 — The reminder belongs to a London day](./0211-the-reminder-belongs-to-a-london-day.md)
 - [0212 — Say what the upstream said](./0212-say-what-the-upstream-said.md)
+- [0213 — A grant that cannot sync is not a connection](./0213-a-grant-that-cannot-sync-is-not-a-connection.md)
 
 <!-- adr-index:end -->
