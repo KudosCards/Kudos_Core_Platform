@@ -69,8 +69,11 @@ export const crmConnectionSchema = z.object({
 });
 export type CrmConnection = z.infer<typeof crmConnectionSchema>;
 
-/** The outcome of a CRM sync — the ingest summary plus how many were fetched. */
+/** The outcome of a CRM sync — the ingest summary plus how many were fetched,
+ * and whether the provider's paging cap cut the pull short (a partial import
+ * that must not be reported as a clean success). */
 export const crmSyncResultSchema = ingestResultSchema.extend({
   fetched: z.number().int().nonnegative(),
+  truncated: z.boolean(),
 });
 export type CrmSyncResult = z.infer<typeof crmSyncResultSchema>;

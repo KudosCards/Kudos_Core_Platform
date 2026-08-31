@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { httpRequest } from "../common/http-request";
 import type { Prisma } from "@prisma/client";
 import { deriveCardSlugBase, uniqueCardSlug } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -378,9 +379,14 @@ export class CatalogSyncService {
     externalId: string,
     image: NonNullable<CatalogCardRecord["frontImage"]>,
   ): Promise<string> {
-    const response = await fetch(image.url, {
-      signal: AbortSignal.timeout(IMAGE_DOWNLOAD_TIMEOUT_MS),
-    });
+    // The artwork download is a read of a signed Airtable attachment URL, so a
+    // rate-limited or briefly-broken response is worth another go rather than
+    // failing that card's sync for the night.
+    const response = await httpRequest(
+      image.url,
+      {},
+      { timeoutMs: IMAGE_DOWNLOAD_TIMEOUT_MS, maxAttempts: 3, label: "Airtable artwork" },
+    );
     if (!response.ok) {
       throw new Error(`Could not download artwork from Airtable (HTTP ${response.status})`);
     }

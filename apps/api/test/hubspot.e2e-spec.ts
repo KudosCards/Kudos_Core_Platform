@@ -32,6 +32,7 @@ const paginatedRecipientsSchema = z.object({
 
 const syncResultSchema = z.object({
   fetched: z.number(),
+  truncated: z.boolean(),
   created: z.number(),
   updated: z.number(),
   skipped: z.number(),
@@ -42,6 +43,9 @@ const startResultSchema = z.object({ url: z.string().url() });
 
 /** Mutable so a test can change what HubSpot "returns" and observe refreshes. */
 let hubspotContacts: HubSpotContact[] = [];
+/** Set by the truncation test: the portal held more contacts than the paging
+ * cap allowed the client to read. */
+let hubspotTruncated = false;
 let exchangeCalls = 0;
 let refreshCalls = 0;
 
@@ -65,7 +69,7 @@ const hubspotMock: HubSpotClient = {
       expiresInSeconds: 1800,
     });
   },
-  fetchContacts: () => Promise.resolve(hubspotContacts),
+  fetchContacts: () => Promise.resolve({ contacts: hubspotContacts, truncated: hubspotTruncated }),
 };
 
 function defaultHubSpotContacts(): HubSpotContact[] {
@@ -104,6 +108,7 @@ describe("CRM connections — HubSpot OAuth (e2e)", () => {
 
   beforeEach(() => {
     hubspotContacts = defaultHubSpotContacts();
+    hubspotTruncated = false;
     exchangeCalls = 0;
     refreshCalls = 0;
   });
@@ -219,6 +224,57 @@ describe("CRM connections — HubSpot OAuth (e2e)", () => {
       .expect(200);
     const parsed = paginatedRecipientsSchema.parse(listed.body);
     expect(parsed.items.every((item) => item.source === "hubspot")).toBe(true);
+  });
+
+  it("a portal past the paging cap reports a partial import, not a clean success", async () => {
+    // The review's scenario: a 12,000-contact portal whose first slice arrives.
+    // What used to happen is that the slice landed, the connection recorded
+    // "ok", and nobody ever learned the rest never came.
+    const { token, accountId } = await signUp();
+    await connectHubSpot(token);
+    hubspotTruncated = true;
+
+    const res = await request(app.getHttpServer())
+      .post("/integrations/connections/hubspot/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const result = syncResultSchema.parse(res.body);
+    expect(result.truncated).toBe(true);
+    // The contacts that did arrive are still imported — a partial import beats
+    // no import, as long as it says so.
+    expect(result.created).toBe(2);
+
+    const connection = await prisma.crmConnection.findFirstOrThrow({
+      where: { accountId, provider: "hubspot" },
+    });
+    expect(connection.lastSyncStatus).not.toBe("ok");
+    expect(connection.lastSyncStatus).toMatch(/partial/i);
+    // And the customer-facing connections list shows it, not a bare "ok".
+    const listed = await request(app.getHttpServer())
+      .get("/integrations/connections")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const hubspot = (listed.body as { provider: string; lastSyncStatus: string }[]).find(
+      (c) => c.provider === "hubspot",
+    );
+    expect(hubspot?.lastSyncStatus).toMatch(/partial/i);
+  });
+
+  it("a complete pull still reports a clean success", async () => {
+    const { token, accountId } = await signUp();
+    await connectHubSpot(token);
+
+    const res = await request(app.getHttpServer())
+      .post("/integrations/connections/hubspot/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect(syncResultSchema.parse(res.body).truncated).toBe(false);
+    const connection = await prisma.crmConnection.findFirstOrThrow({
+      where: { accountId, provider: "hubspot" },
+    });
+    expect(connection.lastSyncStatus).toBe("ok");
   });
 
   it("re-syncing the same contacts dedupes instead of duplicating", async () => {

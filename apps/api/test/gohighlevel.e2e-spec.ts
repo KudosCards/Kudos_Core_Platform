@@ -36,6 +36,7 @@ const paginatedRecipientsSchema = z.object({
 
 const syncResultSchema = z.object({
   fetched: z.number(),
+  truncated: z.boolean(),
   created: z.number(),
   updated: z.number(),
   skipped: z.number(),
@@ -47,6 +48,9 @@ const startResultSchema = z.object({ url: z.string().url() });
 /** Mutable so a test can change what GoHighLevel "returns" and observe refreshes
  * and the locationId the contacts fetch was scoped to. */
 let ghlContacts: GoHighLevelContact[] = [];
+/** Set by the truncation test: GoHighLevel had more contacts than the paging
+ * cap allowed the client to read. */
+let ghlTruncated = false;
 let exchangeCalls = 0;
 let refreshCalls = 0;
 let lastFetchLocationId: string | null = null;
@@ -75,7 +79,7 @@ const ghlMock: GoHighLevelClient = {
   },
   fetchContacts: (_accessToken, locationId) => {
     lastFetchLocationId = locationId;
-    return Promise.resolve(ghlContacts);
+    return Promise.resolve({ contacts: ghlContacts, truncated: ghlTruncated });
   },
 };
 
@@ -110,6 +114,7 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
 
   beforeEach(() => {
     ghlContacts = defaultGoHighLevelContacts();
+    ghlTruncated = false;
     exchangeCalls = 0;
     refreshCalls = 0;
     lastFetchLocationId = null;
@@ -224,6 +229,25 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
       .expect(200);
     const parsed = paginatedRecipientsSchema.parse(listed.body);
     expect(parsed.items.every((item) => item.source === "gohighlevel")).toBe(true);
+  });
+
+  it("a location past the paging cap records a partial sync, not ok", async () => {
+    // The GoHighLevel half of the same defect: what fits still lands, but the
+    // connection must stop telling the customer the import was complete.
+    const { token, accountId } = await signUp();
+    await connectGoHighLevel(token);
+    ghlTruncated = true;
+
+    const res = await request(app.getHttpServer())
+      .post("/integrations/connections/gohighlevel/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect(syncResultSchema.parse(res.body).truncated).toBe(true);
+    const stored = await prisma.crmConnection.findFirstOrThrow({
+      where: { accountId, provider: "gohighlevel" },
+    });
+    expect(stored.lastSyncStatus).toMatch(/partial/i);
   });
 
   it("re-syncing the same contacts dedupes instead of duplicating", async () => {

@@ -9,6 +9,8 @@
 
 export type RoyalMailPostageClass = "first_class" | "second_class";
 
+import { httpRequest } from "../common/http-request";
+
 export interface CreateShipmentInput {
   /** Our own reference for the shipment (the order number), echoed on RM. */
   orderReference: string;
@@ -101,6 +103,9 @@ export interface RoyalMailServiceCodes {
 
 /** A card in a standard envelope: Letter weight band, in grams. */
 const CARD_WEIGHT_GRAMS = 100;
+/** Tracking is a read, polled on a sweep: retrying a rate-limited or briefly
+ * broken response beats losing that card's update until the next sweep. */
+const TRACKING_ATTEMPTS = 3;
 
 /**
  * Map a raw Royal Mail tracking status string to our normalised delivery state.
@@ -144,28 +149,35 @@ export class HttpRoyalMailClient implements RoyalMailClient {
   }
 
   async createShipment(input: CreateShipmentInput): Promise<CreateShipmentResult> {
-    const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/api/v4/shipments`, {
-      method: "POST",
-      headers: {
-        Authorization: this.apiKey,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        shipmentType: "Delivery",
-        serviceCode: this.serviceCodeFor(input.postageClass),
-        shipmentReference: input.orderReference,
-        recipientContact: { name: input.recipientName },
-        recipientAddress: {
-          addressLine1: input.addressLine1,
-          ...(input.addressLine2 ? { addressLine2: input.addressLine2 } : {}),
-          city: input.city,
-          postcode: input.postcode,
-          countryCode: input.country,
+    // Deliberately no retry: Royal Mail may have booked the shipment and failed
+    // to answer, and a second attempt would book a second one — a second card in
+    // the post, at our cost. A failed booking is surfaced instead.
+    const response = await httpRequest(
+      `${this.baseUrl.replace(/\/$/, "")}/api/v4/shipments`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: this.apiKey,
+          "Content-Type": "application/json",
+          Accept: "application/json",
         },
-        packages: [{ weightInGrams: CARD_WEIGHT_GRAMS, packageType: "letter" }],
-      }),
-    });
+        body: JSON.stringify({
+          shipmentType: "Delivery",
+          serviceCode: this.serviceCodeFor(input.postageClass),
+          shipmentReference: input.orderReference,
+          recipientContact: { name: input.recipientName },
+          recipientAddress: {
+            addressLine1: input.addressLine1,
+            ...(input.addressLine2 ? { addressLine2: input.addressLine2 } : {}),
+            city: input.city,
+            postcode: input.postcode,
+            countryCode: input.country,
+          },
+          packages: [{ weightInGrams: CARD_WEIGHT_GRAMS, packageType: "letter" }],
+        }),
+      },
+      { label: "Royal Mail shipment" },
+    );
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
@@ -198,10 +210,11 @@ export class HttpRoyalMailClient implements RoyalMailClient {
     const url = `${this.baseUrl.replace(/\/$/, "")}/api/v4/shipments/${encodeURIComponent(
       trackingNumber,
     )}/tracking`;
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { Authorization: this.apiKey, Accept: "application/json" },
-    });
+    const response = await httpRequest(
+      url,
+      { method: "GET", headers: { Authorization: this.apiKey, Accept: "application/json" } },
+      { maxAttempts: TRACKING_ATTEMPTS, label: "Royal Mail tracking" },
+    );
 
     // Not-yet-tracked is a normal, transient state — not an error to surface.
     if (response.status === 404) {

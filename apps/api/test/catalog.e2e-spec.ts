@@ -444,6 +444,39 @@ describe("Catalog sync (e2e)", () => {
     spy.mockRestore();
   });
 
+  it("retries a rate-limited artwork download instead of losing the card's image", async () => {
+    // The artwork download is a read of a signed attachment URL. Before, a
+    // single 429 lost that card's image for the night; now it waits and asks
+    // again. See ADR 0209.
+    const externalId = `rec${randomUUID().slice(0, 14)}`;
+    activeCards = [
+      card({
+        externalId,
+        title: "Rate Limited Art",
+        frontImage: {
+          url: "https://airtable.test/rate-limited.png",
+          filename: "art.png",
+          contentType: "image/png",
+        },
+      }),
+    ];
+    fetchSpy.mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      headers: { get: () => null },
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+    });
+
+    const token = await opsToken();
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect(response.body).toMatchObject({ imagesCopied: 1 });
+    expect(uploadedPaths).toContain(`catalog/${externalId}.png`);
+  });
+
   it("does not deactivate anything when the fetch returns no cards", async () => {
     const externalId = `rec${randomUUID().slice(0, 14)}`;
     const token = await opsToken();

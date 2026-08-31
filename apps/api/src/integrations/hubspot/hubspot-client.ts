@@ -4,6 +4,8 @@
  * BREVO_CLIENT / CATALOG_SOURCE, since this build/test environment has no
  * network path to HubSpot. See docs/adr/0015-crm-integrations.md (Phase 3).
  */
+import type { CrmContactsResult } from "../crm-contacts-result";
+
 export const HUBSPOT_CLIENT = Symbol("HUBSPOT_CLIENT");
 
 /** HubSpot's OAuth authorization endpoint (where the user grants access). */
@@ -41,5 +43,8 @@ export interface HubSpotClient {
   /** Fetches every contact the token can see, requesting the given property
    * names (HubSpot only returns properties you ask for beyond a small default
    * set). Paginated internally. */
-  fetchContacts(accessToken: string, properties: string[]): Promise<HubSpotContact[]>;
+  fetchContacts(
+    accessToken: string,
+    properties: string[],
+  ): Promise<CrmContactsResult<HubSpotContact>>;
 }

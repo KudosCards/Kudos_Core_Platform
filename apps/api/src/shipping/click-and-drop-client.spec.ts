@@ -195,6 +195,38 @@ describe("HttpClickAndDropClient", () => {
     await expect(client.createOrder(ORDER)).rejects.toThrow(/errorsCount/);
   });
 
+  /**
+   * Retrying is not a blanket good. A create that the upstream already accepted
+   * and then failed to acknowledge would be queued twice on a retry — a second
+   * card in the post at our cost — so creates get one attempt and a clear error.
+   * A delete by identifier is idempotent, so it retries. See ADR 0209.
+   */
+  it("never retries a failed create — a second attempt would queue a second card", async () => {
+    fetchSpy = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(fakeResponse({ ok: false, status: 503, text: "upstream down" }));
+    const client = new HttpClickAndDropClient("key", BASE);
+
+    await expect(client.createOrder(ORDER)).rejects.toThrow(/503/);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives every request a deadline", async () => {
+    fetchSpy = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(fakeResponse({ ok: true, status: 200, json: { createdOrders: [] } }));
+    const client = new HttpClickAndDropClient("key", BASE);
+
+    await client.probe();
+    await client.createOrder(ORDER).catch(() => undefined);
+
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(1);
+    for (let i = 0; i < (fetchSpy.mock.calls as unknown[]).length; i += 1) {
+      const call = fetchSpy.mock.calls.at(i) as [string, RequestInit];
+      expect(call[1].signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+
   it("probe() does a read-only GET and reports status + body + endpoint + scheme", async () => {
     fetchSpy = jest
       .spyOn(globalThis, "fetch")
@@ -337,6 +369,22 @@ describe("HttpClickAndDropClient", () => {
 
       expect(fetchSpy).toHaveBeenCalledTimes(3);
       expect(result.cancelled).toEqual(identifiers);
+      expect(result.failed).toEqual([]);
+    });
+
+    it("retries a rate-limited delete — the refund has already happened", async () => {
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(fakeResponse({ ok: false, status: 429, text: "slow down" }))
+        .mockResolvedValueOnce(
+          fakeResponse({ ok: true, status: 200, json: { deletedOrders: ["ORD-1"] } }),
+        );
+      const client = new HttpClickAndDropClient("key", BASE);
+
+      const result = await client.cancelOrders(["ORD-1"]);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(result.cancelled).toEqual(["ORD-1"]);
       expect(result.failed).toEqual([]);
     });
 

@@ -15,6 +15,8 @@
 
 export type ClickAndDropPostageClass = "first_class" | "second_class";
 
+import { httpRequest } from "../common/http-request";
+
 export interface ClickAndDropOrderInput {
   /** Our own unique reference for this card (echoed on the Click & Drop order,
    * and the natural idempotency key — Click & Drop rejects a duplicate). */
@@ -134,6 +136,10 @@ export interface ClickAndDropServiceCodes {
  * API client's weight band. Letter (not Large Letter) is the cheaper Royal Mail
  * format our A6 cards qualify for — see docs/adr/0160-letter-format-cutoff-birthday-qr.md. */
 const CARD_WEIGHT_GRAMS = 100;
+/** A delete by identifier is idempotent, and the caller has already refunded the
+ * customer by the time it runs — a rate-limited response is worth retrying
+ * rather than reporting a card as still live when it needn't be. */
+const CANCEL_ATTEMPTS = 3;
 const PACKAGE_FORMAT = "letter";
 
 /**
@@ -329,7 +335,9 @@ export class HttpClickAndDropClient implements ClickAndDropClient {
   async probe(): Promise<ClickAndDropProbeResult> {
     const endpoint = this.ordersUrl();
     try {
-      const response = await fetch(endpoint, {
+      // A diagnostic an operator is watching: answer quickly, don't sit through
+      // retries, and report exactly what came back.
+      const response = await httpRequest(endpoint, {
         method: "GET",
         headers: { Authorization: this.authHeader(), Accept: "application/json" },
       });
@@ -380,10 +388,14 @@ export class HttpClickAndDropClient implements ClickAndDropClient {
       const batch = orderIdentifiers.slice(i, i + CANCEL_BATCH_SIZE);
       const endpoint = `${this.ordersUrl()}/${batch.map(encodeURIComponent).join(",")}`;
       try {
-        const response = await fetch(endpoint, {
-          method: "DELETE",
-          headers: { Authorization: this.authHeader(), Accept: "application/json" },
-        });
+        const response = await httpRequest(
+          endpoint,
+          {
+            method: "DELETE",
+            headers: { Authorization: this.authHeader(), Accept: "application/json" },
+          },
+          { maxAttempts: CANCEL_ATTEMPTS, label: "Click & Drop cancel" },
+        );
         const rawBody = await response.text().catch(() => "");
         if (!response.ok) {
           const reason = `Click & Drop delete failed — DELETE ${endpoint} (${response.status}): ${rawBody.slice(0, 300)}`;
@@ -413,40 +425,47 @@ export class HttpClickAndDropClient implements ClickAndDropClient {
     const shippingCostCharged = 0;
     const total = subtotal + shippingCostCharged;
     const endpoint = this.ordersUrl();
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: this.authHeader(),
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        items: [
-          {
-            orderReference: input.orderReference,
-            recipient: {
-              address: {
-                fullName: input.recipientName,
-                addressLine1: input.addressLine1,
-                ...(input.addressLine2 ? { addressLine2: input.addressLine2 } : {}),
-                city: input.city,
-                postcode: input.postcode,
-                countryCode: input.country,
+    // Deliberately no retry: Click & Drop may have queued the order and failed
+    // to answer, and a second attempt would queue a second one — a second card
+    // in the post. A failed create is surfaced instead.
+    const response = await httpRequest(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          Authorization: this.authHeader(),
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          items: [
+            {
+              orderReference: input.orderReference,
+              recipient: {
+                address: {
+                  fullName: input.recipientName,
+                  addressLine1: input.addressLine1,
+                  ...(input.addressLine2 ? { addressLine2: input.addressLine2 } : {}),
+                  city: input.city,
+                  postcode: input.postcode,
+                  countryCode: input.country,
+                },
               },
+              packages: [
+                { weightInGrams: CARD_WEIGHT_GRAMS, packageFormatIdentifier: PACKAGE_FORMAT },
+              ],
+              orderDate: input.orderDate,
+              subtotal,
+              shippingCostCharged,
+              total,
+              currencyCode: "GBP",
+              ...(serviceCode ? { postageDetails: { serviceCode } } : {}),
             },
-            packages: [
-              { weightInGrams: CARD_WEIGHT_GRAMS, packageFormatIdentifier: PACKAGE_FORMAT },
-            ],
-            orderDate: input.orderDate,
-            subtotal,
-            shippingCostCharged,
-            total,
-            currencyCode: "GBP",
-            ...(serviceCode ? { postageDetails: { serviceCode } } : {}),
-          },
-        ],
-      }),
-    });
+          ],
+        }),
+      },
+      { label: "Click & Drop order" },
+    );
 
     // Read the body once as text and keep it, so the real Click & Drop reason is
     // never lost — whatever shape (or non-shape) it arrives in.
