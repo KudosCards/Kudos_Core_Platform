@@ -82,6 +82,53 @@ describe("HttpBrevoClient.fetchContacts", () => {
     }
   });
 
+  /**
+   * The reason the upstream gave is the whole point of the error — see ADR 0212
+   * for the five weeks that cost us on the GoHighLevel side.
+   */
+  describe("says what Brevo said", () => {
+    function errorResponse(status: number, body: string): Response {
+      return {
+        ok: false,
+        status,
+        headers: { get: () => null },
+        text: () => Promise.resolve(body),
+        json: () => Promise.resolve({}),
+      } as unknown as Response;
+    }
+
+    it("carries the upstream reason on a rejected contacts call", async () => {
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(errorResponse(401, '{"message":"Key not found or disabled"}'));
+
+      await expect(client.fetchContacts("key")).rejects.toThrow(/Key not found or disabled/);
+    });
+
+    it("carries the reason from the cheap key check too", async () => {
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(errorResponse(401, '{"message":"Key not found or disabled"}'));
+
+      await expect(client.verifyKey("key")).rejects.toThrow(/Key not found or disabled/);
+    });
+
+    it("never echoes the API key back into the message", async () => {
+      const apiKey = "xkeysib-abcdefghijklmnopqrstuvwxyz";
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(errorResponse(401, `{"message":"Key ${apiKey} is disabled"}`));
+
+      await expect(client.fetchContacts(apiKey)).rejects.toThrow(/\[redacted\]/);
+    });
+
+    it("falls back to the bare summary when there is no body to quote", async () => {
+      fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(errorResponse(401, ""));
+
+      await expect(client.fetchContacts("key")).rejects.toThrow(/^Brevo rejected the API key$/);
+    });
+  });
+
   it("retries a rate-limited page rather than failing the whole sync", async () => {
     fetchSpy = jest
       .spyOn(globalThis, "fetch")

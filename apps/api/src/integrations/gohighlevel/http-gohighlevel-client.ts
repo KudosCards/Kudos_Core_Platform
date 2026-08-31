@@ -1,6 +1,7 @@
 import { BadGatewayException, UnauthorizedException } from "@nestjs/common";
 import { httpRequest } from "../../common/http-request";
 import type { CrmContactsResult } from "../crm-contacts-result";
+import { upstreamDetail, withUpstreamDetail } from "../upstream-detail";
 import type { OAuthTokens } from "../oauth-crm-client";
 import type { GoHighLevelClient, GoHighLevelContact } from "./gohighlevel-client";
 
@@ -81,11 +82,21 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
       { label: "GoHighLevel token" },
     );
 
-    if (response.status === 400 || response.status === 401 || response.status === 403) {
-      throw new UnauthorizedException("GoHighLevel rejected the authorization");
-    }
     if (!response.ok) {
-      throw new BadGatewayException(`GoHighLevel token request failed (${response.status})`);
+      // The secrets go in redacted: our own request carried them, and an upstream
+      // that quotes the request back would otherwise put them in a stored status
+      // the customer can read.
+      const detail = await upstreamDetail(response, {
+        secrets: [params.client_secret, params.refresh_token, params.code],
+      });
+      if (response.status === 400 || response.status === 401 || response.status === 403) {
+        throw new UnauthorizedException(
+          withUpstreamDetail("GoHighLevel rejected the authorization", detail),
+        );
+      }
+      throw new BadGatewayException(
+        withUpstreamDetail(`GoHighLevel token request failed (${response.status})`, detail),
+      );
     }
 
     const body = (await response.json()) as GoHighLevelTokenResponse;
@@ -118,11 +129,16 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
         { maxAttempts: CONTACTS_ATTEMPTS, label: "GoHighLevel contacts" },
       );
 
-      if (response.status === 401) {
-        throw new UnauthorizedException("GoHighLevel rejected the access token");
-      }
       if (!response.ok) {
-        throw new BadGatewayException(`GoHighLevel contacts request failed (${response.status})`);
+        const detail = await upstreamDetail(response, { secrets: [accessToken] });
+        if (response.status === 401) {
+          throw new UnauthorizedException(
+            withUpstreamDetail("GoHighLevel rejected the access token", detail),
+          );
+        }
+        throw new BadGatewayException(
+          withUpstreamDetail(`GoHighLevel contacts request failed (${response.status})`, detail),
+        );
       }
 
       const body = (await response.json()) as GoHighLevelContactsPage;

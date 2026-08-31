@@ -220,5 +220,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0209 — Every outbound call gets a deadline, and a partial import says so](./0209-every-outbound-call-gets-a-deadline-and-a-partial-import-says-so.md)
 - [0210 — One page load should not take the whole pool](./0210-one-page-load-should-not-take-the-whole-pool.md)
 - [0211 — The reminder belongs to a London day](./0211-the-reminder-belongs-to-a-london-day.md)
+- [0212 — Say what the upstream said](./0212-say-what-the-upstream-said.md)
 
 <!-- adr-index:end -->

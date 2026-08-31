@@ -89,6 +89,62 @@ describe("HttpHubSpotClient.fetchContacts", () => {
     expect(initOf(fetchSpy).signal).toBeInstanceOf(AbortSignal);
   });
 
+  /**
+   * The reason the upstream gave is the whole point of the error — see ADR 0212
+   * for the five weeks that cost us on the GoHighLevel side.
+   */
+  describe("says what HubSpot said", () => {
+    function errorResponse(status: number, body: string): Response {
+      return {
+        ok: false,
+        status,
+        headers: { get: () => null },
+        text: () => Promise.resolve(body),
+        json: () => Promise.resolve({}),
+      } as unknown as Response;
+    }
+
+    it("carries the upstream reason on a rejected contacts call", async () => {
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          errorResponse(
+            401,
+            '{"message":"This app has not been granted crm.objects.contacts.read"}',
+          ),
+        );
+
+      await expect(client.fetchContacts("token", ["email"])).rejects.toThrow(
+        /crm\.objects\.contacts\.read/,
+      );
+    });
+
+    it("carries the reason when the authorization is refused", async () => {
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(errorResponse(400, '{"message":"authorization code expired"}'));
+
+      await expect(client.exchangeCode("code")).rejects.toThrow(/authorization code expired/);
+    });
+
+    it("never echoes the access token back into the message", async () => {
+      const token = "hubspot-access-token-abcdefghij";
+      fetchSpy = jest
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(errorResponse(401, `{"message":"Bad token ${token}"}`));
+
+      await expect(client.fetchContacts(token, ["email"])).rejects.toThrow(/\[redacted\]/);
+    });
+
+    it("falls back to the bare summary when there is no body to quote", async () => {
+      fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(errorResponse(401, ""));
+
+      await expect(client.fetchContacts("token", ["email"])).rejects.toThrow(
+        /^HubSpot rejected the access token$/,
+      );
+    });
+  });
+
   it("retries a rate-limited contacts page rather than failing the whole sync", async () => {
     fetchSpy = jest
       .spyOn(globalThis, "fetch")
