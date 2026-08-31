@@ -71,28 +71,37 @@ goes back to resolved.
 
 The review called the erased `resolvedAt` "permanently unrecoverable". It is
 recoverable for tickets resolved through the ops path, because that path writes
-an audit entry naming the status it moved to, and audit entries are timestamped:
+an audit entry naming the status it moved to, and audit entries are timestamped
+and never pruned.
 
-```sql
-UPDATE support_tickets t
-SET resolved_at = a.created_at
-FROM (
-  SELECT DISTINCT ON (target_id) target_id, created_at
-  FROM audit_log_entries
-  WHERE target_type = 'SupportTicket'
-    AND action = 'support_ticket_updated'
-    AND metadata->>'status' = 'resolved'
-  ORDER BY target_id, created_at ASC
-) a
-WHERE t.id = a.target_id
-  AND t.resolved_at IS NULL
-  AND t.closed_at IS NOT NULL;
-```
+The recovery is not, however, "find a `resolved` entry and copy its timestamp".
+Some tickets have one in their history and should still have a null
+`resolvedAt` today, because something later legitimately cleared it — the
+customer replied, or ops moved the ticket back to `open`/`awaiting_customer`.
+Under the rule above, a stamp records that the ticket reached a state _and has
+not gone back behind it_, so a ticket resolved, reopened, then closed without
+being resolved again has no resolution time to restore, and writing one would
+invent data. A ticket resolved, reopened, and resolved again should carry the
+_later_ resolution, because that is what the fixed code writes.
 
-`DISTINCT ON … ORDER BY created_at ASC` takes the _first_ time each ticket was
-resolved, which is the resolution time worth keeping when a ticket was resolved,
-reopened and resolved again. Run the `SELECT` on its own first to see what it
-would touch.
+So the recovery replays the events that move the stamp and asks what the last
+one did, restoring a timestamp only when that last event is a resolution.
+
+The query lives in `docs/ops/p2-18-support-resolved-at-recovery.sql`, in
+numbered steps with two read-only previews before the single write. It was
+checked by replaying eight ticket lifecycles against a real Postgres and
+comparing its output to what the fixed code would have left behind; five
+mutations of it were each caught by that fixture.
+
+An earlier version of this ADR carried a one-shot `UPDATE` that took the
+_first_ `resolved` audit entry for any ticket with a null `resolvedAt` and a
+non-null `closedAt`. Tested against those eight lifecycles it is wrong on
+three: it resurrects a stamp on a ticket the customer reopened by replying, it
+resurrects one on a ticket ops moved back to `awaiting_customer`, and where a
+ticket was resolved twice it restores the first resolution rather than the
+second — which contradicts the table above, in the same document. It was
+written by reasoning about the schema rather than by running it. The ops file
+replaces it.
 
 This is offered, not applied: it is a data change to production, and it is the
 account owner's call.
