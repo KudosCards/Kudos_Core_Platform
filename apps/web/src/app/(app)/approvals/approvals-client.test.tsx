@@ -24,6 +24,11 @@ describe("ApprovalsClient", () => {
       id: `occ-${i}`,
       type: "birthday",
       occasionDate: new Date(Date.now() + (i + 3) * 86_400_000).toISOString(),
+      // A queue row carries the dispatch date it was scheduled with. Approving
+      // for auto-send re-times it server-side, so this value is what a stale
+      // "Posts around" line would show — without it here, a test asserting that
+      // line stays away passes whether or not the code keeps the old date.
+      dispatchDate: new Date(Date.now() + (i + 1) * 86_400_000).toISOString(),
       status: "pending_approval",
       recipient: { id: `r-${i}`, firstName: "Child", lastName: `Number${i}` },
     }) as unknown as OccasionWithRecipient;
@@ -59,7 +64,7 @@ describe("ApprovalsClient", () => {
   beforeEach(() => fetchMock.mockReset());
 
   const rowFor = (i: number) =>
-    screen.getByText(`Child Number${i}`).closest(".card") as HTMLElement;
+    screen.getByText(`Child Number${i}`, { selector: "p" }).closest(".card") as HTMLElement;
 
   it("offers a way back the moment something is skipped", async () => {
     // The whole point. Before this the row simply vanished and the occasion was
@@ -245,6 +250,77 @@ describe("ApprovalsClient", () => {
       await tickAllWithDesign();
 
       expect(screen.queryByRole("checkbox", { name: /Auto-send them/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("what an approved auto-send card says about itself", () => {
+    it("shows the design it was actually approved with, not a placeholder", async () => {
+      // The scheduled list renders designName(occasion.savedDesignId). Pushing
+      // the pre-approval object leaves that null, so a card approved with "Well
+      // Done" described itself as "your chosen design".
+      fetchMock.mockResolvedValue({ approvedIds: ["occ-0", "occ-1"], failed: [] });
+      setup(2, 2, true);
+      await tickAllWithDesign("d2");
+      await userEvent.click(screen.getByRole("checkbox", { name: /Auto-send them/ }));
+
+      await userEvent.click(screen.getByRole("button", { name: /Approve & auto-send 2/ }));
+
+      await waitFor(() => expect(screen.getAllByText(/Auto-send on/).length).toBeGreaterThan(0));
+      expect(screen.getAllByText(/Well Done/).length).toBeGreaterThan(0);
+      expect(screen.queryByText(/your chosen design/)).not.toBeInTheDocument();
+    });
+
+    it("says nothing about when it posts rather than saying the wrong day", async () => {
+      // Approving for auto-send re-times the dispatch date to the postage class
+      // server-side. The client does not know the new one, and the old one is no
+      // longer true — so the "Posts around" line stays away rather than naming a
+      // date the card will not go out on.
+      fetchMock.mockResolvedValue({ approvedIds: ["occ-0", "occ-1"], failed: [] });
+      setup(2, 2, true);
+      await tickAllWithDesign();
+      await userEvent.click(screen.getByRole("checkbox", { name: /Auto-send them/ }));
+
+      await userEvent.click(screen.getByRole("button", { name: /Approve & auto-send 2/ }));
+
+      await waitFor(() => expect(screen.getAllByText(/Auto-send on/).length).toBeGreaterThan(0));
+      expect(screen.queryByText(/Posts around/)).not.toBeInTheDocument();
+    });
+
+    it("puts a singly approved auto-send card in the same list as a bulk one", async () => {
+      // The two paths disagreed: bulk added the card to "Approved and waiting"
+      // and the row-level Approve button did not, so a single auto-send approval
+      // vanished from every list on the page until a reload. That is the class
+      // review finding 23 was about — advancing a card removing it from views
+      // where it belongs.
+      fetchMock.mockResolvedValue({});
+      setup(1, 1, true);
+      await userEvent.selectOptions(within(rowFor(0)).getByRole("combobox"), "d2");
+      await userEvent.click(within(rowFor(0)).getByRole("checkbox", { name: /Auto-send/ }));
+
+      await userEvent.click(within(rowFor(0)).getByRole("button", { name: "Approve & auto-send" }));
+
+      await waitFor(() => expect(screen.getAllByText(/Auto-send on/).length).toBeGreaterThan(0));
+      expect(screen.getAllByText(/Well Done/).length).toBeGreaterThan(0);
+    });
+
+    it("stops naming a failure once that row has left the queue", async () => {
+      fetchMock.mockResolvedValue({
+        approvedIds: ["occ-0"],
+        failed: [{ occasionId: "occ-1", recipientName: "Child Number1", reason: "No address" }],
+      });
+      setup(2);
+      await tickAllWithDesign();
+      await userEvent.click(screen.getByRole("button", { name: "Approve 2 selected" }));
+      await waitFor(() => expect(screen.getByText(/1 could not be approved/)).toBeInTheDocument());
+
+      // Skipping the offending row takes it out of the queue; the notice must
+      // not keep naming somebody who is no longer on the page.
+      fetchMock.mockResolvedValue({});
+      await userEvent.click(within(rowFor(1)).getByRole("button", { name: "Skip" }));
+
+      await waitFor(() =>
+        expect(screen.queryByText(/could not be approved/)).not.toBeInTheDocument(),
+      );
     });
   });
 });
