@@ -159,6 +159,9 @@ export function DispatchReminderSetup() {
           <p className="text-xs text-muted">
             Cards overdue by the escalation threshold get a louder alert to super admins. A “Send
             now” order placed at or after the same-day cut-off (UK time) posts the next working day.
+            The cut-off also closes the digest’s window: if the send time is missed — a deploy, a
+            restart — it goes out on the next hour up to the cut-off, and only once a day either
+            way.
           </p>
 
           <div className="flex flex-wrap items-center gap-2">

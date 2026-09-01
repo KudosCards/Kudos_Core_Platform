@@ -343,4 +343,106 @@ describe("DispatchReminderService", () => {
     await service.scheduledReminder();
     expect(mustShip).toHaveBeenCalled();
   });
+
+  describe("catching up after a missed tick", () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    /** Freeze the clock at a London hour on a winter weekday — GMT, so the
+     * London hour and the UTC hour agree and these read as written. */
+    function atLondonHour(hour: number) {
+      const hh = String(hour).padStart(2, "0");
+      jest.useFakeTimers().setSystemTime(new Date(`2026-01-15T${hh}:00:00.000Z`));
+    }
+
+    it("still sends the digest when the send hour's own tick was missed", async () => {
+      // The cron fires hourly and the gate kept exactly one tick a day. If the
+      // API is restarting when that tick lands — a deploy spanning 07:00 — the
+      // day's digest was lost outright, and the failure is silence on the one
+      // alert whose whole job is to arrive.
+      atLondonHour(8);
+      const { service, mustShip } = build(busySummary, ["ops@kudos.test"], {
+        sendHourLondon: 7,
+        sameDayCutoffHour: 15,
+      });
+
+      await service.scheduledReminder();
+
+      expect(mustShip).toHaveBeenCalled();
+    });
+
+    it("does not run before the send hour", async () => {
+      atLondonHour(6);
+      const { service, mustShip } = build(busySummary, ["ops@kudos.test"], {
+        sendHourLondon: 7,
+        sameDayCutoffHour: 15,
+      });
+
+      await service.scheduledReminder();
+
+      expect(mustShip).not.toHaveBeenCalled();
+    });
+
+    it("catches up at the same-day cut-off but not past it", async () => {
+      // After the cut-off nothing posted today still makes today's post, so a
+      // digest then is asking for something that can no longer happen.
+      const runAt = async (hour: number): Promise<boolean> => {
+        atLondonHour(hour);
+        const { service, mustShip } = build(busySummary, ["ops@kudos.test"], {
+          sendHourLondon: 7,
+          sameDayCutoffHour: 15,
+        });
+        await service.scheduledReminder();
+        return mustShip.mock.calls.length > 0;
+      };
+
+      expect(await runAt(15)).toBe(true);
+      expect(await runAt(16)).toBe(false);
+      expect(await runAt(23)).toBe(false);
+    });
+
+    it("still runs at a send hour later than the cut-off", async () => {
+      // A degenerate but permitted config: both hours are independently 0-23,
+      // so an operator can set a send hour after the cut-off. The window must
+      // collapse to the send hour rather than to nothing at all.
+      atLondonHour(17);
+      const { service, mustShip } = build(busySummary, ["ops@kudos.test"], {
+        sendHourLondon: 17,
+        sameDayCutoffHour: 15,
+      });
+
+      await service.scheduledReminder();
+
+      expect(mustShip).toHaveBeenCalled();
+    });
+
+    it("sends one digest a day, not one an hour, across the catch-up window", async () => {
+      // The catch-up leans entirely on the London-day dedupe. Without it, a
+      // window instead of an instant would mean a digest every hour until the
+      // cut-off.
+      const seen = new Set<string>();
+      const runAt = async (hour: number): Promise<boolean> => {
+        atLondonHour(hour);
+        const { service, sendTransactional, notifyAllAdmins } = build(
+          busySummary,
+          ["ops@kudos.test"],
+          { sendHourLondon: 7, sameDayCutoffHour: 15 },
+        );
+        notifyAllAdmins.mockImplementation((payload: { entityId: string }) => {
+          if (seen.has(payload.entityId)) return Promise.resolve(false);
+          seen.add(payload.entityId);
+          return Promise.resolve(true);
+        });
+        await service.scheduledReminder();
+        return sendTransactional.mock.calls.length > 0;
+      };
+
+      expect(await runAt(7)).toBe(true);
+      for (const hour of [8, 9, 10, 11, 12, 13, 14, 15]) {
+        expect(await runAt(hour)).toBe(false);
+      }
+      expect([...seen]).toEqual(["2026-01-15"]);
+    });
+  });
 });
