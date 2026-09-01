@@ -99,6 +99,34 @@ export function ApprovalsClient({
     });
   }
 
+  /**
+   * Move a card that has just been approved for auto-send into "Approved and
+   * waiting", carrying only what the client actually knows.
+   *
+   * `savedDesignId` is the design it was approved with, so the row names it
+   * rather than falling back to "your chosen design". `dispatchDate` is
+   * deliberately null: approving for auto-send re-times it to the postage class
+   * server-side, and the pre-approval date the queue was holding is no longer
+   * the day the card goes out. The "Posts around" line is guarded on that field,
+   * so it stays away rather than naming a day that will not happen.
+   *
+   * Shared because the row-level Approve did not do this at all, so a single
+   * auto-send approval left the queue and appeared nowhere until a reload — the
+   * class review finding 23 was about.
+   */
+  function scheduleApproved(occasion: OccasionWithRecipient, savedDesignId: string) {
+    setScheduledSends((current) => [
+      {
+        ...occasion,
+        status: "approved",
+        dispatchOption: "auto_send",
+        savedDesignId,
+        dispatchDate: null,
+      } as OccasionWithRecipient,
+      ...current,
+    ]);
+  }
+
   function toggleTick(id: string) {
     setTicked((current) => {
       const next = new Set(current);
@@ -127,6 +155,7 @@ export function ApprovalsClient({
         }),
       });
       removeFromList(occasion.id);
+      if (autoSend) scheduleApproved(occasion, savedDesignId);
     } catch (approveError) {
       setError(approveError instanceof ApiError ? approveError.message : "Could not approve");
     } finally {
@@ -186,7 +215,9 @@ export function ApprovalsClient({
       setTicked((current) => new Set([...current].filter((id) => !approved.has(id))));
       setBulkFailures(result.failed);
       if (bulkAutoSend) {
-        setScheduledSends((current) => [...chosen.filter((o) => approved.has(o.id)), ...current]);
+        for (const occasion of chosen.filter((o) => approved.has(o.id))) {
+          scheduleApproved(occasion, bulkDesignId);
+        }
       }
     } catch (approveError) {
       setError(approveError instanceof ApiError ? approveError.message : "Could not approve");
@@ -254,6 +285,17 @@ export function ApprovalsClient({
       setPendingAction(null);
     }
   }
+
+  /**
+   * The failures still worth showing: those whose row is still in the queue.
+   *
+   * A notice naming somebody the reader has since skipped or approved describes
+   * a page that no longer exists. Derived rather than cleared on every action,
+   * so there is no list to forget to prune.
+   */
+  const visibleFailures = bulkFailures.filter((failure) =>
+    occasions.some((occasion) => occasion.id === failure.occasionId),
+  );
 
   function designName(savedDesignId: string | null): string {
     return savedDesigns.find((d) => d.id === savedDesignId)?.name ?? "your chosen design";
@@ -395,13 +437,13 @@ export function ApprovalsClient({
       {/* Named, not counted. A bulk action that reports "3 failed" leaves the
           reader knowing something is wrong and with no way to act on it — these
           rows are still in the queue above, waiting to be fixed. */}
-      {bulkFailures.length > 0 && (
+      {visibleFailures.length > 0 && (
         <div className="notice notice-warning flex flex-col gap-1 text-sm">
           <p className="font-medium">
-            {bulkFailures.length} could not be approved — the rest went through.
+            {visibleFailures.length} could not be approved — the rest went through.
           </p>
           <ul className="list-inside list-disc">
-            {bulkFailures.map((failure) => (
+            {visibleFailures.map((failure) => (
               <li key={failure.occasionId}>
                 <strong>{failure.recipientName ?? "This card"}</strong> — {failure.reason}
               </li>
