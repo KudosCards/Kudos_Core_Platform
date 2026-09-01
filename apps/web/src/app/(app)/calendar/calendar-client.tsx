@@ -900,7 +900,7 @@ function ListView({
                 {awaitingApproval === 1 ? "s" : ""} approving
               </span>
               <Link href="/approvals" className="text-accent hover:underline">
-                Review &amp; approve →
+                Review & approve →
               </Link>
             </span>
           )}
