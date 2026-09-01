@@ -16,7 +16,7 @@ import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentMembership } from "../auth/current-membership.decorator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser, CurrentMembershipContext } from "../auth/types";
-import type { CalendarOccasionsResponse } from "@kudos/shared-types";
+import type { BulkApproveResult, CalendarOccasionsResponse } from "@kudos/shared-types";
 import type { Paginated } from "../common/paginated";
 import { OccasionsService, type Occasion, type OccasionWithOrder } from "./occasions.service";
 import { CreateOccasionDto } from "./dto/create-occasion.dto";
@@ -25,6 +25,7 @@ import { UpdateOccasionEventDto } from "./dto/update-occasion-event.dto";
 import { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
 import { CalendarRangeQueryDto } from "./dto/calendar-range-query.dto";
 import { ApproveOccasionDto } from "./dto/approve-occasion.dto";
+import { BulkApproveOccasionsDto } from "./dto/bulk-approve-occasions.dto";
 import { SetDispatchDateDto } from "./dto/set-dispatch-date.dto";
 
 @ApiTags("occasions")
@@ -86,6 +87,23 @@ export class OccasionsController {
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<OccasionWithOrder> {
     return this.occasionsService.findOne(membership.accountId, user.id, id);
+  }
+
+  /**
+   * Approve a whole selection with one design.
+   *
+   * Declared before the `:id` routes so the literal path is never read as an
+   * occasion id. Always 200 with a per-occasion breakdown rather than throwing
+   * on the first problem: a selection where one contact has no postal address
+   * must still approve the rest, and say which one it could not. See ADR 0219.
+   */
+  @Post("approve-bulk")
+  approveBulk(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: BulkApproveOccasionsDto,
+  ): Promise<BulkApproveResult> {
+    return this.occasionsService.approveMany(membership.accountId, user.id, dto);
   }
 
   @Post(":id/approve")

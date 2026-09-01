@@ -231,3 +231,44 @@ export const calendarOccasionsResponseSchema = z.object({
   truncated: z.boolean(),
 });
 export type CalendarOccasionsResponse = z.infer<typeof calendarOccasionsResponseSchema>;
+
+/**
+ * The most occasions one bulk-approve request may carry.
+ *
+ * Matched to the approvals page's own `perPage=100`: "Select all N" can never
+ * tick more than a page, so this is the real ceiling rather than a number
+ * invented for the DTO. It also bounds the fan-out — approving is a write and
+ * an audit row each, so an unbounded array is the pool-starvation shape ADR
+ * 0207 and ADR 0210 were both about.
+ */
+export const BULK_APPROVE_MAX = 100;
+
+/**
+ * One occasion a bulk approve could not approve, and why.
+ *
+ * The name is carried so the screen can say "Ada Lovelace — auto-send needs a
+ * postal address" rather than "3 failed". A count with no names is a dead end:
+ * the reader knows something went wrong and has no way to act on it.
+ */
+export const bulkApproveFailureSchema = z.object({
+  occasionId: z.string().uuid(),
+  /** Null for an occasion with no contact behind it (a shared event). */
+  recipientName: z.string().nullable(),
+  reason: z.string(),
+});
+export type BulkApproveFailure = z.infer<typeof bulkApproveFailureSchema>;
+
+/**
+ * What a bulk approve did.
+ *
+ * Both halves are always present, because a bulk action that reports only its
+ * successes is the defect ADR 0186 named: one contact that cannot be approved —
+ * an address missing for auto-send, an occasion someone else approved a moment
+ * ago — must not take the other ninety-nine down with it, and must not vanish
+ * either.
+ */
+export const bulkApproveResultSchema = z.object({
+  approvedIds: z.array(z.string().uuid()),
+  failed: z.array(bulkApproveFailureSchema),
+});
+export type BulkApproveResult = z.infer<typeof bulkApproveResultSchema>;

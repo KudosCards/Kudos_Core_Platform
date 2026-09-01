@@ -227,5 +227,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0216 — The reminder gets a window, not an instant](./0216-the-reminder-gets-a-window-not-an-instant.md)
 - [0217 — The commit hook lints with the config that owns the file](./0217-the-commit-hook-lints-with-the-config-that-owns-the-file.md)
 - [0218 — A box appears only where it can be ticked](./0218-a-box-appears-only-where-it-can-be-ticked.md)
+- [0219 — Approve a selection with one design](./0219-approve-a-selection-with-one-design.md)
 
 <!-- adr-index:end -->
