@@ -290,6 +290,12 @@ export function CalendarClient({
       return next;
     });
   }, []);
+  /** Replace the whole selection — the list's "Select all N" / "Clear
+   * selection". Takes the ids rather than a flag so the list decides what "all"
+   * means for the window it is showing, and this stays a setter. */
+  const selectAllOrders = useCallback((ids: string[]) => {
+    setOrderSelection(new Set(ids));
+  }, []);
 
   // Reflect an inline edit from the pop-up back into the calendar immediately.
   const applyUpdate = useCallback((updated: CalendarOccasion) => {
@@ -547,6 +553,7 @@ export function CalendarClient({
           onCreateForDate={setCreateDate}
           orderSelection={orderSelection}
           onToggleOrder={toggleOrderSelection}
+          onSelectAll={selectAllOrders}
         />
       ) : (
         <GridView
@@ -810,6 +817,7 @@ function ListView({
   onCreateForDate,
   orderSelection,
   onToggleOrder,
+  onSelectAll,
 }: {
   anchor: Date;
   byDay: Map<string, CalendarOccasion[]>;
@@ -820,6 +828,7 @@ function ListView({
   onCreateForDate: (dateKey: string) => void;
   orderSelection: Set<string>;
   onToggleOrder: (id: string) => void;
+  onSelectAll: (ids: string[]) => void;
 }) {
   // Constrain to the anchor's forward window (the server union-seed can carry a
   // few trailing days of the previous month from the month grid — those aren't
@@ -852,8 +861,51 @@ function ListView({
     }
   }
 
+  // What the reader can actually act on in the window they are looking at.
+  // Counted across every visible day rather than per month, because the
+  // selection and the order it becomes are not per month either.
+  const visible = days.flatMap((key) => byDay.get(key) ?? []);
+  const orderableIds = visible.filter((o) => o.status === "approved").map((o) => o.id);
+  const awaitingApproval = visible.filter((o) => o.status === "pending_approval").length;
+  const allSelected = orderableIds.length > 0 && orderableIds.every((id) => orderSelection.has(id));
+
   return (
     <div className="flex flex-col gap-4">
+      {(orderableIds.length > 0 || awaitingApproval > 0) && (
+        <div className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 text-sm">
+          {orderableIds.length > 0 ? (
+            <>
+              <span>
+                <strong>{orderableIds.length}</strong> card
+                {orderableIds.length === 1 ? " is" : "s are"} ready to order
+              </span>
+              <button
+                type="button"
+                onClick={() => onSelectAll(allSelected ? [] : orderableIds)}
+                className="text-accent hover:underline"
+              >
+                {allSelected ? "Clear selection" : `Select all ${orderableIds.length}`}
+              </button>
+            </>
+          ) : (
+            <span className="text-muted">
+              No cards here are ready to order yet — approving one chooses its design.
+            </span>
+          )}
+          {awaitingApproval > 0 && (
+            <span className="flex items-center gap-2 text-muted">
+              <span aria-hidden>·</span>
+              <span>
+                <strong className="text-foreground">{awaitingApproval}</strong> still need
+                {awaitingApproval === 1 ? "s" : ""} approving
+              </span>
+              <Link href="/approvals" className="text-accent hover:underline">
+                Review & approve →
+              </Link>
+            </span>
+          )}
+        </div>
+      )}
       {groups.map((group) => (
         <div
           key={group.monthKey}
@@ -911,29 +963,33 @@ function ListView({
                     </div>
                   ))}
                   {(byDay.get(key) ?? []).map((occasion) => {
-                    // Only an approved occasion (a design has been chosen) can be
-                    // ticked straight into an order. An upcoming one still needs
-                    // approving first — show a muted placeholder in the checkbox
-                    // column so the row lines up, and explain why on hover/click.
+                    // A box appears only where it can be ticked.
+                    //
+                    // It used to also appear, as an inert look-alike span, beside
+                    // anything still awaiting approval — same size, same shape,
+                    // no behaviour. On a calendar where nothing has been approved
+                    // yet that is every row, so the screen read as a column of
+                    // checkboxes that refuse to tick, and was reported as exactly
+                    // that. Nothing distinguished the two: the pill is coloured by
+                    // occasion *type*, so an approved birthday and an unapproved
+                    // one are the same amber.
+                    //
+                    // The count above says how many still need approving and
+                    // links to where that is done, which is what the placeholder
+                    // was trying and failing to communicate.
                     const orderable = occasion.status === "approved";
-                    const needsApproval = occasion.status === "pending_approval";
                     return (
                       <div key={occasion.id} className="flex max-w-56 items-center gap-1.5">
-                        {orderable ? (
+                        {orderable && (
                           <input
                             type="checkbox"
                             checked={orderSelection.has(occasion.id)}
                             onChange={() => onToggleOrder(occasion.id)}
                             title="Select to include in an order"
+                            aria-label={`Include ${occasionLabel(occasion)} in an order`}
                             className="accent-accent"
                           />
-                        ) : needsApproval ? (
-                          <span
-                            aria-hidden
-                            title="Approve this occasion (choose a design in Approvals) to add it to an order"
-                            className="inline-block size-3 shrink-0 rounded-[3px] border border-warning/40 bg-warning-soft"
-                          />
-                        ) : null}
+                        )}
                         <OccasionPill occasion={occasion} onOpen={onOpen} />
                       </div>
                     );

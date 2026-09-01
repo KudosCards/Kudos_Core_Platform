@@ -226,5 +226,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0215 — Two defects found auditing the weekend's PRs](./0215-two-defects-found-auditing-the-weekend.md)
 - [0216 — The reminder gets a window, not an instant](./0216-the-reminder-gets-a-window-not-an-instant.md)
 - [0217 — The commit hook lints with the config that owns the file](./0217-the-commit-hook-lints-with-the-config-that-owns-the-file.md)
+- [0218 — A box appears only where it can be ticked](./0218-a-box-appears-only-where-it-can-be-ticked.md)
 
 <!-- adr-index:end -->
