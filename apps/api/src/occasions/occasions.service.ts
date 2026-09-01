@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, type OccasionType } from "@prisma/client";
@@ -10,9 +11,14 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { SavedDesignsService } from "../saved-designs/saved-designs.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
-import type { CalendarOccasionsResponse } from "@kudos/shared-types";
+import type {
+  BulkApproveFailure,
+  BulkApproveResult,
+  CalendarOccasionsResponse,
+} from "@kudos/shared-types";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
+import { mapWithConcurrency } from "../common/map-with-concurrency";
 import { startOfUtcDay } from "./birthday-occasion.util";
 import {
   DEFAULT_POSTAGE_LEAD_DAYS,
@@ -25,6 +31,7 @@ import type { CreateRecipientEventDto } from "./dto/create-recipient-event.dto";
 import type { UpdateOccasionEventDto } from "./dto/update-occasion-event.dto";
 import type { ListOccasionsQueryDto } from "./dto/list-occasions-query.dto";
 import type { ApproveOccasionDto } from "./dto/approve-occasion.dto";
+import type { BulkApproveOccasionsDto } from "./dto/bulk-approve-occasions.dto";
 
 /** Enough of the recipient to show a human-readable name and pre-fill the
  * checkout shipping line from the address already on the contact record (so it
@@ -107,8 +114,21 @@ function attachOrderLink<T extends { orderRecipients: { batchOrder: OccasionOrde
   return { ...occasion, order: orderRecipients[0]?.batchOrder ?? null };
 }
 
+/**
+ * How many occasions a bulk approve works on at once.
+ *
+ * Each one is a status write plus an audit row, and auto-send adds an
+ * entitlement and a recipient read on top. Six is the same bound ADR 0210
+ * settled on for the Lists page, for the same reason: past it the wall-clock
+ * stops improving and the only thing that grows is how much of the connection
+ * pool one request holds.
+ */
+export const APPROVE_CONCURRENCY = 6;
+
 @Injectable()
 export class OccasionsService {
+  private readonly logger = new Logger(OccasionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -409,7 +429,25 @@ export class OccasionsService {
     // Also verifies the design belongs to this account (reuses the same
     // account-scoped lookup SavedDesignsController uses).
     await this.savedDesigns.findOne(accountId, dto.savedDesignId);
+    return this.approveWithCheckedDesign(accountId, actorUserId, id, dto);
+  }
 
+  /**
+   * Approve one occasion whose design has **already** been verified to belong to
+   * this account.
+   *
+   * Split out so `approveMany` can check the design once for a whole selection
+   * rather than a hundred times over, while both paths still run the same
+   * transition, the same auto-send gates and the same audit entry. A bulk action
+   * that reimplements the single one is how the two closing paths in ADR 0196
+   * came to disagree.
+   */
+  private async approveWithCheckedDesign(
+    accountId: string,
+    actorUserId: string,
+    id: string,
+    dto: ApproveOccasionDto,
+  ): Promise<Occasion> {
     const dispatchOption = dto.dispatchOption ?? "asap";
     const postageClass = dto.postageClass ?? "second_class";
 
@@ -447,6 +485,99 @@ export class OccasionsService {
       metadata: { savedDesignId: dto.savedDesignId, dispatchOption, postageClass },
     });
     return occasion;
+  }
+
+  /**
+   * Approve a whole selection with one design.
+   *
+   * The bottleneck the calendar's list view exposed: approving is where a card's
+   * design is chosen, so it was one occasion at a time, and "send this card to
+   * these thirty pupils on each of their birthdays" was thirty separate acts.
+   * `/send` already posts one design to many contacts, but as one-off cards
+   * going out now — it does not touch the dated occasions sitting in the
+   * approvals queue, which is the whole point of that queue. See ADR 0219.
+   *
+   * Three properties matter more than speed here.
+   *
+   * **One bad row does not take the batch down.** Auto-send needs a complete
+   * postal address, and someone else may have approved or skipped an occasion
+   * while this selection sat on screen. Each is caught against its own id and
+   * reported by name; the rest go through. That is ADR 0186's rule, and the
+   * reason the response carries `failed` at all.
+   *
+   * **Nothing is approved that was not asked for.** The ids are read back
+   * account-scoped first, so an id belonging to another account is a reported
+   * failure rather than a write, and duplicates in the request approve once.
+   *
+   * **The work is bounded.** One approve is a write plus an audit row, and up to
+   * BULK_APPROVE_MAX of them arrive together (ADR 0207).
+   */
+  async approveMany(
+    accountId: string,
+    actorUserId: string,
+    dto: BulkApproveOccasionsDto,
+  ): Promise<BulkApproveResult> {
+    // Once for the selection, not once per occasion: it is the same design for
+    // all of them, and a design that is not this account's should fail the
+    // request outright rather than a hundred times over.
+    await this.savedDesigns.findOne(accountId, dto.savedDesignId);
+
+    const requested = [...new Set(dto.occasionIds)];
+    const found = await this.prisma.occasion.findMany({
+      where: { id: { in: requested }, accountId },
+      select: { id: true, recipient: { select: { firstName: true, lastName: true } } },
+    });
+    const nameById = new Map(
+      found.map((o) => [
+        o.id,
+        o.recipient ? `${o.recipient.firstName} ${o.recipient.lastName}`.trim() : null,
+      ]),
+    );
+
+    const approvedIds: string[] = [];
+    const failed: BulkApproveFailure[] = [];
+
+    // An id the account-scoped read did not return is not ours to approve —
+    // deleted, or another account's. Reported, never written.
+    for (const occasionId of requested) {
+      if (!nameById.has(occasionId)) {
+        failed.push({ occasionId, recipientName: null, reason: "This occasion no longer exists" });
+      }
+    }
+
+    const mine = requested.filter((occasionId) => nameById.has(occasionId));
+    const outcomes = await mapWithConcurrency(mine, APPROVE_CONCURRENCY, async (occasionId) => {
+      try {
+        await this.approveWithCheckedDesign(accountId, actorUserId, occasionId, {
+          savedDesignId: dto.savedDesignId,
+          dispatchOption: dto.dispatchOption,
+          postageClass: dto.postageClass,
+        });
+        return { occasionId, reason: null };
+      } catch (error) {
+        return {
+          occasionId,
+          reason: error instanceof Error ? error.message : "Could not approve this one",
+        };
+      }
+    });
+
+    for (const outcome of outcomes) {
+      if (outcome.reason === null) {
+        approvedIds.push(outcome.occasionId);
+      } else {
+        failed.push({
+          occasionId: outcome.occasionId,
+          recipientName: nameById.get(outcome.occasionId) ?? null,
+          reason: outcome.reason,
+        });
+      }
+    }
+
+    this.logger.log(
+      `Bulk approve: ${approvedIds.length} approved, ${failed.length} could not be (account ${accountId})`,
+    );
+    return { approvedIds, failed };
   }
 
   /**

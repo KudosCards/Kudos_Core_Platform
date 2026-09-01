@@ -1,7 +1,13 @@
 "use client";
 
 import { Zap } from "lucide-react";
-import { suggestFirstClass, type Occasion, type SavedDesign } from "@kudos/shared-types";
+import {
+  suggestFirstClass,
+  type BulkApproveFailure,
+  type BulkApproveResult,
+  type Occasion,
+  type SavedDesign,
+} from "@kudos/shared-types";
 import Link from "next/link";
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
@@ -75,6 +81,13 @@ export function ApprovalsClient({
    * not one click per row at the speed a queue invites. */
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  /** The one design a bulk approve applies to everything ticked. */
+  const [bulkDesignId, setBulkDesignId] = useState("");
+  const [bulkAutoSend, setBulkAutoSend] = useState(false);
+  const [bulkPostage, setBulkPostage] = useState<PostageClass>("second_class");
+  /** What the last bulk approve could not approve, by name and reason. Kept on
+   * screen until the next one: a count with no names is a dead end. */
+  const [bulkFailures, setBulkFailures] = useState<BulkApproveFailure[]>([]);
 
   function removeFromList(id: string) {
     setOccasions((current) => current.filter((occasion) => occasion.id !== id));
@@ -132,6 +145,53 @@ export function ApprovalsClient({
       setError(skipError instanceof ApiError ? skipError.message : "Could not skip");
     } finally {
       setPendingAction(null);
+    }
+  }
+
+  /**
+   * Approve everything ticked with one design.
+   *
+   * Approving is where a card's design is chosen, which is why it was one row at
+   * a time: "this card, to these thirty pupils, each on their birthday" was
+   * thirty separate acts. One request now carries the whole selection, and the
+   * server answers per occasion — so a contact whose address is missing for
+   * auto-send is named rather than taking the other twenty-nine down with it.
+   * See ADR 0219.
+   */
+  async function approveTicked() {
+    const chosen = occasions.filter((o) => ticked.has(o.id));
+    if (chosen.length === 0) return;
+    if (!bulkDesignId) {
+      setError("Choose a design to approve them with");
+      return;
+    }
+    setError(null);
+    setBulkFailures([]);
+    setBulkBusy(true);
+    try {
+      const result = await clientApiFetch<BulkApproveResult>("/occasions/approve-bulk", {
+        method: "POST",
+        body: JSON.stringify({
+          occasionIds: chosen.map((o) => o.id),
+          savedDesignId: bulkDesignId,
+          dispatchOption: bulkAutoSend ? "auto_send" : "asap",
+          ...(bulkAutoSend && { postageClass: bulkPostage }),
+        }),
+      });
+      // Only what actually approved leaves the queue. Anything the server could
+      // not approve stays on screen, still ticked, beside the reason — the row
+      // is where the reader fixes it.
+      const approved = new Set(result.approvedIds);
+      setOccasions((current) => current.filter((o) => !approved.has(o.id)));
+      setTicked((current) => new Set([...current].filter((id) => !approved.has(id))));
+      setBulkFailures(result.failed);
+      if (bulkAutoSend) {
+        setScheduledSends((current) => [...chosen.filter((o) => approved.has(o.id)), ...current]);
+      }
+    } catch (approveError) {
+      setError(approveError instanceof ApiError ? approveError.message : "Could not approve");
+    } finally {
+      setBulkBusy(false);
     }
   }
 
@@ -260,7 +320,23 @@ export function ApprovalsClient({
           <span>
             <strong>{ticked.size}</strong> selected.
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* One design for the whole selection. Approving is where the design
+                is chosen, so without this the bulk bar could only ever skip —
+                which is why "send this card to these thirty" was thirty acts. */}
+            <select
+              value={bulkDesignId}
+              onChange={(e) => setBulkDesignId(e.target.value)}
+              aria-label="Design to approve the selected cards with"
+              className="rounded-md border border-border bg-surface px-2 py-2 text-sm"
+            >
+              <option value="">Choose a design…</option>
+              {savedDesigns.map((design) => (
+                <option key={design.id} value={design.id}>
+                  {design.name}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               onClick={() => setTicked(new Set())}
@@ -274,9 +350,63 @@ export function ApprovalsClient({
               onClick={() => void skipTicked()}
               className="btn-secondary"
             >
-              {bulkBusy ? "Skipping…" : `Skip ${ticked.size} selected`}
+              {bulkBusy ? "Working…" : `Skip ${ticked.size} selected`}
+            </button>
+            <button
+              type="button"
+              disabled={bulkBusy || !bulkDesignId}
+              onClick={() => void approveTicked()}
+              className="btn-accent"
+            >
+              {bulkBusy
+                ? "Working…"
+                : bulkAutoSend
+                  ? `Approve & auto-send ${ticked.size}`
+                  : `Approve ${ticked.size} selected`}
             </button>
           </div>
+          {autoSendEnabled && (
+            <div className="flex w-full flex-wrap items-center gap-3 border-t border-accent/20 pt-3">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={bulkAutoSend}
+                  onChange={(e) => setBulkAutoSend(e.target.checked)}
+                  className="accent-accent"
+                />
+                <span>Auto-send them — we order, pay from your wallet, and post each one</span>
+              </label>
+              {bulkAutoSend && (
+                <select
+                  value={bulkPostage}
+                  onChange={(e) => setBulkPostage(e.target.value as PostageClass)}
+                  aria-label="Postage class for the selected cards"
+                  className="rounded-md border border-border bg-surface px-2 py-1 text-sm"
+                >
+                  <option value="second_class">Second class</option>
+                  <option value="first_class">First class</option>
+                </select>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Named, not counted. A bulk action that reports "3 failed" leaves the
+          reader knowing something is wrong and with no way to act on it — these
+          rows are still in the queue above, waiting to be fixed. */}
+      {bulkFailures.length > 0 && (
+        <div className="notice notice-warning flex flex-col gap-1 text-sm">
+          <p className="font-medium">
+            {bulkFailures.length} could not be approved — the rest went through.
+          </p>
+          <ul className="list-inside list-disc">
+            {bulkFailures.map((failure) => (
+              <li key={failure.occasionId}>
+                <strong>{failure.recipientName ?? "This card"}</strong> — {failure.reason}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

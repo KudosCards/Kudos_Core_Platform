@@ -28,18 +28,32 @@ describe("ApprovalsClient", () => {
       recipient: { id: `r-${i}`, firstName: "Child", lastName: `Number${i}` },
     }) as unknown as OccasionWithRecipient;
 
-  function setup(count = 3, totalPending = count) {
+  function setup(count = 3, totalPending = count, autoSendEnabled = false) {
     const occasions = Array.from({ length: count }, (_, i) => person(i));
     render(
       <ApprovalsClient
         initialOccasions={occasions}
         totalPending={totalPending}
         initialScheduledSends={[]}
-        savedDesigns={[{ id: "d1", name: "Happy Birthday" } as never]}
-        autoSendEnabled={false}
+        savedDesigns={[
+          { id: "d1", name: "Happy Birthday" } as never,
+          { id: "d2", name: "Well Done" } as never,
+        ]}
+        autoSendEnabled={autoSendEnabled}
       />,
     );
     return { occasions };
+  }
+
+  /** Tick everything and choose the design a bulk approve will use. */
+  async function tickAllWithDesign(designId = "d1") {
+    await userEvent.click(screen.getByRole("checkbox", { name: /Select all/ }));
+    // By value: every row carries its own picker with the same option labels,
+    // so selecting by name finds several.
+    await userEvent.selectOptions(
+      screen.getByLabelText("Design to approve the selected cards with"),
+      designId,
+    );
   }
 
   beforeEach(() => fetchMock.mockReset());
@@ -130,5 +144,107 @@ describe("ApprovalsClient", () => {
   it("stays quiet when the queue fits", async () => {
     setup(3, 3);
     expect(screen.queryByText(/Showing the first/)).not.toBeInTheDocument();
+  });
+
+  describe("approving a whole selection with one design", () => {
+    it("sends every ticked occasion in one request, with the chosen design", async () => {
+      // The bottleneck this closes: approving is where the design is chosen, so
+      // "this card, to these three, each on their day" was three separate acts.
+      fetchMock.mockResolvedValue({ approvedIds: ["occ-0", "occ-1", "occ-2"], failed: [] });
+      setup(3);
+      await tickAllWithDesign();
+
+      await userEvent.click(screen.getByRole("button", { name: "Approve 3 selected" }));
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const [path, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+      expect(path).toBe("/occasions/approve-bulk");
+      expect(JSON.parse(init.body)).toEqual({
+        occasionIds: ["occ-0", "occ-1", "occ-2"],
+        savedDesignId: "d1",
+        dispatchOption: "asap",
+      });
+    });
+
+    it("cannot approve until a design is chosen", async () => {
+      setup(3);
+      await userEvent.click(screen.getByRole("checkbox", { name: /Select all/ }));
+
+      expect(screen.getByRole("button", { name: "Approve 3 selected" })).toBeDisabled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("clears the approved rows and keeps the ones it could not approve", async () => {
+      fetchMock.mockResolvedValue({
+        approvedIds: ["occ-0", "occ-2"],
+        failed: [
+          {
+            occasionId: "occ-1",
+            recipientName: "Child Number1",
+            reason: "Auto-send needs a recipient with a postal address",
+          },
+        ],
+      });
+      setup(3);
+      await tickAllWithDesign();
+
+      await userEvent.click(screen.getByRole("button", { name: "Approve 3 selected" }));
+
+      await waitFor(() => expect(screen.queryByText("Child Number0")).not.toBeInTheDocument());
+      expect(screen.queryByText("Child Number2")).not.toBeInTheDocument();
+      // The one that failed is still in the queue, where it can be fixed — and
+      // also named in the notice, which is why this looks for the row's own
+      // heading rather than the name anywhere on the page.
+      expect(screen.getByText("Child Number1", { selector: "p" })).toBeInTheDocument();
+      expect(screen.getByText("Child Number1", { selector: "strong" })).toBeInTheDocument();
+    });
+
+    it("names who could not be approved and why, rather than counting them", async () => {
+      fetchMock.mockResolvedValue({
+        approvedIds: ["occ-0"],
+        failed: [
+          {
+            occasionId: "occ-1",
+            recipientName: "Child Number1",
+            reason: "Auto-send needs a recipient with a postal address",
+          },
+        ],
+      });
+      setup(2);
+      await tickAllWithDesign();
+
+      await userEvent.click(screen.getByRole("button", { name: "Approve 2 selected" }));
+
+      await waitFor(() => expect(screen.getByText(/1 could not be approved/)).toBeInTheDocument());
+      expect(screen.getByText(/postal address/)).toBeInTheDocument();
+      expect(screen.getByText("Child Number1", { selector: "strong" })).toBeInTheDocument();
+    });
+
+    it("carries auto-send and its postage class when the plan allows it", async () => {
+      fetchMock.mockResolvedValue({ approvedIds: ["occ-0", "occ-1"], failed: [] });
+      setup(2, 2, true);
+      await tickAllWithDesign();
+
+      await userEvent.click(screen.getByRole("checkbox", { name: /Auto-send them/ }));
+      await userEvent.selectOptions(
+        screen.getByLabelText("Postage class for the selected cards"),
+        "first_class",
+      );
+      await userEvent.click(screen.getByRole("button", { name: /Approve & auto-send 2/ }));
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const [, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+      expect(JSON.parse(init.body)).toMatchObject({
+        dispatchOption: "auto_send",
+        postageClass: "first_class",
+      });
+    });
+
+    it("offers no auto-send option when the plan does not include it", async () => {
+      setup(2, 2, false);
+      await tickAllWithDesign();
+
+      expect(screen.queryByRole("checkbox", { name: /Auto-send them/ })).not.toBeInTheDocument();
+    });
   });
 });
