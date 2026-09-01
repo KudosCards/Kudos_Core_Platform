@@ -29,11 +29,16 @@
   "lint-staged": {
     "*.{ts,tsx,js,mjs,cjs,md,json,css,yml,yaml}": [
       "prettier --write"
+    ],
+    "{apps,packages}/**/*.{ts,tsx,mjs,cjs,js}": [
+      "node scripts/lint-staged-eslint.mjs"
     ]
   },
   "pnpm": {
     "overrides": {
+      "browserslist": ">=4.28.7",
       "fast-uri": ">=3.1.5",
+      "js-yaml": ">=4.3.1",
       "postcss": ">=8.5.23",
       "sharp": ">=0.35.3"
     }

@@ -11,7 +11,7 @@ security questionnaire asks how access to your systems is controlled — which t
 
 Legend: 🧑 = you (dashboard/manual), 🤖 = enforced in code.
 
-Last reviewed: **2026-08-21** — update this date whenever you work through the list.
+Last reviewed: **2026-09-01** — update this date whenever you work through the list.
 
 ---
 
@@ -23,15 +23,15 @@ offered — SMS can be taken over by porting the number.
 
 | Service      | What it holds                            | 2FA on? | Notes                                   |
 | ------------ | ---------------------------------------- | ------- | --------------------------------------- |
-| **Railway**  | The API and the production **database**  | ☐       | Highest impact. Direct data access.     |
-| **Supabase** | Auth, user accounts, file storage        | ☐       | Also holds the service-role key.        |
-| **Stripe**   | Payments, payouts, customer billing      | ☐       | Money. Enable payout notifications too. |
-| **GitHub**   | All source code, deploy pipeline         | ☐       | A push to `main` deploys to production. |
-| **Netlify**  | The public website                       | ☐       | Defacement / redirect risk.             |
-| **Airtable** | The card catalog                         | ☐       | Feeds what customers can buy.           |
-| **Brevo**    | Transactional + marketing email          | ☐       | Can email your whole customer list.     |
-| **Google**   | Analytics, Search Console                | ☐       | Lower impact, still worth it.           |
-| **Sentry**   | Error reports (may contain user context) | ☐       |                                         |
+| **Railway**  | The API and the production **database**  | ☑       | Highest impact. Direct data access.     |
+| **Supabase** | Auth, user accounts, file storage        | ☑       | Also holds the service-role key.        |
+| **Stripe**   | Payments, payouts, customer billing      | ☑       | Money. Enable payout notifications too. |
+| **GitHub**   | All source code, deploy pipeline         | ☑       | A push to `main` deploys to production. |
+| **Netlify**  | The public website                       | ☑       | Defacement / redirect risk.             |
+| **Airtable** | The card catalog                         | ☑       | Feeds what customers can buy.           |
+| **Brevo**    | Transactional + marketing email          | ☑       | Can email your whole customer list.     |
+| **Google**   | Analytics, Search Console                | ☑       | Lower impact, still worth it.           |
+| **Sentry**   | Error reports (may contain user context) | ☑       |                                         |
 
 Tick the boxes as you go and commit the change, so the file records what is actually true.
 
@@ -40,9 +40,9 @@ Tick the boxes as you go and commit the change, so the file records what is actu
 Every service issues one-time recovery codes when you enable 2FA. Losing them while also losing
 your phone means losing the account.
 
-- ☐ Saved in a password manager, **not** in a note on the same laptop or phone that holds the
+- ☑ Saved in a password manager, **not** in a note on the same laptop or phone that holds the
   authenticator app.
-- ☐ Not committed to this repository, ever. (`.env*` is gitignored, but recovery codes do not
+- ☑ Not committed to this repository, ever. (`.env*` is gitignored, but recovery codes do not
   belong in a repo at all.)
 
 ## 3. Review who has access 🧑

@@ -89,4 +89,5 @@ Relaxing the gate to "at or after the send hour" would fix it, and the London-da
 dedupe now makes that safe — the key would stop a second send. It was not done
 here: "runs only at the configured hour" is a deliberate behaviour with a test
 of its own, and overturning a tested decision belongs in a change that is about
-that decision, not smuggled into a timezone fix. Flagged for a separate call.
+that decision, not smuggled into a timezone fix. Flagged for a separate call — taken in ADR 0216, which turns the gate into a
+window bounded by the same-day cut-off.
