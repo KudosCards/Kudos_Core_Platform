@@ -224,5 +224,7 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0213 — A grant that cannot sync is not a connection](./0213-a-grant-that-cannot-sync-is-not-a-connection.md)
 - [0214 — An import that cannot send a card is not a success](./0214-an-import-that-cannot-send-a-card-is-not-a-success.md)
 - [0215 — Two defects found auditing the weekend's PRs](./0215-two-defects-found-auditing-the-weekend.md)
+- [0216 — The reminder gets a window, not an instant](./0216-the-reminder-gets-a-window-not-an-instant.md)
+- [0217 — The commit hook lints with the config that owns the file](./0217-the-commit-hook-lints-with-the-config-that-owns-the-file.md)
 
 <!-- adr-index:end -->

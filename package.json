@@ -29,6 +29,9 @@
   "lint-staged": {
     "*.{ts,tsx,js,mjs,cjs,md,json,css,yml,yaml}": [
       "prettier --write"
+    ],
+    "{apps,packages}/**/*.{ts,tsx,mjs,cjs,js}": [
+      "node scripts/lint-staged-eslint.mjs"
     ]
   },
   "pnpm": {
