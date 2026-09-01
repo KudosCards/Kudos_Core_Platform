@@ -1,7 +1,24 @@
 -- P2-18 recovery — restore the `resolved_at` values the ops ticket path erased
 -- (ADR 0196, review finding 31).
 --
--- NOT YET APPLIED. Steps 0-2 are read-only. Step 3 is the only write.
+-- ===========================================================================
+-- NOTHING TO RECOVER — checked against production, 1 September 2026.
+--
+--   Step 0                      0 closed tickets, 0 missing a resolution
+--   support_tickets by status   one ticket, `resolved`, stamp intact
+--
+-- The erasure only ever happened on a move into `closed`, and no ticket has
+-- reached that state. The one ticket that has been resolved still carries its
+-- `resolved_at`, so there is no gap to fill and Step 3 would write nothing.
+--
+-- Do not run Step 3 expecting rows. Steps 0-2 stay read-only and safe.
+--
+-- The fix (#388) has been on `main` since 30 August, so a ticket resolved and
+-- then closed from here on keeps its resolution time. This file is kept as the
+-- record of what the defect would have cost and how it would have been undone,
+-- not because it is still owed. If it is ever needed — an old row surfacing
+-- from a restore, say — the steps below are tested and idempotent.
+-- ===========================================================================
 --
 -- ---------------------------------------------------------------------------
 -- WHY THIS IS NEEDED

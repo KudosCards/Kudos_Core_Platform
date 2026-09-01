@@ -103,5 +103,7 @@ second — which contradicts the table above, in the same document. It was
 written by reasoning about the schema rather than by running it. The ops file
 replaces it.
 
-This is offered, not applied: it is a data change to production, and it is the
-account owner's call.
+Checked against production on 1 September 2026: there is nothing to recover.
+No support ticket has ever been closed, and the erasure only happened on a move
+into `closed`. The one ticket that has been resolved still carries its
+`resolvedAt`. The defect was real and is fixed; it simply never reached data.
