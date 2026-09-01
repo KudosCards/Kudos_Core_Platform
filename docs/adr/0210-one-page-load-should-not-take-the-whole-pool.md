@@ -98,3 +98,35 @@ page for that account, but no longer a pool outage for everyone else. The clean
 bound on total work is a cap on saved smart lists per account, which is a
 pricing and product decision rather than an engineering one — flagged, not
 taken. `PLAN_CATALOG` has no such limit today.
+
+## The cap: asked, measured, closed
+
+Measured against production on 1 September 2026, rather than argued about:
+
+|                                    |                                     |
+| ---------------------------------- | ----------------------------------- |
+| accounts                           | 15                                  |
+| accounts with any saved smart list | 1                                   |
+| most saved by one account          | 1                                   |
+| worst Lists page load              | 14 queries (12 of them the presets) |
+
+One account has saved one smart list. The heaviest page load in the business
+resolves the six presets plus that one, and eleven of the fifteen twelfths of
+that cost is there whether anyone saves anything or not.
+
+**No cap.** Not "not yet" — a limit is customer-visible, easy to add and hard to
+remove, and it would be answering a question nobody has asked. The distribution
+would have to change by two orders of magnitude before the shape of this
+decision changed.
+
+That does not retire the fix above. The measurement that justified it was 45
+resolves seizing 90 connections, and the harm was one page load starving
+requests belonging to _other_ accounts — a concurrency problem, not a
+one-big-account problem. Bounding it was right at 1 saved list and would be
+right at 500. It is only the _cap_ that turned out to be unnecessary.
+
+If this is ever revisited, the number to look at first is
+`most_saved_by_one_account`, and the query is in this ADR's history. A flat
+ceiling enforced on create — an abuse guard, not a plan entitlement — is the
+cheaper answer than a tier, because it costs no marketing copy, no
+`PLAN_CATALOG` entry and no grandfathering.
