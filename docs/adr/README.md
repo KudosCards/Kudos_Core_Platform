@@ -230,5 +230,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0219 — Approve a selection with one design](./0219-approve-a-selection-with-one-design.md)
 - [0220 — Three defects found reviewing bulk approve](./0220-three-defects-found-reviewing-bulk-approve.md)
 - [0221 — A cohort card is not the birthday realign's to delete](./0221-a-cohort-card-is-not-the-birthday-realigns-to-delete.md)
+- [0222 — A key date only clears its own occasions](./0222-a-key-date-only-clears-its-own-occasions.md)
 
 <!-- adr-index:end -->
