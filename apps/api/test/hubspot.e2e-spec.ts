@@ -264,6 +264,11 @@ describe("CRM connections — HubSpot OAuth (e2e)", () => {
   it("a complete pull still reports a clean success", async () => {
     const { token, accountId } = await signUp();
     await connectHubSpot(token);
+    // The default fixture carries a contact with no surname, so the default
+    // pull is *not* complete — this test was named for a fixture it did not
+    // have, and passed only because the status said "ok" regardless of what
+    // the ingest made of the pull. Give it the complete pull it describes.
+    hubspotContacts = hubspotContacts.filter((c) => c.properties.lastname);
 
     const res = await request(app.getHttpServer())
       .post("/integrations/connections/hubspot/sync")

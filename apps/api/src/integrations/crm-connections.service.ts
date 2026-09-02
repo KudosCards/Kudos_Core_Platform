@@ -96,6 +96,10 @@ export interface CrmConnectionView {
 
 export interface CrmSyncResult extends IngestResult {
   fetched: number;
+  /** Rows the provider returned that the mapper could make nothing of — no
+   * first or last name, so there is nobody to address a card to. They never
+   * reached the ingest, so they appear in no other count. */
+  unmappable: number;
   /** True when the provider's paging cap stopped the pull with more contacts
    * still to read — the import is partial, not complete. */
   truncated: boolean;
@@ -127,6 +131,47 @@ interface OAuthState {
  */
 export function partialSyncStatus(fetched: number): string {
   return `partial: stopped at the provider page limit after ${fetched} contacts — some were not imported`;
+}
+
+/** The column this is written to holds 200 characters. */
+const SYNC_STATUS_MAX = 200;
+
+/**
+ * What to store on the connection after a successful pull.
+ *
+ * "ok" used to be written whenever the pull itself completed, no matter what
+ * the ingest made of it — so a sync that dropped a third of a portal for want
+ * of surnames left the same trace as one that brought everything across. For a
+ * nightly sync this string is the *only* trace: nobody is watching, and the
+ * summary panel that would have said more is never rendered. It is also what
+ * the connections list shows verbatim on the next page load.
+ *
+ * So "ok" now means what it says, and anything short of it says how short.
+ * See ADR 0227.
+ */
+export function syncStatus(input: {
+  truncated: boolean;
+  fetched: number;
+  unmappable: number;
+  skipped: number;
+}): string {
+  // Truncation outranks the rest: it means contacts we never even saw, so the
+  // counts below describe a sample rather than the address book.
+  if (input.truncated) {
+    return partialSyncStatus(input.fetched).slice(0, SYNC_STATUS_MAX);
+  }
+  const missing = input.unmappable + input.skipped;
+  if (missing === 0) {
+    return "ok";
+  }
+  const reasons = [
+    input.unmappable > 0 ? `${input.unmappable} with no first or last name` : null,
+    input.skipped > 0 ? `${input.skipped} already on file or over your plan's limit` : null,
+  ].filter((part): part is string => part !== null);
+  return `incomplete: ${missing} of ${input.fetched} contacts were not imported — ${reasons.join(", ")}`.slice(
+    0,
+    SYNC_STATUS_MAX,
+  );
 }
 
 function toView(connection: CrmConnection): CrmConnectionView {
@@ -410,6 +455,11 @@ export class CrmConnectionsService {
 
     try {
       const { contacts, fetched, truncated } = await this.fetchContacts(connection);
+      // Rows the provider sent that the mapper could do nothing with. Counted
+      // here rather than in each provider's fetch because every one of them
+      // reports `fetched` as the raw row count and `contacts` as what survived
+      // mapping — the difference is the same thing in all three.
+      const unmappable = Math.max(0, fetched - contacts.length);
       const result = await this.recipients.ingestFromSource(
         accountId,
         provider,
@@ -427,10 +477,15 @@ export class CrmConnectionsService {
         where: { id: connection.id },
         data: {
           lastSyncedAt: new Date(),
-          lastSyncStatus: truncated ? partialSyncStatus(fetched) : "ok",
+          lastSyncStatus: syncStatus({
+            truncated,
+            fetched,
+            unmappable,
+            skipped: result.skipped,
+          }),
         },
       });
-      return { fetched, truncated, ...result };
+      return { fetched, unmappable, truncated, ...result };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       this.logger.warn(`CRM sync failed for account ${accountId} (${provider}): ${message}`);

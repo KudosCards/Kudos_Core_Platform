@@ -48,11 +48,23 @@ export const ingestReadinessSchema = z.object({
 });
 export type IngestReadiness = z.infer<typeof ingestReadinessSchema>;
 
-/** The result summary the ingest endpoint returns. */
+/**
+ * The result summary the ingest endpoint returns.
+ *
+ * Every contact handed to the ingest is accounted for by exactly one of
+ * `created`, `updated`, `skipped` or `duplicates`. That is the whole point: a
+ * summary whose parts do not add up to the whole leaves the customer to guess
+ * where the rest went, and they guess "it worked". See ADR 0227.
+ */
 export const ingestResultSchema = z.object({
   created: z.number().int().nonnegative(),
   updated: z.number().int().nonnegative(),
+  /** Refused: over the plan's contact cap, or the same person as one already
+   *  on file. Each one is named in `errors`. */
   skipped: z.number().int().nonnegative(),
+  /** The same external id appeared more than once in one payload; the last
+   *  occurrence won. Not a failure, but it explains a gap in the arithmetic. */
+  duplicates: z.number().int().nonnegative(),
   errors: z.array(z.object({ externalId: z.string(), reason: z.string() })),
   readiness: ingestReadinessSchema,
 });
@@ -89,9 +101,16 @@ export type CrmConnection = z.infer<typeof crmConnectionSchema>;
 
 /** The outcome of a CRM sync — the ingest summary plus how many were fetched,
  * and whether the provider's paging cap cut the pull short (a partial import
- * that must not be reported as a clean success). */
+ * that must not be reported as a clean success).
+ *
+ * `fetched === created + updated + skipped + duplicates + unmappable`. */
 export const crmSyncResultSchema = ingestResultSchema.extend({
   fetched: z.number().int().nonnegative(),
+  /** Rows the provider returned that carry no usable name, so they never
+   *  reached the ingest at all. Ordinary in a marketing list full of
+   *  email-only subscribers, and previously invisible: they were counted in
+   *  `fetched` and in nothing else. */
+  unmappable: z.number().int().nonnegative(),
   truncated: z.boolean(),
 });
 export type CrmSyncResult = z.infer<typeof crmSyncResultSchema>;

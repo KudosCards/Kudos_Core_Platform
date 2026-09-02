@@ -16,6 +16,9 @@
 // bundle. Lets us type the router-transition wrapper precisely without pulling
 // the SDK into this module's static graph.
 import type * as SentryClient from "@sentry/nextjs";
+// A real (tiny, no-SDK) import: the scrubbers must be in hand the moment the
+// SDK resolves, and they carry none of its weight.
+import { scrubBreadcrumb, scrubEvent } from "./lib/sentry-scrub";
 
 type RouterTransitionStart = typeof SentryClient.captureRouterTransitionStart;
 
@@ -30,6 +33,12 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
       dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
       environment: process.env.NODE_ENV,
       tracesSampleRate: 0,
+      // This is the half that matters most. An error anywhere in the session
+      // ships the navigation breadcrumbs that led to it, so an invite or
+      // password-reset token from a page visited ten minutes ago rides along
+      // with an unrelated crash. See ADR 0228.
+      beforeSend: scrubEvent,
+      beforeBreadcrumb: scrubBreadcrumb,
     });
     routerTransitionStart = Sentry.captureRouterTransitionStart;
   });

@@ -1,5 +1,7 @@
+import { redactUrl, REDACTED } from "@kudos/shared-types";
+
 /**
- * Routes whose URL *path* carries a bearer-equivalent secret.
+ * API routes whose URL *path* carries a bearer-equivalent secret.
  *
  * pino-http logs `url` on every request at `info`, which is the production
  * level, so without this the token is written to the log in full. Anyone who can
@@ -10,10 +12,14 @@
  *
  * Listed as prefixes rather than matched by shape: a token has no distinguishing
  * format, and guessing which path segments are secret is how one gets missed.
+ *
+ * These are the *API's* routes. The web app reaches the same features on
+ * different paths (`/invite/<token>` for this one) and keeps its own list —
+ * see apps/web/src/lib/sentry-scrub.ts and ADR 0228.
  */
 const TOKEN_BEARING_PREFIXES = ["/rts/", "/invites/", "/guest/claim/"] as const;
 
-export const REDACTED = "[redacted]";
+export { REDACTED };
 
 /**
  * Replace the token segment of a URL with a placeholder, leaving the route shape
@@ -23,17 +29,10 @@ export const REDACTED = "[redacted]";
  *   /rts/tok123/address?x=1       → /rts/[redacted]/address?x=1
  *   /guest/claim/tok123           → /guest/claim/[redacted]
  *
- * Anything else is returned unchanged.
+ * Anything else is returned unchanged. The mechanism is shared with the web app
+ * so a scrubber improved on one side is improved on both; this file supplies
+ * the routes.
  */
 export function redactUrlTokens(url: string): string {
-  for (const prefix of TOKEN_BEARING_PREFIXES) {
-    if (!url.startsWith(prefix)) continue;
-    const rest = url.slice(prefix.length);
-    if (rest.length === 0) return url;
-    // The token runs to the next path separator, or to the query string.
-    const end = rest.search(/[/?]/);
-    const tail = end === -1 ? "" : rest.slice(end);
-    return `${prefix}${REDACTED}${tail}`;
-  }
-  return url;
+  return redactUrl(url, TOKEN_BEARING_PREFIXES);
 }

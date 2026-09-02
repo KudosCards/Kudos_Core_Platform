@@ -87,6 +87,8 @@ describe("IntegrationsClient — a partial import says so", () => {
       created: 4800,
       updated: 100,
       skipped: 100,
+      duplicates: 0,
+      unmappable: 0,
       errors: [],
       truncated: true,
       readiness: {
@@ -121,6 +123,8 @@ describe("IntegrationsClient — a partial import says so", () => {
       created: 500,
       updated: 0,
       skipped: 0,
+      duplicates: 0,
+      unmappable: 0,
       errors: [],
       truncated: false,
       readiness: {
@@ -148,6 +152,8 @@ describe("IntegrationsClient — a partial import says so", () => {
       created: 10,
       updated: 0,
       skipped: 0,
+      duplicates: 0,
+      unmappable: 0,
       errors: [],
       truncated: false,
       readiness: { total: 10, withDateOfBirth: 10, withPostalAddress: 4, sendable: 4 },
@@ -161,12 +167,93 @@ describe("IntegrationsClient — a partial import says so", () => {
     expect(summary).not.toHaveTextContent(/without a date of birth/);
   });
 
+  it("accounts for the contacts that never made it into the counts", async () => {
+    // The everyday shape of a marketing list: a third of it is email-only
+    // subscribers with no surname, so the mapper drops them before the ingest
+    // ever sees them. The summary read "0 new, 97 updated (of 100 fetched)" —
+    // in green — and left the customer to work out where the other three went.
+    fetchMock.mockResolvedValue({
+      fetched: 100,
+      created: 0,
+      updated: 97,
+      skipped: 0,
+      duplicates: 0,
+      unmappable: 3,
+      errors: [],
+      truncated: false,
+      readiness: { total: 97, withDateOfBirth: 97, withPostalAddress: 97, sendable: 97 },
+    });
+    renderClient();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sync now" }));
+
+    const summary = await screen.findByText(/Imported 0 new/);
+    expect(summary).toHaveTextContent(/3 with no first or last name/i);
+    // Three contacts short of the address book is not a clean success.
+    expect(summary.className).not.toContain("success");
+    // And the "Last synced" line must not say ok directly beneath a panel
+    // that has just said three contacts did not arrive.
+    await waitFor(() =>
+      expect(screen.getByText(/3 of 100 contacts were not imported/i)).toBeInTheDocument(),
+    );
+  });
+
+  it("names why a contact was refused rather than only counting it", async () => {
+    fetchMock.mockResolvedValue({
+      fetched: 2,
+      created: 1,
+      updated: 0,
+      skipped: 1,
+      duplicates: 0,
+      unmappable: 0,
+      errors: [
+        {
+          externalId: "20",
+          reason:
+            "Skipped: these details now match another contact already on file " +
+            "(same name, postcode and date of birth)",
+        },
+      ],
+      truncated: false,
+      readiness: { total: 1, withDateOfBirth: 1, withPostalAddress: 1, sendable: 1 },
+    });
+    renderClient();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sync now" }));
+
+    expect(await screen.findByText(/match another contact already on file/i)).toBeInTheDocument();
+    // The contact is named, so the customer knows which one to go and fix.
+    expect(screen.getByText("20")).toBeInTheDocument();
+  });
+
+  it("counts a repeated contact as a duplicate rather than losing it", async () => {
+    fetchMock.mockResolvedValue({
+      fetched: 4,
+      created: 3,
+      updated: 0,
+      skipped: 0,
+      duplicates: 1,
+      unmappable: 0,
+      errors: [],
+      truncated: false,
+      readiness: { total: 3, withDateOfBirth: 3, withPostalAddress: 3, sendable: 3 },
+    });
+    renderClient();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sync now" }));
+
+    const summary = await screen.findByText(/Imported 3 new/);
+    expect(summary).toHaveTextContent(/1 listed twice/i);
+  });
+
   it("still reports a complete pull as a clean success", async () => {
     fetchMock.mockResolvedValue({
       fetched: 42,
       created: 40,
       updated: 2,
       skipped: 0,
+      duplicates: 0,
+      unmappable: 0,
       errors: [],
       truncated: false,
       readiness: { total: 42, withDateOfBirth: 42, withPostalAddress: 42, sendable: 42 },

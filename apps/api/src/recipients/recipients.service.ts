@@ -134,7 +134,13 @@ export interface IngestReadiness {
 export interface IngestResult {
   created: number;
   updated: number;
+  /** Refused: over the plan's cap, or the same person as one already on file.
+   *  Every one of these is named in `errors`. */
   skipped: number;
+  /** The same externalId appeared more than once in one payload; the last
+   *  occurrence won. Not a failure, but without it `created + updated +
+   *  skipped` silently falls short of what the caller handed over. */
+  duplicates: number;
   errors: { externalId: string; reason: string }[];
   readiness: IngestReadiness;
 }
@@ -870,8 +876,14 @@ export class RecipientsService {
     // Anything neither created nor updated nor cap-blocked collided with an
     // existing recipient's name+postcode+DOB dedupe key (a same-person match
     // from another source) — counted as skipped without a per-id reason.
+    //
+    // `updateErrors` belongs here too, and used to be left out. Those contacts
+    // were refused on the way in, so they are neither `updated` nor anything
+    // else — they simply left the summary, which is how a sync came to report
+    // "0 new, 97 updated (of 100 fetched)" with no account of the other three.
+    // They are the one class of skip that *is* named per-id in `errors`.
     const dedupeSkipped = toCreate.length - capSkippedIds.length - createdCount;
-    const skipped = capSkippedIds.length + Math.max(0, dedupeSkipped);
+    const skipped = capSkippedIds.length + Math.max(0, dedupeSkipped) + updateErrors.length;
 
     // The reported bug: CRM-synced recipients carry a DOB but never reached the
     // calendar because only the nightly cron created birthday occasions. Now a
@@ -894,6 +906,10 @@ export class RecipientsService {
       created: createdCount,
       updated: updatedCount,
       skipped,
+      // Collapsed above, before anything was looked up. Reported rather than
+      // swallowed so that created + updated + skipped + duplicates accounts for
+      // every contact this was given. See ADR 0227.
+      duplicates: contacts.length - unique.length,
       errors,
       readiness: await this.readinessFor(accountId, source),
     };
