@@ -659,6 +659,16 @@ export class RecipientsService {
     const candidateNewRows: { rowNumber: number; recipient: Prisma.RecipientCreateManyInput }[] =
       [];
     const toUpdate: { id: string; email: string | null; row: number }[] = [];
+    // Which existing contact each queued update belongs to, so a second row
+    // naming the same person is recognised as the duplicate it is rather than
+    // counted and written again. The mirror of `pendingByKey`, which only ever
+    // covered the create branch — so a re-uploaded file listing someone twice
+    // reported "updated 2" for one contact, issued two writes for it, and said
+    // nothing about the duplicate. See ADR 0233.
+    const queuedUpdateByExistingId = new Map<
+      string,
+      { rowNumber: number; entry: { id: string; email: string | null; row: number } }
+    >();
 
     for (const { rowNumber, parsed } of parsedRows) {
       const hasDistinguishingInfo = parsed.addressPostcode !== null || parsed.dateOfBirth !== null;
@@ -671,7 +681,20 @@ export class RecipientsService {
 
       const existing = hasDistinguishingInfo ? existingByKey.get(key) : undefined;
       if (existing) {
-        toUpdate.push({ id: existing.id, email: parsed.email ?? existing.email, row: rowNumber });
+        const alreadyQueued = queuedUpdateByExistingId.get(existing.id);
+        if (alreadyQueued) {
+          // Merged into the earlier row that named the same contact. The later
+          // value wins, as it does for two rows naming the same new person.
+          alreadyQueued.entry.email = parsed.email ?? alreadyQueued.entry.email;
+          summary.warnings.push({
+            row: rowNumber,
+            message: `Duplicate of row ${alreadyQueued.rowNumber} in this file — merged into it`,
+          });
+          continue;
+        }
+        const entry = { id: existing.id, email: parsed.email ?? existing.email, row: rowNumber };
+        toUpdate.push(entry);
+        queuedUpdateByExistingId.set(existing.id, { rowNumber, entry });
         summary.updated += 1;
         continue;
       }

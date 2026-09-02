@@ -241,5 +241,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0230 — One rule match, not two](./0230-one-rule-match-not-two.md)
 - [0231 — Bounding the whole, not the parts](./0231-bounding-the-whole-not-the-parts.md)
 - [0232 — A claim outliving what it claims](./0232-a-claim-outliving-what-it-claims.md)
+- [0233 — The half of the guard that was written](./0233-the-half-of-the-guard-that-was-written.md)
 
 <!-- adr-index:end -->

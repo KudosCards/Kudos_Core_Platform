@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma, type Recipient } from "@prisma/client";
 import {
   createSegmentInputSchema,
@@ -66,6 +66,22 @@ const SAMPLE_SIZE = 8;
  */
 export const RESOLVE_CONCURRENCY = 6;
 
+/**
+ * When one account's saved-list count is worth someone looking at.
+ *
+ * ADR 0210 bounded the *concurrency* of this page and left the *total work*
+ * unbounded, deliberately: a per-account cap is a product decision, and the
+ * measured distribution did not justify making it. Across every account on the
+ * platform the maximum was one saved list.
+ *
+ * That deferral is only safe while it stays true, and nothing was watching it —
+ * the first account to approach the problem would announce itself as a slow
+ * page nobody could explain. This is the tripwire: at fifty saved lists the
+ * overview still works, and someone is told before it stops being a deferral
+ * and starts being an incident. See ADR 0233.
+ */
+export const SAVED_SEGMENT_WARN_THRESHOLD = 50;
+
 /** Occasion-type display labels for the member preview line (server-side copy of
  * the web's OCCASION_TYPE_LABELS — kept tiny; only the recurring types appear). */
 const OCCASION_TYPE_LABELS: Record<OccasionType, string> = {
@@ -111,6 +127,8 @@ function windowRange(window: SegmentWindow, today: Date): { from: Date; to: Date
 
 @Injectable()
 export class SegmentsService {
+  private readonly logger = new Logger(SegmentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -141,6 +159,17 @@ export class SegmentsService {
       where: { accountId },
       orderBy: { createdAt: "desc" },
     });
+
+    if (savedRows.length >= SAVED_SEGMENT_WARN_THRESHOLD) {
+      // Not an error and not a limit: the page still works. It is the signal
+      // that the deferral above is running out, while there is still time to
+      // decide what to do about it rather than discover it from a support call.
+      this.logger.warn(
+        `Account ${accountId} has ${savedRows.length} saved smart lists — the segments overview ` +
+          `resolves every one on each load. Above ${SAVED_SEGMENT_WARN_THRESHOLD} this is worth ` +
+          `revisiting (ADR 0210's deferred per-account cap).`,
+      );
+    }
 
     const jobs: { row: (typeof savedRows)[number] | null; definition: SegmentDefinition }[] = [
       ...SEGMENT_PRESETS.map((preset) => ({ row: null, definition: preset.definition })),
