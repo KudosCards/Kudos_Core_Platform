@@ -207,31 +207,29 @@ export async function realignBirthdayOccasion(
     return { moved: false, retired, discarded, created: false, blocked: false };
   }
 
-  try {
-    await prisma.occasion.update({
-      where: { id: keeper.id },
-      data: { occasionDate: target, dispatchDate: computeDispatchDate(target) },
-    });
-  } catch (error) {
-    // The blocker check above covers every row this read, so reaching here means
-    // something claimed the date between that read and this write. Correcting a
-    // date of birth must not 500 on a race: fall back to the same answer the
-    // blocker branch gives — the date is taken, so the live row gives way.
-    if (!isUniqueViolation(error)) throw error;
-    const { retired: r2, discarded: d2 } = await discardLosers(prisma, [keeper], today);
-    return {
-      moved: false,
-      retired: retired + r2,
-      discarded: discarded + d2,
-      created: false,
-      blocked: true,
-    };
-  }
+  // The blocker check above covers every row this read, so a P2002 here means
+  // something claimed the date between that read and this write.
+  //
+  // **It is deliberately not caught.** This runs inside a transaction, and once
+  // Postgres refuses a statement it marks the whole block aborted: every
+  // subsequent command fails with 25P02 until the block ends. A catch that
+  // recovered by running more statements on the same `tx` — which is what used
+  // to be here — could not once have worked. It turned a 500 into a different
+  // 500, and read as though the race were handled.
+  //
+  // The caller retries instead, on a fresh transaction with fresh reads, where
+  // the row that claimed the date is now visible and the blocker branch above
+  // gives the right answer without a race at all. See ADR 0229.
+  await prisma.occasion.update({
+    where: { id: keeper.id },
+    data: { occasionDate: target, dispatchDate: computeDispatchDate(target) },
+  });
   return { moved: true, retired, discarded, created: false, blocked: false };
 }
 
-/** Prisma's "unique constraint failed" — the occasion idempotency key, here. */
-function isUniqueViolation(error: unknown): boolean {
+/** Prisma's "unique constraint failed" — the occasion idempotency key, here.
+ *  Exported for the caller that retries on it; see the note above the write. */
+export function isOccasionUniqueViolation(error: unknown): boolean {
   return (
     typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2002"
   );
