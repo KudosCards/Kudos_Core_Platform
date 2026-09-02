@@ -269,13 +269,28 @@ export class ClickAndDropService {
     const identifiers = [...new Set(orderIdentifiers.filter((id) => id.length > 0))];
     if (identifiers.length === 0) return { cancelled: [], failed: [] };
     if (!this.client.enabled) {
-      // Import is off, so nothing of ours is in Click & Drop to pull. Anything
-      // holding an identifier was imported while it was on, which is worth a
-      // log line rather than silence.
+      // Every one of these holds a Click & Drop identifier, so every one was
+      // imported while the integration was on and is sitting in Royal Mail's
+      // queue right now. Switching the key off does not recall them.
+      //
+      // This used to return an empty `failed` list — an answer indistinguishable
+      // from "there was nothing to cancel". The caller escalates only on
+      // failures, so nothing was raised, and the audit entry then recorded
+      // `clickAndDropStillLive: []`: it asserted nothing was left live at the
+      // moment everything was. A log line is not a record, and the fulfilment
+      // rows carrying these identifiers are deleted moments later.
+      //
+      // ADR 0179's rule is that anything not explicitly confirmed cancelled
+      // counts as failed. This branch never reaches `parseCancelResponse`, so it
+      // has to apply the rule itself.
+      const reason = "Click & Drop is switched off, so this order could not be recalled";
       this.logger.warn(
         `Click & Drop is disabled, so ${identifiers.length} imported order(s) were not cancelled: ${identifiers.join(", ")}`,
       );
-      return { cancelled: [], failed: [] };
+      return {
+        cancelled: [],
+        failed: identifiers.map((orderIdentifier) => ({ orderIdentifier, reason })),
+      };
     }
 
     let result: ClickAndDropCancelResult;
