@@ -235,5 +235,7 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0224 — The comment named one sink; there were three](./0224-the-comment-named-one-sink-there-were-three.md)
 - [0225 — A tick that loses its guard defers to the next one](./0225-a-tick-that-loses-its-guard-defers-to-the-next-one.md)
 - [0226 — Two live Checkout Sessions can both be paid](./0226-two-live-sessions-can-both-be-paid.md)
+- [0227 — A summary whose parts do not add up](./0227-a-summary-whose-parts-do-not-add-up.md)
+- [0228 — The web reported the tokens the API was scrubbing](./0228-the-web-reported-the-tokens-the-api-was-scrubbing.md)
 
 <!-- adr-index:end -->
