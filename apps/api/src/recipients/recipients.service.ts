@@ -30,7 +30,11 @@ import { buildScheduledBirthdayOccasion, startOfUtcDay } from "../occasions/birt
 import { realignBirthdayOccasion, type RealignResult } from "../occasions/realign-birthday.util";
 import { promoteDueOccasions } from "../occasions/promote-due-occasions.util";
 import { buildScheduledKeyDateOccasion } from "../occasions/key-date-occasion.util";
-import { keyDateTypeSchema, OPEN_OCCASION_STATUSES } from "@kudos/shared-types";
+import {
+  keyDateTypeSchema,
+  OPEN_OCCASION_STATUSES,
+  ROLLING_OCCASION_SOURCES,
+} from "@kudos/shared-types";
 
 /**
  * Distinct (first name, last name) pairs per dedupe-lookup query.
@@ -1101,10 +1105,19 @@ export class RecipientsService {
       // when promotion happened overnight and wrong the moment it became eager
       // — a re-dated key date would have left its old occasion sitting in
       // Approvals asking for a card on a date already corrected.
+      // `source` matters as much as `type`. A KeyDateType is also an
+      // OccasionType, so a shared event or a hand-added one-off can carry
+      // `anniversary` against this same contact — and without this filter the
+      // customer correcting their own renewal date silently deleted somebody
+      // else's approved card. Same defect as ADR 0221's, one model over; not
+      // reachable through the pickers today, and one dropdown away from being
+      // so.
       await tx.occasion.deleteMany({
         where: {
           recipientId,
+          accountId,
           type,
+          source: { in: [...ROLLING_OCCASION_SOURCES] },
           status: { in: [...OPEN_OCCASION_STATUSES] },
           occasionDate: { not: occasion.occasionDate as Date },
         },
@@ -1145,8 +1158,19 @@ export class RecipientsService {
     // customer had just deleted.
     await this.prisma.$transaction([
       this.prisma.recipientKeyDate.deleteMany({ where: { recipientId, accountId, type } }),
+      // Scoped by `source` for the reason above, and by `accountId` like the
+      // key-date delete beside it: `assertRecipient` has already established the
+      // contact is this account's, so this is the consistency the review's one
+      // unqualified pass rested on rather than a reachable hole. That
+      // consistency decays one query at a time.
       this.prisma.occasion.deleteMany({
-        where: { recipientId, type, status: { in: [...OPEN_OCCASION_STATUSES] } },
+        where: {
+          recipientId,
+          accountId,
+          type,
+          source: { in: [...ROLLING_OCCASION_SOURCES] },
+          status: { in: [...OPEN_OCCASION_STATUSES] },
+        },
       }),
     ]);
     await this.audit.record({
