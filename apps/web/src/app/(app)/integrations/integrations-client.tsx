@@ -87,15 +87,46 @@ const CONNECTED_PILL = <span className="pill pill-positive">Connected</span>;
 const PARTIAL_SYNC_LABEL = "partial: some contacts were not imported";
 
 /**
+ * What the "Last synced" line says until the next page load replaces it with
+ * the status the API stored.
+ *
+ * This used to be `truncated ? PARTIAL : "ok"`, which meant a sync that dropped
+ * a third of the address book for want of surnames put "ok" on the line while
+ * the panel directly above it said otherwise, and the server had stored
+ * something different again. Deliberately terser than the stored status — it
+ * survives one render, and the summary panel is carrying the detail. See ADR
+ * 0227.
+ */
+function optimisticSyncStatus(result: CrmSyncResult): string {
+  if (result.truncated) {
+    return PARTIAL_SYNC_LABEL;
+  }
+  const missing = result.skipped + result.unmappable;
+  return missing > 0
+    ? `incomplete: ${missing} of ${result.fetched} contacts were not imported`
+    : "ok";
+}
+
+/**
  * Summary shown after a manual sync — green when everything came across, amber
  * when it didn't. A truncated pull is a partial import, and saying "Imported 5,000"
  * in green for a 12,000-contact portal is how someone ends up believing their
  * whole address book is here.
  */
 function SyncSummary({ result }: { result: CrmSyncResult }) {
-  const counts = `Imported ${result.created} new, ${result.updated} updated${
-    result.skipped > 0 ? `, ${result.skipped} skipped` : ""
-  } (of ${result.fetched} fetched).`;
+  // Every contact the CRM handed over is one of these, and the sentence says so
+  // — "0 new, 97 updated (of 100 fetched)" invited the customer to assume the
+  // other three were a rounding error rather than three children who will not
+  // get a card. See ADR 0227.
+  const unaccounted = [
+    result.skipped > 0 ? `${result.skipped} skipped` : null,
+    result.unmappable > 0 ? `${result.unmappable} with no first or last name` : null,
+    result.duplicates > 0 ? `${result.duplicates} listed twice` : null,
+  ].filter((part): part is string => part !== null);
+  const counts =
+    `Imported ${result.created} new, ${result.updated} updated` +
+    `${unaccounted.length > 0 ? `, ${unaccounted.join(", ")}` : ""}` +
+    ` (of ${result.fetched} fetched).`;
 
   // A card needs a birthday to know when and an address to know where. Both are
   // optional in every CRM we read, so "imported 500" can mean twelve people will
@@ -109,8 +140,9 @@ function SyncSummary({ result }: { result: CrmSyncResult }) {
   ].filter((part): part is string => part !== null);
 
   // Green only when everything came across and everything can be used. An
-  // import nobody can send a card from is not a success.
-  const clean = !result.truncated && missing.length === 0;
+  // import nobody can send a card from is not a success, and neither is one
+  // that quietly left contacts behind.
+  const clean = !result.truncated && missing.length === 0 && unaccounted.length === 0;
   return (
     <p
       className={
@@ -129,7 +161,36 @@ function SyncSummary({ result }: { result: CrmSyncResult }) {
             ? ` — ${missing.join(", ")}. Add those in your CRM and sync again, or fill them in on the Contacts page.`
             : ".")
         : ""}
+      {result.unmappable > 0
+        ? " A contact needs a first and last name before a card can be addressed to it — add those in your CRM and sync again."
+        : ""}
+      {result.errors.length > 0 ? <SyncRefusals errors={result.errors} /> : null}
     </p>
+  );
+}
+
+/** How many refusals to name before the list becomes its own wall of text. */
+const REFUSALS_SHOWN = 5;
+
+/**
+ * The per-contact reasons. The API has always returned these and nothing ever
+ * rendered them, so a customer could see that a contact was refused but never
+ * why — and the reason is the only part they can act on.
+ */
+function SyncRefusals({ errors }: { errors: CrmSyncResult["errors"] }) {
+  const shown = errors.slice(0, REFUSALS_SHOWN);
+  const rest = errors.length - shown.length;
+  return (
+    <span className="mt-2 block font-normal">
+      <ul className="list-disc space-y-1 pl-5">
+        {shown.map((error) => (
+          <li key={error.externalId}>
+            <span className="font-medium">{error.externalId}</span> — {error.reason}
+          </li>
+        ))}
+      </ul>
+      {rest > 0 ? <span className="mt-1 block">…and {rest} more.</span> : null}
+    </span>
   );
 }
 
@@ -212,7 +273,7 @@ function BrevoConnector({
           lastSyncedAt: new Date(),
           // Not unconditionally "ok": a truncated pull is a partial import, and
           // the "Last synced" line is what carries that until the next reload.
-          lastSyncStatus: syncResult.truncated ? PARTIAL_SYNC_LABEL : "ok",
+          lastSyncStatus: optimisticSyncStatus(syncResult),
         });
       }
     } catch (syncError) {
@@ -396,7 +457,7 @@ function OAuthConnector({
           lastSyncedAt: new Date(),
           // Not unconditionally "ok": a truncated pull is a partial import, and
           // the "Last synced" line is what carries that until the next reload.
-          lastSyncStatus: syncResult.truncated ? PARTIAL_SYNC_LABEL : "ok",
+          lastSyncStatus: optimisticSyncStatus(syncResult),
         });
       }
     } catch (syncError) {

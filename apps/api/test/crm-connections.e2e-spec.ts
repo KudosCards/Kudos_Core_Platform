@@ -32,6 +32,8 @@ const syncResultSchema = z.object({
   created: z.number(),
   updated: z.number(),
   skipped: z.number(),
+  duplicates: z.number(),
+  unmappable: z.number(),
   errors: z.array(z.object({ externalId: z.string(), reason: z.string() })),
 });
 
@@ -145,6 +147,13 @@ describe("CRM connections — Brevo (e2e)", () => {
       created: 2,
       updated: 0,
       skipped: 0,
+      // The third contact has no surname, so the mapper dropped it before
+      // ingest ever saw it. It is not "skipped" — nothing skipped it — but it
+      // is one of the three the customer was told about, and until it was
+      // counted the summary read "2 created, 0 skipped (of 3 fetched)" and
+      // left them to work out where the third went.
+      unmappable: 1,
+      duplicates: 0,
     });
 
     const list = paginatedRecipientsSchema.parse(
@@ -179,6 +188,141 @@ describe("CRM connections — Brevo (e2e)", () => {
     expect(syncResultSchema.parse(sync.body).truncated).toBe(true);
     const stored = await prisma.crmConnection.findFirstOrThrow({ where: { accountId } });
     expect(stored.lastSyncStatus).toMatch(/partial/i);
+  });
+
+  it("accounts for every contact the provider handed over", async () => {
+    // The invariant the summary rests on. Whatever else changes, a contact that
+    // was fetched is either created, updated, skipped, a duplicate of another
+    // in the same pull, or unmappable — never simply absent.
+    const { token } = await signUp();
+    await connect(token).expect(201);
+    mockContacts = [
+      { id: 1, email: "ada@example.com", attributes: { FIRSTNAME: "Ada", LASTNAME: "Lovelace" } },
+      // Same externalId twice in one pull — collapsed, last one wins.
+      { id: 1, email: "ada2@example.com", attributes: { FIRSTNAME: "Ada", LASTNAME: "Lovelace" } },
+      { id: 2, email: "no@example.com", attributes: { FIRSTNAME: "NoLast" } },
+      { id: 3, email: "n@example.com", attributes: {} },
+    ];
+
+    const sync = await request(app.getHttpServer())
+      .post("/integrations/connections/brevo/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const result = syncResultSchema.parse(sync.body);
+    expect(result.fetched).toBe(4);
+    expect(result.unmappable).toBe(2);
+    expect(result.duplicates).toBe(1);
+    expect(result.created).toBe(1);
+    expect(
+      result.created + result.updated + result.skipped + result.duplicates + result.unmappable,
+    ).toBe(result.fetched);
+  });
+
+  it("counts a contact refused on update as skipped, with a reason", async () => {
+    // An edit in the source CRM can make one contact the same person as
+    // another already on file. The update is refused — correctly — but the
+    // contact was landing in neither `updated` nor `skipped`, so it left the
+    // summary entirely while `errors` named it to nobody.
+    const { token } = await signUp();
+    // The dedupe key is (account, first, last, postcode, date of birth), and
+    // Postgres treats NULLs in a unique index as distinct — so a postcode has
+    // to be mapped for two contacts to be capable of colliding at all.
+    await request(app.getHttpServer())
+      .post("/integrations/connections")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        provider: "brevo",
+        apiKey: "brevo-key-good",
+        fieldMapping: { dateOfBirth: "DOB", addressPostcode: "POSTCODE" },
+      })
+      .expect(201);
+    mockContacts = [
+      {
+        id: 10,
+        email: "grace@example.com",
+        attributes: {
+          FIRSTNAME: "Grace",
+          LASTNAME: "Hopper",
+          DOB: "2015-01-01",
+          POSTCODE: "SW1A 1AA",
+        },
+      },
+      {
+        id: 20,
+        email: "alan@example.com",
+        attributes: {
+          FIRSTNAME: "Alan",
+          LASTNAME: "Turing",
+          DOB: "2015-02-02",
+          POSTCODE: "SW1A 1AA",
+        },
+      },
+    ];
+    await request(app.getHttpServer())
+      .post("/integrations/connections/brevo/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    // Contact 20 is renamed in the CRM to the person contact 10 already is.
+    mockContacts = [
+      {
+        id: 20,
+        email: "alan@example.com",
+        attributes: {
+          FIRSTNAME: "Grace",
+          LASTNAME: "Hopper",
+          DOB: "2015-01-01",
+          POSTCODE: "SW1A 1AA",
+        },
+      },
+    ];
+    const second = await request(app.getHttpServer())
+      .post("/integrations/connections/brevo/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const result = syncResultSchema.parse(second.body);
+    expect(result).toMatchObject({ fetched: 1, created: 0, updated: 0, skipped: 1 });
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.externalId).toBe("20");
+    expect(
+      result.created + result.updated + result.skipped + result.duplicates + result.unmappable,
+    ).toBe(result.fetched);
+  });
+
+  it("does not record a sync that lost contacts as ok", async () => {
+    // The connections list renders any non-"ok" status verbatim, and it is the
+    // only trace a nightly sync leaves. Writing "ok" over a pull that dropped
+    // contacts is how a customer comes to believe their whole address book is
+    // here.
+    const { token, accountId } = await signUp();
+    await connect(token).expect(201);
+
+    await request(app.getHttpServer())
+      .post("/integrations/connections/brevo/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const stored = await prisma.crmConnection.findFirstOrThrow({ where: { accountId } });
+    expect(stored.lastSyncStatus).not.toBe("ok");
+    expect(stored.lastSyncStatus).toContain("1 of 3");
+  });
+
+  it("records ok when every contact came across", async () => {
+    const { token, accountId } = await signUp();
+    await connect(token).expect(201);
+    mockContacts = [
+      { id: 1, email: "ada@example.com", attributes: { FIRSTNAME: "Ada", LASTNAME: "Lovelace" } },
+    ];
+
+    await request(app.getHttpServer())
+      .post("/integrations/connections/brevo/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const stored = await prisma.crmConnection.findFirstOrThrow({ where: { accountId } });
+    expect(stored.lastSyncStatus).toBe("ok");
   });
 
   it("re-syncing updates matched contacts instead of duplicating", async () => {
