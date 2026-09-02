@@ -233,5 +233,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0222 — A key date only clears its own occasions](./0222-a-key-date-only-clears-its-own-occasions.md)
 - [0223 — A refund reports what it could not stop](./0223-a-refund-reports-what-it-could-not-stop.md)
 - [0224 — The comment named one sink; there were three](./0224-the-comment-named-one-sink-there-were-three.md)
+- [0225 — A tick that loses its guard defers to the next one](./0225-a-tick-that-loses-its-guard-defers-to-the-next-one.md)
 
 <!-- adr-index:end -->
