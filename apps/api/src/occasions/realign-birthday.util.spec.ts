@@ -1,10 +1,22 @@
-import { realignBirthdayOccasion } from "./realign-birthday.util";
+import { isOccasionUniqueViolation, realignBirthdayOccasion } from "./realign-birthday.util";
 
 /**
- * The race path, which no end-to-end test can reach: something claims the
- * corrected date between the read that checks for a blocker and the write that
- * moves the row onto it. The blocker check covers every row it read, so this is
- * the residue — and correcting a date of birth must not 500 on it. See ADR 0185.
+ * The race path: something claims the corrected date between the read that
+ * checks for a blocker and the write that moves the row onto it. The blocker
+ * check covers every row it read, so this is the residue — and correcting a
+ * date of birth must not 500 on it (ADR 0185).
+ *
+ * This function used to recover from it here, by clearing the row that could
+ * not move. **That could never have run.** In production the realign is always
+ * inside a transaction, and Postgres marks the block aborted the moment the
+ * unique key refuses a statement — so the recovery's own writes failed with
+ * 25P02 and the customer got a 500 anyway. The test passed because the stub
+ * below is a plain client with no transaction: it differed from production in
+ * exactly the way that mattered.
+ *
+ * The collision is now propagated and the *caller* retries on a fresh
+ * transaction, where the row that claimed the date is visible and the blocker
+ * branch handles it with no race at all. See ADR 0229.
  */
 describe("realignBirthdayOccasion under a concurrent claim", () => {
   const RECIPIENT = { accountId: "acc-1", recipientId: "rec-1" };
@@ -39,8 +51,8 @@ describe("realignBirthdayOccasion under a concurrent claim", () => {
     return { client, deleted, retired };
   }
 
-  it("gives the row up instead of throwing when the date is claimed mid-write", async () => {
-    const { client, deleted } = prismaStub({
+  it("propagates the collision rather than trying to recover inside the transaction", async () => {
+    const { client } = prismaStub({
       // One live row, on the wrong date, and nothing blocking the target — so
       // the move is attempted.
       rows: [
@@ -58,15 +70,21 @@ describe("realignBirthdayOccasion under a concurrent claim", () => {
       },
     });
 
-    const result = await realignBirthdayOccasion(
-      client as unknown as Parameters<typeof realignBirthdayOccasion>[0],
-      { ...RECIPIENT, dateOfBirth },
-      now,
-    );
+    await expect(
+      realignBirthdayOccasion(
+        client as unknown as Parameters<typeof realignBirthdayOccasion>[0],
+        { ...RECIPIENT, dateOfBirth },
+        now,
+      ),
+    ).rejects.toMatchObject({ code: "P2002" });
+  });
 
-    expect(result).toMatchObject({ moved: false, blocked: true });
-    // The row that could not move is cleared rather than left on the old date.
-    expect(deleted.flat()).toContain("keeper");
+  it("recognises the collision for the caller that retries on it", () => {
+    // The caller's retry turns on this, so it is worth one line: a P2002 is
+    // retried, anything else is a real failure and goes up.
+    expect(isOccasionUniqueViolation({ code: "P2002" })).toBe(true);
+    expect(isOccasionUniqueViolation(new Error("connection reset"))).toBe(false);
+    expect(isOccasionUniqueViolation(null)).toBe(false);
   });
 
   it("still surfaces an error that is not a unique-key collision", async () => {

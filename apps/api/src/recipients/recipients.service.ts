@@ -27,7 +27,11 @@ import { parseRecipientRow, type ParsedRecipientRow } from "./csv-row.util";
 import { suggestMapping, remapRow } from "./csv-mapping.util";
 import type { CsvColumnMapping, CsvImportPreview } from "@kudos/shared-types";
 import { buildScheduledBirthdayOccasion, startOfUtcDay } from "../occasions/birthday-occasion.util";
-import { realignBirthdayOccasion, type RealignResult } from "../occasions/realign-birthday.util";
+import {
+  isOccasionUniqueViolation,
+  realignBirthdayOccasion,
+  type RealignResult,
+} from "../occasions/realign-birthday.util";
 import { promoteDueOccasions } from "../occasions/promote-due-occasions.util";
 import { buildScheduledKeyDateOccasion } from "../occasions/key-date-occasion.util";
 import {
@@ -399,74 +403,113 @@ export class RecipientsService {
     });
     const previousDateOfBirth = previous?.dateOfBirth ?? null;
 
-    let count: number;
-    try {
-      ({ count } = await this.prisma.recipient.updateMany({
-        where: { id, accountId },
-        data: dto,
-      }));
-    } catch (error) {
-      throw this.mapWriteError(error);
-    }
-    if (count === 0) {
-      throw new NotFoundException("Recipient not found");
-    }
+    // One transaction for the contact write, the birthday realign it triggers
+    // and the audit entry that records both.
+    //
+    // These were three separate commits. Any failure between them left a changed
+    // date of birth with no AuditLogEntry naming it — on the one table whose
+    // whole purpose is to say who touched a child's personal data, and whose own
+    // service throws rather than lose a record. The realign itself has been
+    // transactional since ADR 0185; the write it describes was not inside it.
+    // See ADR 0229.
+    const attempt = async (): Promise<{ recipient: Recipient; realigned: RealignResult | null }> =>
+      this.prisma.$transaction(async (tx) => {
+        let count: number;
+        try {
+          ({ count } = await tx.recipient.updateMany({ where: { id, accountId }, data: dto }));
+        } catch (error) {
+          throw this.mapWriteError(error);
+        }
+        if (count === 0) {
+          throw new NotFoundException("Recipient not found");
+        }
 
-    const recipient = await this.prisma.recipient.findFirstOrThrow({ where: { id, accountId } });
+        const recipient = await tx.recipient.findFirstOrThrow({ where: { id, accountId } });
 
-    // If the date of birth changed, move the contact's live birthday onto the
-    // corrected date rather than leaving it behind. Deleting only the
-    // `scheduled` row (what this used to do) orphaned anything already in
-    // Approvals or approved, so a contact accrued one stale birthday per
-    // correction. See realign-birthday.util.ts.
-    let realigned: RealignResult | null = null;
-    if (dto.dateOfBirth !== undefined) {
-      // In a transaction: the realign retires the losing rows before it moves
-      // the keeper, so a failure part-way through used to commit the destruction
-      // and leave the keeper on the old date — a correction that made things
-      // worse and then failed identically on every retry. See ADR 0185.
-      realigned = await this.prisma.$transaction((tx) =>
-        realignBirthdayOccasion(
-          tx,
-          { accountId, recipientId: id, dateOfBirth: recipient.dateOfBirth },
-          new Date(),
-        ),
-      );
-      // A corrected date of birth can move a birthday into the approval window
-      // as well as out of it, so re-run the same rule here too.
-      if (recipient.dateOfBirth) {
-        await promoteDueOccasions(this.prisma, accountId);
-      }
-    }
+        // If the date of birth changed, move the contact's live birthday onto
+        // the corrected date rather than leaving it behind. Deleting only the
+        // `scheduled` row (what this used to do) orphaned anything already in
+        // Approvals or approved, so a contact accrued one stale birthday per
+        // correction. See realign-birthday.util.ts.
+        //
+        // The realign retires the losing rows before it moves the keeper, so a
+        // failure part-way through must not commit the destruction and leave the
+        // keeper on the old date — a correction that made things worse and then
+        // failed identically on every retry. See ADR 0185.
+        let realigned: RealignResult | null = null;
+        if (dto.dateOfBirth !== undefined) {
+          realigned = await realignBirthdayOccasion(
+            tx,
+            { accountId, recipientId: id, dateOfBirth: recipient.dateOfBirth },
+            new Date(),
+          );
+        }
 
-    await this.audit.record({
-      accountId,
-      actorUserId,
-      action: "update",
-      targetType: "Recipient",
-      targetId: id,
-      // What actually changed. This used to be null, so an audit trail could
-      // show that a date of birth had been edited four times and not what any
-      // of the four values were — which is exactly the question asked of it.
-      metadata: {
-        fields: Object.keys(dto).sort(),
-        ...(dto.dateOfBirth !== undefined && {
-          dateOfBirth: {
-            from: previousDateOfBirth ? previousDateOfBirth.toISOString().slice(0, 10) : null,
-            to: recipient.dateOfBirth ? recipient.dateOfBirth.toISOString().slice(0, 10) : null,
+        await this.audit.record(
+          {
+            accountId,
+            actorUserId,
+            action: "update",
+            targetType: "Recipient",
+            targetId: id,
+            // What actually changed. This used to be null, so an audit trail
+            // could show that a date of birth had been edited four times and not
+            // what any of the four values were — which is exactly the question
+            // asked of it.
+            metadata: {
+              fields: Object.keys(dto).sort(),
+              ...(dto.dateOfBirth !== undefined && {
+                dateOfBirth: {
+                  from: previousDateOfBirth ? previousDateOfBirth.toISOString().slice(0, 10) : null,
+                  to: recipient.dateOfBirth
+                    ? recipient.dateOfBirth.toISOString().slice(0, 10)
+                    : null,
+                },
+                birthdayOccasion: realigned
+                  ? {
+                      moved: realigned.moved,
+                      retired: realigned.retired,
+                      discarded: realigned.discarded,
+                      created: realigned.created,
+                      blocked: realigned.blocked,
+                    }
+                  : null,
+              }),
+            },
           },
-          birthdayOccasion: realigned
-            ? {
-                moved: realigned.moved,
-                retired: realigned.retired,
-                discarded: realigned.discarded,
-                created: realigned.created,
-                blocked: realigned.blocked,
-              }
-            : null,
-        }),
-      },
-    });
+          tx,
+        );
+        return { recipient, realigned };
+      });
+
+    // The realign checks for a blocker and then moves the keeper onto the
+    // corrected date; another writer can take that date in between, and the
+    // unique key refuses the write. That P2002 cannot be recovered from inside
+    // the transaction — Postgres has already marked the block aborted, so every
+    // further statement fails with 25P02 (which is what the catch that used to
+    // live down there did, to nobody's benefit). Retrying the whole transaction
+    // is the recovery: the fresh read sees the row that claimed the date and the
+    // blocker branch handles it with no race at all. See ADR 0229.
+    //
+    // One retry. The second attempt only loses if a *third* writer takes the
+    // date in the same instant, and correcting a date of birth is not a
+    // contended operation — a persistent conflict is a bug, not a queue, and
+    // should surface rather than spin.
+    let recipient: Recipient;
+    try {
+      ({ recipient } = await attempt());
+    } catch (error) {
+      if (!isOccasionUniqueViolation(error)) throw error;
+      ({ recipient } = await attempt());
+    }
+
+    // After the commit, not inside it: promotion is a separate rule about which
+    // occasions are due, and it must not be able to roll back the correction.
+    // A corrected date of birth can move a birthday into the approval window as
+    // well as out of it, so re-run the same rule here too.
+    if (dto.dateOfBirth !== undefined && recipient.dateOfBirth) {
+      await promoteDueOccasions(this.prisma, accountId);
+    }
     return recipient;
   }
 
@@ -616,6 +659,16 @@ export class RecipientsService {
     const candidateNewRows: { rowNumber: number; recipient: Prisma.RecipientCreateManyInput }[] =
       [];
     const toUpdate: { id: string; email: string | null; row: number }[] = [];
+    // Which existing contact each queued update belongs to, so a second row
+    // naming the same person is recognised as the duplicate it is rather than
+    // counted and written again. The mirror of `pendingByKey`, which only ever
+    // covered the create branch — so a re-uploaded file listing someone twice
+    // reported "updated 2" for one contact, issued two writes for it, and said
+    // nothing about the duplicate. See ADR 0233.
+    const queuedUpdateByExistingId = new Map<
+      string,
+      { rowNumber: number; entry: { id: string; email: string | null; row: number } }
+    >();
 
     for (const { rowNumber, parsed } of parsedRows) {
       const hasDistinguishingInfo = parsed.addressPostcode !== null || parsed.dateOfBirth !== null;
@@ -628,7 +681,20 @@ export class RecipientsService {
 
       const existing = hasDistinguishingInfo ? existingByKey.get(key) : undefined;
       if (existing) {
-        toUpdate.push({ id: existing.id, email: parsed.email ?? existing.email, row: rowNumber });
+        const alreadyQueued = queuedUpdateByExistingId.get(existing.id);
+        if (alreadyQueued) {
+          // Merged into the earlier row that named the same contact. The later
+          // value wins, as it does for two rows naming the same new person.
+          alreadyQueued.entry.email = parsed.email ?? alreadyQueued.entry.email;
+          summary.warnings.push({
+            row: rowNumber,
+            message: `Duplicate of row ${alreadyQueued.rowNumber} in this file — merged into it`,
+          });
+          continue;
+        }
+        const entry = { id: existing.id, email: parsed.email ?? existing.email, row: rowNumber };
+        toUpdate.push(entry);
+        queuedUpdateByExistingId.set(existing.id, { rowNumber, entry });
         summary.updated += 1;
         continue;
       }

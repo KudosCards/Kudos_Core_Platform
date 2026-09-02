@@ -1,5 +1,6 @@
 import { BadGatewayException, UnauthorizedException } from "@nestjs/common";
 import { httpRequest } from "../../common/http-request";
+import { startFetchBudget } from "../fetch-budget";
 import type { CrmContactsResult } from "../crm-contacts-result";
 import { upstreamDetail, withUpstreamDetail } from "../upstream-detail";
 import type { HubSpotClient, HubSpotContact, HubSpotTokens } from "./hubspot-client";
@@ -104,8 +105,10 @@ export class HttpHubSpotClient implements HubSpotClient {
   ): Promise<CrmContactsResult<HubSpotContact>> {
     const contacts: HubSpotContact[] = [];
     let after: string | undefined;
+    // Bounds the whole pull, not each request — see fetch-budget.ts.
+    const budget = startFetchBudget();
 
-    for (let page = 0; page < HUBSPOT_MAX_PAGES; page += 1) {
+    for (let page = 0; page < HUBSPOT_MAX_PAGES && !budget.expired(); page += 1) {
       const query = new URLSearchParams({ limit: String(HUBSPOT_PAGE_SIZE) });
       for (const property of properties) {
         query.append("properties", property);

@@ -773,6 +773,23 @@ export function DesignEditorClient({
     }
   }
 
+  /**
+   * Throw the local mirror away, and forget that it existed.
+   *
+   * Both halves, always. `backedUpSnapshot` is what the "backed up on this
+   * device" chip and the leave guard are derived from, and clearing the store
+   * without clearing it left the claim standing against nothing: edit back to a
+   * snapshot that *was* mirrored and the chip came on, the guard came off, and
+   * the work was unrecoverable. That is the same defect ADR 0182 fixed on the
+   * write side — the claim outliving the thing it claims — arriving from the
+   * other direction. One function, so the pair cannot come apart again.
+   * See ADR 0232.
+   */
+  function forgetLocalBackup() {
+    clearDraft(savedDesign.id);
+    setBackedUpSnapshot(null);
+  }
+
   /** Persist the current name + document, updating the saved snapshot so the
    * editor is no longer "dirty". Throws on failure so callers can react. */
   async function persist() {
@@ -783,7 +800,7 @@ export function DesignEditorClient({
     setSavedSnapshot(JSON.stringify({ name, document: document_ }));
     setSavedAt(new Date());
     // Safely on the server now — the local backup is no longer needed.
-    clearDraft(savedDesign.id);
+    forgetLocalBackup();
     setBackupBlocked(false);
     setSaveError(null);
   }
@@ -949,7 +966,7 @@ export function DesignEditorClient({
           <button
             type="button"
             onClick={() => {
-              clearDraft(savedDesign.id);
+              forgetLocalBackup();
               setRecoverable(null);
             }}
             className="rounded-full border border-amber-400 px-4 py-1.5 text-xs font-medium hover:bg-amber-100"

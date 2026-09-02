@@ -283,11 +283,45 @@ export function computeDispatchDate(
   leadDays: number = DEFAULT_POSTAGE_LEAD_DAYS,
   options: DispatchDateOptions = {},
 ): Date {
+  return dispatchPlan(occasionDate, leadDays, options).dispatchDate;
+}
+
+/** When a card posts, and the seasonal rule that decided it. */
+export interface DispatchPlan {
+  dispatchDate: Date;
+  /** The rule matched against the *base* posting date — the one that granted
+   *  any extra lead, and the only rule that governs this card. */
+  rule: SeasonalDispatchRule | null;
+}
+
+/**
+ * The posting date **and the rule that produced it**, together.
+ *
+ * They are returned together because they were derived separately and diverged.
+ * `computeDispatchDate` matches its rule on the base posting date, before the
+ * extra lead; `suggestFirstClass` re-derived its own by matching on the *final*
+ * date, after. Where the extra lead pulls the final date back out of the window
+ * that granted it — a band a few days wide at the start of December — the card
+ * was scheduled three days early for the Christmas rush while the Approvals
+ * screen and the batch composer showed no First-Class nudge on it. Sixteen
+ * occasion dates in the 2025-2028 horizon, and the same contradiction ADR 0195
+ * was written to remove.
+ *
+ * One match, in one place, for both answers. See ADR 0230.
+ */
+export function dispatchPlan(
+  occasionDate: Date,
+  leadDays: number = DEFAULT_POSTAGE_LEAD_DAYS,
+  options: DispatchDateOptions = {},
+): DispatchPlan {
   const holidays = options.holidays ?? UK_BANK_HOLIDAYS;
   const base = workingDaysBefore(occasionDate, leadDays, holidays);
   const rule = seasonalDispatchRuleFor(base, options.seasonalRules);
-  if (!rule?.extraLeadDays) return base;
-  return workingDaysBefore(occasionDate, leadDays + rule.extraLeadDays, holidays);
+  if (!rule?.extraLeadDays) return { dispatchDate: base, rule };
+  return {
+    dispatchDate: workingDaysBefore(occasionDate, leadDays + rule.extraLeadDays, holidays),
+    rule,
+  };
 }
 
 /**
@@ -381,23 +415,23 @@ export interface FirstClassSuggestion {
 
 /**
  * Should we suggest First Class for a card timed to this occasion? True when the
- * card would be *posted* inside a seasonal window flagged `suggestFirstClass`,
+ * seasonal rule governing this card's schedule is flagged `suggestFirstClass`,
  * so the UI can prompt at the point postage is chosen.
  *
- * Matched on the posting date for the same reason the extra lead is, and so the
- * two always agree: a nudge saying the post is slow beside a schedule computed
- * as though it isn't would be the platform contradicting itself. Both postage
- * classes share the send-by-5 lead (they are equal by design), so the default is
- * the right one to derive the posting date from here.
+ * It asks `dispatchPlan` which rule that is rather than working it out again. A
+ * nudge saying the post is slow beside a schedule computed as though it isn't
+ * would be the platform contradicting itself — and it did, for every card whose
+ * extra lead carried its posting date back out of the window that granted it.
+ * See ADR 0230. Both postage classes share the send-by-5 lead (they are equal by
+ * design), so the default is the right one to plan from here.
  */
 export function suggestFirstClass(
   occasionDate: Date,
   options: { seasonalRules?: readonly SeasonalDispatchRule[] } = {},
 ): FirstClassSuggestion {
-  const posting = computeDispatchDate(occasionDate, DEFAULT_POSTAGE_LEAD_DAYS, {
+  const { rule } = dispatchPlan(occasionDate, DEFAULT_POSTAGE_LEAD_DAYS, {
     seasonalRules: options.seasonalRules,
   });
-  const rule = seasonalDispatchRuleFor(posting, options.seasonalRules);
   if (rule?.suggestFirstClass) {
     return {
       suggested: true,

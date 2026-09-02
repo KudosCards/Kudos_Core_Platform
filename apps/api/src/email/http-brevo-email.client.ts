@@ -5,6 +5,25 @@ import type { EmailClient, SendEmailInput } from "./email.client";
 const BREVO_EMAIL_URL = "https://api.brevo.com/v3/smtp/email";
 
 /**
+ * A deadline of its own, four times the default.
+ *
+ * The send below deliberately does not retry, because Brevo may have accepted a
+ * message and then failed to answer us, and a second attempt puts a second copy
+ * in the recipient's inbox. **An abort carries exactly the same ambiguity**, and
+ * the 15-second default made it the likelier of the two: a slow-but-successful
+ * send throws, the caller treats it as a failure, and the record that would have
+ * suppressed a repeat is never written. The reminder digest is the clearest
+ * case — an unstamped `reminderSentAt` means tomorrow's run sends the identical
+ * email to someone who already has it, which is the duplicate the no-retry rule
+ * exists to prevent, arriving a day late.
+ *
+ * So the deadline is set where an abort really does mean "not delivered" rather
+ * than "slow". It still bounds the call: a hung Brevo cannot hold a caller open
+ * indefinitely. See ADR 0231.
+ */
+export const BREVO_EMAIL_TIMEOUT_MS = 60_000;
+
+/**
  * The real Brevo transactional-email client. Never instantiated in tests
  * (EMAIL_CLIENT is overridden with a mock) — see email-client.provider.ts.
  *
@@ -48,7 +67,7 @@ export class HttpBrevoEmailClient implements EmailClient {
           ...content,
         }),
       },
-      { label: "Brevo email" },
+      { label: "Brevo email", timeoutMs: BREVO_EMAIL_TIMEOUT_MS },
     );
 
     if (!response.ok) {

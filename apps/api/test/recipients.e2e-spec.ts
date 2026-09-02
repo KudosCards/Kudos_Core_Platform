@@ -381,6 +381,47 @@ describe("Recipients (e2e)", () => {
     expect(summary.warnings.some((w) => w.row === 3 && /duplicate/i.test(w.message))).toBe(true);
   });
 
+  it("does not count a duplicate row for an existing contact twice either", async () => {
+    // The mirror of the case above, and the half the guard missed: two rows for
+    // someone *already on file*. Both matched the existing contact, both were
+    // counted as an update and both were queued for a write, so the report read
+    // "updated 2" for one person and the file's duplicate went unmentioned. A
+    // corrected re-upload is exactly where duplicate rows and existing matches
+    // coincide. See ADR 0233.
+    const { token, accountId } = await signUp();
+    await request(app.getHttpServer())
+      .post("/recipients")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ firstName: "Archie", lastName: "Winn", dateOfBirth: "2011-05-29", ...MAILABLE })
+      .expect(201);
+
+    const csv = [
+      "firstName,lastName,dateOfBirth,postcode,email",
+      "Archie,Winn,29/05/2011,SW1A 1AA,first@example.com",
+      "Archie,Winn,29/05/2011,SW1A 1AA,second@example.com",
+    ].join("\n");
+    const response = await request(app.getHttpServer())
+      .post("/recipients/import")
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from(csv), "contacts.csv")
+      .expect(201);
+    const summary = importSummarySchema.parse(response.body);
+
+    expect(summary.created).toBe(0);
+    // One contact was updated, however many rows named it.
+    expect(summary.updated).toBe(1);
+    expect(summary.warnings.some((w) => w.row === 3 && /duplicate of row 2/i.test(w.message))).toBe(
+      true,
+    );
+
+    // And the last value in the file wins, exactly as it does when two rows
+    // name the same *new* person.
+    const stored = await prisma.recipient.findFirstOrThrow({
+      where: { accountId, firstName: "Archie" },
+    });
+    expect(stored.email).toBe("second@example.com");
+  });
+
   it("reports the contacts it actually created, not the ones it tried to", async () => {
     // `skipDuplicates` is on the import's createMany for a documented reason:
     // another request can create a contact matching this batch's dedupe key
