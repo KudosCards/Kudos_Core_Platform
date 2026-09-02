@@ -487,7 +487,16 @@ function toDetail(page: PagePayload): MessagePageDetail {
       : null;
   return {
     ...toSummary(page),
-    message: page.message,
+    // Cleaned on the way out, exactly as the public read does — and for the same
+    // reason, which that read's own comment got wrong when it called itself "the
+    // only place this HTML is ever executed". The builder is a sink too: this
+    // value feeds MessagePageView's dangerouslySetInnerHTML and
+    // RichTextEditor's ref.current.innerHTML, both on the authenticated origin,
+    // where the per-request CSP does not apply (it is gated on "/r/"). A row
+    // written before the write side was sealed executed when its own author
+    // opened it to edit. Idempotent, so a row cleaned at write time is
+    // unchanged.
+    message: cleanMessageHtml(page.message),
     videoUrl: page.videoUrl,
     embedUrl,
     ctaLabel: page.ctaLabel,

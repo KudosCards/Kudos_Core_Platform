@@ -117,36 +117,70 @@ export class WebhooksService {
       return;
     }
 
-    const fulfilled = await this.prisma.$transaction(async (tx) => {
+    const paymentIntentId =
+      typeof session.payment_intent === "string" ? session.payment_intent : null;
+
+    const outcome = await this.prisma.$transaction(async (tx) => {
       // Status-guarded: Stripe redelivers webhooks at-least-once, so a
       // second delivery of the same event must be a safe no-op, not a
       // second FulfillmentJob per card.
       const { count } = await tx.batchOrder.updateMany({
         where: { id: batchOrderId, status: "pending_payment" },
-        data: { status: "paid" },
+        // Recording the paying session is what makes the guard below able to
+        // tell a redelivery from a second charge. Up to this point the column
+        // means "the session the order is waiting on"; from here it means "the
+        // session that paid it", and an order resumed once has two sessions
+        // that could each arrive here. See ADR 0226.
+        data: { status: "paid", stripeCheckoutSessionId: session.id },
       });
       if (count === 0) {
-        // Not a no-op in every case: a redelivered event for an order
-        // already "paid" is the expected, harmless case Stripe's at-least-
-        // once delivery guarantees. But if the order is in any OTHER
-        // status (e.g. "cancelled" — a customer released a stuck
-        // pending_payment order via cancel() at the same moment they
-        // completed payment in another tab), Stripe has now been paid for
-        // an order this system considers abandoned. Refunds are out of
-        // scope for this phase (ADR 0008), so the only safe thing to do
-        // is make this loudly auditable rather than silently swallow it.
         const current = await tx.batchOrder.findUnique({ where: { id: batchOrderId } });
-        if (current && current.status !== "paid") {
-          await this.audit.record({
-            accountId: current.accountId,
-            actorUserId: SYSTEM_ACTOR,
-            action: "payment_succeeded_after_cancel_anomaly",
-            targetType: "BatchOrder",
-            targetId: batchOrderId,
-            metadata: { stripeCheckoutSessionId: session.id, orderStatus: current.status },
-          });
+        if (!current) {
+          return { fulfilled: false, unfulfilled: null };
         }
-        return false;
+        // The expected, harmless case Stripe's at-least-once delivery
+        // guarantees: this very session already paid this order.
+        if (current.status === "paid" && current.stripeCheckoutSessionId === session.id) {
+          return { fulfilled: false, unfulfilled: null };
+        }
+        // Anything else means Stripe has taken money this system did not
+        // fulfil against, and there are two ways in. The order may have moved
+        // out of pending_payment (e.g. "cancelled" — a customer released a
+        // stuck order via cancel() at the moment they completed payment in
+        // another tab). Or it may be *already paid by a different session*: a
+        // resumed checkout leaves two live sessions, and a buyer who still has
+        // the abandoned tab open can pay both. That second case used to be
+        // read as a plain redelivery and recorded nowhere at all.
+        //
+        // Refunding from a webhook is money moving with no human behind it, so
+        // this records the fact and pages an operator instead. See ADR 0226.
+        const alreadyPaid = current.status === "paid";
+        await this.audit.record({
+          accountId: current.accountId,
+          actorUserId: SYSTEM_ACTOR,
+          action: alreadyPaid
+            ? "duplicate_payment_anomaly"
+            : "payment_succeeded_after_cancel_anomaly",
+          targetType: "BatchOrder",
+          targetId: batchOrderId,
+          metadata: {
+            stripeCheckoutSessionId: session.id,
+            orderStatus: current.status,
+            ...(alreadyPaid &&
+              current.stripeCheckoutSessionId && {
+                paidByCheckoutSessionId: current.stripeCheckoutSessionId,
+              }),
+            ...(paymentIntentId && { stripePaymentIntentId: paymentIntentId }),
+          },
+        });
+        return {
+          fulfilled: false,
+          unfulfilled: {
+            orderStatus: current.status,
+            alreadyPaid,
+            paidByCheckoutSessionId: current.stripeCheckoutSessionId,
+          },
+        };
       }
 
       // Shared with wallet payment: recipients → queued, a FulfillmentJob per
@@ -162,14 +196,28 @@ export class WebhooksService {
         targetId: batchOrderId,
         metadata: { stripeCheckoutSessionId: session.id },
       });
-      return true;
+      return { fulfilled: true, unfulfilled: null };
     });
+
+    // An audit row nobody reads does not get the customer their money back, so
+    // the same fact goes to an operator's bell. Post-commit, like every other
+    // notification here — see OpsActivityService for why it can't go inside the
+    // transaction.
+    if (outcome.unfulfilled) {
+      await this.opsActivity.paymentNeedsRefund({
+        batchOrderId,
+        stripeCheckoutSessionId: session.id,
+        stripePaymentIntentId: paymentIntentId,
+        amountMinor: session.amount_total ?? null,
+        ...outcome.unfulfilled,
+      });
+    }
 
     // Only on the FIRST delivery (fulfilled === true) — never on a redelivery,
     // so the buyer is emailed exactly once. Best-effort: a send failure is
     // logged, not thrown (the payment + fulfilment already succeeded, and the
     // same information is on the success page).
-    if (fulfilled) {
+    if (outcome.fulfilled) {
       await this.maybeSendOrderEmail(batchOrderId);
       await this.notifyOrderPaid(batchOrderId);
       // Kudos HQ's copy of the same event. After the transaction, like the two

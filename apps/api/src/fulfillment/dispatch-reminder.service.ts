@@ -11,6 +11,16 @@ import { DispatchConfigService } from "../dispatch/dispatch-config.service";
 import { FulfillmentService, type MustShipCard, type MustShipSummary } from "./fulfillment.service";
 import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 
+/** How this run was reached. */
+export interface DispatchReminderRunOptions {
+  /**
+   * Whether another tick will attempt today's digest if this one declines.
+   * True for every tick of the send window but the last; false for a direct
+   * run, which has no successor.
+   */
+  retryFollows?: boolean;
+}
+
 /** What one reminder run did — returned for tests + logging. */
 export interface DispatchReminderResult {
   adminsEmailed: number;
@@ -59,12 +69,17 @@ export class DispatchReminderService {
   async scheduledReminder(): Promise<void> {
     const config = await this.dispatchConfig.getReminderConfig();
     if (!config.enabled) return;
-    if (!this.withinSendWindow(londonHour(new Date()), config)) return;
-    await this.runDispatchReminder(config);
+    const hour = londonHour(new Date());
+    const { first, last } = this.sendWindow(config);
+    if (hour < first || hour > last) return;
+    // Whether this tick has a successor to hand the day to. Only matters when
+    // the run loses its dedupe guard — see `runDispatchReminder`.
+    await this.runDispatchReminder(config, { retryFollows: hour < last });
   }
 
   /**
-   * Whether an hourly tick at `hour` should attempt the day's digest.
+   * The inclusive range of London hours in which an hourly tick may attempt the
+   * day's digest.
    *
    * London, not UTC. The hour an operator sets is the hour they mean; judging
    * it against the server's UTC clock made a "07:00" reminder arrive at 08:00
@@ -77,24 +92,34 @@ export class DispatchReminderService {
    * tick inside the window sends anything — `runDispatchReminder` keys the
    * notification-centre entry on the London day and stops there if it already
    * exists (ADR 0211), so a window costs at most the same one digest an instant
-   * did.
+   * did *as long as that entry can be written*. When it can't, the tick defers
+   * to its successor rather than assuming it went first; the last tick has no
+   * successor, which is why the caller says whether one follows. See ADR 0225.
    *
    * Both hours are independently 0-23 on the settings panel, so a send hour
    * *after* the cut-off is a config an operator can save. `Math.max` collapses
    * the window to the send hour alone rather than to nothing, which is the
    * behaviour that config had before there was a window at all.
    */
-  private withinSendWindow(hour: number, config: DispatchReminderConfig): boolean {
-    const lastHour = Math.max(config.sendHourLondon, config.sameDayCutoffHour);
-    return hour >= config.sendHourLondon && hour <= lastHour;
+  private sendWindow(config: DispatchReminderConfig): { first: number; last: number } {
+    return {
+      first: config.sendHourLondon,
+      last: Math.max(config.sendHourLondon, config.sameDayCutoffHour),
+    };
   }
 
   /**
    * The reminder itself — runnable directly (tests, an on-demand trigger) without
    * the cron's enabled/hour gate. Emails all operators the digest, writes the
    * in-app entry, and escalates critically-overdue cards to super admins.
+   *
+   * `options.retryFollows` defaults to false: a direct run is its own last
+   * chance, so it behaves as it always has.
    */
-  async runDispatchReminder(config?: DispatchReminderConfig): Promise<DispatchReminderResult> {
+  async runDispatchReminder(
+    config?: DispatchReminderConfig,
+    options: DispatchReminderRunOptions = {},
+  ): Promise<DispatchReminderResult> {
     const cfg = config ?? (await this.dispatchConfig.getReminderConfig());
     const summary = await this.fulfillment.mustShip();
     const base: DispatchReminderResult = {
@@ -125,6 +150,7 @@ export class DispatchReminderService {
     // to nobody. See ADR 0211.
     const today = londonDay(new Date());
     let created = true;
+    let guardLost = false;
     try {
       created = await this.platformNotifications.notifyAllAdmins({
         kind: "dispatch_reminder",
@@ -135,12 +161,28 @@ export class DispatchReminderService {
         entityId: today,
       });
     } catch (error) {
-      // Losing the dedupe guard is better than losing the alert — fall through
-      // and still email this run.
+      // `created` keeps its initialised `true`, so without the flag below this
+      // run would go on believing it went first.
+      guardLost = true;
       const reason = error instanceof Error ? error.message : "Unknown error";
       this.logger.error(`Dispatch reminder in-app notification failed: ${reason}`);
     }
     if (!created) {
+      return base;
+    }
+    if (guardLost && options.retryFollows) {
+      // The tick that cannot record itself cannot tell whether an earlier tick
+      // already emailed, so it hands the day to the next one. That is only safe
+      // because there is a next one: hourly ticks from the send hour to the
+      // cut-off (ADR 0216). Sending anyway was the right call when the gate kept
+      // exactly one tick a day and a lost guard cost nothing; against a nine-hour
+      // window a durable failure costs nine identical digests, which is how an
+      // alert stops being read. The last tick of the window is passed
+      // `retryFollows: false` and still sends, because silence is the one
+      // outcome this alert must not have. See ADR 0225.
+      this.logger.warn(
+        "Dispatch reminder: dedupe guard unavailable, deferring the digest to the next tick",
+      );
       return base;
     }
 

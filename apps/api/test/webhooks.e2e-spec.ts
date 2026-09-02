@@ -638,6 +638,155 @@ describe("Webhooks (e2e)", () => {
       expect(order.status).toBe("draft");
     });
 
+    it("records the session that actually paid, not the one it was waiting on", async () => {
+      // The column means "waiting on this session" right up until payment, and
+      // "paid by this session" afterwards. Both readings have to hold, because
+      // the payment can land on either session — the buyer may still have the
+      // abandoned tab open.
+      const { token } = await signUp();
+      const { batchOrderId, firstSessionId } = await orderResumedOnSecondSession(token);
+
+      await postWebhook(
+        buildStripeEventPayload("checkout.session.completed", {
+          id: firstSessionId,
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+
+      const order = await prisma.batchOrder.findUniqueOrThrow({ where: { id: batchOrderId } });
+      expect(order.status).toBe("paid");
+      expect(order.stripeCheckoutSessionId).toBe(firstSessionId);
+    });
+
+    it("raises the alarm when a second session pays an order that is already paid", async () => {
+      // Both sessions stay payable for Stripe's 24 hours, so a buyer with the
+      // abandoned tab still open can pay twice for one order. The second
+      // payment finds the order already "paid", and the anomaly guard used to
+      // read `current.status !== "paid"` — so it recorded nothing at all. The
+      // account was charged twice, no audit row, nobody told, no refund.
+      const { token } = await signUp();
+      const { batchOrderId, firstSessionId, secondSessionId } =
+        await orderResumedOnSecondSession(token);
+      // Somebody who can actually issue the refund has to exist to be paged.
+      const superAdminUserId = randomUUID();
+      await prisma.platformAdmin.create({
+        data: {
+          userId: superAdminUserId,
+          role: "super_admin",
+          email: `ops-${superAdminUserId}@kudoscards.co.uk`,
+        },
+      });
+
+      await postWebhook(
+        buildStripeEventPayload("checkout.session.completed", {
+          id: secondSessionId,
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+      await postWebhook(
+        buildStripeEventPayload("checkout.session.completed", {
+          id: firstSessionId,
+          payment_intent: "pi_test_the_second_charge",
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+
+      const entries = await prisma.auditLogEntry.findMany({
+        where: { targetId: batchOrderId, action: "duplicate_payment_anomaly" },
+      });
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.metadata).toMatchObject({
+        stripeCheckoutSessionId: firstSessionId,
+        paidByCheckoutSessionId: secondSessionId,
+        stripePaymentIntentId: "pi_test_the_second_charge",
+      });
+
+      // An audit row nobody reads does not get anyone their money back.
+      const alerts = await prisma.platformNotification.findMany({
+        where: { kind: "payment_needs_refund", entityId: firstSessionId },
+      });
+      expect(alerts.length).toBeGreaterThan(0);
+      expect(alerts[0]!.body).toContain("already paid");
+
+      // Paid once, printed once.
+      const jobs = await prisma.fulfillmentJob.findMany({
+        where: { orderRecipient: { batchOrderId } },
+      });
+      expect(jobs).toHaveLength(1);
+    });
+
+    it("raises the alarm when the abandoned session pays first and the live one follows", async () => {
+      // The mirror image, and the one the column has to move for. Here the
+      // payment lands on the session the order was NOT waiting on, so the row
+      // still names the other one. Leave the column alone and the live
+      // session's own completion compares equal to it and reads as a plain
+      // redelivery — the second charge disappears entirely.
+      const { token } = await signUp();
+      const { batchOrderId, firstSessionId, secondSessionId } =
+        await orderResumedOnSecondSession(token);
+      const superAdminUserId = randomUUID();
+      await prisma.platformAdmin.create({
+        data: {
+          userId: superAdminUserId,
+          role: "super_admin",
+          email: `ops-${superAdminUserId}@kudoscards.co.uk`,
+        },
+      });
+
+      await postWebhook(
+        buildStripeEventPayload("checkout.session.completed", {
+          id: firstSessionId,
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+      await postWebhook(
+        buildStripeEventPayload("checkout.session.completed", {
+          id: secondSessionId,
+          metadata: { batchOrderId },
+        }),
+      ).expect(201);
+
+      const entries = await prisma.auditLogEntry.findMany({
+        where: { targetId: batchOrderId, action: "duplicate_payment_anomaly" },
+      });
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.metadata).toMatchObject({
+        stripeCheckoutSessionId: secondSessionId,
+        paidByCheckoutSessionId: firstSessionId,
+      });
+      const alerts = await prisma.platformNotification.findMany({
+        where: { kind: "payment_needs_refund", entityId: secondSessionId },
+      });
+      expect(alerts.length).toBeGreaterThan(0);
+
+      const jobs = await prisma.fulfillmentJob.findMany({
+        where: { orderRecipient: { batchOrderId } },
+      });
+      expect(jobs).toHaveLength(1);
+    });
+
+    it("stays silent on a redelivery of the session that did pay", async () => {
+      // Stripe delivers at least once. The same session arriving twice is the
+      // expected case and must not look like a second charge.
+      const { token } = await signUp();
+      const { batchOrderId, secondSessionId } = await orderResumedOnSecondSession(token);
+
+      const paid = buildStripeEventPayload("checkout.session.completed", {
+        id: secondSessionId,
+        metadata: { batchOrderId },
+      });
+      await postWebhook(paid).expect(201);
+      await postWebhook(paid).expect(201);
+
+      const entries = await prisma.auditLogEntry.findMany({
+        where: {
+          targetId: batchOrderId,
+          action: { in: ["duplicate_payment_anomaly", "payment_succeeded_after_cancel_anomaly"] },
+        },
+      });
+      expect(entries).toHaveLength(0);
+    });
+
     it("still releases an order that checked out before the session was recorded", async () => {
       // Orders already in pending_payment when the column shipped carry no
       // session id. They must keep expiring the way they always did, or a

@@ -132,6 +132,18 @@ describe("DispatchReminderService", () => {
     expect(notify.entityId).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
+  it("a direct run still emails when the in-app entry cannot be written", async () => {
+    // No cron, no window, no next tick — an on-demand run is its own last
+    // chance, so losing the dedupe guard must not cost the alert.
+    const { service, sendTransactional, notifyAllAdmins } = build(busySummary, ["ops@kudos.test"]);
+    notifyAllAdmins.mockRejectedValue(new Error("connection terminated unexpectedly"));
+
+    const result = await service.runDispatchReminder();
+
+    expect(result.adminsEmailed).toBe(1);
+    expect(sendTransactional).toHaveBeenCalledTimes(1);
+  });
+
   it("does not re-email when today's entry already exists (first run wins)", async () => {
     const { service, sendTransactional, notifyAllAdmins } = build(busySummary, ["ops@kudos.test"]);
     // Another instance already recorded today's entry → notify returns false.
@@ -443,6 +455,49 @@ describe("DispatchReminderService", () => {
         expect(await runAt(hour)).toBe(false);
       }
       expect([...seen]).toEqual(["2026-01-15"]);
+    });
+
+    it("defers rather than repeats when the in-app entry cannot be written", async () => {
+      // The dedupe guard *is* the notification write. `created` is initialised
+      // `true` and only reassigned on success, so a write that keeps throwing
+      // leaves every tick in the window believing it went first: nine identical
+      // digests where the day should have one. Deferring is safe precisely
+      // because there is a window — a failed tick is no longer the day's only
+      // chance, which is the whole point of ADR 0216.
+      const runAt = async (hour: number): Promise<number> => {
+        atLondonHour(hour);
+        const { service, sendTransactional, notifyAllAdmins } = build(
+          busySummary,
+          ["ops@kudos.test"],
+          { sendHourLondon: 7, sameDayCutoffHour: 15 },
+        );
+        notifyAllAdmins.mockRejectedValue(new Error("connection terminated unexpectedly"));
+        await service.scheduledReminder();
+        return sendTransactional.mock.calls.length;
+      };
+
+      for (const hour of [7, 8, 9, 10, 11, 12, 13, 14]) {
+        expect(await runAt(hour)).toBe(0);
+      }
+      // The cut-off tick has nothing to defer to, and silence is the one
+      // outcome this alert must not have — so it sends, unguarded, once.
+      expect(await runAt(15)).toBe(1);
+    });
+
+    it("emails unguarded when the send hour is the whole window", async () => {
+      // A send hour after the cut-off collapses the window to one tick. There
+      // is no later tick to defer to, so a lost guard must not cost the day.
+      atLondonHour(17);
+      const { service, sendTransactional, notifyAllAdmins } = build(
+        busySummary,
+        ["ops@kudos.test"],
+        { sendHourLondon: 17, sameDayCutoffHour: 15 },
+      );
+      notifyAllAdmins.mockRejectedValue(new Error("connection terminated unexpectedly"));
+
+      await service.scheduledReminder();
+
+      expect(sendTransactional).toHaveBeenCalledTimes(1);
     });
   });
 });
