@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { COMMITTED_OCCASION_STATUSES } from "@kudos/shared-types";
+import { COMMITTED_OCCASION_STATUSES, ROLLING_OCCASION_SOURCES } from "@kudos/shared-types";
 import { startOfUtcDay } from "./birthday-occasion.util";
 import { nextBirthdayOccurrence } from "./next-birthday.util";
 import { computeDispatchDate } from "./occasion-scheduling.constants";
@@ -96,6 +96,12 @@ async function discardLosers(
  */
 const LIVE_ORDER = ["approved", "pending_approval", "scheduled"] as const;
 
+/** Whether a birthday row is one this function owns — the contact's own
+ * recurring birthday, rather than a shared event's or a one-off campaign's. */
+function isRolling(source: string): boolean {
+  return (ROLLING_OCCASION_SOURCES as readonly string[]).includes(source);
+}
+
 export async function realignBirthdayOccasion(
   prisma: PrismaLike,
   input: { accountId: string; recipientId: string; dateOfBirth: Date | null },
@@ -114,10 +120,24 @@ export async function realignBirthdayOccasion(
       accountId: input.accountId,
       type: "birthday",
     },
-    select: { id: true, status: true, occasionDate: true },
+    select: { id: true, status: true, occasionDate: true, source: true },
   });
   const isLive = (status: string): boolean => (LIVE_ORDER as readonly string[]).includes(status);
-  const live = all.filter((o) => isLive(o.status));
+
+  // Only the contact's own recurring birthday is this function's to move or
+  // discard. A shared event of type `birthday` — a cohort card the whole class
+  // gets — writes a birthday row against the same contact, and the read above
+  // cannot tell them apart because the unique key is (recipient, type, date)
+  // with no source in it.
+  //
+  // Without this filter the cohort card was picked up as a rival birthday, lost
+  // the ranking to the row on the corrected date, and was hard-deleted along
+  // with the design chosen for it. It needed no unusual sequence: the contact
+  // page sends `dateOfBirth` on every save, so correcting a postcode ran the
+  // realign and destroyed an approved card. The create below has always tagged
+  // its own rows `recurring_per_recipient`; the read simply never asked.
+  const live = all.filter((o) => isLive(o.status) && isRolling(o.source));
+  const liveIds = new Set(live.map((o) => o.id));
 
   // No date of birth any more: there is no birthday to hold, so every live row
   // goes. (A committed card is untouched by the filter above.)
@@ -138,7 +158,12 @@ export async function realignBirthdayOccasion(
   // there — and trying was a P2002, a 500, and (because none of this ran in a
   // transaction) the losing rows already destroyed. The date is represented; the
   // live row is surplus and gives way. See ADR 0185.
-  const blocker = all.find((o) => o.occasionDate.getTime() === targetTime && !isLive(o.status));
+  // Anything on the corrected date that this function may not move: a committed
+  // card, a skipped or missed row — and now a shared event's card, which is not
+  // ours even though it is live. The read stays unfiltered for exactly this: the
+  // unique key has no source column, so a cohort card on the target date still
+  // blocks, and moving the keeper onto it would be the P2002 ADR 0185 removed.
+  const blocker = all.find((o) => o.occasionDate.getTime() === targetTime && !liveIds.has(o.id));
   if (blocker) {
     const { retired, discarded } =
       live.length > 0 ? await discardLosers(prisma, live, today) : { retired: 0, discarded: 0 };

@@ -14,7 +14,9 @@ describe("realignBirthdayOccasion under a concurrent claim", () => {
   const dateOfBirth = new Date("1996-10-23T00:00:00.000Z");
 
   function prismaStub(overrides: {
-    rows: { id: string; status: string; occasionDate: Date }[];
+    // `source` is part of the real row: the realign only moves or discards
+    // rows it owns, so a stub without it describes no row the function acts on.
+    rows: { id: string; status: string; occasionDate: Date; source: string }[];
     onUpdate: () => never | void;
   }) {
     const deleted: string[][] = [];
@@ -42,7 +44,12 @@ describe("realignBirthdayOccasion under a concurrent claim", () => {
       // One live row, on the wrong date, and nothing blocking the target — so
       // the move is attempted.
       rows: [
-        { id: "keeper", status: "approved", occasionDate: new Date("2026-11-01T00:00:00.000Z") },
+        {
+          id: "keeper",
+          status: "approved",
+          occasionDate: new Date("2026-11-01T00:00:00.000Z"),
+          source: "recurring_per_recipient",
+        },
       ],
       onUpdate: () => {
         const error: Error & { code?: string } = new Error("Unique constraint failed");
@@ -67,7 +74,12 @@ describe("realignBirthdayOccasion under a concurrent claim", () => {
     // silently unchanged birthday.
     const { client } = prismaStub({
       rows: [
-        { id: "keeper", status: "scheduled", occasionDate: new Date("2026-11-01T00:00:00.000Z") },
+        {
+          id: "keeper",
+          status: "scheduled",
+          occasionDate: new Date("2026-11-01T00:00:00.000Z"),
+          source: "recurring_per_recipient",
+        },
       ],
       onUpdate: () => {
         throw new Error("connection reset");
