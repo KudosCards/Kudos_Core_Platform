@@ -2091,15 +2091,31 @@ export class BatchOrdersService {
       where: { orderRecipientId: { in: orderRecipientIds } },
       select: { id: true, status: true, clickAndDropOrderId: true },
     });
-    await tx.fulfillmentJob.deleteMany({
-      where: { orderRecipientId: { in: orderRecipientIds }, status: { not: "posted" } },
-    });
+    // Deleted *and* reported in one statement, so the status is the one the row
+    // actually held when it went.
+    //
+    // A separate `deleteMany` leaves the report reading a snapshot taken a
+    // round-trip earlier, and at Read Committed each statement takes a fresh
+    // one. A card that read `pending` and reached `printed` before the delete
+    // was then deleted with its stale status still saying `pending` — dropped
+    // from `raced` entirely, so nothing escalated and the audit row recorded an
+    // order that had had nothing in production. There is no way to read a row's
+    // status after deleting it, so it has to come back with the delete.
+    const deleted =
+      orderRecipientIds.length === 0
+        ? []
+        : await tx.$queryRaw<{ id: string; status: FulfillmentJobStatus }[]>(Prisma.sql`
+            DELETE FROM fulfillment_jobs
+            WHERE order_recipient_id IN (${Prisma.join(orderRecipientIds)})
+              AND status <> 'posted'::"FulfillmentJobStatus"
+            RETURNING id, status
+          `);
     // Whatever is still here escaped: it reached `posted` before the delete
     // could reach it. Re-read rather than infer, so the report names what is
     // real even if the race ran on during the transaction.
     const survivors = await tx.fulfillmentJob.findMany({
       where: { orderRecipientId: { in: orderRecipientIds } },
-      select: { id: true },
+      select: { id: true, status: true },
     });
     const survivorIds = new Set(survivors.map((job) => job.id));
 
@@ -2123,9 +2139,28 @@ export class BatchOrdersService {
       clickAndDropOrderIds: jobs
         .filter((job) => !survivorIds.has(job.id) && job.clickAndDropOrderId !== null)
         .map((job) => job.clickAndDropOrderId as string),
-      raced: jobs
-        .filter((job) => job.status !== "pending")
-        .map((job) => ({ jobId: job.id, status: job.status, stopped: !survivorIds.has(job.id) })),
+      // Membership comes from the re-read, not the snapshot above.
+      //
+      // `stopped` already used the fresh survivors while membership used the
+      // stale status, and the two disagree in exactly the case this report
+      // exists for: a job that read `pending` and reached `posted` one
+      // round-trip later is skipped by the delete, turns up in survivors, and
+      // was then dropped from `raced` because the status it *had* was
+      // `pending`. Nothing escalated, and the audit row recorded
+      // `racedCards: []` for an order whose card was on its way. Read Committed
+      // takes a fresh snapshot per statement, so this window is real on the
+      // Stripe-refund path — the wallet path runs Serializable and would abort
+      // and retry instead.
+      // Every card that had left `pending` by the time the release reached it,
+      // built from what the release itself observed rather than the snapshot
+      // above: the delete reports the status each row actually held, and
+      // whatever survived is `posted` and beyond recall.
+      raced: [
+        ...survivors.map((job) => ({ jobId: job.id, status: job.status, stopped: false })),
+        ...deleted
+          .filter((job) => job.status !== "pending")
+          .map((job) => ({ jobId: job.id, status: job.status, stopped: true })),
+      ],
     };
   }
 }
