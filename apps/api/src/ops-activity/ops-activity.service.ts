@@ -188,6 +188,69 @@ export class OpsActivityService {
   }
 
   /**
+   * Stripe took money this system did not fulfil against, and only a person can
+   * put it right. Two ways in, both from the Checkout webhook (ADR 0226):
+   *
+   * - the order moved out of `pending_payment` before the payment landed —
+   *   cancelled in another tab, most likely;
+   * - the order was **already paid by a different Checkout Session**. A resumed
+   *   checkout leaves two sessions live, and a buyer who still has the
+   *   abandoned tab open can pay them both.
+   *
+   * Super-admin only, like the refund-race alert: this is money, and it needs
+   * somebody who can issue the refund rather than everybody who can see the
+   * bell. Keyed on the offending session so a redelivered webhook rings once.
+   */
+  async paymentNeedsRefund(input: {
+    batchOrderId: string;
+    stripeCheckoutSessionId: string;
+    stripePaymentIntentId: string | null;
+    amountMinor: number | null;
+    orderStatus: string;
+    alreadyPaid: boolean;
+    paidByCheckoutSessionId: string | null;
+  }): Promise<void> {
+    try {
+      const order = await this.prisma.batchOrder.findUnique({
+        where: { id: input.batchOrderId },
+        select: { orderNumber: true, account: { select: { name: true } } },
+      });
+      const reference = order ? `ORD-${order.orderNumber}` : input.batchOrderId;
+      const amount = input.amountMinor === null ? "" : ` of ${formatMinor(input.amountMinor)}`;
+      const parts = [
+        input.alreadyPaid
+          ? `${reference} was already paid${
+              input.paidByCheckoutSessionId
+                ? ` by Checkout Session ${input.paidByCheckoutSessionId}`
+                : ""
+            }, so this is a second charge for the same order.` +
+            ` The cards were printed once and must not be printed again.`
+          : `A payment landed on ${reference}, which is "${input.orderStatus}" — nothing was` +
+            ` printed and nothing will be.`,
+        `The customer has been charged${amount} and needs refunding:` +
+          ` Checkout Session ${input.stripeCheckoutSessionId}` +
+          `${input.stripePaymentIntentId ? `, payment intent ${input.stripePaymentIntentId}` : ""}.`,
+      ];
+      await this.platformNotifications.notifyAllAdmins(
+        {
+          kind: "payment_needs_refund",
+          title: `Refund needed on ${reference}${order ? ` (${order.account.name})` : ""}`,
+          body: parts.join(" "),
+          href: `/admin/orders/${input.batchOrderId}`,
+          entityType: "CheckoutSession",
+          entityId: input.stripeCheckoutSessionId,
+        },
+        { role: "super_admin" },
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(
+        `Refund-needed alert for ${input.batchOrderId} could not be raised: ${reason}`,
+      );
+    }
+  }
+
+  /**
    * Somebody signed up. Called from both routes into an account with a login:
    * a normal signup, and a guest one-off buyer later claiming the account they
    * bought from (ADR 0025).

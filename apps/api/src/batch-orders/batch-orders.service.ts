@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -199,6 +200,8 @@ const EMPTY_RELEASE: OrderReleaseResult = { clickAndDropOrderIds: [], raced: [] 
 
 @Injectable()
 export class BatchOrdersService {
+  private readonly logger = new Logger(BatchOrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly entitlements: EntitlementsService,
@@ -1319,6 +1322,10 @@ export class BatchOrdersService {
     // order at a time.
     let movedFromDraft = false;
     let walletApplied = 0;
+    // The session a resume replaces. Both stay payable at Stripe for 24 hours
+    // unless this one is told to stop, and a buyer with the abandoned tab still
+    // open can pay them both. Expired below, once the row names the new one.
+    let supersededSessionId: string | null = null;
     if (existing.status === "draft") {
       walletApplied = await runSerializable(this.prisma, async (tx) => {
         const balance = await this.walletBalance(tx, accountId);
@@ -1369,6 +1376,7 @@ export class BatchOrdersService {
       // A resume re-uses the reservation the first attempt already took. Taking
       // it again would debit the wallet twice for one order.
       walletApplied = existing.walletAppliedMinor;
+      supersededSessionId = existing.stripeCheckoutSessionId;
     }
 
     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
@@ -1452,6 +1460,29 @@ export class BatchOrdersService {
         stripeCheckoutSessionId: session.id,
       },
     });
+
+    // Only now that the row names the new session may the old one be stopped.
+    // Expiring it earlier — at the top of the resume branch, where it reads
+    // most naturally — is a trap: Stripe answers the expire call with a
+    // `checkout.session.expired` webhook, `releasableBySession` still finds the
+    // old id on the row, and the order is handed back to `draft` with its
+    // wallet reservation released, while the session we are about to hand the
+    // buyer is live. They then pay for cards nobody prints, which is the exact
+    // failure ADR 0179 exists to prevent. See ADR 0226.
+    if (supersededSessionId) {
+      try {
+        await this.stripe.checkout.sessions.expire(supersededSessionId);
+      } catch (error) {
+        // Stripe refuses to expire a session that has already completed or timed
+        // out on its own clock — the ordinary case for an order resumed a day
+        // later. Best-effort: a resume must not fail because the session it
+        // replaced was already dead.
+        const reason = error instanceof Error ? error.message : "Unknown error";
+        this.logger.warn(
+          `Could not expire superseded Checkout Session ${supersededSessionId} for batch order ${id}: ${reason}`,
+        );
+      }
+    }
 
     if (actorUserId) {
       await this.audit.record({

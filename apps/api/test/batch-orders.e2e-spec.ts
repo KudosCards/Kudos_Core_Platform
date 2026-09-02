@@ -94,13 +94,15 @@ describe("Batch orders (e2e)", () => {
   let prisma: PrismaService;
   let batchOrders: BatchOrdersService;
   let checkoutSessionsCreate: jest.Mock;
+  let checkoutSessionsExpire: jest.Mock;
   let refundsCreate: jest.Mock;
 
   beforeAll(async () => {
     checkoutSessionsCreate = jest.fn();
+    checkoutSessionsExpire = jest.fn();
     refundsCreate = jest.fn();
     const mockStripe = {
-      checkout: { sessions: { create: checkoutSessionsCreate } },
+      checkout: { sessions: { create: checkoutSessionsCreate, expire: checkoutSessionsExpire } },
       refunds: { create: refundsCreate },
     } as unknown as Stripe;
 
@@ -115,6 +117,10 @@ describe("Batch orders (e2e)", () => {
 
   beforeEach(() => {
     checkoutSessionsCreate.mockReset();
+    checkoutSessionsExpire.mockReset();
+    checkoutSessionsExpire.mockImplementation((id: string) =>
+      Promise.resolve({ id, status: "expired" }),
+    );
     refundsCreate.mockReset();
     refundsCreate.mockImplementation(() =>
       Promise.resolve({ id: `re_test_${randomUUID()}`, status: "succeeded" }),
@@ -901,6 +907,98 @@ describe("Batch orders (e2e)", () => {
     // webhook must recognise it as stale rather than release an order the buyer
     // may be paying for right now. That only works if the resume moved this
     // column on. See ADR 0179.
+    expect(stored.stripeCheckoutSessionId).toBe(sessionIdFromUrl(resume.body));
+  });
+
+  it("expires the session the resume supersedes, so only one is payable", async () => {
+    // Both sessions are live for Stripe's 24 hours. If the abandoned tab is
+    // still open, the buyer can pay it as well as the fresh one and be charged
+    // twice for one order. Only one may remain payable.
+    const { token } = await signUp();
+    const occasionId = await createApprovedOccasion(token);
+    const createResponse = await request(app.getHttpServer())
+      .post("/batch-orders")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ lines: [buildLine(occasionId)] })
+      .expect(201);
+    const order = batchOrderSchema.parse(createResponse.body);
+
+    const first = await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/checkout`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    // What the order was waiting on at the moment the expiry was requested.
+    // This is the whole ordering question: expire the old session while the
+    // row still names it and Stripe's expiry webhook comes back and releases
+    // the order to draft — with a live session behind it, and a wallet
+    // reservation handed back — so the buyer pays for cards nobody prints.
+    let waitingOnWhenExpired: string | null = null;
+    checkoutSessionsExpire.mockImplementation(async (id: string) => {
+      const row = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.id } });
+      waitingOnWhenExpired = row.stripeCheckoutSessionId;
+      return { id, status: "expired" };
+    });
+
+    const resume = await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/checkout`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ resume: true })
+      .expect(201);
+
+    expect(checkoutSessionsExpire).toHaveBeenCalledTimes(1);
+    expect(checkoutSessionsExpire).toHaveBeenCalledWith(sessionIdFromUrl(first.body));
+    expect(waitingOnWhenExpired).toBe(sessionIdFromUrl(resume.body));
+  });
+
+  it("does not expire anything on a first checkout", async () => {
+    const { token } = await signUp();
+    const occasionId = await createApprovedOccasion(token);
+    const createResponse = await request(app.getHttpServer())
+      .post("/batch-orders")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ lines: [buildLine(occasionId)] })
+      .expect(201);
+    const order = batchOrderSchema.parse(createResponse.body);
+
+    await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/checkout`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect(checkoutSessionsExpire).not.toHaveBeenCalled();
+  });
+
+  it("still returns the new checkout URL when the old session cannot be expired", async () => {
+    // Stripe refuses to expire a session that has already completed or expired
+    // on its own clock, and that is the ordinary case for an order resumed a
+    // day later. It must not cost the buyer their resume.
+    const { token } = await signUp();
+    const occasionId = await createApprovedOccasion(token);
+    const createResponse = await request(app.getHttpServer())
+      .post("/batch-orders")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ lines: [buildLine(occasionId)] })
+      .expect(201);
+    const order = batchOrderSchema.parse(createResponse.body);
+
+    await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/checkout`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    checkoutSessionsExpire.mockRejectedValue(new Error("session already expired"));
+
+    const resume = await request(app.getHttpServer())
+      .post(`/batch-orders/${order.id}/checkout`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ resume: true })
+      .expect(201);
+
+    expect(resume.body).toEqual({
+      checkoutUrl: expect.stringMatching(/^https:\/\/checkout\.stripe\.test\/pay\/cs_test_/),
+    });
+    const stored = await prisma.batchOrder.findUniqueOrThrow({ where: { id: order.id } });
+    expect(stored.status).toBe("pending_payment");
     expect(stored.stripeCheckoutSessionId).toBe(sessionIdFromUrl(resume.body));
   });
 
