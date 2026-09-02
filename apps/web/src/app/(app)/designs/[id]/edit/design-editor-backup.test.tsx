@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, act } from "@testing-library/react";
 import type { SavedDesign } from "@kudos/shared-types";
+import { draftKey } from "@/lib/design-draft";
 import { DesignEditorClient } from "./design-editor-client";
 
 /**
@@ -112,6 +113,32 @@ describe("the editor's backup claim", () => {
       // on return, nagging on the way out is noise.
       fireEvent.click(screen.getByRole("link", { name: /back to designs/i }));
       expect(confirmSpy).not.toHaveBeenCalled();
+    });
+
+    it("stops claiming a backup once the draft has been discarded", () => {
+      // The claim is derived by comparing the current edit against the last
+      // snapshot that was mirrored. Clearing the draft empties the store but
+      // used to leave that snapshot behind, so an edit matching it read as
+      // backed up against storage holding nothing — chip on, leave guard off,
+      // work unrecoverable. See ADR 0232.
+      // A draft from a previous session, so the recovery banner (and its
+      // Discard) is on screen while this session makes its own edits.
+      window.localStorage.setItem(
+        draftKey(SAVED_DESIGN.id),
+        JSON.stringify({ name: "From yesterday", document: SAVED_DESIGN.document, ts: Date.now() }),
+      );
+
+      renderEditor();
+      editAndSettle("Ten years");
+      expect(screen.getByText(/backed up on this device/i)).toBeInTheDocument();
+
+      // The recovery banner's Discard, which throws the stored draft away
+      // without touching the edit in front of the member.
+      fireEvent.click(screen.getByRole("button", { name: /^discard$/i }));
+
+      expect(screen.queryByText(/backed up on this device/i)).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("link", { name: /back to designs/i }));
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("unsaved changes"));
     });
   });
 });
