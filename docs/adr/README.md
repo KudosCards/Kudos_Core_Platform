@@ -232,5 +232,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0221 — A cohort card is not the birthday realign's to delete](./0221-a-cohort-card-is-not-the-birthday-realigns-to-delete.md)
 - [0222 — A key date only clears its own occasions](./0222-a-key-date-only-clears-its-own-occasions.md)
 - [0223 — A refund reports what it could not stop](./0223-a-refund-reports-what-it-could-not-stop.md)
+- [0224 — The comment named one sink; there were three](./0224-the-comment-named-one-sink-there-were-three.md)
 
 <!-- adr-index:end -->

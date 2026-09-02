@@ -376,8 +376,15 @@ export class MessagesService {
       title: page.title,
       // Cleaned on the way out as well as in. The write-side fix cannot reach a
       // row already written by the unsanitised path, and there is no migration
-      // that can (sanitising is not expressible in SQL) — so the public read,
-      // which is the only place this HTML is ever executed, does it too.
+      // that can (sanitising is not expressible in SQL), so every read that can
+      // reach a raw-HTML sink does it too.
+      //
+      // This comment used to say "the only place this HTML is ever executed",
+      // which was the reasoning rather than the fact: the authenticated builder
+      // renders the same column through dangerouslySetInnerHTML and innerHTML,
+      // and its read was left raw for a week on the strength of that sentence.
+      // See ADR 0224.
+      //
       // Idempotent, so a row cleaned at write time is unchanged here.
       message: cleanMessageHtml(page.message),
       emoji: page.emoji,
