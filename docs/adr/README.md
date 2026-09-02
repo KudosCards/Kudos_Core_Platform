@@ -237,5 +237,7 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0226 — Two live Checkout Sessions can both be paid](./0226-two-live-sessions-can-both-be-paid.md)
 - [0227 — A summary whose parts do not add up](./0227-a-summary-whose-parts-do-not-add-up.md)
 - [0228 — The web reported the tokens the API was scrubbing](./0228-the-web-reported-the-tokens-the-api-was-scrubbing.md)
+- [0229 — A date-of-birth edit is all or nothing](./0229-a-date-of-birth-edit-is-all-or-nothing.md)
+- [0230 — One rule match, not two](./0230-one-rule-match-not-two.md)
 
 <!-- adr-index:end -->

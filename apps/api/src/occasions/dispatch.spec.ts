@@ -170,6 +170,34 @@ describe("suggestFirstClass", () => {
     expect(suggestFirstClass(utc(2026, 11, 1)).suggested).toBe(false);
   });
 
+  it("agrees with the lead calculation on every date, not just the easy ones", () => {
+    // The two examples above are the whole reason this exists. They assert the
+    // property at two hand-picked dates, and the dates that break it are the
+    // ones where the extra lead pulls the posting date back *out* of the window
+    // it was granted for — a band a few days wide at the start of December that
+    // neither example lands in.
+    //
+    // `computeDispatchDate` decides which rule applies from the base posting
+    // date, before the extra lead; `suggestFirstClass` used to decide from the
+    // final one, after. So the schedule took three extra days for the Christmas
+    // rush while the Approvals screen showed no First-Class nudge on the same
+    // card. See ADR 0230.
+    const rules = DEFAULT_SEASONAL_DISPATCH_RULES;
+    const disagreements: string[] = [];
+    for (let t = Date.UTC(2025, 0, 1); t <= Date.UTC(2030, 11, 31); t += 86_400_000) {
+      const occasion = new Date(t);
+      // The date the lead calculation matches its rule on: the base posting
+      // date, computed with the seasonal rules taken out of play.
+      const base = computeDispatchDate(occasion, undefined, { seasonalRules: [] });
+      const governing = seasonalDispatchRuleFor(base, rules);
+      const nudged = suggestFirstClass(occasion, { seasonalRules: rules }).suggested;
+      if (nudged !== Boolean(governing?.suggestFirstClass)) {
+        disagreements.push(isoDay(occasion));
+      }
+    }
+    expect(disagreements).toEqual([]);
+  });
+
   it("does not suggest outside a busy window", () => {
     expect(suggestFirstClass(utc(2026, 6, 15)).suggested).toBe(false);
   });
