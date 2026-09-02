@@ -106,14 +106,24 @@
 --
 -- Expect: `missing_resolution` > 0. If it is 0, there is nothing to recover
 -- and you can stop here.
+--
+-- Counted over every ticket with no `resolved_at`, not just closed ones. The
+-- defect erased the stamp on the way to `closed`, so closed tickets are where
+-- most of it is — but Step 3's WHERE is `t.resolved_at IS NULL` with no
+-- mention of `closed_at`, so it also restores a ticket that was resolved and
+-- never closed. Gating on the narrower population meant an operator could read
+-- 0 here, stop, and leave recoverable rows behind. A gate must count what the
+-- write will touch.
 -- ===========================================================================
 
 SELECT
-  count(*)                                                        AS closed_tickets,
+  count(*)                                                        AS tickets,
   count(*) FILTER (WHERE resolved_at IS NULL)                     AS missing_resolution,
-  count(*) FILTER (WHERE resolved_at IS NOT NULL)                 AS still_have_it
-FROM support_tickets
-WHERE closed_at IS NOT NULL;
+  count(*) FILTER (WHERE resolved_at IS NOT NULL)                 AS still_have_it,
+  -- Where the missing ones sit, so the number above is readable.
+  count(*) FILTER (WHERE resolved_at IS NULL AND closed_at IS NOT NULL) AS missing_and_closed,
+  count(*) FILTER (WHERE resolved_at IS NULL AND closed_at IS NULL)     AS missing_still_open
+FROM support_tickets;
 
 
 -- ===========================================================================

@@ -239,5 +239,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0228 — The web reported the tokens the API was scrubbing](./0228-the-web-reported-the-tokens-the-api-was-scrubbing.md)
 - [0229 — A date-of-birth edit is all or nothing](./0229-a-date-of-birth-edit-is-all-or-nothing.md)
 - [0230 — One rule match, not two](./0230-one-rule-match-not-two.md)
+- [0231 — Bounding the whole, not the parts](./0231-bounding-the-whole-not-the-parts.md)
 
 <!-- adr-index:end -->

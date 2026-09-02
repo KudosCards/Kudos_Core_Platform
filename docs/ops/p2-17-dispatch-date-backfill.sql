@@ -63,10 +63,24 @@
 --     2028 season the affected range runs to 10 January, not 8.
 --
 -- HOW TO RUN IT
--- Step by step, not as one blob. Step 3 opens a transaction and deliberately
--- does not close it, so you get to read the row count before deciding; running
--- the whole file in one go would leave that transaction open and roll it back
--- when the session ends. Paste one step, read what it says, move on.
+-- Step by step, not as one blob: paste one step, read what it says, move on.
+--
+-- Step 3 is a single self-contained statement with RETURNING, not a
+-- BEGIN/COMMIT pair, and that is deliberate. The Supabase SQL editor runs each
+-- request in its own session, so there is no transaction spanning steps: a
+-- `BEGIN; UPDATE ...` pasted on its own reports its row count and then rolls
+-- back when the session ends, and a `COMMIT;` pasted afterwards lands in a
+-- session with no open transaction. The operator reads a count matching Step 1
+-- and concludes it applied while nothing was written. This script used to be
+-- written that way. (p2-18, written a day later, had it right.)
+--
+-- The safety that BEGIN was reaching for is still here, in a different place:
+-- Step 1 is the dry run — it lists exactly the rows Step 3 will touch, and
+-- Step 3's WHERE is the same one. Read Step 1, then apply, then Step 4
+-- verifies. Step 3's RETURNING shows what actually changed.
+--
+-- If you would rather have the transaction, run this file in `psql`, where one
+-- session does span the whole thing, and wrap Step 3 yourself.
 --
 -- BEFORE YOU RUN ANYTHING
 -- Step 0 checks that production is still on the bundled seasonal rules. The
@@ -201,10 +215,9 @@ WHERE o.status IN ('scheduled', 'pending_approval', 'approved')
 ORDER BY o.occasion_date;
 
 -- ---------------------------------------------------------------------------
--- STEP 3 — the backfill. Wrapped so you can read the count before committing.
+-- STEP 3 — the backfill. One statement: it applies when you run it.
+-- Read STEP 1 first — it lists exactly the rows this will touch.
 -- ---------------------------------------------------------------------------
-BEGIN;
-
 WITH remap (occasion_date, old_dispatch, new_dispatch) AS (
   VALUES
     (DATE '2026-12-01', DATE '2026-11-19', DATE '2026-11-24'),
@@ -259,11 +272,13 @@ WHERE r.occasion_date = o.occasion_date
   AND o.dispatch_date_overridden = false
   -- Nothing past approval: from `queued` on there is an order, and the
   -- fulfilment job carries its own due date.
-  AND o.status IN ('scheduled', 'pending_approval', 'approved');
+  AND o.status IN ('scheduled', 'pending_approval', 'approved')
+RETURNING o.id, o.occasion_date, o.dispatch_date;
 
--- Compare this count against STEP 1 before deciding.
--- COMMIT;   -- uncomment to apply
--- ROLLBACK; -- or this to walk away
+-- Every row above was changed. Compare the count against STEP 1: they should
+-- match. If STEP 1 listed rows this did not return, stop and work out why
+-- before running anything else — the two share a WHERE clause, so a difference
+-- means something moved underneath you.
 
 -- ---------------------------------------------------------------------------
 -- STEP 4 — after committing, this must return no rows.

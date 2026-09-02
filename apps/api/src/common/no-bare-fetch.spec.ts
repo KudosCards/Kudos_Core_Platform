@@ -13,7 +13,16 @@ import { join } from "node:path";
  */
 const SRC = join(__dirname, "..");
 const ALLOWED = ["common/http-request.ts"];
-const BARE_FETCH = /(?<![.\w])fetch\s*\(/;
+/**
+ * A call to `fetch`, however it is reached.
+ *
+ * The optional `<something>.` prefix is the part that was missing. The pattern
+ * used to exclude any dotted form outright, so `globalThis.fetch(url, init)` —
+ * the way someone writes it when the bare global feels too implicit — sailed
+ * past the guard untimed. `fetch` still has to be the whole identifier, so
+ * `this.fetchContacts(` and `prefetch(` stay out.
+ */
+const BARE_FETCH = /(?<![\w$])(?:[\w$]+(?:\.[\w$]+)*\.)?fetch\s*\(/;
 
 /** Prose is not code: a doc comment reading "Injectable fetch (defaults to the
  * global)" is not a call site, and a guard that can't tell the difference gets
@@ -47,9 +56,14 @@ describe("outbound HTTP", () => {
     // it pass forever while every call site went untimed.
     expect(BARE_FETCH.test('const response = await fetch(url, { method: "POST" });')).toBe(true);
     expect(BARE_FETCH.test("  const r = fetch(`${base}/thing`);")).toBe(true);
+    // Reached through an object, which is how it gets written when the bare
+    // global feels too implicit — and which the guard used to wave through.
+    expect(BARE_FETCH.test("const r = await globalThis.fetch(url, init);")).toBe(true);
+    expect(BARE_FETCH.test("return window.fetch(url);")).toBe(true);
     // Not our concern: a method named fetch on something else.
     expect(BARE_FETCH.test("await this.fetchContacts(token);")).toBe(false);
     expect(BARE_FETCH.test("const x = prefetch(url);")).toBe(false);
+    // A reference, not a call — this is how the global is injected for tests.
     expect(BARE_FETCH.test("const impl = options.fetchImpl ?? globalThis.fetch;")).toBe(false);
   });
 

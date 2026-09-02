@@ -1,5 +1,6 @@
 import { BadGatewayException, UnauthorizedException } from "@nestjs/common";
 import { httpRequest } from "../../common/http-request";
+import { startFetchBudget } from "../fetch-budget";
 import type { CrmContactsResult } from "../crm-contacts-result";
 import { upstreamDetail, withUpstreamDetail } from "../upstream-detail";
 import type { OAuthTokens } from "../oauth-crm-client";
@@ -116,7 +117,9 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
     const first = new URLSearchParams({ locationId, limit: String(GOHIGHLEVEL_PAGE_SIZE) });
     let nextUrl: string | null = `${GOHIGHLEVEL_CONTACTS_URL}?${first.toString()}`;
 
-    for (let page = 0; page < GOHIGHLEVEL_MAX_PAGES && nextUrl; page += 1) {
+    // Bounds the whole pull, not each request — see fetch-budget.ts.
+    const budget = startFetchBudget();
+    for (let page = 0; page < GOHIGHLEVEL_MAX_PAGES && nextUrl && !budget.expired(); page += 1) {
       const response: Response = await httpRequest(
         nextUrl,
         {
