@@ -82,7 +82,7 @@ export const AUDIENCES: readonly Audience[] = [
       "Client birthdays, work anniversaries and renewal dates — synced from your CRM, printed and posted as real cards.",
     intro: [
       "A card on a client's desk does something a marketing email can't: it's from a person, it took effort, and it stays on the desk.",
-      "If your contacts already live in HubSpot or GoHighLevel, they don't need re-keying — connect the account and the dates come with them.",
+      "If your contacts already live in a CRM, they don't need re-keying — connect the account and the dates come with them.",
     ],
     moments: [
       {
@@ -107,7 +107,7 @@ export const AUDIENCES: readonly Audience[] = [
       {
         heading: "Connect the CRM you already use",
         detail:
-          "HubSpot and GoHighLevel connect directly, so contacts and their dates sync across rather than being exported and re-imported.",
+          "Your CRM connects directly, so contacts and their dates sync across rather than being exported and re-imported.",
       },
       {
         heading: "Your own artwork",

@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { CrmConnection, Prisma } from "@prisma/client";
+import { crmProviderLabel } from "@kudos/shared-types";
 import type { EnvConfig } from "../config/env.schema";
 import { PrismaService } from "../prisma/prisma.service";
 import { CryptoService } from "../common/crypto.service";
@@ -556,7 +557,7 @@ export class CrmConnectionsService {
       // wording said only "please reconnect it", which is the action that had
       // just failed — say which of the two choices to make instead.
       throw new BadRequestException(
-        "This GoHighLevel connection is to an agency, which has no contacts to import. " +
+        "This connection is to an agency, which has no contacts to import. " +
           "Disconnect, connect again, and choose the sub-account you want contacts from.",
       );
     }
@@ -586,7 +587,13 @@ export class CrmConnectionsService {
     }
 
     if (!connection.encryptedRefreshToken) {
-      throw new UnauthorizedException(`${provider} connection has no refresh token — reconnect it`);
+      // The label, not the slug: interpolating `provider` put "gohighlevel" in
+      // front of a customer, which is the reference their white-label policy
+      // forbids — and a grep for the brand would never have found it, because
+      // the brand is not written here. See ADR 0234.
+      throw new UnauthorizedException(
+        `${crmProviderLabel(provider)} connection has no refresh token — reconnect it`,
+      );
     }
     const refreshToken = this.crypto.decrypt(connection.encryptedRefreshToken);
     const tokens = await this.oauthDescriptor(provider).client.refreshTokens(refreshToken);

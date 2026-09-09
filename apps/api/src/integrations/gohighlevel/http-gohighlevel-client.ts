@@ -80,7 +80,7 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
         },
         body: new URLSearchParams(params).toString(),
       },
-      { label: "GoHighLevel token" },
+      { label: "LeadConnector token" },
     );
 
     if (!response.ok) {
@@ -92,11 +92,11 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
       });
       if (response.status === 400 || response.status === 401 || response.status === 403) {
         throw new UnauthorizedException(
-          withUpstreamDetail("GoHighLevel rejected the authorization", detail),
+          withUpstreamDetail("LeadConnector rejected the authorization", detail),
         );
       }
       throw new BadGatewayException(
-        withUpstreamDetail(`GoHighLevel token request failed (${response.status})`, detail),
+        withUpstreamDetail(`LeadConnector token request failed (${response.status})`, detail),
       );
     }
 
@@ -129,18 +129,18 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
             accept: "application/json",
           },
         },
-        { maxAttempts: CONTACTS_ATTEMPTS, label: "GoHighLevel contacts" },
+        { maxAttempts: CONTACTS_ATTEMPTS, label: "LeadConnector contacts" },
       );
 
       if (!response.ok) {
         const detail = await upstreamDetail(response, { secrets: [accessToken] });
         if (response.status === 401) {
           throw new UnauthorizedException(
-            withUpstreamDetail("GoHighLevel rejected the access token", detail),
+            withUpstreamDetail("LeadConnector rejected the access token", detail),
           );
         }
         throw new BadGatewayException(
-          withUpstreamDetail(`GoHighLevel contacts request failed (${response.status})`, detail),
+          withUpstreamDetail(`LeadConnector contacts request failed (${response.status})`, detail),
         );
       }
 

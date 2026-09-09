@@ -89,6 +89,45 @@ export const createdApiKeySchema = accountApiKeySchema.extend({
 });
 export type CreatedApiKey = z.infer<typeof createdApiKeySchema>;
 
+/**
+ * What each CRM is called on screen.
+ *
+ * One map, because there were four — the integrations page, the contacts list,
+ * the smart-list rule builder and the ops subscriber page each carried their
+ * own copy, and each spelled the third provider "GoHighLevel". Their
+ * marketplace rejected our listing for exactly that: the product is sold
+ * white-label, so an agency's client may know it only as their agency's CRM,
+ * and an app that names HighLevel to that person breaches the policy.
+ *
+ * `LeadConnector` is not a euphemism we invented — it is HighLevel's own
+ * white-label name (their API host is `services.leadconnectorhq.com`, and it is
+ * the placeholder in their own marketplace fields). We already know their
+ * filter accepts it: our OAuth redirect URL has been registered under that word
+ * since ADR 0156.
+ *
+ * Keyed by both the internal provider slug and the public OAuth slug, because
+ * the post-connect redirect carries the public one. See ADR 0234.
+ */
+export const CRM_PROVIDER_LABELS: Record<string, string> = {
+  brevo: "Brevo",
+  hubspot: "HubSpot",
+  gohighlevel: "LeadConnector",
+  leadconnector: "LeadConnector",
+};
+
+/**
+ * The name to show for a provider slug.
+ *
+ * The fallback capitalises an unknown slug, which is right for a CRM we have
+ * not met and wrong for this one — `gohighlevel` would come back "Gohighlevel",
+ * a breach no source-scanning guard could see because no such string is ever
+ * written down. A known provider must therefore always have an explicit entry
+ * above; `crm-connections.service.spec.ts` holds us to it.
+ */
+export function crmProviderLabel(provider: string): string {
+  return CRM_PROVIDER_LABELS[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
+}
+
 /** A connection to an external CRM (Brevo, …) — never includes the API key. */
 export const crmConnectionSchema = z.object({
   provider: z.string(),

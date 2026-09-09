@@ -1,5 +1,6 @@
 "use client";
 
+import { CRM_PROVIDER_LABELS } from "@kudos/shared-types";
 import type { Recipient, RecipientListSummary } from "@kudos/shared-types";
 import { nextBirthdayOccurrence, startOfUtcDay } from "@kudos/shared-types";
 import Link from "next/link";
@@ -49,9 +50,7 @@ const SOURCE_LABELS: Record<string, string> = {
   manual: "Manual",
   csv: "CSV",
   api: "API",
-  brevo: "Brevo",
-  hubspot: "HubSpot",
-  gohighlevel: "GoHighLevel",
+  ...CRM_PROVIDER_LABELS,
 };
 function sourceLabel(source: string): string {
   return SOURCE_LABELS[source] ?? source;
