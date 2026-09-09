@@ -245,5 +245,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0234 — The name a Location user must never see](./0234-the-name-a-location-user-must-never-see.md)
 - [0235 — The build cache is not the deploy](./0235-the-build-cache-is-not-the-deploy.md)
 - [0236 — The field the fix did not carry, and the warning nothing was listening to](./0236-the-field-the-fix-did-not-carry.md)
+- [0237 — An override that permits any future major](./0237-an-override-that-permits-any-future-major.md)
 
 <!-- adr-index:end -->
