@@ -2118,28 +2118,37 @@ export class BatchOrdersService {
       .map((r) => r.occasionId)
       .filter((occasionId): occasionId is string => occasionId !== null);
 
-    const jobs = await tx.fulfillmentJob.findMany({
-      where: { orderRecipientId: { in: orderRecipientIds } },
-      select: { id: true, status: true, clickAndDropOrderId: true },
-    });
-    // Deleted *and* reported in one statement, so the status is the one the row
-    // actually held when it went.
+    // Deleted *and* reported in one statement, so every field of the report is
+    // the one the row actually held when it went.
     //
-    // A separate `deleteMany` leaves the report reading a snapshot taken a
-    // round-trip earlier, and at Read Committed each statement takes a fresh
-    // one. A card that read `pending` and reached `printed` before the delete
-    // was then deleted with its stale status still saying `pending` — dropped
-    // from `raced` entirely, so nothing escalated and the audit row recorded an
-    // order that had had nothing in production. There is no way to read a row's
-    // status after deleting it, so it has to come back with the delete.
+    // Reading the rows first and deleting them afterwards leaves the report on a
+    // snapshot taken a round-trip earlier, and at Read Committed each statement
+    // takes a fresh one. Both fields matter, and each fails in its own way:
+    //
+    //   - `status`: a card that read `pending` and reached `printed` before the
+    //     delete was deleted with its stale status still saying `pending`, and
+    //     so dropped out of `raced` — nothing escalated, and the audit row
+    //     recorded an order that had had nothing in production.
+    //   - `clickAndDropOrderId`: the import sweep runs every five minutes and
+    //     writes *only* this column — it leaves `status` at `pending`, because
+    //     the card is still waiting to be printed. A card handed to Royal Mail
+    //     inside this window read as `null` here, so its identifier never
+    //     reached `cancelImported`, the recall was never attempted, and with
+    //     the status unmoved `raced` had nothing to say either. Total silence,
+    //     on a refunded order whose card was about to post. See ADR 0236.
+    //
+    // There is no way to read a row after deleting it, so it all has to come
+    // back with the delete.
     const deleted =
       orderRecipientIds.length === 0
         ? []
-        : await tx.$queryRaw<{ id: string; status: FulfillmentJobStatus }[]>(Prisma.sql`
+        : await tx.$queryRaw<
+            { id: string; status: FulfillmentJobStatus; clickAndDropOrderId: string | null }[]
+          >(Prisma.sql`
             DELETE FROM fulfillment_jobs
             WHERE order_recipient_id IN (${Prisma.join(orderRecipientIds)})
               AND status <> 'posted'::"FulfillmentJobStatus"
-            RETURNING id, status
+            RETURNING id, status, click_and_drop_order_id AS "clickAndDropOrderId"
           `);
     // Whatever is still here escaped: it reached `posted` before the delete
     // could reach it. Re-read rather than infer, so the report names what is
@@ -2148,7 +2157,6 @@ export class BatchOrdersService {
       where: { orderRecipientId: { in: orderRecipientIds } },
       select: { id: true, status: true },
     });
-    const survivorIds = new Set(survivors.map((job) => job.id));
 
     await tx.orderRecipient.updateMany({
       where: { batchOrderId },
@@ -2165,11 +2173,12 @@ export class BatchOrdersService {
     }
 
     return {
-      // Only the cards actually stopped: a posted card's Click & Drop order is
-      // spent, and asking Royal Mail to delete it would fail anyway.
-      clickAndDropOrderIds: jobs
-        .filter((job) => !survivorIds.has(job.id) && job.clickAndDropOrderId !== null)
-        .map((job) => job.clickAndDropOrderId as string),
+      // Only the cards actually stopped, and only as the delete itself saw them:
+      // a posted card's Click & Drop order is spent, and asking Royal Mail to
+      // delete it would fail anyway.
+      clickAndDropOrderIds: deleted
+        .map((job) => job.clickAndDropOrderId)
+        .filter((identifier): identifier is string => identifier !== null),
       // Membership comes from the re-read, not the snapshot above.
       //
       // `stopped` already used the fresh survivors while membership used the

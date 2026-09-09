@@ -181,9 +181,10 @@ describe("A refund tells the truth about what it could not stop (e2e)", () => {
     };
     const middleware: Parameters<typeof prisma.$use>[0] = async (params, next) => {
       const result: unknown = await next(params);
-      if (params.model === "FulfillmentJob" && params.action === "findMany" && raceOnce) {
+      if (params.model === "OrderRecipient" && params.action === "findMany" && raceOnce) {
+        // The release's own first read — the statement the window opens after.
         // Committed on its own connection, so the delete's fresh snapshot sees
-        // it — which is what makes this a race rather than a stubbed status.
+        // it, which is what makes this a race rather than a stubbed status.
         await raceOnce();
       }
       return result;
@@ -229,7 +230,7 @@ describe("A refund tells the truth about what it could not stop (e2e)", () => {
     };
     prisma.$use(async (params, next) => {
       const result: unknown = await next(params);
-      if (params.model === "FulfillmentJob" && params.action === "findMany" && raceOnce) {
+      if (params.model === "OrderRecipient" && params.action === "findMany" && raceOnce) {
         await raceOnce();
       }
       return result;
@@ -249,6 +250,69 @@ describe("A refund tells the truth about what it could not stop (e2e)", () => {
     };
     expect(metadata.racedCards).toHaveLength(1);
     expect(metadata.racedCards[0]).toMatchObject({ jobId, status: "printed", stopped: true });
+  });
+
+  it("recalls a card that entered Royal Mail's queue between the read and the delete", async () => {
+    // The half of the same window that the `raced` fix left behind.
+    //
+    // `raced` now comes from the delete's own RETURNING, but the Click & Drop
+    // identifiers were still read from the snapshot taken a round-trip earlier.
+    //
+    // The import sweep runs every five minutes and writes only the identifier —
+    // it does not touch `status`, because the card is still waiting to be
+    // printed. So the likeliest shape of this race leaves nothing else to
+    // notice it: the job is `pending` at the read with no identifier, is handed
+    // to Royal Mail before the delete reaches it, and is deleted. `raced` is
+    // rightly empty (the status never moved), and the snapshot still says the
+    // identifier is null — so the cancel is never attempted, `failed` is
+    // therefore empty, nothing escalates, and the audit row records
+    // `clickAndDropStillLive: []` for a card Royal Mail is about to post on a
+    // fully refunded order. Silence, which is the one outcome ADR 0180 exists
+    // to prevent — reached through the field the fix did not carry over.
+    const operator = await superAdmin();
+    const token = await signUp();
+    const { orderId, jobId } = await paidOrder(token);
+    const identifier = `cd-${randomUUID().slice(0, 8)}`;
+
+    let raceOnce: (() => Promise<void>) | null = async () => {
+      raceOnce = null;
+      await prisma.fulfillmentJob.update({
+        where: { id: jobId },
+        data: { clickAndDropOrderId: identifier },
+      });
+    };
+    prisma.$use(async (params, next) => {
+      const result: unknown = await next(params);
+      if (params.model === "OrderRecipient" && params.action === "findMany" && raceOnce) {
+        await raceOnce();
+      }
+      return result;
+    });
+
+    await refund(token, orderId).expect(201);
+
+    // The delete still stopped the row; what matters is whether we then asked
+    // Royal Mail to stop the print.
+    expect(await prisma.fulfillmentJob.findUnique({ where: { id: jobId } })).toBeNull();
+
+    const audit = await auditFor(orderId);
+    const metadata = audit.metadata as {
+      clickAndDropStillLive: string[];
+      racedCards: { jobId: string; status: string; stopped: boolean }[];
+    };
+    // The e2e app runs the disabled Click & Drop client, so every identifier we
+    // hand it comes back as still live — which is the point: the identifier has
+    // to reach it at all.
+    expect(metadata.clickAndDropStillLive).toEqual([identifier]);
+    // The status never moved, so `raced` has nothing to say about it. That is
+    // precisely why the identifier is the only thing standing between this card
+    // and Royal Mail's printer.
+    expect(metadata.racedCards).toEqual([]);
+
+    const alert = await prisma.platformNotification.findFirst({
+      where: { kind: "click_and_drop_cancel_failed", userId: operator },
+    });
+    expect(alert).not.toBeNull();
   });
 
   it("still records a clean refund as clean", async () => {
