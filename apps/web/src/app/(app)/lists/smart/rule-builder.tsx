@@ -1,5 +1,6 @@
 "use client";
 
+import { CRM_PROVIDER_LABELS } from "@kudos/shared-types";
 import { useEffect, useRef, useState } from "react";
 import type {
   OccasionType,
@@ -53,9 +54,7 @@ const SOURCE_LABELS: Record<string, string> = {
   manual: "Added by hand",
   csv: "CSV import",
   api: "API",
-  brevo: "Brevo",
-  hubspot: "HubSpot",
-  gohighlevel: "GoHighLevel",
+  ...CRM_PROVIDER_LABELS,
 };
 
 type Mode = "occasion" | "contact";

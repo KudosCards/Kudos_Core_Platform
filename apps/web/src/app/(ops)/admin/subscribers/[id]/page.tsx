@@ -1,3 +1,4 @@
+import { CRM_PROVIDER_LABELS } from "@kudos/shared-types";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { AdminIdentity, Customer360 } from "@kudos/shared-types";
@@ -36,9 +37,7 @@ const SOURCE_LABELS: Record<string, string> = {
   manual: "Added by hand",
   csv: "CSV import",
   api: "API / Zapier",
-  brevo: "Brevo",
-  hubspot: "HubSpot",
-  gohighlevel: "GoHighLevel",
+  ...CRM_PROVIDER_LABELS,
 };
 const sourceLabel = (s: string) => SOURCE_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1);
 

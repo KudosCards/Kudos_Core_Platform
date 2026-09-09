@@ -155,7 +155,11 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
       .get("/integrations/oauth/leadconnector/callback")
       .query({ code: "good-code", state })
       .expect(302)
-      .expect("location", /connected=gohighlevel/);
+      // The white-label slug, not the internal provider key. The callback used to
+      // resolve "leadconnector" back to "gohighlevel" and then put that in the
+      // redirect — so the browser's address bar named HighLevel at the end of
+      // every install, which is what their marketplace rejected. See ADR 0234.
+      .expect("location", /connected=leadconnector/);
   }
 
   it("completes OAuth, storing tokens encrypted and the granted locationId", async () => {
@@ -210,7 +214,7 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
         .expect(302);
 
       const location = res.headers.location as string;
-      expect(location).toContain("error=gohighlevel");
+      expect(location).toContain("error=leadconnector");
       // Not just "it failed" — which of the two choices to make next time.
       expect(location).toContain("reason=no_location");
     });
@@ -269,7 +273,7 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
       .get("/integrations/oauth/leadconnector/callback")
       .query({ code: "good-code", state: "not-a-real-signed-state" })
       .expect(302)
-      .expect("location", /error=gohighlevel/);
+      .expect("location", /error=leadconnector/);
     expect(exchangeCalls).toBe(0);
     expect(await prisma.crmConnection.count({ where: { accountId } })).toBe(0);
   });
@@ -279,7 +283,7 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
       .get("/integrations/oauth/leadconnector/callback")
       .query({ error: "access_denied" })
       .expect(302)
-      .expect("location", /error=gohighlevel/);
+      .expect("location", /error=leadconnector/);
     expect(exchangeCalls).toBe(0);
   });
 

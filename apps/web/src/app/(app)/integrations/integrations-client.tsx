@@ -7,6 +7,7 @@ import type {
   CrmConnection,
   CrmSyncResult,
 } from "@kudos/shared-types";
+import { crmProviderLabel } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 
@@ -15,15 +16,9 @@ import { clientApiFetch } from "@/lib/api.client";
 const PRIMARY_BTN = "btn-accent flex-1 sm:flex-none";
 const SECONDARY_BTN = "btn-secondary flex-1 sm:flex-none";
 
-/** Provider slug → the name we show. Falls back to a capitalised slug. */
-function labelFor(provider: string): string {
-  const known: Record<string, string> = {
-    brevo: "Brevo",
-    hubspot: "HubSpot",
-    gohighlevel: "GoHighLevel",
-  };
-  return known[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
-}
+/** Provider slug → the name we show. One shared map (ADR 0234) — this was a
+ *  local copy, and it was one of four that all spelled the same breach. */
+const labelFor = crmProviderLabel;
 
 function formatDate(value: Date | string | null): string {
   if (!value) return "—";
@@ -401,7 +396,7 @@ function BrevoConnector({
   );
 }
 
-/** OAuth CRM connector (HubSpot, GoHighLevel): no API key to paste — "Connect"
+/** OAuth CRM connector (HubSpot, LeadConnector): no API key to paste — "Connect"
  * bounces the user through the provider's consent screen and back with
  * ?connected=<provider>. The connected state mirrors Brevo's. One component
  * serves every OAuth provider; only the slug, name and blurb differ. */
@@ -680,10 +675,10 @@ export function IntegrationsClient({
           </ConnectorShell>
           <OAuthConnector
             provider="gohighlevel"
-            name="GoHighLevel"
+            name={crmProviderLabel("gohighlevel")}
             connection={gohighlevel}
             onChange={(next) => updateConnection("gohighlevel", next)}
-            description="Connect your GoHighLevel sub-account to import contacts. You'll be sent to GoHighLevel to choose a location and approve read-only access to its contacts — no password is shared with us."
+            description="Connect your CRM sub-account to import contacts. You'll be sent to your CRM to choose a location and approve read-only access to its contacts — no password is shared with us."
           />
         </div>
       </section>

@@ -96,6 +96,22 @@ function toNormalized(dto: ExternalContactDto): NormalizedContact {
  */
 const OAUTH_CALLBACK_SLUG_ALIASES: Record<string, string> = { leadconnector: "gohighlevel" };
 
+/**
+ * The inverse: our internal provider key → the slug the *browser* may see.
+ *
+ * ADR 0156 sanitised the inbound URL and stopped there. The callback resolved
+ * "leadconnector" back to "gohighlevel" and then interpolated that into the
+ * redirect, so every successful install finished at
+ * `/integrations?connected=gohighlevel` — the brand in the address bar, on the
+ * one screen their reviewer is guaranteed to look at. It is what the listing
+ * was rejected for. See ADR 0234.
+ *
+ * Derived from the resolved provider rather than echoed from the inbound path
+ * param: the param is unvalidated URL input, and reflecting it would put
+ * arbitrary text in the banner the page renders from this value.
+ */
+const PUBLIC_OAUTH_SLUGS: Record<string, string> = { gohighlevel: "leadconnector" };
+
 @ApiTags("integrations")
 @Controller("integrations")
 export class IntegrationsController {
@@ -227,8 +243,9 @@ export class IntegrationsController {
     const webAppUrl = (this.config.get("WEB_APP_URL", { infer: true }) ?? "").replace(/\/$/, "");
     // `reason` is optional and only set when we know something the page can act
     // on — "which of the two choices to make next time" beats "it failed".
+    const publicProvider = PUBLIC_OAUTH_SLUGS[provider] ?? provider;
     const back = (status: string, reason?: string) =>
-      `${webAppUrl}/integrations?${status}=${encodeURIComponent(provider)}` +
+      `${webAppUrl}/integrations?${status}=${encodeURIComponent(publicProvider)}` +
       (reason ? `&reason=${encodeURIComponent(reason)}` : "");
 
     if (error || !code || !state) {

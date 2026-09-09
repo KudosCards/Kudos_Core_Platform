@@ -118,7 +118,7 @@ describe("HttpGoHighLevelClient.fetchContacts", () => {
         .mockResolvedValue(errorResponse(401, '{"message":"app not live"}'));
 
       await expect(client.fetchContacts("token", "loc-1")).rejects.toThrow(
-        /GoHighLevel rejected the access token/,
+        /LeadConnector rejected the access token/,
       );
     });
 
@@ -156,7 +156,7 @@ describe("HttpGoHighLevelClient.fetchContacts", () => {
       fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(errorResponse(401, ""));
 
       await expect(client.fetchContacts("token", "loc-1")).rejects.toThrow(
-        /^GoHighLevel rejected the access token$/,
+        /^LeadConnector rejected the access token$/,
       );
     });
   });

@@ -3,6 +3,27 @@
   command = "pnpm install --frozen-lockfile && pnpm run build"
   publish = ".next"
 
+[build.environment]
+  # Netlify scans the build output for the values of secret env vars, and
+  # Turbopack's on-disk cache (`.next/cache/turbopack/*.sst`) trips it: the
+  # compiler persists module contents there, so anything inlined at build time
+  # is in it, and the scanner reads those files as text.
+  #
+  # Scoped to the cache directories, and deliberately not to the key or to
+  # scanning as a whole. The cache is a build artefact — saved and restored
+  # between builds, never served — while everything that *is* deployed
+  # (`server/`, `static/`, the functions) is still scanned. That makes this
+  # safe by construction: a secret genuinely reaching deployable output would
+  # still fail the build, so this cannot mask a real leak.
+  #
+  # Verified before adding: a build with a sentinel value for
+  # CATALOG_REVALIDATE_SECRET put that value in *no* build file at all —
+  # cache, server chunks or client chunks — while a control value known to be
+  # inlined (NEXT_PUBLIC_API_URL) appeared in seven cache files and in both
+  # server and static chunks. So the scanner reads the cache correctly; what it
+  # matched on is the real value's own content. See ADR 0235.
+  SECRETS_SCAN_OMIT_PATHS = ".next/cache/**,.netlify/.next/cache/**,apps/web/.next/cache/**,apps/web/.netlify/.next/cache/**"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 

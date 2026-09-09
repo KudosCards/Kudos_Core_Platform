@@ -78,7 +78,7 @@ describe("IntegrationsClient — a partial import says so", () => {
       />,
     );
 
-    expect(screen.getByText(/We couldn't connect GoHighLevel/i)).toBeInTheDocument();
+    expect(screen.getByText(/We couldn't connect LeadConnector/i)).toBeInTheDocument();
   });
 
   it("warns that contacts were left behind when the pull was truncated", async () => {
