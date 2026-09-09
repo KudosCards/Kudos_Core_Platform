@@ -20,7 +20,7 @@
     "@supabase/supabase-js": "^2.47.10",
     "konva": "^10.3.0",
     "lucide-react": "^1.30.0",
-    "next": "16.2.12",
+    "next": "16.3.3",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -46,7 +46,7 @@
     "eslint-config-prettier": "^9.1.0",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.5.0",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.4",
     "svgo": "^4.0.2",
     "tailwindcss": "^4",
     "typescript": "^5"
