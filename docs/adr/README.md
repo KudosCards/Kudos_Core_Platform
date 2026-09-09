@@ -243,5 +243,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0232 — A claim outliving what it claims](./0232-a-claim-outliving-what-it-claims.md)
 - [0233 — The half of the guard that was written](./0233-the-half-of-the-guard-that-was-written.md)
 - [0234 — The name a Location user must never see](./0234-the-name-a-location-user-must-never-see.md)
+- [0235 — The build cache is not the deploy](./0235-the-build-cache-is-not-the-deploy.md)
 
 <!-- adr-index:end -->
