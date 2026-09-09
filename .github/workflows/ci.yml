@@ -99,15 +99,30 @@ jobs:
         run: pnpm turbo run build
 
       # Fails the build on a high or critical advisory in a dependency that
-      # actually ships. Scoped with --prod on purpose: the remaining known
-      # issues are all in build tooling (a PostCSS one via Tailwind, a js-yaml
-      # one via ESLint's config loader) which never runs in production, and
-      # gating on those would leave this permanently red — which teaches
-      # everyone to ignore it. --audit-level high keeps it to things worth
-      # stopping a deploy for.
+      # actually ships. Scoped with --prod on purpose: dev-only advisories are
+      # frequent and mostly unreachable — build tooling that never runs in
+      # production — and gating on those would leave this permanently red,
+      # which teaches everyone to ignore it. --audit-level high keeps it to
+      # things worth stopping a deploy for.
+      #
+      # Deliberately not listing today's advisories here. The list this comment
+      # used to carry named a PostCSS and a js-yaml issue, both long gone, and
+      # a comment that describes advisories rather than the rule goes stale
+      # while still reading as current — it told the next person the scope was
+      # safe for reasons that had stopped being true. See ADR 0238.
       #
       # If an advisory lands with no fix available and this blocks an urgent
       # deploy, raise the threshold to `critical` in a one-line PR rather than
       # deleting the step, and open an issue to put it back.
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level high
+
+      # The same audit unscoped, reporting only. A high in a *dev* dependency
+      # cannot reach a customer, so it must not be able to block a deploy — but
+      # it should not be invisible either. An svgo high sat unnoticed until
+      # someone ran this by hand during a dependency pass; the gap was that
+      # nothing ever ran it. continue-on-error keeps the job green and leaves
+      # the failure legible in the step list. See ADR 0238.
+      - name: Report dev-dependency advisories (non-blocking)
+        continue-on-error: true
+        run: pnpm audit --audit-level high

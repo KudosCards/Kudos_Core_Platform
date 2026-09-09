@@ -1,5 +1,6 @@
 import { Logger } from "@nestjs/common";
 import { httpRequest } from "../common/http-request";
+import { CATALOG_FETCH_BUDGET_MS, startFetchBudget } from "../common/fetch-budget";
 import type {
   CatalogCardRecord,
   CatalogFieldMapping,
@@ -137,7 +138,12 @@ export class AirtableCatalogSource implements CatalogSource {
   /** What the last fetch read, so the sync can show its working. */
   private fieldMapping: CatalogFieldMapping | null = null;
 
-  constructor(private readonly config: AirtableConfig) {}
+  /** `now` is injectable so a test can exhaust the pull's budget without
+   *  waiting two minutes for it. */
+  constructor(
+    private readonly config: AirtableConfig,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   lastFieldMapping(): CatalogFieldMapping | null {
     return this.fieldMapping;
@@ -225,7 +231,25 @@ export class AirtableCatalogSource implements CatalogSource {
     const records: AirtableRecord[] = [];
     let offset: string | undefined;
 
+    // Bounds the whole pull, not each request. Each page is already bounded —
+    // four attempts, a 15s deadline each, backoff capped at 30s — and a hundred
+    // of those is an arithmetic ceiling over four hours, on a sync an operator
+    // triggers and waits on. See ADR 0238.
+    const budget = startFetchBudget(CATALOG_FETCH_BUDGET_MS, this.now);
+
     for (let page = 0; page < MAX_PAGES; page += 1) {
+      if (budget.expired()) {
+        // Thrown, not truncated — the opposite of what a contacts pull does
+        // with the same helper, and deliberately so. `deactivateRetired`
+        // deactivates every card missing from the fetched set and guards only
+        // against a fetch of exactly zero, so handing back a partial catalog
+        // would unpublish everything after the cut-off. A failed sync leaves
+        // yesterday's catalog standing, which is the outcome to prefer.
+        throw new Error(
+          `Airtable pull exceeded its ${CATALOG_FETCH_BUDGET_MS / 1000}s budget after ${page} ` +
+            `page(s) — aborting rather than syncing a partial catalog`,
+        );
+      }
       const url = new URL(`${AIRTABLE_API_BASE}/${baseId}/${table}`);
       url.searchParams.set("pageSize", String(PAGE_SIZE));
       if (offset) {

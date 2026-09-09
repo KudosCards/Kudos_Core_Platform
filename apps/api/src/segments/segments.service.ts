@@ -44,6 +44,7 @@ const RECONCILABLE_STATUSES = ["scheduled", "pending_approval", "approved"] as c
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
+import { PlatformNotificationService } from "../platform-notifications/platform-notification.service";
 import { mapWithConcurrency } from "../common/map-with-concurrency";
 import { MISSING_ADDRESS_WHERE } from "../recipients/recipients.service";
 import { SEGMENT_PRESETS } from "./segment-presets";
@@ -133,6 +134,7 @@ export class SegmentsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
+    private readonly platformNotifications: PlatformNotificationService,
   ) {}
 
   /**
@@ -150,6 +152,43 @@ export class SegmentsService {
    * the ceiling — two bounded batches running concurrently would be twice it.
    * See ADR 0210.
    */
+  /**
+   * Tell an operator that an account is approaching the cap ADR 0210 deferred.
+   *
+   * This was a `this.logger.warn`. The API's Sentry is errors-only with no
+   * console-capture integration, so that reached an application log nobody
+   * tails — and ADR 0233 claimed on its strength that "someone is told". A
+   * tripwire whose signal nobody receives is the deferral without the watch.
+   *
+   * Keyed on the *band* rather than the account, so crossing fifty files one
+   * alert and crossing a hundred files one more. `notifyAllAdmins` refuses a
+   * duplicate `kind` + `entityId`, and this runs on a page load: without a key
+   * it would file an alert per visit, which is how an alert stops being read —
+   * the same failure as the silent log, from the other direction.
+   *
+   * Best-effort. The overview is a page a customer is waiting on, and a
+   * notification write that fails must not take it down; the count is not
+   * changing in the next few seconds, so the next load files it.
+   */
+  private async warnSavedListsOverThreshold(accountId: string, count: number): Promise<void> {
+    const band = Math.floor(count / SAVED_SEGMENT_WARN_THRESHOLD) * SAVED_SEGMENT_WARN_THRESHOLD;
+    try {
+      await this.platformNotifications.notifyAllAdmins({
+        kind: "saved_lists_over_threshold",
+        title: "An account is approaching the saved-list cap",
+        body:
+          `This account has ${count} saved smart lists. The segments overview resolves every ` +
+          `one on each load, bounded to ${RESOLVE_CONCURRENCY} at a time (ADR 0210). The ` +
+          `per-account cap was deferred on the measured maximum of one — worth revisiting.`,
+        entityType: "Account",
+        entityId: `${accountId}:${band}`,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Could not file the saved-list threshold alert: ${reason}`);
+    }
+  }
+
   async overview(accountId: string): Promise<SegmentsOverview> {
     // The row read is one indexed query over small rows; it is the resolving
     // that costs, so this stays whole. The page needs every saved list anyway:
@@ -161,14 +200,7 @@ export class SegmentsService {
     });
 
     if (savedRows.length >= SAVED_SEGMENT_WARN_THRESHOLD) {
-      // Not an error and not a limit: the page still works. It is the signal
-      // that the deferral above is running out, while there is still time to
-      // decide what to do about it rather than discover it from a support call.
-      this.logger.warn(
-        `Account ${accountId} has ${savedRows.length} saved smart lists — the segments overview ` +
-          `resolves every one on each load. Above ${SAVED_SEGMENT_WARN_THRESHOLD} this is worth ` +
-          `revisiting (ADR 0210's deferred per-account cap).`,
-      );
+      await this.warnSavedListsOverThreshold(accountId, savedRows.length);
     }
 
     const jobs: { row: (typeof savedRows)[number] | null; definition: SegmentDefinition }[] = [
