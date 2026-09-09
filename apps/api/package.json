@@ -58,7 +58,7 @@
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "sanitize-html": ">=2.17.5 <2.17.6",
+    "sanitize-html": "^2.17.7",
     "sharp": "^0.35.4",
     "stripe": "^22.3.2",
     "zod": "^3.23.8"
@@ -108,12 +108,20 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "tsconfig": "<rootDir>/../tsconfig.spec.json"
+        }
+      ]
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "transformIgnorePatterns": [
+      "^(?!.*\\.pnpm/(?:dom-serializer|domelementtype|domhandler|domutils|entities|htmlparser2|nanoid)@).*node_modules"
+    ]
   }
 }
