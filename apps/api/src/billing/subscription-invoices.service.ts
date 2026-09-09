@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type Stripe from "stripe";
+import { INVOICE_BACKFILL_BUDGET_MS, startFetchBudget } from "../common/fetch-budget";
 import { PrismaService } from "../prisma/prisma.service";
 import { STRIPE_CLIENT } from "./stripe-client.provider";
 
@@ -121,8 +122,23 @@ export class SubscriptionInvoicesService {
       truncated: false,
     };
 
+    // Bounds the whole backfill, not each request. The page cap is a stop on
+    // *count*; nothing stopped it on *time*, and this is an awaited ops
+    // endpoint. Expiry is reported exactly as the page cap is — `truncated` —
+    // because a partial backfill is safe here: every write is an upsert on the
+    // invoice id. See ADR 0238.
+    const budget = startFetchBudget(INVOICE_BACKFILL_BUDGET_MS);
+
     let startingAfter: string | undefined;
     for (let page = 0; page < MAX_PAGES; page += 1) {
+      if (budget.expired()) {
+        summary.truncated = true;
+        this.logger.warn(
+          `Subscription invoice backfill stopped after ${page} page(s) on its ` +
+            `${INVOICE_BACKFILL_BUDGET_MS / 1000}s budget with more to read`,
+        );
+        return summary;
+      }
       const response = await this.stripe.invoices.list({
         status: "paid",
         limit: PAGE_SIZE,

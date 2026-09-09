@@ -151,3 +151,10 @@ bounds its pull at 100 pages but takes no wall-clock budget, so it is the
 with no user waiting on it, which is the entire reason ADR 0231's finding
 mattered, so the fix would be ceremony. Recorded here rather than fixed, so the
 next audit finds a decision instead of a gap.
+
+> **Superseded — this deferral was wrong.** It is not only a cron.
+> `POST /catalog/sync` (`catalog.controller.ts`, behind `PlatformAdminGuard`)
+> is synchronous and awaited, so an operator does wait on it, and the ceiling
+> is over four hours. The premise was never checked — a cron was found and a
+> controller was not looked for. Fixed in ADR 0238, which also records why the
+> budget must throw rather than truncate.

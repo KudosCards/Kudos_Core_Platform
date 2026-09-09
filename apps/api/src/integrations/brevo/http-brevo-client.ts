@@ -1,6 +1,6 @@
 import { BadGatewayException, UnauthorizedException } from "@nestjs/common";
 import { httpRequest } from "../../common/http-request";
-import { startFetchBudget } from "../fetch-budget";
+import { startFetchBudget } from "../../common/fetch-budget";
 import type { CrmContactsResult } from "../crm-contacts-result";
 import { upstreamDetail, withUpstreamDetail } from "../upstream-detail";
 import type { BrevoClient, BrevoContact } from "./brevo-client";

@@ -1,4 +1,5 @@
 import { AirtableCatalogSource } from "./airtable-catalog-source";
+import { CATALOG_FETCH_BUDGET_MS } from "../common/fetch-budget";
 
 function jsonResponse(body: unknown): Response {
   return {
@@ -8,12 +9,54 @@ function jsonResponse(body: unknown): Response {
   } as unknown as Response;
 }
 
+function recordNamed(id: string) {
+  return {
+    id,
+    fields: {
+      "Card Title": "Happy Birthday - Balloons",
+      "Card SKU": "KC-BDAY-GEN-002",
+      Occasion: "Birthday",
+      Status: "Active",
+      "Front Image": [{ url: "https://airtable.test/a.png", filename: "a.png", type: "image/png" }],
+    },
+  };
+}
+
 describe("AirtableCatalogSource", () => {
   const config = { apiKey: "pat_test", baseId: "appTest", tableName: "Card List" };
   let fetchSpy: jest.SpyInstance;
 
   afterEach(() => {
     fetchSpy?.mockRestore();
+  });
+
+  it("gives up on a pull that outruns its wall-clock budget, rather than returning part of it", async () => {
+    // Each page bounded, the sum unbounded: 100 pages x 4 attempts x a 15s
+    // deadline, plus backoffs capped at 30s, is over four hours — and
+    // `POST /catalog/sync` is a synchronous request an operator waits on.
+    //
+    // It has to *throw*. `deactivateRetired` deactivates every card absent from
+    // the fetched set, guarded only against a fetch of exactly zero, so
+    // returning a partial pull would quietly unpublish whatever came after the
+    // cut-off. Failing is the safe half of the fork. See ADR 0238.
+    let page = 0;
+    fetchSpy = jest.spyOn(global, "fetch").mockImplementation(() => {
+      page += 1;
+      // Always another page, so nothing but the budget can end this.
+      return Promise.resolve(
+        jsonResponse({ records: [recordNamed(`rec${page}`)], offset: `off${page}` }),
+      );
+    });
+
+    // A clock that jumps past the budget once the first page is paid for.
+    let calls = 0;
+    const now = () => (calls++ === 0 ? 0 : CATALOG_FETCH_BUDGET_MS);
+
+    await expect(new AirtableCatalogSource(config, now).fetchActiveCards()).rejects.toThrow(
+      /budget/i,
+    );
+    // Stopped between pages, not after a hundred of them.
+    expect(page).toBeLessThan(5);
   });
 
   it("isConfigured reflects whether credentials are present", () => {
