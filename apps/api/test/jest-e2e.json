@@ -5,7 +5,15 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
+    "^.+\\.(t|j)s$": [
+      "ts-jest",
+      {
+        "tsconfig": "<rootDir>/../tsconfig.spec.json"
+      }
+    ]
   },
-  "maxWorkers": 1
+  "maxWorkers": 1,
+  "transformIgnorePatterns": [
+    "^(?!.*\\.pnpm/(?:dom-serializer|domelementtype|domhandler|domutils|entities|htmlparser2|nanoid)@).*node_modules"
+  ]
 }

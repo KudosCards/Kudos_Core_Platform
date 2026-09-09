@@ -1,0 +1,20 @@
+{
+  // TypeScript for the test runs only — never for `pnpm build`, whose output is
+  // what ships.
+  //
+  // `sanitize-html` 2.17.6+ reaches five ESM-only packages (htmlparser2,
+  // entities, domhandler, domutils, dom-serializer). Node ≥22.12 loads those
+  // from CommonJS itself via `require(esm)`, which is why the API runtime never
+  // needed anything; Jest's own module registry does not, so the suite has to
+  // compile them down. That needs `allowJs`, and `allowJs` has no business in
+  // the build config — it would put third-party JavaScript through `tsc` on the
+  // way to `dist/`. See ADR 0239.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    // Compile them, don't type-check them: these are somebody else's
+    // JavaScript and their diagnostics are not ours to fix.
+    "checkJs": false
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}
