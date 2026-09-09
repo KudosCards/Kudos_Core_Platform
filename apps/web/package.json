@@ -47,7 +47,7 @@
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.5.0",
     "sharp": "^0.35.4",
-    "svgo": "^4.0.2",
+    "svgo": "^4.1.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
