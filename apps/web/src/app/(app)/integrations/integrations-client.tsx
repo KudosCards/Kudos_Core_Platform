@@ -138,8 +138,13 @@ function SyncSummary({ result }: { result: CrmSyncResult }) {
   // import nobody can send a card from is not a success, and neither is one
   // that quietly left contacts behind.
   const clean = !result.truncated && missing.length === 0 && unaccounted.length === 0;
+  // A `div`, not a `p`: the refusals below are a list, and a `<ul>` inside a
+  // `<p>` is invalid HTML — the parser ends the paragraph early, so in a
+  // server-rendered context the list and everything after it would fall out of
+  // the coloured box entirely. React says so on every render and nothing was
+  // listening; jest.setup.ts now is. See ADR 0236.
   return (
-    <p
+    <div
       className={
         clean
           ? "rounded-lg bg-success-soft px-4 py-2 text-sm font-medium text-success"
@@ -160,7 +165,7 @@ function SyncSummary({ result }: { result: CrmSyncResult }) {
         ? " A contact needs a first and last name before a card can be addressed to it — add those in your CRM and sync again."
         : ""}
       {result.errors.length > 0 ? <SyncRefusals errors={result.errors} /> : null}
-    </p>
+    </div>
   );
 }
 
@@ -176,7 +181,7 @@ function SyncRefusals({ errors }: { errors: CrmSyncResult["errors"] }) {
   const shown = errors.slice(0, REFUSALS_SHOWN);
   const rest = errors.length - shown.length;
   return (
-    <span className="mt-2 block font-normal">
+    <div className="mt-2 font-normal">
       <ul className="list-disc space-y-1 pl-5">
         {shown.map((error) => (
           <li key={error.externalId}>
@@ -184,8 +189,8 @@ function SyncRefusals({ errors }: { errors: CrmSyncResult["errors"] }) {
           </li>
         ))}
       </ul>
-      {rest > 0 ? <span className="mt-1 block">…and {rest} more.</span> : null}
-    </span>
+      {rest > 0 ? <p className="mt-1">…and {rest} more.</p> : null}
+    </div>
   );
 }
 
