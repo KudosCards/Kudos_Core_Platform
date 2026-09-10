@@ -3,9 +3,12 @@ import { SupabaseAdminModule } from "../supabase/supabase-admin.module";
 import { PlatformNotificationsModule } from "../platform-notifications/platform-notifications.module";
 import { WalletModule } from "./wallet.module";
 import { WalletCampaignsService } from "./wallet-campaigns.service";
+import { WalletCampaignsAdminService } from "./wallet-campaigns-admin.service";
+import { WalletCampaignsController } from "./wallet-campaigns.controller";
 
 /**
- * Delivery for wallet campaigns, kept out of `WalletModule` on purpose.
+ * Wallet campaigns — the hourly sweep that credits, and the super-admin
+ * surface that decides what to credit. Kept out of `WalletModule` on purpose.
  *
  * `WalletModule` owns the ledger and is imported widely; this needs Supabase
  * and the operator inbox, which the ledger has no business depending on. A
@@ -14,7 +17,8 @@ import { WalletCampaignsService } from "./wallet-campaigns.service";
  */
 @Module({
   imports: [WalletModule, SupabaseAdminModule, PlatformNotificationsModule],
-  providers: [WalletCampaignsService],
+  controllers: [WalletCampaignsController],
+  providers: [WalletCampaignsService, WalletCampaignsAdminService],
   exports: [WalletCampaignsService],
 })
 export class WalletCampaignsModule {}

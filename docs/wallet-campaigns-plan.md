@@ -37,6 +37,13 @@ aggregate, and it can never disagree with the balances it produced.
 
 ### D1 — Eligibility: the signup path only
 
+> **Superseded in part.** The table below reads the _creation sites_ correctly,
+> but the plan then intended to tell the two apart at query time with
+> "has an owner membership and holds no claim token". That works for an
+> unclaimed guest and fails for a claimed one: a claim nulls the token and
+> renames the account, leaving it indistinguishable from a registration.
+> `Account.origin` is now recorded at creation instead. See ADR 0240.
+
 There are two paths that create an `Account`:
 
 | path                         | what it is                                               |
@@ -225,7 +232,9 @@ Plus `campaign` on `WalletEntryType`. No grants table — the ledger is the reco
 
 ## Phasing
 
-Each phase is independently mergeable and leaves the platform working.
+Each phase is independently mergeable and leaves the platform working. All four
+are built; what each one actually shipped is recorded in ADR 0240, including the
+two things this plan got wrong.
 
 **Phase 1 — the ledger can express a campaign.** `campaign` entry type across
 Prisma, `shared-types` and `ENTRY_LABELS`; two-step enum migration. No behaviour
@@ -244,6 +253,11 @@ retroactive windows, a paused-then-resumed window, and a budget hit mid-sweep.
 existing setup panels: create, pause, resume, end, and a live readout of accounts
 credited and budget remaining. `campaignCreditIssuedMinor` on the admin overview
 with its contra-figure sentence.
+
+Two rules came out of building it that this plan had not thought about, both
+recorded in ADR 0240: the amount and the window are frozen once a campaign leaves
+draft, and an exhausted campaign restarts by having its budget raised rather than
+by being set live again.
 
 ## Tests and guards
 

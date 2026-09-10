@@ -65,6 +65,23 @@ export interface AdminOverview {
   funnel: { signedUp: number; placedFirstOrder: number; cardsFulfilled: number };
   /** At-risk accounts to surface, most-stale first. */
   needsAttention: { id: string; name: string; lastActivityDays: number }[];
+  /**
+   * Total marketing-campaign credit ever issued, in pence — a contra figure
+   * beside revenue, not a subtraction from it.
+   *
+   * `revenueMinor` counts `BatchOrder.totalMinor` regardless of how the order
+   * was paid, so an order settled from a campaign credit counts as revenue with
+   * no cash behind it. Attributing that per order is not possible: money in a
+   * wallet is fungible, `debitAndSettleOrder` writes one negative charge with no
+   * record of which credits funded it, and the ledger's defining property is
+   * that a balance is a plain SUM. So this reports the other side honestly
+   * instead — here is how much credit we issued.
+   *
+   * It doubles as the standing liability: a wallet credit never expires
+   * (ADR 0012), so every uncredited penny here is spendable forever. See
+   * docs/wallet-campaigns-plan.md (D6, D8).
+   */
+  campaignCreditIssuedMinor: number;
 }
 
 export interface AdminOrderRow {
@@ -185,6 +202,7 @@ export class AdminService {
       funnelRows,
       activeRows,
       atRiskRows,
+      campaignCredit,
     ] = await Promise.all([
       this.prisma.account.count(),
       this.prisma.account.groupBy({ by: ["type"], _count: true }),
@@ -247,6 +265,13 @@ export class AdminService {
         HAVING COALESCE(MAX(o.created_at), a.created_at) <= ${atRiskCutoff}
         ORDER BY last_activity ASC
       `),
+      // Marketing credit issued, all time. Keyed on the entry *type* rather
+      // than the `campaign:` reference prefix, because the type is the thing
+      // that exists to separate marketing spend from goodwill corrections.
+      this.prisma.walletLedgerEntry.aggregate({
+        where: { type: "campaign" },
+        _sum: { amountMinor: true },
+      }),
     ]);
 
     // Accounts breakdown.
@@ -300,6 +325,7 @@ export class AdminService {
         cardsFulfilled: funnel.cards_fulfilled,
       },
       needsAttention: atRisk.slice(0, 6),
+      campaignCreditIssuedMinor: campaignCredit._sum.amountMinor ?? 0,
     };
   }
 
