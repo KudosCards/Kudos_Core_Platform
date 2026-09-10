@@ -32,7 +32,12 @@ describe("Admin — wallet adjustment (e2e)", () => {
 
   async function account(): Promise<string> {
     const created = await prisma.account.create({
-      data: { type: "organisation", name: `Wallet co ${randomUUID()}`, planId: "centre" },
+      data: {
+        origin: "signup",
+        type: "organisation",
+        name: `Wallet co ${randomUUID()}`,
+        planId: "centre",
+      },
     });
     return created.id;
   }

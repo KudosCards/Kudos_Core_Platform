@@ -26,6 +26,10 @@ const SRC = join(__dirname, "..");
 const INTERVAL_JOBS = new Set([
   "shipping/click-and-drop.service.ts",
   "fulfillment/delivery-poll.service.ts",
+  // The wallet-campaign sweep. Hourly, and a campaign's window is already
+  // stored as UTC instants — an operator picks London dates and the creating
+  // edge converts once — so there is no hour of the day for this job to mean.
+  "wallet/wallet-campaigns.service.ts",
 ]);
 
 function sourceFiles(dir: string): string[] {

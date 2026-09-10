@@ -5,13 +5,14 @@ import { DashboardService } from "./dashboard.service";
 import { EntitlementsModule } from "../entitlements/entitlements.module";
 import { BillingModule } from "../billing/billing.module";
 import { OpsActivityModule } from "../ops-activity/ops-activity.module";
+import { WalletCampaignsModule } from "../wallet/wallet-campaigns.module";
 import { supabaseAdminProvider } from "../supabase/supabase-admin.provider";
 
 @Module({
   // BillingModule provides STRIPE_CLIENT (used to cancel a subscription on
   // account deletion); supabaseAdminProvider is the service-role client that
   // removes the Supabase logins for a deleted account.
-  imports: [EntitlementsModule, BillingModule, OpsActivityModule],
+  imports: [EntitlementsModule, BillingModule, OpsActivityModule, WalletCampaignsModule],
   controllers: [AccountsController],
   providers: [AccountsService, DashboardService, supabaseAdminProvider],
   exports: [AccountsService],

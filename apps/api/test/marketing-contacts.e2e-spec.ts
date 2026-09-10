@@ -131,6 +131,7 @@ describe("Subscriber marketing lists (e2e)", () => {
     const claimToken = `claim-${randomUUID()}`;
     await prisma.account.create({
       data: {
+        origin: "signup",
         type: "organisation",
         name: "Guest Buyer Ltd",
         planId: "free",

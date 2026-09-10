@@ -71,6 +71,10 @@ export class GuestOrdersService {
       data: {
         type: "individual",
         name: "Guest",
+        // Minted because someone is buying, not because they registered. The
+        // claim below nulls the token and renames the account, so this column
+        // is the only thing that still knows. See docs/wallet-campaigns-plan.md.
+        origin: "guest",
         planId: "free",
         contactEmail: dto.buyerEmail,
         claimToken,

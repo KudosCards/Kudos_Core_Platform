@@ -17,6 +17,7 @@ import { MarketingContactsService } from "../marketing/marketing-contacts.servic
 import { STRIPE_CLIENT } from "../billing/stripe-client.provider";
 import { SUPABASE_ADMIN_CLIENT } from "../supabase/supabase-admin.provider";
 import { OpsActivityService } from "../ops-activity/ops-activity.service";
+import { WalletCampaignsService } from "../wallet/wallet-campaigns.service";
 import type { CreateAccountDto } from "./dto/create-account.dto";
 
 /** An account safe to return over the API — without the claim-token secret. */
@@ -28,6 +29,7 @@ export const SAFE_ACCOUNT_SELECT = {
   id: true,
   type: true,
   name: true,
+  origin: true,
   stripeCustomerId: true,
   planId: true,
   contactEmail: true,
@@ -45,13 +47,19 @@ export class AccountsService {
     private readonly prisma: PrismaService,
     private readonly marketing: MarketingContactsService,
     private readonly opsActivity: OpsActivityService,
+    private readonly walletCampaigns: WalletCampaignsService,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
     @Inject(SUPABASE_ADMIN_CLIENT) private readonly supabaseAdmin: SupabaseClient,
   ) {}
 
   /** `email` (the signing-up user's, from their verified JWT) is stored as the
    * account's contactEmail so birthday reminders have somewhere to go. */
-  async signup(userId: string, dto: CreateAccountDto, email: string | null): Promise<Account> {
+  async signup(
+    userId: string,
+    dto: CreateAccountDto,
+    email: string | null,
+    verifiedEmail: string | null,
+  ): Promise<Account> {
     const existing = await this.prisma.membership.findFirst({ where: { userId } });
     if (existing) {
       throw new ConflictException("This user already belongs to an account");
@@ -59,7 +67,13 @@ export class AccountsService {
 
     const account = await this.prisma.$transaction(async (tx) => {
       const created = await tx.account.create({
-        data: { type: dto.type, name: dto.name, planId: "free", contactEmail: email },
+        data: {
+          type: dto.type,
+          name: dto.name,
+          planId: "free",
+          contactEmail: email,
+          origin: "signup",
+        },
       });
       await tx.membership.create({
         data: { accountId: created.id, userId, role: "owner", email },
@@ -79,6 +93,20 @@ export class AccountsService {
     // Tell Kudos HQ. After the transaction and best-effort, so a notification
     // problem can never cost us a signup.
     await this.opsActivity.accountSignedUp(account.id);
+
+    // A live wallet campaign credits this account now rather than on the next
+    // hourly sweep, so the money is there on their first page.
+    //
+    // `verifiedEmail`, not the `email` beside it: with a campaign live the
+    // address decides £5, and this is exactly the case ADR 0188 named. The
+    // address is normally already confirmed by the time we get here —
+    // Supabase returns no session until it is, so `POST /accounts` is not
+    // reached before then — but "normally" is not a control.
+    //
+    // Best-effort inside the service, for the same reason the line above is:
+    // a campaign problem must never cost a signup. Anything missed here the
+    // sweep picks up within the hour.
+    await this.walletCampaigns.creditOnSignup(account.id, verifiedEmail);
 
     return account;
   }

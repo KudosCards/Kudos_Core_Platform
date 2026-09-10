@@ -29,6 +29,7 @@ import { DispatchModule } from "./dispatch/dispatch.module";
 import { PricingModule } from "./pricing/pricing.module";
 import { CatalogModule } from "./catalog/catalog.module";
 import { WalletModule } from "./wallet/wallet.module";
+import { WalletCampaignsModule } from "./wallet/wallet-campaigns.module";
 import { AutoSendModule } from "./auto-send/auto-send.module";
 import { OpsActivityModule } from "./ops-activity/ops-activity.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
@@ -90,6 +91,7 @@ import { PlatformNotificationsModule } from "./platform-notifications/platform-n
     PricingModule,
     CatalogModule,
     WalletModule,
+    WalletCampaignsModule,
     AutoSendModule,
     OpsActivityModule,
     IntegrationsModule,

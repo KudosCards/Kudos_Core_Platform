@@ -47,6 +47,7 @@ describe("Admin — Customer 360 (e2e)", () => {
 
     const account = await prisma.account.create({
       data: {
+        origin: "signup",
         type: "organisation",
         name: `Engaged Centre ${randomUUID()}`,
         planId: "centre",
@@ -266,7 +267,12 @@ describe("Admin — Customer 360 (e2e)", () => {
   it("reports no subscription spend for an account that has never paid", async () => {
     const token = await operatorToken();
     const account = await prisma.account.create({
-      data: { type: "individual", name: `Never Paid ${randomUUID()}`, planId: "free" },
+      data: {
+        origin: "signup",
+        type: "individual",
+        name: `Never Paid ${randomUUID()}`,
+        planId: "free",
+      },
     });
 
     const response = await request(app.getHttpServer())
@@ -291,6 +297,7 @@ describe("Admin — Customer 360 (e2e)", () => {
     const token = await operatorToken();
     const account = await prisma.account.create({
       data: {
+        origin: "signup",
         type: "organisation",
         name: `Long Standing ${randomUUID()}`,
         planId: "centre",
@@ -326,7 +333,12 @@ describe("Admin — Customer 360 (e2e)", () => {
 
     // Another account's invoice must not leak into this one's total.
     const other = await prisma.account.create({
-      data: { type: "individual", name: `Other ${randomUUID()}`, planId: "starter" },
+      data: {
+        origin: "signup",
+        type: "individual",
+        name: `Other ${randomUUID()}`,
+        planId: "starter",
+      },
     });
     await prisma.subscriptionInvoice.create({
       data: {

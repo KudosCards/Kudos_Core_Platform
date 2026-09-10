@@ -23,6 +23,20 @@ enum AccountType {
   individual
 }
 
+/// How an account came into being. Two paths create one, and they are not the
+/// same thing: `signup` is a person registering, `guest` is an account minted
+/// server-side mid-checkout so a one-off buyer has somewhere to put their card.
+///
+/// Recorded rather than inferred because it stops being inferable. A claim
+/// nulls `claimToken` and `claimTokenExpiresAt` and renames the account, so a
+/// claimed guest is otherwise indistinguishable from a registration — which
+/// matters the moment something decides to give money to "new sign-ups". See
+/// docs/wallet-campaigns-plan.md.
+enum AccountOrigin {
+  signup
+  guest
+}
+
 enum MembershipRole {
   owner
   admin
@@ -33,6 +47,10 @@ model Account {
   id                    String      @id @default(uuid())
   type                  AccountType
   name                  String
+  /// Required with no default on purpose: both creation paths must say which
+  /// they are, and a third would fail to compile rather than quietly inherit
+  /// whichever default happened to be safer for the author.
+  origin                AccountOrigin
   stripeCustomerId      String?     @unique @map("stripe_customer_id")
   planId                String?     @map("plan_id")
   /// Guest one-off buyer's email — captured at Stripe checkout for the receipt
@@ -959,11 +977,68 @@ model SubscriptionInvoice {
   @@map("subscription_invoices")
 }
 
+/// Where a marketing wallet campaign is in its life. `exhausted` is distinct
+/// from `ended`: one ran out of budget, the other ran out of window, and an
+/// operator needs to know which.
+enum WalletCampaignStatus {
+  draft
+  live
+  paused
+  exhausted
+  ended
+}
+
+/// A marketing campaign that credits every new account signing up inside a
+/// window — "sign up in October and get £5 towards your first card".
+///
+/// There is deliberately no grants table. A campaign's grants *are* the
+/// WalletLedgerEntry rows carrying `reference = campaign:<id>`, so the count of
+/// accounts credited and the total spent can never disagree with the balances
+/// they produced. See docs/wallet-campaigns-plan.md.
+model WalletCampaign {
+  id   String @id @default(uuid())
+  name String
+
+  /// Per-account credit in pence. Bounded £1-£50 at the DTO, and frozen once
+  /// the campaign leaves `draft`: "sign up in October and get £5" is a promise
+  /// to everyone in the window, and one-credit-per-account means an early
+  /// signup could not be topped up to match a later raise.
+  amountMinor Int @map("amount_minor")
+
+  /// The window, as UTC instants. An operator picks London dates and the
+  /// creating edge converts once — storing instants keeps every later
+  /// comparison a plain timestamp comparison with no timezone logic in it.
+  /// Half-open: an account is in-window when startsAt <= createdAt < endsAt.
+  startsAt DateTime @map("starts_at")
+  endsAt   DateTime @map("ends_at")
+
+  /// Hard ceiling on total credit, in pence. Required, with no default: a
+  /// per-account amount times an unbounded number of signups is unbounded
+  /// liability, and "we will keep an eye on it" is not a control. Checked
+  /// inside the crediting transaction, because anywhere else lets two
+  /// concurrent signups both take the last £5.
+  budgetMinor Int @map("budget_minor")
+
+  status          WalletCampaignStatus @default(draft)
+  createdByUserId String               @map("created_by_user_id")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+
+  /// The sweep's own query: live campaigns whose window is open.
+  @@index([status, startsAt])
+  @@map("wallet_campaigns")
+}
+
 enum WalletEntryType {
   topup
   charge
   refund
   adjustment
+  /// A marketing wallet campaign's welcome credit — "sign up in October and get
+  /// £5 towards your first card". Distinct from `adjustment` so a customer does
+  /// not read "Adjustment" against a gift, and so campaign spend is separable
+  /// from goodwill corrections in the ledger. See docs/wallet-campaigns-plan.md.
+  campaign
 }
 
 /// Append-only. Never UPDATE or DELETE a row — corrections are new entries
@@ -988,6 +1063,10 @@ model WalletLedgerEntry {
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId, createdAt])
+  /// A campaign's budget check aggregates every entry it has issued, by
+  /// reference, on each credit. Without this it is a scan of the whole ledger
+  /// per crediting attempt.
+  @@index([reference])
   @@map("wallet_ledger_entries")
 }
 

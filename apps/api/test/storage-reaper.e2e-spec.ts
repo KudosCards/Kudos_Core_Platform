@@ -120,7 +120,7 @@ describe("Storage reaper (e2e)", () => {
 
   it("deletes the orphan and keeps the referenced object (real Prisma)", async () => {
     const account = await prisma.account.create({
-      data: { type: "organisation", name: `Centre ${randomUUID()}` },
+      data: { origin: "signup", type: "organisation", name: `Centre ${randomUUID()}` },
     });
     const kept = `${account.id}/kept.png`;
     const orphan = `${account.id}/orphan.png`;
@@ -151,7 +151,7 @@ describe("Storage reaper (e2e)", () => {
     // documents — which is what made paging necessary; paging is only safe if
     // nothing on a later page is missed.
     const account = await prisma.account.create({
-      data: { type: "organisation", name: `Centre ${randomUUID()}` },
+      data: { origin: "signup", type: "organisation", name: `Centre ${randomUUID()}` },
     });
     const referenced = `${account.id}/on-a-later-page.png`;
 
@@ -192,7 +192,7 @@ describe("Storage reaper (e2e)", () => {
 
   it("defaults to a dry run that deletes nothing", async () => {
     const account = await prisma.account.create({
-      data: { type: "organisation", name: `Centre ${randomUUID()}` },
+      data: { origin: "signup", type: "organisation", name: `Centre ${randomUUID()}` },
     });
     const orphan = `${account.id}/orphan.png`;
     storageObjects = [{ path: orphan, createdAt: OLD }];

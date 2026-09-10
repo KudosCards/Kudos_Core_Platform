@@ -8,6 +8,7 @@ import { SeatBillingSetup } from "./seat-billing-setup";
 import { SeasonalDispatchSetup } from "./seasonal-dispatch-setup";
 import { DispatchReminderSetup } from "./dispatch-reminder-setup";
 import { PrintSizeSetup } from "./print-size-setup";
+import { WalletCampaignSetup } from "./wallet-campaign-setup";
 import { ArrivalSweepButton } from "./arrival-sweep-button";
 import { DailySummaryButton } from "./daily-summary-button";
 import { OccasionSchedulerButton } from "./occasion-scheduler-button";
@@ -24,6 +25,7 @@ interface AdminOverview {
   cardsSent: number;
   funnel: { signedUp: number; placedFirstOrder: number; cardsFulfilled: number };
   needsAttention: { id: string; name: string; lastActivityDays: number }[];
+  campaignCreditIssuedMinor: number;
 }
 
 function Stat({
@@ -279,6 +281,9 @@ export default async function AdminOverviewPage() {
       {/* Default print card size (A5/A6) the fulfilment print run opens on. */}
       <PrintSizeSetup />
 
+      {/* Marketing wallet campaigns — free credit for sign-ups in a window. */}
+      <WalletCampaignSetup />
+
       {/* Force the estimated-arrival sweep for untracked stamped post (ADR 0124). */}
       <ArrivalSweepButton />
 
@@ -292,6 +297,25 @@ export default async function AdminOverviewPage() {
       {/* Import paid subscription invoices from Stripe so customer pages can
           show lifetime subscription spend. */}
       <SubscriptionBackfillButton />
+
+      {/* Campaign credit, beside revenue rather than inside it. Revenue counts an
+          order at its price however it was paid, so an order settled from a
+          campaign credit is revenue with no cash behind it. Per-order
+          attribution isn't possible — wallet money is fungible — so the honest
+          answer is to show how much credit was issued. See ADR/plan D8. */}
+      {overview.campaignCreditIssuedMinor > 0 && (
+        <Panel
+          title="Marketing credit issued"
+          right={formatGbp(overview.campaignCreditIssuedMinor)}
+        >
+          <p className="text-sm text-muted">
+            Free wallet credit given to new sign-ups by wallet campaigns, all time. Revenue above
+            includes orders paid for with this credit, so treat it as a cost against that figure
+            rather than a subtraction from it. Wallet credit never expires, so anything not yet
+            spent is still owed.
+          </p>
+        </Panel>
+      )}
 
       {/* Revenue chart + plans */}
       <div className="grid gap-4 lg:grid-cols-3">

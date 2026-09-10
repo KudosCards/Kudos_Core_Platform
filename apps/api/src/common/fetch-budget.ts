@@ -69,6 +69,20 @@ export const CATALOG_FETCH_BUDGET_MS = 120_000;
  */
 export const INVOICE_BACKFILL_BUDGET_MS = 120_000;
 
+/**
+ * How long one wallet-campaign sweep may spend crediting accounts.
+ *
+ * A fourth caller, and it truncates like the contacts pull rather than throwing
+ * like the catalog: the accounts it did not reach are still in-window and the
+ * sweep runs again in an hour, so stopping early costs a delay, not a credit.
+ *
+ * The sweep makes one Supabase lookup per candidate account to confirm the
+ * address — see ADR 0188 for why that is a record lookup rather than a token
+ * claim — so it is an outbound-call loop like the others, however small the
+ * numbers are today.
+ */
+export const CAMPAIGN_SWEEP_BUDGET_MS = 120_000;
+
 export interface FetchBudget {
   /** True once the pull has run longer than it is allowed to. Checked between
    *  pages, never mid-request: a page already paid for is worth keeping. */

@@ -87,6 +87,25 @@ export function londonDayStart(day: string): Date {
 }
 
 /**
+ * The London calendar day after `day`.
+ *
+ * Calendar arithmetic, not "plus 24 hours": the clocks-back day is 25 hours
+ * long and the clocks-forward day is 23, so adding a fixed duration lands on
+ * the wrong date twice a year. `Date.UTC` handles month and year rollover.
+ *
+ * Used to turn an inclusive window an operator typed ("1 to 31 October") into
+ * the half-open instant window everything downstream compares against.
+ */
+export function londonDayAfter(day: string): string {
+  const [year, month, date] = day.split("-").map(Number);
+  if (year === undefined || month === undefined || date === undefined || Number.isNaN(date)) {
+    throw new Error(`londonDayAfter expects a YYYY-MM-DD day, got "${day}"`);
+  }
+  const next = new Date(Date.UTC(year, month - 1, date + 1));
+  return next.toISOString().slice(0, 10);
+}
+
+/**
  * The last complete London day before `now`, as the day itself plus the
  * half-open UTC window `[from, to)` covering it.
  *

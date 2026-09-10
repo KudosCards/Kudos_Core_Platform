@@ -1,0 +1,15 @@
+-- A marketing campaign's welcome credit is not a goodwill correction, and the
+-- customer's wallet page renders the entry type verbatim — so reusing
+-- `adjustment` would show someone "Adjustment" against money we gave them to
+-- welcome them. It also keeps campaign spend separable from goodwill in the
+-- ledger, which the admin overview's contra figure depends on.
+--
+-- `IF NOT EXISTS` matches the existing precedent for enum additions here, so a
+-- re-run is a no-op rather than an error.
+--
+-- Nothing writes this value yet: Phase 1 is vocabulary only. That is also what
+-- keeps this a single migration — Postgres will not let a newly added enum
+-- value be *used* in the transaction that adds it.
+--
+-- See docs/wallet-campaigns-plan.md.
+ALTER TYPE "WalletEntryType" ADD VALUE IF NOT EXISTS 'campaign';
