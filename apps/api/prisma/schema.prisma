@@ -959,6 +959,58 @@ model SubscriptionInvoice {
   @@map("subscription_invoices")
 }
 
+/// Where a marketing wallet campaign is in its life. `exhausted` is distinct
+/// from `ended`: one ran out of budget, the other ran out of window, and an
+/// operator needs to know which.
+enum WalletCampaignStatus {
+  draft
+  live
+  paused
+  exhausted
+  ended
+}
+
+/// A marketing campaign that credits every new account signing up inside a
+/// window — "sign up in October and get £5 towards your first card".
+///
+/// There is deliberately no grants table. A campaign's grants *are* the
+/// WalletLedgerEntry rows carrying `reference = campaign:<id>`, so the count of
+/// accounts credited and the total spent can never disagree with the balances
+/// they produced. See docs/wallet-campaigns-plan.md.
+model WalletCampaign {
+  id   String @id @default(uuid())
+  name String
+
+  /// Per-account credit in pence. Bounded £1-£50 at the DTO, and frozen once
+  /// the campaign leaves `draft`: "sign up in October and get £5" is a promise
+  /// to everyone in the window, and one-credit-per-account means an early
+  /// signup could not be topped up to match a later raise.
+  amountMinor Int @map("amount_minor")
+
+  /// The window, as UTC instants. An operator picks London dates and the
+  /// creating edge converts once — storing instants keeps every later
+  /// comparison a plain timestamp comparison with no timezone logic in it.
+  /// Half-open: an account is in-window when startsAt <= createdAt < endsAt.
+  startsAt DateTime @map("starts_at")
+  endsAt   DateTime @map("ends_at")
+
+  /// Hard ceiling on total credit, in pence. Required, with no default: a
+  /// per-account amount times an unbounded number of signups is unbounded
+  /// liability, and "we will keep an eye on it" is not a control. Checked
+  /// inside the crediting transaction, because anywhere else lets two
+  /// concurrent signups both take the last £5.
+  budgetMinor Int @map("budget_minor")
+
+  status          WalletCampaignStatus @default(draft)
+  createdByUserId String               @map("created_by_user_id")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+
+  /// The sweep's own query: live campaigns whose window is open.
+  @@index([status, startsAt])
+  @@map("wallet_campaigns")
+}
+
 enum WalletEntryType {
   topup
   charge
@@ -993,6 +1045,10 @@ model WalletLedgerEntry {
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId, createdAt])
+  /// A campaign's budget check aggregates every entry it has issued, by
+  /// reference, on each credit. Without this it is a scan of the whole ledger
+  /// per crediting attempt.
+  @@index([reference])
   @@map("wallet_ledger_entries")
 }
 

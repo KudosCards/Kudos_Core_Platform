@@ -145,6 +145,9 @@ export const walletEntryTypeSchema = z.enum([
 ]);
 export type WalletEntryType = z.infer<typeof walletEntryTypeSchema>;
 
+export const walletCampaignStatusSchema = z.enum(["draft", "live", "paused", "exhausted", "ended"]);
+export type WalletCampaignStatus = z.infer<typeof walletCampaignStatusSchema>;
+
 export const subscriptionStatusSchema = z.enum([
   "trialing",
   "active",

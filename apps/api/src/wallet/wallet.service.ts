@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma, type WalletLedgerEntry } from "@prisma/client";
+import { Prisma, type WalletCampaign, type WalletLedgerEntry } from "@prisma/client";
 import Stripe from "stripe";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
@@ -21,6 +21,35 @@ import type { TopUpDto } from "./dto/top-up.dto";
 
 /** No human is behind a Stripe webhook — see webhooks.service.ts. */
 const SYSTEM_ACTOR = "system:stripe-webhook";
+/** Campaign credits are granted by the platform, not by the operator who
+ *  happened to create the campaign — the campaign id in the metadata is what
+ *  ties a credit back to a person's decision. */
+const SYSTEM_ACTOR_CAMPAIGN = "system:wallet-campaign";
+
+/**
+ * What a campaign credit did. A result rather than an exception, because the
+ * caller is a sweep over many accounts: ADR 0186's rule is that one account
+ * that cannot be credited must not take the batch down, and "already credited"
+ * and "out of budget" are ordinary outcomes rather than failures at all.
+ */
+export type CampaignCreditOutcome =
+  | { status: "credited"; amountMinor: number }
+  /** This account already has a campaign credit — this one or an earlier one. */
+  | { status: "already_credited" }
+  | { status: "budget_exhausted" }
+  | {
+      status: "not_eligible";
+      reason: "campaign_not_live" | "outside_window" | "email_unverified" | "account_missing";
+    };
+
+/** The prefix every campaign credit's ledger `reference` carries, so one
+ *  account's campaign credit can be found without knowing which campaign. */
+export const CAMPAIGN_REFERENCE_PREFIX = "campaign:";
+
+/** The ledger reference a given campaign's credits carry. */
+export function campaignReference(campaignId: string): string {
+  return `${CAMPAIGN_REFERENCE_PREFIX}${campaignId}`;
+}
 
 export interface WalletSummary {
   balanceMinor: number;
@@ -344,6 +373,110 @@ export class WalletService {
       });
     }
     return this.getSummary(accountId);
+  }
+
+  /**
+   * Credit one account from a marketing wallet campaign.
+   *
+   * Every check that decides whether money moves happens **inside the same
+   * serializable transaction as the write**, because each of them is a
+   * read-then-write and this is money with no payment behind it:
+   *
+   * - **Budget.** Outside the transaction, two accounts signing up together
+   *   both read "£5 left" and both take it. This is the whole reason the budget
+   *   is a control rather than a hope.
+   * - **One credit per account, ever** — not per campaign. Two campaigns with
+   *   overlapping windows would otherwise both match an account created in the
+   *   overlap, and nobody plans to pay a welcome gift twice. It costs nothing
+   *   to enforce, because an account can only be new once.
+   * - **The window**, half-open on `createdAt`, so an account on the boundary
+   *   belongs to exactly one day's campaign.
+   *
+   * `verifiedEmail` is a required argument rather than something read in here,
+   * and null means "not verified" exactly as `verifiedEmailFromToken` returns.
+   * The two callers establish it differently — the signup path from the request
+   * JWT, the sweep from an authoritative Supabase lookup — and making it an
+   * argument means a third caller has to say which it has rather than
+   * accidentally skipping the question. With a campaign live, the address
+   * decides £5. See ADR 0188 and docs/wallet-campaigns-plan.md.
+   *
+   * The audit entry is written **inside** the transaction, unlike
+   * `adjustBalance` above, which writes it after. ADR 0229 settled that
+   * argument for the date-of-birth edit and it applies harder here: a credit
+   * that commits without the row saying who authorised it is money with no
+   * record. The older path is a known inconsistency, noted rather than changed
+   * as a side effect of this work.
+   */
+  async creditCampaign(
+    accountId: string,
+    campaign: WalletCampaign,
+    verifiedEmail: string | null,
+  ): Promise<CampaignCreditOutcome> {
+    if (campaign.status !== "live") {
+      return { status: "not_eligible", reason: "campaign_not_live" };
+    }
+    if (!verifiedEmail) {
+      return { status: "not_eligible", reason: "email_unverified" };
+    }
+
+    const reference = campaignReference(campaign.id);
+    return runSerializable(this.prisma, async (tx): Promise<CampaignCreditOutcome> => {
+      const account = await tx.account.findUnique({
+        where: { id: accountId },
+        select: { createdAt: true },
+      });
+      if (!account) {
+        return { status: "not_eligible", reason: "account_missing" };
+      }
+      // Half-open: [startsAt, endsAt).
+      if (account.createdAt < campaign.startsAt || account.createdAt >= campaign.endsAt) {
+        return { status: "not_eligible", reason: "outside_window" };
+      }
+
+      const existing = await tx.walletLedgerEntry.findFirst({
+        where: { accountId, reference: { startsWith: CAMPAIGN_REFERENCE_PREFIX } },
+        select: { id: true },
+      });
+      if (existing) {
+        return { status: "already_credited" };
+      }
+
+      const { _sum } = await tx.walletLedgerEntry.aggregate({
+        where: { reference },
+        _sum: { amountMinor: true },
+      });
+      const spent = _sum.amountMinor ?? 0;
+      if (spent + campaign.amountMinor > campaign.budgetMinor) {
+        return { status: "budget_exhausted" };
+      }
+
+      const balance = await this.balanceOf(tx, accountId);
+      await tx.walletLedgerEntry.create({
+        data: {
+          accountId,
+          type: "campaign",
+          amountMinor: campaign.amountMinor,
+          balanceAfterMinor: balance + campaign.amountMinor,
+          reference,
+        },
+      });
+      await this.audit.record(
+        {
+          accountId,
+          actorUserId: SYSTEM_ACTOR_CAMPAIGN,
+          action: "wallet_campaign_credited",
+          targetType: "Wallet",
+          targetId: accountId,
+          metadata: {
+            campaignId: campaign.id,
+            campaignName: campaign.name,
+            amountMinor: campaign.amountMinor,
+          },
+        },
+        tx,
+      );
+      return { status: "credited", amountMinor: campaign.amountMinor };
+    });
   }
 
   /** Balance = sum of all ledger amounts. Order-independent; can't drift. */
