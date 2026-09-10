@@ -964,6 +964,11 @@ enum WalletEntryType {
   charge
   refund
   adjustment
+  /// A marketing wallet campaign's welcome credit — "sign up in October and get
+  /// £5 towards your first card". Distinct from `adjustment` so a customer does
+  /// not read "Adjustment" against a gift, and so campaign spend is separable
+  /// from goodwill corrections in the ledger. See docs/wallet-campaigns-plan.md.
+  campaign
 }
 
 /// Append-only. Never UPDATE or DELETE a row — corrections are new entries

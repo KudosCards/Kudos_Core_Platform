@@ -136,7 +136,13 @@ export type BatchOrderStatus = z.infer<typeof batchOrderStatusSchema>;
 export const paymentMethodSchema = z.enum(["card", "wallet"]);
 export type PaymentMethod = z.infer<typeof paymentMethodSchema>;
 
-export const walletEntryTypeSchema = z.enum(["topup", "charge", "refund", "adjustment"]);
+export const walletEntryTypeSchema = z.enum([
+  "topup",
+  "charge",
+  "refund",
+  "adjustment",
+  "campaign",
+]);
 export type WalletEntryType = z.infer<typeof walletEntryTypeSchema>;
 
 export const subscriptionStatusSchema = z.enum([

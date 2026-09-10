@@ -8,11 +8,20 @@ import { clientApiFetch } from "@/lib/api.client";
 /** Preset top-up amounts in pence, plus a custom field. */
 const PRESETS_MINOR = [1000, 2500, 5000];
 
+/**
+ * What each ledger line is called on the customer's own wallet page.
+ *
+ * A `Record` keyed on the type rather than a lookup with a fallback, so adding a
+ * value to `WalletEntryType` fails the build here until someone decides what a
+ * customer should read. A gift that renders as a blank, or as the internal
+ * word, is worse than no gift.
+ */
 const ENTRY_LABELS: Record<WalletEntryType, string> = {
   topup: "Top-up",
   charge: "Order payment",
   refund: "Refund",
   adjustment: "Adjustment",
+  campaign: "Free credit",
 };
 
 function formatGbp(minor: number): string {
