@@ -23,6 +23,20 @@ enum AccountType {
   individual
 }
 
+/// How an account came into being. Two paths create one, and they are not the
+/// same thing: `signup` is a person registering, `guest` is an account minted
+/// server-side mid-checkout so a one-off buyer has somewhere to put their card.
+///
+/// Recorded rather than inferred because it stops being inferable. A claim
+/// nulls `claimToken` and `claimTokenExpiresAt` and renames the account, so a
+/// claimed guest is otherwise indistinguishable from a registration — which
+/// matters the moment something decides to give money to "new sign-ups". See
+/// docs/wallet-campaigns-plan.md.
+enum AccountOrigin {
+  signup
+  guest
+}
+
 enum MembershipRole {
   owner
   admin
@@ -33,6 +47,10 @@ model Account {
   id                    String      @id @default(uuid())
   type                  AccountType
   name                  String
+  /// Required with no default on purpose: both creation paths must say which
+  /// they are, and a third would fail to compile rather than quietly inherit
+  /// whichever default happened to be safer for the author.
+  origin                AccountOrigin
   stripeCustomerId      String?     @unique @map("stripe_customer_id")
   planId                String?     @map("plan_id")
   /// Guest one-off buyer's email — captured at Stripe checkout for the receipt

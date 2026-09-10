@@ -44,7 +44,12 @@ describe("Admin — run the occasion scheduler (e2e)", () => {
    * their occasions left `scheduled` — the state a pre-#356 import produced. */
   async function strandedAccount(count: number, inDays: number): Promise<string> {
     const created = await prisma.account.create({
-      data: { type: "organisation", name: `Stranded co ${randomUUID()}`, planId: "centre" },
+      data: {
+        origin: "signup",
+        type: "organisation",
+        name: `Stranded co ${randomUUID()}`,
+        planId: "centre",
+      },
     });
     const due = new Date();
     due.setUTCHours(0, 0, 0, 0);

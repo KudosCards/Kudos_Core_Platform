@@ -29,6 +29,7 @@ export const SAFE_ACCOUNT_SELECT = {
   id: true,
   type: true,
   name: true,
+  origin: true,
   stripeCustomerId: true,
   planId: true,
   contactEmail: true,
@@ -66,7 +67,13 @@ export class AccountsService {
 
     const account = await this.prisma.$transaction(async (tx) => {
       const created = await tx.account.create({
-        data: { type: dto.type, name: dto.name, planId: "free", contactEmail: email },
+        data: {
+          type: dto.type,
+          name: dto.name,
+          planId: "free",
+          contactEmail: email,
+          origin: "signup",
+        },
       });
       await tx.membership.create({
         data: { accountId: created.id, userId, role: "owner", email },

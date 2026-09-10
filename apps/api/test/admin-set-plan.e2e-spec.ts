@@ -35,7 +35,7 @@ describe("Admin — set plan (e2e)", () => {
 
   async function account(planId = "free"): Promise<string> {
     const created = await prisma.account.create({
-      data: { type: "organisation", name: `Plan co ${randomUUID()}`, planId },
+      data: { origin: "signup", type: "organisation", name: `Plan co ${randomUUID()}`, planId },
     });
     return created.id;
   }

@@ -130,14 +130,15 @@ export class WalletCampaignsService {
     const candidates = await this.prisma.account.findMany({
       where: {
         createdAt: { gte: campaign.startsAt, lt: campaign.endsAt },
-        // An owner membership is what makes an account somebody's rather than a
-        // guest checkout's. An unclaimed guest has no membership at all, so
-        // this excludes them exactly — see the note in the plan about a
-        // *claimed* guest, which this cannot tell apart from a signup.
+        // A registration, not a guest checkout. This used to be inferred from
+        // "has an owner membership and still holds no claim token", which
+        // excluded an *unclaimed* guest exactly and a claimed one not at all —
+        // a claim nulls the token and renames the account. `origin` is recorded
+        // at creation precisely so this question has an answer.
+        origin: "signup",
+        // Still required, and not as a second opinion on origin: the owner's
+        // userId is what the confirmed-address lookup needs.
         memberships: { some: { role: "owner" } },
-        // Belt and braces alongside the membership filter: a guest account that
-        // has not been claimed still holds its token.
-        claimToken: null,
         walletEntries: { none: { reference: { startsWith: CAMPAIGN_REFERENCE_PREFIX } } },
       },
       select: {

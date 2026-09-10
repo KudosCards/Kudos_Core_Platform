@@ -103,6 +103,7 @@ describe("Wallet campaign delivery (e2e)", () => {
   async function unclaimedGuestAt(createdAt: Date): Promise<string> {
     const account = await prisma.account.create({
       data: {
+        origin: "guest",
         type: "individual",
         name: "Guest",
         planId: "free",
@@ -173,6 +174,30 @@ describe("Wallet campaign delivery (e2e)", () => {
     // membership to look up an address for — but it *would* fetch it and then
     // decline, which is a candidate we paid to consider. Zero means the query
     // never offered it.
+    expect(summary.skipped).toBe(0);
+  });
+
+  it("leaves a guest account alone after it has been claimed", async () => {
+    // The case the origin column exists for. A claim nulls claimToken and
+    // claimTokenExpiresAt, renames the account and gives it an owner
+    // membership — so the filter this replaced ("has an owner, holds no claim
+    // token") saw a claimed guest as a registration and would have credited
+    // them. The column is recorded at creation and a claim does not touch it.
+    const guest = await unclaimedGuestAt(IN_WINDOW);
+    await prisma.account.update({
+      where: { id: guest },
+      data: {
+        claimToken: null,
+        claimTokenExpiresAt: null,
+        name: "Claimed buyer",
+        memberships: { create: { userId: randomUUID(), role: "owner", email: "b@example.com" } },
+      },
+    });
+    await campaign();
+
+    const summary = await campaigns.sweep();
+
+    expect(await balanceOf(guest)).toBe(0);
     expect(summary.skipped).toBe(0);
   });
 

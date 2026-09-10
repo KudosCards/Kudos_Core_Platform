@@ -111,6 +111,7 @@ describe("Ops activity (e2e)", () => {
     // is the row that would make a naive "count accounts" query wrong.
     const guest = await prisma.account.create({
       data: {
+        origin: "signup",
         type: "individual",
         name: "Guest",
         planId: "free",

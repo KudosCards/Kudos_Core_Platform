@@ -53,7 +53,12 @@ describe("Fulfillment due buckets span the open statuses (e2e)", () => {
    */
   async function job(status: "pending" | "in_progress" | "printed" | "posted", dueIn: number) {
     const account = await prisma.account.create({
-      data: { type: "organisation", name: `Queue co ${randomUUID()}`, planId: "centre" },
+      data: {
+        origin: "signup",
+        type: "organisation",
+        name: `Queue co ${randomUUID()}`,
+        planId: "centre",
+      },
     });
     const recipient = await prisma.recipient.create({
       data: {
