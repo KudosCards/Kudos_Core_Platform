@@ -10,6 +10,7 @@ import { UpdateNotificationsDto } from "./dto/update-notifications.dto";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { CurrentMembership } from "../auth/current-membership.decorator";
 import { MembershipGuard } from "../auth/membership.guard";
+import { verifiedEmailFromToken } from "../auth/types";
 import type { AuthenticatedUser, CurrentMembershipContext } from "../auth/types";
 
 @ApiTags("accounts")
@@ -29,7 +30,16 @@ export class AccountsController {
     // authorization input — the claim is the right source. It becomes the
     // account's contactEmail, which a later guest claim compares against; that
     // comparison is made against a *confirmed* address on the other side. ADR 0188.
-    return this.accountsService.signup(user.id, dto, user.unverifiedEmail);
+    // Two addresses, deliberately side by side. `unverifiedEmail` becomes the
+    // account's contactEmail — a detail, not an authorization input. The second
+    // is what a live wallet campaign is allowed to pay out on, and it is null
+    // unless Supabase says the address is confirmed. See ADR 0188.
+    return this.accountsService.signup(
+      user.id,
+      dto,
+      user.unverifiedEmail,
+      verifiedEmailFromToken(user),
+    );
   }
 
   /** Toggle birthday-reminder emails (opt-out). */
