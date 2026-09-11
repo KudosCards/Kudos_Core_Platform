@@ -4,6 +4,7 @@ import type { DispatchReminderConfig } from "@kudos/shared-types";
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { SuperAdminEditable } from "../ops-role";
 
 interface ConfigResponse {
   config: DispatchReminderConfig;
@@ -81,111 +82,115 @@ export function DispatchReminderSetup() {
 
       {error && <p className="text-sm font-medium text-danger">{error}</p>}
 
-      {config === null ? (
-        <p className="text-sm text-muted">Loading…</p>
-      ) : (
-        <>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={config.enabled}
-              onChange={(e) => patch({ enabled: e.target.checked })}
-              className="accent-accent"
-            />
-            <span>Send the daily reminder</span>
-          </label>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-xs tracking-wide text-muted uppercase">Send time</span>
-              <select
-                value={config.sendHourLondon}
-                onChange={(e) => patch({ sendHourLondon: Number(e.target.value) })}
-                className={cell}
-              >
-                {Array.from({ length: 24 }, (_, h) => (
-                  <option key={h} value={h}>
-                    {hourLabel(h)}
-                  </option>
-                ))}
-              </select>
+      <SuperAdminEditable>
+        {config === null ? (
+          <p className="text-sm text-muted">Loading…</p>
+        ) : (
+          <>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={config.enabled}
+                onChange={(e) => patch({ enabled: e.target.checked })}
+                className="accent-accent"
+              />
+              <span>Send the daily reminder</span>
             </label>
 
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-xs tracking-wide text-muted uppercase">Send-by window</span>
-              <span className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={15}
-                  value={config.leadWorkingDays}
-                  onChange={(e) => patch({ leadWorkingDays: Number(e.target.value) || 1 })}
-                  className={`${cell} w-16`}
-                />
-                <span className="text-muted">working days</span>
-              </span>
-            </label>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-xs tracking-wide text-muted uppercase">Send time</span>
+                <select
+                  value={config.sendHourLondon}
+                  onChange={(e) => patch({ sendHourLondon: Number(e.target.value) })}
+                  className={cell}
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {hourLabel(h)}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-xs tracking-wide text-muted uppercase">Escalate after</span>
-              <span className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  max={15}
-                  value={config.escalateAfterWorkingDays}
-                  onChange={(e) => patch({ escalateAfterWorkingDays: Number(e.target.value) || 0 })}
-                  className={`${cell} w-16`}
-                />
-                <span className="text-muted">wd late (0 = off)</span>
-              </span>
-            </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-xs tracking-wide text-muted uppercase">Send-by window</span>
+                <span className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={15}
+                    value={config.leadWorkingDays}
+                    onChange={(e) => patch({ leadWorkingDays: Number(e.target.value) || 1 })}
+                    className={`${cell} w-16`}
+                  />
+                  <span className="text-muted">working days</span>
+                </span>
+              </label>
 
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-xs tracking-wide text-muted uppercase">Same-day cut-off</span>
-              <select
-                value={config.sameDayCutoffHour}
-                onChange={(e) => patch({ sameDayCutoffHour: Number(e.target.value) })}
-                className={cell}
-              >
-                {Array.from({ length: 24 }, (_, h) => (
-                  <option key={h} value={h}>
-                    {`${String(h).padStart(2, "0")}:00 UK`}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <p className="text-xs text-muted">
-            Cards overdue by the escalation threshold get a louder alert to super admins. A “Send
-            now” order placed at or after the same-day cut-off (UK time) posts the next working day.
-            The cut-off also closes the digest’s window: if the send time is missed — a deploy, a
-            restart — it goes out on the next hour up to the cut-off, and only once a day either
-            way.
-          </p>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-xs tracking-wide text-muted uppercase">Escalate after</span>
+                <span className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={15}
+                    value={config.escalateAfterWorkingDays}
+                    onChange={(e) =>
+                      patch({ escalateAfterWorkingDays: Number(e.target.value) || 0 })
+                    }
+                    className={`${cell} w-16`}
+                  />
+                  <span className="text-muted">wd late (0 = off)</span>
+                </span>
+              </label>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => save(config)}
-              disabled={busy}
-              className="btn-accent disabled:opacity-50"
-            >
-              {busy ? "Saving…" : "Save settings"}
-            </button>
-            {defaults && (
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-xs tracking-wide text-muted uppercase">Same-day cut-off</span>
+                <select
+                  value={config.sameDayCutoffHour}
+                  onChange={(e) => patch({ sameDayCutoffHour: Number(e.target.value) })}
+                  className={cell}
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {`${String(h).padStart(2, "0")}:00 UK`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="text-xs text-muted">
+              Cards overdue by the escalation threshold get a louder alert to super admins. A “Send
+              now” order placed at or after the same-day cut-off (UK time) posts the next working
+              day. The cut-off also closes the digest’s window: if the send time is missed — a
+              deploy, a restart — it goes out on the next hour up to the cut-off, and only once a
+              day either way.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => save(defaults)}
+                onClick={() => save(config)}
                 disabled={busy}
-                className="text-sm text-muted hover:text-foreground disabled:opacity-40"
+                className="btn-accent disabled:opacity-50"
               >
-                Reset to default
+                {busy ? "Saving…" : "Save settings"}
               </button>
-            )}
-          </div>
-        </>
-      )}
+              {defaults && (
+                <button
+                  type="button"
+                  onClick={() => save(defaults)}
+                  disabled={busy}
+                  className="text-sm text-muted hover:text-foreground disabled:opacity-40"
+                >
+                  Reset to default
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </SuperAdminEditable>
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { SuperAdminEditable } from "../ops-role";
 
 interface SeatPriceStatus {
   priceId: string | null;
@@ -70,33 +71,35 @@ export function SeatBillingSetup() {
 
       {error && <p className="text-sm font-medium text-danger">{error}</p>}
 
-      {status === null ? (
-        <p className="text-sm text-muted">Loading…</p>
-      ) : configured ? (
-        <div className="flex flex-col gap-1 text-sm">
-          <p className="text-muted">
-            Extra Centre seats are billable — {SOURCE_LABEL[status.source]}.
-          </p>
-          <code className="w-fit rounded bg-foreground/[0.05] px-2 py-1 text-xs">
-            {status.priceId}
-          </code>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          <p className="text-sm text-muted">
-            Turn on the £5/month extra-seat charge. This creates the recurring price in Stripe from
-            here — no dashboard or redeploy — and switches seat purchasing on immediately.
-          </p>
-          <button
-            type="button"
-            onClick={enable}
-            disabled={busy}
-            className="btn-accent w-fit disabled:opacity-50"
-          >
-            {busy ? "Setting up…" : "Enable seat billing"}
-          </button>
-        </div>
-      )}
+      <SuperAdminEditable>
+        {status === null ? (
+          <p className="text-sm text-muted">Loading…</p>
+        ) : configured ? (
+          <div className="flex flex-col gap-1 text-sm">
+            <p className="text-muted">
+              Extra Centre seats are billable — {SOURCE_LABEL[status.source]}.
+            </p>
+            <code className="w-fit rounded bg-foreground/[0.05] px-2 py-1 text-xs">
+              {status.priceId}
+            </code>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-muted">
+              Turn on the £5/month extra-seat charge. This creates the recurring price in Stripe
+              from here — no dashboard or redeploy — and switches seat purchasing on immediately.
+            </p>
+            <button
+              type="button"
+              onClick={enable}
+              disabled={busy}
+              className="btn-accent w-fit disabled:opacity-50"
+            >
+              {busy ? "Setting up…" : "Enable seat billing"}
+            </button>
+          </div>
+        )}
+      </SuperAdminEditable>
     </div>
   );
 }

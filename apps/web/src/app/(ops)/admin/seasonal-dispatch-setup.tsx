@@ -4,6 +4,7 @@ import type { SeasonalDispatchRule } from "@kudos/shared-types";
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { SuperAdminEditable } from "../ops-role";
 
 interface RulesResponse {
   rules: SeasonalDispatchRule[];
@@ -102,117 +103,119 @@ export function SeasonalDispatchSetup() {
 
       {error && <p className="text-sm font-medium text-danger">{error}</p>}
 
-      {rows === null ? (
-        <p className="text-sm text-muted">Loading…</p>
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead>
-                <tr className="text-xs tracking-wide text-muted uppercase">
-                  <th className="py-2 pr-3 font-medium">Label</th>
-                  <th className="py-2 pr-3 font-medium">From</th>
-                  <th className="py-2 pr-3 font-medium">To</th>
-                  <th className="py-2 pr-3 font-medium">Extra days</th>
-                  <th className="py-2 pr-3 font-medium">1st class</th>
-                  <th className="py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-3 text-muted">
-                      No windows — dispatch uses the standard lead all year.
-                    </td>
+      <SuperAdminEditable>
+        {rows === null ? (
+          <p className="text-sm text-muted">Loading…</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead>
+                  <tr className="text-xs tracking-wide text-muted uppercase">
+                    <th className="py-2 pr-3 font-medium">Label</th>
+                    <th className="py-2 pr-3 font-medium">From</th>
+                    <th className="py-2 pr-3 font-medium">To</th>
+                    <th className="py-2 pr-3 font-medium">Extra days</th>
+                    <th className="py-2 pr-3 font-medium">1st class</th>
+                    <th className="py-2" />
                   </tr>
-                ) : (
-                  rows.map(({ id, rule }) => (
-                    <tr key={id} className="border-t border-border">
-                      <td className="py-2 pr-3">
-                        <input
-                          value={rule.label}
-                          onChange={(e) => update(id, { label: e.target.value })}
-                          placeholder="e.g. Christmas post rush"
-                          className={`${cell} w-44`}
-                        />
-                      </td>
-                      <td className="py-2 pr-3">
-                        <MonthDay value={rule.from} onChange={(from) => update(id, { from })} />
-                      </td>
-                      <td className="py-2 pr-3">
-                        <MonthDay value={rule.to} onChange={(to) => update(id, { to })} />
-                      </td>
-                      <td className="py-2 pr-3">
-                        <input
-                          type="number"
-                          min={0}
-                          max={30}
-                          value={rule.extraLeadDays}
-                          onChange={(e) =>
-                            update(id, { extraLeadDays: Number(e.target.value) || 0 })
-                          }
-                          className={`${cell} w-16`}
-                        />
-                      </td>
-                      <td className="py-2 pr-3">
-                        <input
-                          type="checkbox"
-                          checked={rule.suggestFirstClass}
-                          onChange={(e) => update(id, { suggestFirstClass: e.target.checked })}
-                          className="accent-accent"
-                        />
-                      </td>
-                      <td className="py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setRows((current) => (current ?? []).filter((r) => r.id !== id))
-                          }
-                          className="text-xs text-muted hover:text-accent"
-                        >
-                          Remove
-                        </button>
+                </thead>
+                <tbody>
+                  {rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-3 text-muted">
+                        No windows — dispatch uses the standard lead all year.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    rows.map(({ id, rule }) => (
+                      <tr key={id} className="border-t border-border">
+                        <td className="py-2 pr-3">
+                          <input
+                            value={rule.label}
+                            onChange={(e) => update(id, { label: e.target.value })}
+                            placeholder="e.g. Christmas post rush"
+                            className={`${cell} w-44`}
+                          />
+                        </td>
+                        <td className="py-2 pr-3">
+                          <MonthDay value={rule.from} onChange={(from) => update(id, { from })} />
+                        </td>
+                        <td className="py-2 pr-3">
+                          <MonthDay value={rule.to} onChange={(to) => update(id, { to })} />
+                        </td>
+                        <td className="py-2 pr-3">
+                          <input
+                            type="number"
+                            min={0}
+                            max={30}
+                            value={rule.extraLeadDays}
+                            onChange={(e) =>
+                              update(id, { extraLeadDays: Number(e.target.value) || 0 })
+                            }
+                            className={`${cell} w-16`}
+                          />
+                        </td>
+                        <td className="py-2 pr-3">
+                          <input
+                            type="checkbox"
+                            checked={rule.suggestFirstClass}
+                            onChange={(e) => update(id, { suggestFirstClass: e.target.checked })}
+                            className="accent-accent"
+                          />
+                        </td>
+                        <td className="py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setRows((current) => (current ?? []).filter((r) => r.id !== id))
+                            }
+                            className="text-xs text-muted hover:text-accent"
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setSaved(false);
-                setRows((current) => [
-                  ...(current ?? []),
-                  { id: crypto.randomUUID(), rule: blankRule() },
-                ]);
-              }}
-              className="rounded-full border border-border px-3 py-1.5 text-sm font-medium hover:bg-foreground/[0.03]"
-            >
-              + Add window
-            </button>
-            <button
-              type="button"
-              onClick={() => save((rows ?? []).map((r) => r.rule))}
-              disabled={busy}
-              className="btn-accent disabled:opacity-50"
-            >
-              {busy ? "Saving…" : "Save windows"}
-            </button>
-            <button
-              type="button"
-              onClick={() => save(defaults)}
-              disabled={busy}
-              className="text-sm text-muted hover:text-foreground disabled:opacity-40"
-            >
-              Reset to default
-            </button>
-          </div>
-        </>
-      )}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSaved(false);
+                  setRows((current) => [
+                    ...(current ?? []),
+                    { id: crypto.randomUUID(), rule: blankRule() },
+                  ]);
+                }}
+                className="rounded-full border border-border px-3 py-1.5 text-sm font-medium hover:bg-foreground/[0.03]"
+              >
+                + Add window
+              </button>
+              <button
+                type="button"
+                onClick={() => save((rows ?? []).map((r) => r.rule))}
+                disabled={busy}
+                className="btn-accent disabled:opacity-50"
+              >
+                {busy ? "Saving…" : "Save windows"}
+              </button>
+              <button
+                type="button"
+                onClick={() => save(defaults)}
+                disabled={busy}
+                className="text-sm text-muted hover:text-foreground disabled:opacity-40"
+              >
+                Reset to default
+              </button>
+            </div>
+          </>
+        )}
+      </SuperAdminEditable>
     </div>
   );
 }

@@ -7,13 +7,16 @@ import { serverApiFetch } from "@/lib/api.server";
 import { LogoutButton } from "../(app)/logout-button";
 import { OpsNotificationBell } from "./ops-notification-bell";
 import { Logo } from "@/components/logo";
+import { OpsRoleProvider } from "./ops-role";
 
 /**
  * The internal ops shell — a separate surface from the customer app, with its
  * own operator sign-in (/admin-login). Gated on platform-operator status (GET
  * /admin/me), which also returns the operator's identity + role so the shell
- * can show who's signed in and gate the Team page to super admins. See
- * docs/adr/0010 and docs/adr/0040-admin-auth.md.
+ * can show who's signed in, gate the Team page to super admins, and hand the
+ * role to OpsRoleProvider so every panel below gates its own controls from one
+ * fetch rather than asking again. See docs/adr/0010 and
+ * docs/adr/0040-admin-auth.md.
  */
 export default async function OpsLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const me = await serverApiFetch<AdminIdentity>("/admin/me").catch((error: unknown) => {
@@ -160,7 +163,9 @@ export default async function OpsLayout({ children }: Readonly<{ children: React
             <span className="shrink-0 underline underline-offset-2">Open queue →</span>
           </Link>
         )}
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <OpsRoleProvider role={me.role}>{children}</OpsRoleProvider>
+        </main>
       </div>
     </div>
   );

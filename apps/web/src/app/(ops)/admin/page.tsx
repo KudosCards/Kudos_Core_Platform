@@ -13,6 +13,7 @@ import { ArrivalSweepButton } from "./arrival-sweep-button";
 import { DailySummaryButton } from "./daily-summary-button";
 import { OccasionSchedulerButton } from "./occasion-scheduler-button";
 import { SubscriptionBackfillButton } from "./subscription-backfill-button";
+import { SuperAdminOnly } from "../ops-role";
 
 interface AdminOverview {
   accounts: { total: number; organisations: number; individuals: number };
@@ -284,19 +285,28 @@ export default async function AdminOverviewPage() {
       {/* Marketing wallet campaigns — free credit for sign-ups in a window. */}
       <WalletCampaignSetup />
 
-      {/* Force the estimated-arrival sweep for untracked stamped post (ADR 0124). */}
+      {/* Force the estimated-arrival sweep for untracked stamped post (ADR 0124).
+          Not super-admin-gated, and deliberately: POST /fulfillment/notify-arrivals
+          carries only PlatformAdminGuard, because chasing an untracked delivery is
+          ops work rather than a platform setting. */}
       <ArrivalSweepButton />
 
-      {/* Send yesterday's business digest on demand (ADR 0165). */}
-      <DailySummaryButton />
+      {/* The three below are each a single super-admin action with nothing to
+          read once it's inert, so an ops operator is shown nothing rather than a
+          dead button. Every other panel on this page stays visible and goes
+          read-only — seeing the configuration is an operator's job. */}
+      <SuperAdminOnly>
+        {/* Send yesterday's business digest on demand (ADR 0165). */}
+        <DailySummaryButton />
 
-      {/* Bring the 06:00 recurring-occasion sweep forward, to repair an account
-          whose Approvals page is empty while its calendar is full. */}
-      <OccasionSchedulerButton />
+        {/* Bring the 06:00 recurring-occasion sweep forward, to repair an account
+            whose Approvals page is empty while its calendar is full. */}
+        <OccasionSchedulerButton />
 
-      {/* Import paid subscription invoices from Stripe so customer pages can
-          show lifetime subscription spend. */}
-      <SubscriptionBackfillButton />
+        {/* Import paid subscription invoices from Stripe so customer pages can
+            show lifetime subscription spend. */}
+        <SubscriptionBackfillButton />
+      </SuperAdminOnly>
 
       {/* Campaign credit, beside revenue rather than inside it. Revenue counts an
           order at its price however it was paid, so an order settled from a
