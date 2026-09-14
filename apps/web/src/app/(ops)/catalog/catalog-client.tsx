@@ -23,6 +23,12 @@ interface CatalogSyncSummary {
   skippedNoImage: { externalId: string; sku: string | null; title: string }[];
   artworkFailed: { externalId: string; sku: string | null; title: string; reason: string }[];
   errors: { externalId: string; sku: string | null; reason: string }[];
+  /** Product codes on more than one card — report noise, not corruption. */
+  duplicateSkus?: { sku: string; designs: { externalId: string; title: string }[] }[];
+  /** Names that collide on the URL slug. Permanent: a slug is assigned once. */
+  duplicateNames?: { slug: string; designs: { externalId: string; title: string }[] }[];
+  /** Upstream categories with no published landing page. */
+  unpublishedCategories?: { category: string; count: number }[];
   /** Designs whose artwork is not the card's shape, so part of it is cut off to
    *  make it fit — worst first. See docs/card-artwork-crop-plan.md. */
   cropped?: {
@@ -222,6 +228,8 @@ export function CatalogClient({
             <li>No image (skipped): {summary.skippedNoImage.length}</li>
             <li>Artwork not copied: {summary.artworkFailed?.length ?? 0}</li>
             <li>Artwork being cropped: {summary.cropped?.length ?? 0}</li>
+            <li>Shared product codes: {summary.duplicateSkus?.length ?? 0}</li>
+            <li>Clashing card names: {summary.duplicateNames?.length ?? 0}</li>
             <li>Errors: {summary.errors.length}</li>
           </ul>
 
@@ -330,6 +338,60 @@ export function CatalogClient({
                       </p>
                     ))}
                 </div>
+              ))}
+            </div>
+          )}
+          {/* What the catalog *data* can be wrong about, as opposed to its
+              artwork. None of this corrupts anything — all three are fixed in
+              Airtable — which is exactly why none of it was visible until the
+              sync started saying so. See docs/card-artwork-shape-plan.md. */}
+          {summary.duplicateSkus && summary.duplicateSkus.length > 0 && (
+            <div className="flex flex-col gap-1 border-t border-black/10 pt-2">
+              <p className="font-medium text-amber-600">One product code, more than one card:</p>
+              <p className="text-xs text-foreground/60">
+                Nothing is keyed on the code, so no card is broken. But every list on this page
+                reads “Title (SKU)”, and the re-export list above is handed to somebody as codes to
+                work through — two cards on one code cannot be worked from.
+              </p>
+              {summary.duplicateSkus.map((group) => (
+                <p key={group.sku} className="text-xs text-foreground/60">
+                  <span className="font-medium text-foreground/70">{group.sku}</span> —{" "}
+                  {group.designs.map((d) => d.title).join(", ")}
+                </p>
+              ))}
+            </div>
+          )}
+          {summary.duplicateNames && summary.duplicateNames.length > 0 && (
+            <div className="flex flex-col gap-1 border-t border-black/10 pt-2">
+              <p className="font-medium text-amber-600">Two cards, one address:</p>
+              <p className="text-xs text-foreground/60">
+                A card’s URL comes from its name and is assigned once, never recalculated — changing
+                it would break indexed links and the QR codes on cards already posted. So the second
+                card to claim a name keeps a <code>-2</code> on the end of its address for good,
+                even if it is renamed later. Worth fixing before these are published.
+              </p>
+              {summary.duplicateNames.map((group) => (
+                <p key={group.slug} className="text-xs text-foreground/60">
+                  <span className="font-medium text-foreground/70">/{group.slug}</span> —{" "}
+                  {group.designs.map((d) => d.title).join(", ")}
+                </p>
+              ))}
+            </div>
+          )}
+          {summary.unpublishedCategories && summary.unpublishedCategories.length > 0 && (
+            <div className="flex flex-col gap-1 border-t border-black/10 pt-2">
+              <p className="font-medium">Categories with no landing page</p>
+              <p className="text-xs text-foreground/60">
+                These cards are fine — they sync, they browse, and their own pages are indexable.
+                They just sit under <code>/cards/other</code>, which is deliberately not indexed, so
+                there is no category page for anyone to search for. Either the category is worth
+                naming properly or the upstream value needs correcting.
+              </p>
+              {summary.unpublishedCategories.map((entry) => (
+                <p key={entry.category} className="text-xs text-foreground/60">
+                  <span className="font-medium text-foreground/70">{entry.category}</span> —{" "}
+                  {entry.count} card{entry.count === 1 ? "" : "s"}
+                </p>
               ))}
             </div>
           )}
