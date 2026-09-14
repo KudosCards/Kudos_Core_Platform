@@ -40,7 +40,10 @@ interface FulfillmentJobDetail {
       customFields: Record<string, string> | null;
     };
     occasion: { type: string; title: string | null; occasionDate: string } | null;
-    savedDesign: { name: string; document: DesignDocument };
+    /** The card's own artwork, stored when it was bought — not the design's
+     * current state. See docs/order-artwork-plan.md. */
+    documentSnapshot: DesignDocument;
+    savedDesign: { name: string };
   };
 }
 
@@ -1157,7 +1160,7 @@ export function FulfillmentClient({
               recipient’s name merged in.
             </p>
             <CardFacePreview
-              document={applyMergeTokens(preview.orderRecipient.savedDesign.document, {
+              document={applyMergeTokens(preview.orderRecipient.documentSnapshot, {
                 firstName: preview.orderRecipient.recipient.firstName,
                 lastName: preview.orderRecipient.recipient.lastName,
                 occasion: occasionLabelFor(preview.orderRecipient.occasion),

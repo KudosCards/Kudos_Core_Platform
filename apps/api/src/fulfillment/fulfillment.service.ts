@@ -87,7 +87,13 @@ const DETAIL_SELECT = {
       // resolve in the personalised render (preview + print run).
       recipient: { select: { firstName: true, lastName: true, customFields: true } },
       occasion: { select: { type: true, title: true, occasionDate: true, dispatchDate: true } },
-      savedDesign: { select: { id: true, name: true, document: true } },
+      // The *card's* artwork, not the design's. A saved design is a reusable
+      // template an account edits between sends; reading it here meant every
+      // past order re-rendered whenever it changed. `savedDesign` stays for the
+      // name shown on the print sheet and for provenance. See
+      // docs/order-artwork-plan.md.
+      documentSnapshot: true,
+      savedDesign: { select: { id: true, name: true } },
       // This card's own QR slug (minted at settlement). The print run encodes it
       // into the real /r/<slug> QR so a printed card scans to its message page —
       // without it the QR element renders as an empty placeholder box.
@@ -918,7 +924,7 @@ export class FulfillmentService {
         occasionTitle: job.orderRecipient.occasion?.title ?? null,
         occasionDate: job.orderRecipient.occasion?.occasionDate ?? null,
         savedDesignName: job.orderRecipient.savedDesign.name,
-        document: job.orderRecipient.savedDesign.document,
+        document: job.orderRecipient.documentSnapshot,
         messagePageSlug: job.orderRecipient.messagePageLink?.slug ?? null,
       }));
     });
