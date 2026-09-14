@@ -130,6 +130,14 @@ Each phase is its own PR, merged when green before the next starts.
   was back-only stopped being true the moment a front background could be
   cropped.
 
+**Backgrounds only, and `heavy` only.** An image _element_ is drawn to its own
+box on both renderers, so it scales rather than losing its edges; reporting a
+crop on one would report something that is not happening. And a `noticeable`
+loss stays out of the ops surface: a line that appears on nearly every run is one
+an operator scrolls past, which costs as much as never showing it. The smaller
+losses belong in the editor (phase 4), where the person seeing them can still
+act.
+
 ### Phase 3 — The preview stops implying a border
 
 - Draw the trim edge on the previewed page and state plainly in the toolbar that
