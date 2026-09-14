@@ -64,8 +64,16 @@ export function isLowPrintDpi(dpi: number): boolean {
   return printDpiVerdict(dpi) === "low";
 }
 
-/** Millimetres per design unit at a card size — the design fills the trim width
- * (matches the renderer's geometry and `fittedCardMm`). */
+/**
+ * Millimetres per design unit at a card size — the design fills the **trim**
+ * width, matching the print-ready PDF's geometry (`faceGeometry`).
+ *
+ * It does *not* match `fittedCardMm`, which this used to claim. That fits the
+ * card into the printer safe area — 95mm of a 105mm A6 page — for the browser
+ * print path, so the two differ by about 10%. Trim is the right basis here: it
+ * is the larger of the two and therefore the more demanding resolution test, and
+ * it is what the print house actually receives. See docs/card-artwork-crop-plan.md.
+ */
 function mmPerUnit(size: CardSize): number {
   return CARD_SIZE_DIMENSIONS_MM[size].widthMm / CARD_WIDTH;
 }
