@@ -187,7 +187,9 @@ export class MessagesService {
           id: true,
           messagePageId: true,
           batchOrder: { select: { accountId: true } },
-          savedDesign: { select: { document: true } },
+          // The card's own artwork: the video this page seeds is the one on the
+          // card that was bought, not whatever the design carries now.
+          documentSnapshot: true,
         },
       }),
       tx.messagePageLink.findMany({
@@ -218,10 +220,9 @@ export class MessagesService {
     const autoRows = pending
       .filter((recipient) => !effectivePageId(recipient))
       .map((recipient) => {
-        // `savedDesign` is optional-chained: the settlement path always sets a
-        // design, but a missing one must never throw inside this transaction and
-        // strand a paid order — it just yields a page with no video.
-        const video = resolveSeededVideo(recipient.savedDesign?.document);
+        // The snapshot is required by the schema, so there is nothing to
+        // optional-chain any more — a card cannot exist without its artwork.
+        const video = resolveSeededVideo(recipient.documentSnapshot);
         return {
           pageId: randomUUID(),
           accountId: recipient.batchOrder.accountId,

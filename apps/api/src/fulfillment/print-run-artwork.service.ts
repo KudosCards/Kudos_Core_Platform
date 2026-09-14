@@ -47,13 +47,17 @@ export class PrintRunArtworkService {
 
     const parsed = designDocumentSchema.safeParse(card.document);
     if (!parsed.success) {
-      throw new BadRequestException("This card's design can't be read.");
+      throw new BadRequestException("This card's artwork can't be read.");
     }
 
-    // The URL must be one this design actually references. Design documents
-    // carry customer-supplied URLs and this fetch happens server-side, so taking
-    // the client's word for it would be a confused-deputy SSRF vector. Belt and
-    // braces: the host allowlist below is the same one the print engine applies.
+    // The URL must be one *this card* actually references — its own stored
+    // artwork, since it reads through printRun. That matters here and not only
+    // for what prints: asking the live design would refuse a URL the card
+    // really carries, and accept one it no longer does, both times because
+    // somebody edited a template. Design documents carry customer-supplied URLs
+    // and this fetch happens server-side, so taking the client's word for it
+    // would be a confused-deputy SSRF vector. Belt and braces: the host
+    // allowlist below is the same one the print engine applies.
     if (!documentAssetUrls(parsed.data).has(dto.assetUrl)) {
       throw new BadRequestException("That artwork isn't part of this card's design.");
     }
