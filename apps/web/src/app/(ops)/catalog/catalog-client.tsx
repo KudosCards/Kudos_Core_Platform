@@ -21,6 +21,16 @@ interface CatalogSyncSummary {
   skippedNoImage: { externalId: string; sku: string | null; title: string }[];
   artworkFailed: { externalId: string; sku: string | null; title: string; reason: string }[];
   errors: { externalId: string; sku: string | null; reason: string }[];
+  /** Designs whose artwork is not the card's shape, so part of it is cut off to
+   *  make it fit — worst first. See docs/card-artwork-crop-plan.md. */
+  cropped?: {
+    externalId: string;
+    sku: string | null;
+    title: string;
+    percent: number;
+    axis: "width" | "height";
+    verdict: "noticeable" | "heavy";
+  }[];
   fieldMapping?: {
     fields: Record<string, CatalogFieldResolution>;
     columns: string[];
@@ -101,6 +111,7 @@ export function CatalogClient({ configured }: { configured: boolean }) {
             <li>Images copied: {summary.imagesCopied}</li>
             <li>No image (skipped): {summary.skippedNoImage.length}</li>
             <li>Artwork not copied: {summary.artworkFailed?.length ?? 0}</li>
+            <li>Artwork being cropped: {summary.cropped?.length ?? 0}</li>
             <li>Errors: {summary.errors.length}</li>
           </ul>
 
@@ -156,6 +167,35 @@ export function CatalogClient({ configured }: { configured: boolean }) {
                 <p key={c.externalId} className="text-xs text-foreground/60">
                   {c.title}
                   {c.sku ? ` (${c.sku})` : ""} — {c.reason}
+                </p>
+              ))}
+            </div>
+          )}
+          {/* Which of our designs are being cut up — a question that had no
+              answer at all until the sync started measuring. A card is 1:1.409
+              and a background fills it, centred and cropped, so a square source
+              loses 29% of its width. Reported, not refused: blocking on a
+              threshold nobody has tested against real artwork risks emptying
+              the catalog, and this is the evidence to decide on.
+              See docs/card-artwork-crop-plan.md. */}
+          {summary.cropped && summary.cropped.length > 0 && (
+            <div className="flex flex-col gap-1 border-t border-black/10 pt-2">
+              <p className="font-medium text-amber-600">
+                Imported, but part of the artwork is cut off:
+              </p>
+              <p className="text-xs text-foreground/60">
+                A card is 105 × 148 mm and a background fills it edge to edge, centred and cropped —
+                so artwork of any other shape loses its sides or its top and bottom. Re-export at
+                1:1.409 (for example 1050 × 1480) and re-attach in Airtable to keep the whole
+                composition.
+              </p>
+              {summary.cropped.map((c) => (
+                <p key={c.externalId} className="text-xs text-foreground/60">
+                  <span className={c.verdict === "heavy" ? "font-medium text-amber-700" : ""}>
+                    {c.percent}% of the {c.axis}
+                  </span>{" "}
+                  — {c.title}
+                  {c.sku ? ` (${c.sku})` : ""}
                 </p>
               ))}
             </div>

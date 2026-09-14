@@ -44,34 +44,34 @@ enum MembershipRole {
 }
 
 model Account {
-  id                    String      @id @default(uuid())
+  id                    String        @id @default(uuid())
   type                  AccountType
   name                  String
   /// Required with no default on purpose: both creation paths must say which
   /// they are, and a third would fail to compile rather than quietly inherit
   /// whichever default happened to be safer for the author.
   origin                AccountOrigin
-  stripeCustomerId      String?     @unique @map("stripe_customer_id")
-  planId                String?     @map("plan_id")
+  stripeCustomerId      String?       @unique @map("stripe_customer_id")
+  planId                String?       @map("plan_id")
   /// Guest one-off buyer's email — captured at Stripe checkout for the receipt
   /// and the account-claim link. Null for accounts created via normal signup
   /// (identity comes from the membership's user). See docs/adr/0025.
-  contactEmail          String?     @map("contact_email")
+  contactEmail          String?       @map("contact_email")
   /// Single-use token that lets a guest claim (attach a login to) the account
   /// they just bought from. Set when a guest order is created, nulled on claim
   /// or expiry. A secret — never returned by the API (findById omits it).
-  claimToken            String?     @unique @map("claim_token")
-  claimTokenExpiresAt   DateTime?   @map("claim_token_expires_at")
+  claimToken            String?       @unique @map("claim_token")
+  claimTokenExpiresAt   DateTime?     @map("claim_token_expires_at")
   /// Whether we email this account upcoming-birthday reminders. Opt-out (default
   /// on); the reminder cron skips accounts with this false. See docs/adr/0025.
-  reminderEmailsEnabled Boolean     @default(true) @map("reminder_emails_enabled")
+  reminderEmailsEnabled Boolean       @default(true) @map("reminder_emails_enabled")
   /// Paid team seats beyond the plan's included allowance (Centre includes 3).
   /// The seat limit = PlanEntitlement.includedSeats + extraSeats; inviting past
   /// it is hard-blocked until a seat is added. Kept in sync with the Stripe
   /// subscription's per-seat item quantity. See docs/adr/0035-seat-based-billing.md.
-  extraSeats            Int         @default(0) @map("extra_seats")
-  createdAt             DateTime    @default(now()) @map("created_at")
-  updatedAt             DateTime    @updatedAt @map("updated_at")
+  extraSeats            Int           @default(0) @map("extra_seats")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
 
   memberships          Membership[]
   invites              Invite[]
@@ -564,27 +564,37 @@ model Event {
 // ---------------------------------------------------------------------------
 
 model CardDesign {
-  id           String   @id @default(uuid())
-  category     String
-  name         String
+  id            String   @id @default(uuid())
+  category      String
+  name          String
   /// URL slug for the public catalog — `/cards/<category>/<slug>`. Assigned once
   /// (from the name) and never recomputed: a slug that tracked the name would
   /// break indexed URLs and the QR codes on cards already posted the moment a
   /// title was corrected. See docs/adr/0163-catalog-urls-and-category-pages.md.
-  slug         String   @unique
-  thumbnailUrl String   @map("thumbnail_url")
+  slug          String   @unique
+  thumbnailUrl  String   @map("thumbnail_url")
   /// DesignDocument JSON — see packages/shared-types/src/card.ts for the shape.
-  document     Json
-  isActive     Boolean  @default(true) @map("is_active")
+  document      Json
+  isActive      Boolean  @default(true) @map("is_active")
   /// The Airtable record id this design was synced from (null for seeded
   /// templates). Unique so the catalog sync can upsert in place — see
   /// docs/adr/0011-airtable-catalog-sync.md.
-  externalId   String?  @unique @map("external_id")
+  externalId    String?  @unique @map("external_id")
   /// Human-facing product code from Airtable (e.g. "KC-BDAY-GEN-001"), shown
   /// to the ops team. Null for seeded templates.
-  sku          String?  @map("sku")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  sku           String?  @map("sku")
+  /// The artwork's own pixel size, as measured at sync time. Null when the
+  /// design predates the measurement or its image could not be read.
+  ///
+  /// A background is drawn full-bleed and centre-cropped to the card's 1:1.409,
+  /// so a source of any other shape loses its edges — 29% of the width for a
+  /// square one. Nothing used to measure that, so "which of our designs are
+  /// being cut up" had no answer. These two columns are the answer.
+  /// See docs/card-artwork-crop-plan.md.
+  artworkWidth  Int?     @map("artwork_width")
+  artworkHeight Int?     @map("artwork_height")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   savedDesigns SavedDesign[]
 
@@ -647,30 +657,30 @@ enum PaymentMethod {
 /// Deliberately one order with many recipient lines, not one cart line per
 /// recipient — see docs/adr/0002-batch-order-model.md.
 model BatchOrder {
-  id                    String           @id @default(uuid())
+  id                      String           @id @default(uuid())
   /// Human-friendly sequential order number (rendered as ORD-1035). Separate
   /// from the uuid id so ops/customers have a short reference. Sequence starts
   /// at 1000 (see the migration) so the first orders read ORD-1000+.
-  orderNumber           Int              @unique @default(autoincrement()) @map("order_number")
-  accountId             String           @map("account_id")
+  orderNumber             Int              @unique @default(autoincrement()) @map("order_number")
+  accountId               String           @map("account_id")
   /// The user who placed the order. Null for guest one-off purchases, which are
   /// created by an unauthenticated visitor against a fresh guest account with no
   /// membership. See docs/adr/0025.
-  createdByUserId       String?          @map("created_by_user_id")
-  status                BatchOrderStatus @default(draft)
-  currency              String           @default("GBP")
-  subtotalMinor         Int              @default(0) @map("subtotal_minor")
-  postageMinor          Int              @default(0) @map("postage_minor")
-  totalMinor            Int              @default(0) @map("total_minor")
-  paymentMethod         PaymentMethod?   @map("payment_method")
+  createdByUserId         String?          @map("created_by_user_id")
+  status                  BatchOrderStatus @default(draft)
+  currency                String           @default("GBP")
+  subtotalMinor           Int              @default(0) @map("subtotal_minor")
+  postageMinor            Int              @default(0) @map("postage_minor")
+  totalMinor              Int              @default(0) @map("total_minor")
+  paymentMethod           PaymentMethod?   @map("payment_method")
   /// How much of this order was paid from the account wallet, in pence. Reserved
   /// (debited) when the Checkout Session is created, not when payment settles —
   /// two concurrent checkouts sizing their charge against the same balance would
   /// otherwise overdraw it. Released back to the ledger on every path where the
   /// payment never completes. 0 means no wallet money was used; a *fully*
   /// wallet-paid order records that on `paymentMethod` instead. See ADR 0169.
-  walletAppliedMinor    Int              @default(0) @map("wallet_applied_minor")
-  stripePaymentIntentId String?          @unique @map("stripe_payment_intent_id")
+  walletAppliedMinor      Int              @default(0) @map("wallet_applied_minor")
+  stripePaymentIntentId   String?          @unique @map("stripe_payment_intent_id")
   /// The Checkout Session behind this order's CURRENT payment attempt. Written
   /// on every checkout and overwritten on a resume, so a webhook for a session
   /// we have since superseded can be recognised as stale and ignored — without
@@ -679,18 +689,18 @@ model BatchOrder {
   /// Null on orders that last checked out before this column existed and on
   /// orders that never reached Stripe; both fall back to the status guard
   /// alone, which is the pre-existing behaviour. See ADR 0179.
-  stripeCheckoutSessionId String?        @unique @map("stripe_checkout_session_id")
+  stripeCheckoutSessionId String?          @unique @map("stripe_checkout_session_id")
   /// Stripe's generated VAT invoice for a card-paid order (Stripe is the source
   /// of truth for VAT/company details, exactly like subscriber invoices). Set
   /// from the invoice.paid webhook. Null for wallet-paid orders (no Stripe charge
   /// of their own). See docs/adr/0102-vat-receipts.md.
-  stripeInvoiceId       String?          @unique @map("stripe_invoice_id")
+  stripeInvoiceId         String?          @unique @map("stripe_invoice_id")
   /// Stripe hosted invoice page (view online).
-  receiptUrl            String?          @map("receipt_url")
+  receiptUrl              String?          @map("receipt_url")
   /// Stripe generated invoice PDF (the downloadable VAT receipt).
-  receiptPdfUrl         String?          @map("receipt_pdf_url")
-  createdAt             DateTime         @default(now()) @map("created_at")
-  updatedAt             DateTime         @updatedAt @map("updated_at")
+  receiptPdfUrl           String?          @map("receipt_pdf_url")
+  createdAt               DateTime         @default(now()) @map("created_at")
+  updatedAt               DateTime         @updatedAt @map("updated_at")
 
   account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   orderRecipients OrderRecipient[]
@@ -1194,36 +1204,36 @@ enum ReturnCaseStatus {
 /// gives exactly one **free** (£0) recovery per case (freeRecoveryUsed); further
 /// resends need a fresh paid order. See docs/adr/0039-returned-to-sender.md.
 model ReturnCase {
-  id               String           @id @default(uuid())
-  accountId        String           @map("account_id")
+  id                   String           @id @default(uuid())
+  accountId            String           @map("account_id")
   /// The card that came back. One case per returned card.
-  orderRecipientId String           @unique @map("order_recipient_id")
-  recipientId      String           @map("recipient_id")
-  reason           ReturnReason
-  status           ReturnCaseStatus @default(awaiting_address)
+  orderRecipientId     String           @unique @map("order_recipient_id")
+  recipientId          String           @map("recipient_id")
+  reason               ReturnReason
+  status               ReturnCaseStatus @default(awaiting_address)
   /// The one Kudos Promise free recovery — set true once used (resend or hand-deliver).
-  freeRecoveryUsed Boolean          @default(false) @map("free_recovery_used")
+  freeRecoveryUsed     Boolean          @default(false) @map("free_recovery_used")
   /// When the customer updated the contact's address after the return.
-  addressUpdatedAt DateTime?        @map("address_updated_at")
-  resolvedAt       DateTime?        @map("resolved_at")
+  addressUpdatedAt     DateTime?        @map("address_updated_at")
+  resolvedAt           DateTime?        @map("resolved_at")
   /// How it closed: "resend_recipient" | "send_business" | "archived".
-  resolution       String?
+  resolution           String?
   /// The free recovery BatchOrder created for the resend/hand-deliver, if any.
-  recoveryOrderId  String?          @map("recovery_order_id")
+  recoveryOrderId      String?          @map("recovery_order_id")
   /// The ops operator (PlatformAdmin userId) who marked the card returned.
-  markedByUserId   String           @map("marked_by_user_id")
+  markedByUserId       String           @map("marked_by_user_id")
   /// Secret token in the customer's RTS email link — lets them update the
   /// address and recover the card without logging in. Never returned by the
   /// account-scoped API; only embedded in the email. See ADR 0039.
-  publicToken      String?          @unique @map("public_token")
+  publicToken          String?          @unique @map("public_token")
   /// When that token stops working. Every sibling bearer token here is bounded
   /// (invites 14 days, guest claims 30) and this one was not, so a forwarded or
   /// archived RTS link stayed live for ever. Nulled outright when the case
   /// closes; see ADR 0189.
-  publicTokenExpiresAt DateTime?    @map("public_token_expires_at")
-  returnedAt       DateTime         @default(now()) @map("returned_at")
-  createdAt        DateTime         @default(now()) @map("created_at")
-  updatedAt        DateTime         @updatedAt @map("updated_at")
+  publicTokenExpiresAt DateTime?        @map("public_token_expires_at")
+  returnedAt           DateTime         @default(now()) @map("returned_at")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
 
   account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
   orderRecipient OrderRecipient @relation(fields: [orderRecipientId], references: [id], onDelete: Cascade)
