@@ -137,8 +137,10 @@ somebody will act on.
 this is the one that replaces judgement-by-guess with judgement-by-looking, and
 turns "re-export 217" into "re-export the 30 that actually lose something".
 
-**Falsifying check**: a design known to be 2:3 must show a band of exactly
-4.46 mm at the top and the bottom, and an A6-shaped one must show no band at all.
+**Falsifying check**: a design known to be 2:3 must show a band of **4.495 mm**
+at the top and the bottom, and an A6-shaped one must show no band at all. (4.495
+against the authored canvas, 4.46 against the trim — the same 0.063 mm noted
+above. Both are pinned by test, so neither can drift unnoticed.)
 
 ### Phase 2 — Say it once, with the numbers that matter
 

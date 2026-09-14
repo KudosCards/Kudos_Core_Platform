@@ -10,8 +10,10 @@ import {
   CARD_WIDTH,
   DEFAULT_CARD_SIZE,
   backReservedFooterTop,
+  coverCropLoss,
   konvaFontStyle,
   konvaTextDecoration,
+  revealedCrop,
   textWrapWidth,
 } from "@kudos/shared-types";
 import { FontPreloader, resolveFontFamily } from "@/lib/editor-fonts";
@@ -117,7 +119,7 @@ export function CardFacePreview({
   qrUrl,
   pixelRatio,
   size = DEFAULT_CARD_SIZE,
-  reservedFooter = "clip",
+  artworkView = "as-printed",
 }: {
   document: DesignDocument;
   width?: number;
@@ -138,18 +140,23 @@ export function CardFacePreview({
    * reserved footer falls (30mm is a different fraction of an A6 than an A5). */
   size?: CardSize;
   /**
-   * How the back's reserved footer is treated.
+   * What the face shows: exactly what prints, or everything the artwork
+   * contains.
    *
-   * `clip` (default) hides whatever falls in it — the truth about what prints.
-   * `reveal` draws the artwork in full and marks the band instead, for someone
-   * who needs to see what a customer actually supplied: under `clip` there is no
-   * way to review a full-bleed back, because the part being hidden is exactly
-   * the part you need to look at. Never the default — a preview should show what
-   * prints unless it is asked otherwise.
+   * `"full"` turns off both of the things that hide artwork from an operator —
+   * the back's reserved-footer clip, and the crop that fits a background to the
+   * card's shape — and *marks* what they remove instead. It exists because the
+   * printed render is the one view guaranteed not to answer "what is being cut
+   * off?": the part in question is the part that is gone.
+   *
+   * In `"full"` the whole card is scaled down into the rectangle that prints,
+   * so the discarded band can be drawn around it at the same scale. Never the
+   * default — a preview shows what prints unless asked otherwise.
    */
-  reservedFooter?: "clip" | "reveal";
+  artworkView?: "as-printed" | "full";
 }) {
   const scale = width / CANVAS_WIDTH;
+  const revealing = artworkView === "full";
 
   // The bottom strip of the back is pre-printed on our card stock with the Kudos
   // logo and QR, so nothing authored may show there — see card-format.ts
@@ -164,7 +171,7 @@ export function CardFacePreview({
   // The print engine is unaffected either way; it is the actual guarantee.
   const reservedTop = face === "back" ? backReservedFooterTop(size) : null;
   const clip =
-    reservedTop !== null && reservedFooter === "clip"
+    reservedTop !== null && !revealing
       ? { x: 0, y: 0, width: CANVAS_WIDTH, height: reservedTop }
       : undefined;
   const front =
@@ -178,6 +185,41 @@ export function CardFacePreview({
   const usedFontKeys = Array.from(
     new Set(elements.filter((el) => el.kind === "text").map((el) => el.fontFamily)),
   );
+
+  // The background's own pixel size, needed to lay the reveal out. Loaded here as
+  // well as in PageBackground: it is the same url, so the browser serves the
+  // second request from cache, and the alternative is threading a measurement
+  // back up out of a child that every other renderer shares.
+  const backgroundUrl =
+    revealing && front?.background?.type === "image" ? front.background.assetUrl : "";
+  const [backgroundImage] = useImage(backgroundUrl, "anonymous");
+
+  /**
+   * Where the whole artwork goes and which part of it prints — null whenever
+   * there is nothing to reveal, which is the common case: not in reveal mode,
+   * no image background, or artwork already the card's shape. A band drawn on a
+   * card that loses nothing would be a lie in the one view meant to be trusted.
+   */
+  const reveal = (() => {
+    if (!backgroundImage) return null;
+    const natural = { width: backgroundImage.width, height: backgroundImage.height };
+    const box = { width: CANVAS_WIDTH, height: CANVAS_HEIGHT };
+    const loss = coverCropLoss(natural, box);
+    if (loss.widthLost <= 0 && loss.heightLost <= 0) return null;
+    return revealedCrop(natural, box);
+  })();
+
+  // The card itself, scaled into the rectangle that prints so the discarded
+  // artwork can be drawn around it at the same scale. Identity when nothing is
+  // being revealed.
+  const cardTransform = reveal
+    ? {
+        x: reveal.printed.x,
+        y: reveal.printed.y,
+        scaleX: reveal.printed.width / CANVAS_WIDTH,
+        scaleY: reveal.printed.height / CANVAS_HEIGHT,
+      }
+    : { x: 0, y: 0, scaleX: 1, scaleY: 1 };
 
   // Redraw once fonts settle so text paints in the real font, not the fallback.
   const stageRef = useRef<Konva.Stage>(null);
@@ -214,63 +256,131 @@ export function CardFacePreview({
       >
         <Layer listening={false}>
           <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#ffffff" />
+          {/* The whole artwork, behind the card, when revealing. Drawn
+              uncropped — that is the entire point of the view — with the card
+              itself scaled down onto the part of it that prints. */}
+          {reveal && backgroundImage && (
+            <KonvaImage
+              x={reveal.drawn.x}
+              y={reveal.drawn.y}
+              width={reveal.drawn.width}
+              height={reveal.drawn.height}
+              image={backgroundImage}
+              listening={false}
+            />
+          )}
           {/* One Group rather than a second Layer: a Layer is a whole extra
               canvas, and these previews are rendered dozens at a time in the
               design and review grids. */}
-          <Group clip={clip}>
-            <PageBackground background={front?.background} />
-            {elements.map((element) => {
-              if (element.kind === "text") {
-                return (
-                  <Text
-                    key={element.id}
-                    text={element.text}
-                    x={element.x}
-                    y={element.y}
-                    width={textWrapWidth(element)}
-                    align={element.align ?? "left"}
-                    wrap="word"
-                    lineHeight={1.3}
-                    fontFamily={resolveFontFamily(element.fontFamily)}
-                    fontSize={element.fontSize}
-                    fontStyle={konvaFontStyle(element.bold, element.italic)}
-                    textDecoration={konvaTextDecoration(element.underline)}
-                    fill={element.color}
-                    rotation={element.rotation}
-                  />
-                );
-              }
-              if (element.kind === "image") {
-                return <ImageNode key={element.id} element={element} />;
-              }
-              if (element.kind === "shape") {
-                return (
-                  <Group key={element.id} x={element.x} y={element.y} rotation={element.rotation}>
-                    <ShapePrimitive element={element} />
-                  </Group>
-                );
-              }
-              // Real per-card QR when a link is supplied (print run), else a marked
-              // placeholder square (designer preview, before a code is minted).
-              return <QrNode key={element.id} element={element} qrUrl={qrUrl} />;
-            })}
+          <Group {...cardTransform}>
+            <Group clip={clip}>
+              <PageBackground background={front?.background} />
+              {elements.map((element) => {
+                if (element.kind === "text") {
+                  return (
+                    <Text
+                      key={element.id}
+                      text={element.text}
+                      x={element.x}
+                      y={element.y}
+                      width={textWrapWidth(element)}
+                      align={element.align ?? "left"}
+                      wrap="word"
+                      lineHeight={1.3}
+                      fontFamily={resolveFontFamily(element.fontFamily)}
+                      fontSize={element.fontSize}
+                      fontStyle={konvaFontStyle(element.bold, element.italic)}
+                      textDecoration={konvaTextDecoration(element.underline)}
+                      fill={element.color}
+                      rotation={element.rotation}
+                    />
+                  );
+                }
+                if (element.kind === "image") {
+                  return <ImageNode key={element.id} element={element} />;
+                }
+                if (element.kind === "shape") {
+                  return (
+                    <Group key={element.id} x={element.x} y={element.y} rotation={element.rotation}>
+                      <ShapePrimitive element={element} />
+                    </Group>
+                  );
+                }
+                // Real per-card QR when a link is supplied (print run), else a marked
+                // placeholder square (designer preview, before a code is minted).
+                return <QrNode key={element.id} element={element} qrUrl={qrUrl} />;
+              })}
+            </Group>
+            {/* Reveal mode: nothing is hidden, so the band has to be *marked* or
+                there is no way to tell which part of the artwork won't print. A
+                tint light enough to read the artwork through, and a rule on the
+                line itself. Inside the card transform, so it tracks the card
+                when the reveal scales it down. */}
+            {reservedTop !== null && revealing && (
+              <Group listening={false}>
+                <Rect
+                  x={0}
+                  y={reservedTop}
+                  width={CANVAS_WIDTH}
+                  height={CANVAS_HEIGHT - reservedTop}
+                  fill="#ffffff"
+                  opacity={0.35}
+                />
+                <Line
+                  points={[0, reservedTop, CANVAS_WIDTH, reservedTop]}
+                  stroke="#dc2626"
+                  strokeWidth={1.5}
+                  dash={[8, 5]}
+                />
+              </Group>
+            )}
           </Group>
-          {/* Reveal mode: nothing is hidden, so the band has to be *marked* or
-              there is no way to tell which part of the artwork won't print. A
-              tint light enough to read the artwork through, and a rule on the
-              line itself. */}
-          {reservedTop !== null && reservedFooter === "reveal" && (
+          {/* The artwork that will not be printed: everything of `drawn` outside
+              `printed`. Dimmed rather than hidden — the question being asked is
+              what is in there — with the trim line ruled so the boundary is
+              unambiguous. Four bands, of which at most two are ever non-empty,
+              because a cover-crop only trims one axis. */}
+          {reveal && (
             <Group listening={false}>
+              {[
+                {
+                  x: reveal.drawn.x,
+                  y: reveal.drawn.y,
+                  width: reveal.drawn.width,
+                  height: reveal.printed.y - reveal.drawn.y,
+                },
+                {
+                  x: reveal.drawn.x,
+                  y: reveal.printed.y + reveal.printed.height,
+                  width: reveal.drawn.width,
+                  height:
+                    reveal.drawn.y +
+                    reveal.drawn.height -
+                    (reveal.printed.y + reveal.printed.height),
+                },
+                {
+                  x: reveal.drawn.x,
+                  y: reveal.printed.y,
+                  width: reveal.printed.x - reveal.drawn.x,
+                  height: reveal.printed.height,
+                },
+                {
+                  x: reveal.printed.x + reveal.printed.width,
+                  y: reveal.printed.y,
+                  width:
+                    reveal.drawn.x + reveal.drawn.width - (reveal.printed.x + reveal.printed.width),
+                  height: reveal.printed.height,
+                },
+              ]
+                .filter((band) => band.width > 0.01 && band.height > 0.01)
+                .map((band, i) => (
+                  <Rect key={i} {...band} fill="#000000" opacity={0.45} />
+                ))}
               <Rect
-                x={0}
-                y={reservedTop}
-                width={CANVAS_WIDTH}
-                height={CANVAS_HEIGHT - reservedTop}
-                fill="#ffffff"
-                opacity={0.35}
-              />
-              <Line
-                points={[0, reservedTop, CANVAS_WIDTH, reservedTop]}
+                x={reveal.printed.x}
+                y={reveal.printed.y}
+                width={reveal.printed.width}
+                height={reveal.printed.height}
                 stroke="#dc2626"
                 strokeWidth={1.5}
                 dash={[8, 5]}

@@ -48,6 +48,15 @@ const document_: DesignDocument = {
   ],
 };
 
+/** A document with one face, so a back's reserved footer cannot be what makes
+ *  the reveal appear. */
+function frontOnly(assetUrl: string): DesignDocument {
+  return {
+    version: 1,
+    pages: [{ name: "front", elements: [], background: { type: "image", assetUrl } }],
+  };
+}
+
 const card: PrintRunCard = {
   jobId: "job-1",
   recipientFirstName: "Elise",
@@ -214,5 +223,71 @@ describe("PrintRunOverlay — the preview's border is not the printed card", () 
       // screen; a band that printed would put a grey frame on a real card.
       expect(band.className).toContain("print:hidden");
     }
+  });
+});
+
+/**
+ * Phase 1 of docs/card-artwork-shape-plan.md: see what is being cut off.
+ *
+ * 207 of 217 catalog designs are 2:3 on a 1:1.4095 card and lose 4.5mm off the
+ * top and the bottom. Whether that matters is a different question per card — a
+ * margin on one, a decapitated character on another — and the printed render is
+ * the one view guaranteed not to answer it, because the part in question is the
+ * part that is gone.
+ */
+describe("PrintRunOverlay — showing what will not be printed", () => {
+  it("offers the reveal for a cropped background, not only for a back face", async () => {
+    // The toggle used to appear only when the run had a back, because the
+    // reserved footer was the only thing the render hid. A background losing its
+    // edges hides artwork too, on any face.
+    stubImageLoader({ width: 1000, height: 1500 }); // 2:3 — the catalog's shape
+    render(
+      <PrintRunOverlay cards={[{ ...card, document: frontOnly(BACKGROUND) }]} onClose={() => {}} />,
+    );
+
+    expect(await screen.findByRole("button", { name: "Full artwork" })).toBeInTheDocument();
+  });
+
+  it("says nothing to reveal when every image already fits the card", async () => {
+    // The discriminator. A control that is always there is one nobody reads as
+    // meaning anything, and on a run with nothing hidden it would reveal
+    // nothing — a dead toggle inviting a support ticket.
+    // The card's own proportion to within a rounding hair, and small enough to
+    // be low-resolution at A6 — so the low-resolution line can serve as the
+    // positive signal below. (900 x 1268 is the exact proportion but clears the
+    // dpi floor, which would leave nothing to wait for.)
+    stubImageLoader({ width: 600, height: 845 });
+    render(
+      <PrintRunOverlay cards={[{ ...card, document: frontOnly(BACKGROUND) }]} onClose={() => {}} />,
+    );
+
+    // The low-resolution line is the positive signal that the pre-flight has
+    // finished; without waiting for it the absence below proves nothing.
+    expect(await screen.findByText(/low-resolution/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Full artwork" })).not.toBeInTheDocument();
+  });
+
+  it("explains what the dimmed area is once the reveal is on", async () => {
+    stubImageLoader({ width: 1000, height: 1500 });
+    render(
+      <PrintRunOverlay cards={[{ ...card, document: frontOnly(BACKGROUND) }]} onClose={() => {}} />,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Full artwork" }));
+
+    expect(screen.getByText(/artwork that will not be printed/)).toBeInTheDocument();
+    // And it must not be mistaken for a change to the output.
+    expect(screen.getByText(/print-ready PDF is unaffected/)).toBeInTheDocument();
+  });
+
+  it("refuses Browser print while the reveal is on", async () => {
+    // Browser print rasterises what is on screen, and this view deliberately
+    // shows artwork that must not reach paper.
+    stubImageLoader({ width: 1000, height: 1500 });
+    render(
+      <PrintRunOverlay cards={[{ ...card, document: frontOnly(BACKGROUND) }]} onClose={() => {}} />,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Full artwork" }));
+
+    expect(screen.getByRole("button", { name: "Browser print" })).toBeDisabled();
   });
 });
