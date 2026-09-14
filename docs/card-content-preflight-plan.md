@@ -108,12 +108,27 @@ Each phase is its own PR, merged when green before the next starts.
 
 ### Phase 2 — Stop it reaching print
 
-- Two new pre-send buckets: **"Two messages on the same face"** and **"This
-  design names someone by hand"**, both warnings, both naming the face and the
-  text so the sender can act.
+- Two new findings on the pre-send check: **"Two pieces of text overlap"** and
+  **"This design says <name>"**, both warnings, both naming the face so the
+  sender can act.
 - The API's preflight is the source of truth (the web surface renders what it is
   given), so the check runs where the order is actually placed, not only in the
   browser.
+
+**Corrected while building this.** The plan said _buckets_. It should not have:
+a `PreflightBucket` is per-recipient, and the codebase had already settled this
+question for `backArtworkClipped`, whose comment says a bucket "would list every
+recipient in the run for one problem that is the same on all of them". Both of
+these are properties of the design, so they sit beside it as design-level
+findings instead.
+
+The name check also grew a second half while being built. A salutation line
+("Dear alex,") names one person outright and needs no list to compare against,
+so it catches a name belonging to nobody in the send at all — which is the Cole
+Fortes card exactly, and which `literalNamesIn` alone could never have found.
+`literalNamesIn` still runs, against this send's own recipients, because a
+recipient's name appearing in the text is wrong for every _other_ card in the
+batch. Two checks, two different mistakes.
 
 ### Phase 3 — Catch it at authoring time
 

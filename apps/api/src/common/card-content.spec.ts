@@ -3,6 +3,7 @@ import {
   estimatedTextBox,
   literalNamesIn,
   OVERLAP_MIN_FRACTION,
+  salutationNames,
   stackedTextInDocument,
   stackedTextOnPage,
 } from "@kudos/shared-types";
@@ -263,5 +264,66 @@ describe("literalNamesIn", () => {
 
   it("reads an unparseable document as nothing found rather than throwing", () => {
     expect(literalNamesIn({} as DesignDocument, ["Elise"])).toEqual([]);
+  });
+});
+
+describe("salutationNames", () => {
+  it("finds the person a card is addressed to, in whatever case they typed", () => {
+    // Cole Fortes's card opened "Dear alex,". A check that only noticed
+    // capitalised names would have missed the one that actually went wrong.
+    const document = doc([
+      page("inside-right", [text({ text: "Dear alex,\n\nWell done!\n\nFrom Kip x" })]),
+    ]);
+
+    expect(salutationNames(document).map((f) => f.name)).toEqual(["alex"]);
+  });
+
+  it("finds a salutation written with any of the usual openers", () => {
+    for (const opener of ["To", "Dear", "Hi", "Hello", "Hey"]) {
+      const document = doc([page("front", [text({ text: `${opener} Florence,\n\nEnjoy!` })])]);
+      expect(salutationNames(document).map((f) => f.name)).toEqual(["Florence"]);
+    }
+  });
+
+  it("leaves a card addressed to a relationship alone", () => {
+    // "To Mum" and "To the team" are perfectly good cards. Flagging them is the
+    // false positive that teaches people to ignore the warning.
+    for (const line of ["To Mum", "Dear Grandad,", "Hi everyone!", "To the team", "To all"]) {
+      const document = doc([page("inside-right", [text({ text: `${line}\n\nWell done!` })])]);
+      expect(salutationNames(document)).toEqual([]);
+    }
+  });
+
+  it("does not mistake a sentence containing 'to' for a salutation", () => {
+    // The reason a salutation must be the whole line. Without that rule this
+    // reads "Kip" as the person the card is addressed to.
+    const document = doc([
+      page("front", [text({ text: "Welcome to Kip McGrath\n\nWe are glad to have you" })]),
+    ]);
+
+    expect(salutationNames(document)).toEqual([]);
+  });
+
+  it("never reads a name out of a merge token", () => {
+    // `To {firstName}` is the correct way to write this, and the reason the
+    // tokens are stripped before anything is matched.
+    const document = doc([
+      page("inside-right", [text({ text: "To {firstName}\n\nHappy Birthday!" })]),
+    ]);
+
+    expect(salutationNames(document)).toEqual([]);
+  });
+
+  it("names the face it found the salutation on", () => {
+    const document = doc([
+      page("front", []),
+      page("inside-right", [text({ text: "To Florence,\n\nHave a lovely day" })]),
+    ]);
+
+    expect(salutationNames(document)[0]).toMatchObject({ face: "inside-right", name: "Florence" });
+  });
+
+  it("reads an unparseable document as nothing found rather than throwing", () => {
+    expect(salutationNames({} as DesignDocument)).toEqual([]);
   });
 });

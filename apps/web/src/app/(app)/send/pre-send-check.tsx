@@ -11,6 +11,14 @@ const PREVIEW_ROWS = 4;
 
 type BucketKey = "missingAddress" | "invalidPostcode" | "unresolvedTokens" | "duplicate";
 
+/** Face names as a sender reads them — the same words the print overlay uses. */
+const FACE_LABEL: Record<string, string> = {
+  front: "front",
+  "inside-left": "inside left",
+  "inside-right": "inside right",
+  back: "back",
+};
+
 /** Per-bucket presentation. `fixable` buckets (address problems) get an inline
  * "Fix" button; the rest are advisory warnings the sender resolves elsewhere. */
 const BUCKETS: {
@@ -261,6 +269,56 @@ export function PreSendCheck({
           </span>
         </div>
       )}
+
+      {/* Two messages written on top of each other — Elise Bisby's card, which
+          carried hers and Florence's, overlapping. A warning rather than a
+          blocker: the boxes are estimated from the document because real text
+          height depends on wrapping and on which font loaded, so unlike the
+          reserved-strip rule this one cannot promise it is never wrong. See
+          docs/card-content-preflight-plan.md. */}
+      {preflight.stackedText.map((face) => (
+        <div
+          key={`stacked-${face.face}`}
+          className="flex flex-col gap-1 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-foreground"
+        >
+          <span className="font-medium">
+            Two pieces of text overlap on the {FACE_LABEL[face.face] ?? face.face}
+          </span>
+          <span className="text-xs">
+            They will print on top of each other. This usually means an old message was left behind
+            when a new one was added.{" "}
+            <Link href={editDesignHref} className="font-medium underline">
+              Open the design
+            </Link>{" "}
+            and delete the one you don’t want.
+          </span>
+        </div>
+      ))}
+
+      {/* A person named by hand — the card for Cole Fortes that opened "Dear
+          alex,". `wrongFor` is the count that makes it worth reading: how many
+          of these cards are going to somebody else. */}
+      {preflight.namedByHand.map((named) => (
+        <div
+          key={`named-${named.face}-${named.name}`}
+          className="flex flex-col gap-1 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-foreground"
+        >
+          <span className="font-medium">
+            This design says “{named.name}” on the {FACE_LABEL[named.face] ?? named.face}
+          </span>
+          <span className="text-xs">
+            {named.wrongFor === 0
+              ? "Everyone in this send has that name, so it may be fine."
+              : `${named.wrongFor} of ${preflight.total} ${
+                  preflight.total === 1 ? "card is" : "cards are"
+                } going to somebody else, and will still say “${named.name}”.`}{" "}
+            <Link href={editDesignHref} className="font-medium underline">
+              Open the design
+            </Link>{" "}
+            and use the First name field so each card is addressed to its own recipient.
+          </span>
+        </div>
+      ))}
 
       {!allReady && (
         <div className="flex flex-col gap-2">

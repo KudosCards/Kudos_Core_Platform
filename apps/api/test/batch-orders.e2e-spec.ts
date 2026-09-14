@@ -1597,6 +1597,126 @@ describe("Batch orders (e2e)", () => {
       ).toBe(true);
     });
 
+    /** Replace the inside-right face of a saved design with these text blocks. */
+    async function setInsideRightText(
+      savedDesignId: string,
+      elements: Record<string, unknown>[],
+    ): Promise<void> {
+      const design = await prisma.savedDesign.findUniqueOrThrow({ where: { id: savedDesignId } });
+      const document = design.document as { pages: { name: string }[] };
+      await prisma.savedDesign.update({
+        where: { id: savedDesignId },
+        data: {
+          document: {
+            ...document,
+            pages: document.pages.map((page) =>
+              page.name === "inside-right" ? { ...page, elements } : page,
+            ),
+          } as never,
+        },
+      });
+    }
+
+    const messageBlock = (id: string, text: string, y: number): Record<string, unknown> => ({
+      kind: "text",
+      id,
+      text,
+      x: 60,
+      y,
+      fontFamily: "Helvetica",
+      fontSize: 18,
+      color: "#1a1a1a",
+      width: 330,
+    });
+
+    it("warns before payment when two messages are written on top of each other", async () => {
+      // Elise Bisby's card. A message for Florence, a message for Elise, both
+      // left in the same design, and the whole batch printed both — overlapping.
+      // See docs/card-content-preflight-plan.md.
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const recipientId = await createRecipientWithAddress(token, { firstName: "Elise" });
+
+      const clean = await request(app.getHttpServer())
+        .post("/batch-orders/preflight")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [recipientId], postageClass: "second_class" })
+        .expect(201);
+      expect((clean.body as { stackedText: unknown[] }).stackedText).toEqual([]);
+
+      await setInsideRightText(savedDesignId, [
+        messageBlock(
+          "elise",
+          "To {firstName}\n\nHappy Birthday!\n\nWe hope you have a fantastic day,\n\nFrom all of your friends at Kip x",
+          120,
+        ),
+        messageBlock(
+          "florence",
+          "To Florence,\n\nHappy Birthday!\n\nHave a lovely day,\n\nFrom all of your friends at Kip x",
+          150,
+        ),
+      ]);
+
+      const flagged = await request(app.getHttpServer())
+        .post("/batch-orders/preflight")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [recipientId], postageClass: "second_class" })
+        .expect(201);
+      const { stackedText } = flagged.body as { stackedText: { face: string; pairs: number }[] };
+      expect(stackedText).toEqual([{ face: "inside-right", pairs: 1 }]);
+    });
+
+    it("warns before payment when the design addresses somebody by name", async () => {
+      // Cole Fortes's card, which carried a message to "alex". A salutation is
+      // the case worth naming: it is unambiguously addressed to one person, and
+      // every other card in the send is going to somebody else.
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const elise = await createRecipientWithAddress(token, { firstName: "Elise" });
+      const cole = await createRecipientWithAddress(token, { firstName: "Cole" });
+
+      await setInsideRightText(savedDesignId, [
+        messageBlock("message", "Dear alex,\n\nWell done!\n\nFrom all at Kip x", 120),
+      ]);
+
+      const flagged = await request(app.getHttpServer())
+        .post("/batch-orders/preflight")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [elise, cole],
+          postageClass: "second_class",
+        })
+        .expect(201);
+
+      const { namedByHand } = flagged.body as {
+        namedByHand: { name: string; face: string; wrongFor: number }[];
+      };
+      expect(namedByHand).toEqual([{ name: "alex", face: "inside-right", wrongFor: 2 }]);
+    });
+
+    it("says nothing about a design that addresses its recipient with a token", async () => {
+      // The discriminator. `To {firstName}` is the correct way to write this and
+      // must never be flagged, however the recipients happen to be called.
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const elise = await createRecipientWithAddress(token, { firstName: "Elise" });
+
+      await setInsideRightText(savedDesignId, [
+        messageBlock("message", "To {firstName}\n\nHappy Birthday!\n\nFrom all at Kip x", 120),
+      ]);
+
+      const clean = await request(app.getHttpServer())
+        .post("/batch-orders/preflight")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [elise], postageClass: "second_class" })
+        .expect(201);
+
+      const body = clean.body as { stackedText: unknown[]; namedByHand: unknown[] };
+      expect(body.stackedText).toEqual([]);
+      expect(body.namedByHand).toEqual([]);
+    });
+
     it("counts a skipped birthday apart from a contact who has none", async () => {
       // The composer used to fold these together and tell the sender "no
       // occasion on file". For a skipped birthday that is untrue — it is on

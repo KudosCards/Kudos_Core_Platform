@@ -1,3 +1,4 @@
+import type { DesignPage } from "./card";
 import type { PricingBreakdown } from "./pricing";
 
 /**
@@ -87,6 +88,35 @@ export interface BatchOrderPreflight {
    * problem that is the same on all of them.
    */
   backArtworkClipped: { background: boolean; elements: number };
+  /**
+   * Faces carrying two pieces of text written on top of each other, and how many
+   * such pairs each has.
+   *
+   * A property of the *design*, like `backArtworkClipped` and for the same
+   * reason: a bucket would list every recipient in the run for one problem that
+   * is identical on all of them.
+   *
+   * A warning and never a blocker. The measurement estimates each text box from
+   * the document, because real height depends on wrapping and on which font
+   * loaded — `reservedFooterViolation` earns the right to block by being free of
+   * false positives, and this is not. See docs/card-content-preflight-plan.md.
+   */
+  stackedText: { face: DesignPage["name"]; pairs: number }[];
+  /**
+   * People this design names by hand rather than with a merge token, and how
+   * many cards in *this* send are going to somebody else.
+   *
+   * Found two ways, because they catch different mistakes. A salutation line
+   * ("Dear alex,") names one person unambiguously and needs no list to compare
+   * against, so it finds a name belonging to nobody in the send at all. A
+   * recipient's own first name appearing literally anywhere in the text is wrong
+   * for every *other* card in the same send.
+   *
+   * `wrongFor` counts the cards that are not for that person, which is the
+   * number that makes the warning worth reading: "1 of 1" is a card addressed to
+   * the wrong person, "7 of 7" is a batch with somebody else's name on it.
+   */
+  namedByHand: { name: string; face: DesignPage["name"]; wrongFor: number }[];
 }
 
 /** The sender's timing choice, as the composer's picker reports it. `null` means
