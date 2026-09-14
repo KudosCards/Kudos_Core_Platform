@@ -79,6 +79,10 @@ export interface CatalogSyncSummary {
     percent: number;
     axis: "width" | "height";
     verdict: Exclude<CropVerdict, "ok">;
+    /** The artwork's own pixel size, so the re-export brief can be read
+     *  straight off the screen instead of inferred from a percentage. */
+    width: number;
+    height: number;
   }[];
   /**
    * Which upstream columns the sync actually read. Present when the source can
@@ -316,6 +320,8 @@ export class CatalogSyncService {
               percent: cropLossPercent(loss),
               axis,
               verdict,
+              width: copied.natural.width,
+              height: copied.natural.height,
             });
           }
         }

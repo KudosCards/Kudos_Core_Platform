@@ -157,6 +157,11 @@ describe("CatalogSyncService — measuring artwork at the door", () => {
       ["Happy Tulips", 29, "heavy"],
       ["Gentle Stripes", 5, "noticeable"],
     ]);
+    // The source size travels with the finding. A percentage alone cannot be
+    // turned into a re-export brief — somebody would have to go and open the
+    // file to find out what it currently is.
+    expect(summary.cropped[0]).toMatchObject({ width: 1500, height: 1000 });
+    expect(summary.cropped[1]).toMatchObject({ width: 1000, height: 1000 });
     // "Made For Us" fits, so it is not in the list at all. A report that named
     // every design would be a report nobody reads.
     expect(summary.cropped.map((c) => c.title)).not.toContain("Made For Us");

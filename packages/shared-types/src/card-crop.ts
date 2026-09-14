@@ -19,11 +19,12 @@
  * See docs/card-artwork-crop-plan.md.
  */
 
+import { CARD_SIZE_DIMENSIONS_MM, type CardSize } from "./card-format";
 import { CARD_HEIGHT, CARD_WIDTH, coverCrop } from "./design-layout";
 
 // The same "an image's natural size" the resolution pre-flight uses. One
 // definition, so a caller can hand the same measurement to both questions.
-import type { PixelSize } from "./print-quality";
+import { PRINT_DPI_TARGET, type PixelSize } from "./print-quality";
 
 export type { PixelSize };
 
@@ -169,4 +170,47 @@ export function revealedCrop(natural: PixelSize, box: PixelSize): RevealedCrop {
       height: crop.height * scale,
     },
   };
+}
+
+const MM_PER_INCH = 25.4;
+
+/**
+ * The crop as millimetres off **each** edge of a printed card. Pure.
+ *
+ * "6% of the height" is true and almost useless: nobody briefs a designer in
+ * percentages of an axis, and nobody can picture one. "4.5mm off the top and
+ * the bottom" is the same fact in a form a person can hold a ruler against.
+ *
+ * Halved, because a cover-crop is centred and takes from both edges — and
+ * measured against the axis actually being trimmed, since a card is 105mm one
+ * way and 148mm the other.
+ */
+export function cropLossPerEdgeMm(loss: CropLoss, size: CardSize): number {
+  const { widthMm, heightMm } = CARD_SIZE_DIMENSIONS_MM[size];
+  const axis = croppedAxis(loss);
+  if (axis === null) return 0;
+  const alongMm = axis === "width" ? widthMm : heightMm;
+  const fraction = axis === "width" ? loss.widthLost : loss.heightLost;
+  return (alongMm * fraction) / 2;
+}
+
+/**
+ * The pixel size artwork should be authored at: the card's own proportion, at
+ * the print target. Pure.
+ *
+ * The one number to give whoever produces the artwork. It has to answer both
+ * pre-flights at once — the right shape so nothing is cropped, and enough
+ * pixels so nothing is soft — because an export that fixes one while breaking
+ * the other just moves the complaint. A6 comes out at 1240 x 1748.
+ */
+export function idealArtworkPixels(size: CardSize): PixelSize {
+  const { widthMm, heightMm } = CARD_SIZE_DIMENSIONS_MM[size];
+  const px = (mm: number) => Math.round((mm / MM_PER_INCH) * PRINT_DPI_TARGET);
+  // From the paper, not the authored canvas. The canvas is 450 x 634 while
+  // 450 x 148/105 is 634.29, so deriving from it would give 1240 x 1747 — a
+  // number no design tool produces, that a supplier would reasonably "correct"
+  // to 1748, and that is odd enough to invite a query every time it is read.
+  // 1240 x 1748 is A6 at 300dpi exactly; against our canvas it loses 0.06% of
+  // its height, which the floor forgives (see the true-A6 case above).
+  return { width: px(widthMm), height: px(heightMm) };
 }

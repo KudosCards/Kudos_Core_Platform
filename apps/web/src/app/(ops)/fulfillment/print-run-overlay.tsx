@@ -9,10 +9,13 @@ import {
   cardSizeLabel,
   backgroundCropLoss,
   collectPrintImageTargets,
+  cropLossPerEdgeMm,
   cropLossPercent,
   cropVerdict,
   DEFAULT_CARD_SIZE,
   cardSizeDimensions,
+  croppedAxis,
+  idealArtworkPixels,
   fittedCardInsetMm,
   fittedCardMm,
   imagePrintDpi,
@@ -169,11 +172,13 @@ export function PrintRunOverlay({
   // smaller losses are the customer's to see, in the editor, where they can
   // still act on them. See docs/card-artwork-crop-plan.md.
   const [cropped, setCropped] = useState<{
-    count: number;
-    worstPercent: number;
-    /** Backgrounds losing anything at all, at any verdict — what decides whether
-     *  there is something for "Full artwork" to reveal. */
+    /** Backgrounds losing anything the floor does not forgive. */
     anyCount: number;
+    /** …of which this many are losing enough to be worth saying loudly. */
+    heavyCount: number;
+    worstPercent: number;
+    worstPerEdgeMm: number;
+    worstAxis: "width" | "height";
   } | null>(null);
 
   useEffect(() => {
@@ -187,25 +192,41 @@ export function PrintRunOverlay({
       const findings = await Promise.all(
         Array.from(targets.entries()).map(async ([url, printed]) => {
           const natural = await loadNaturalSize(url);
-          if (natural === null) return { lowRes: false, cropPercent: 0, cropped: false };
+          if (natural === null) {
+            return {
+              lowRes: false,
+              cropped: false,
+              heavy: false,
+              cropPercent: 0,
+              perEdgeMm: 0,
+              axis: "height" as const,
+            };
+          }
           const loss = backgrounds.has(url) ? backgroundCropLoss(natural) : null;
+          const verdict = loss ? cropVerdict(loss) : "ok";
           return {
             lowRes: isLowPrintDpi(imagePrintDpi(natural, printed)),
-            cropPercent: loss && cropVerdict(loss) === "heavy" ? cropLossPercent(loss) : 0,
-            // Anything the floor does not forgive — the threshold for *offering
-            // to show* somebody the discarded band is lower than the threshold
-            // for interrupting them with a warning about it.
-            cropped: loss !== null && cropVerdict(loss) !== "ok",
+            cropped: loss !== null && verdict !== "ok",
+            heavy: verdict === "heavy",
+            cropPercent: loss ? cropLossPercent(loss) : 0,
+            perEdgeMm: loss ? cropLossPerEdgeMm(loss, size) : 0,
+            axis: loss ? (croppedAxis(loss) ?? "height") : ("height" as "width" | "height"),
           };
         }),
       );
       if (cancelled) return;
       setLowResCount(findings.filter((f) => f.lowRes).length);
-      const heavy = findings.filter((f) => f.cropPercent > 0);
+      const losing = findings.filter((f) => f.cropped);
+      const worst = losing.reduce<(typeof losing)[number] | null>(
+        (w, f) => (w === null || f.cropPercent > w.cropPercent ? f : w),
+        null,
+      );
       setCropped({
-        count: heavy.length,
-        worstPercent: heavy.reduce((worst, f) => Math.max(worst, f.cropPercent), 0),
-        anyCount: findings.filter((f) => f.cropped).length,
+        anyCount: losing.length,
+        heavyCount: losing.filter((f) => f.heavy).length,
+        worstPercent: worst?.cropPercent ?? 0,
+        worstPerEdgeMm: worst?.perEdgeMm ?? 0,
+        worstAxis: worst?.axis ?? "height",
       });
     })();
     return () => {
@@ -371,12 +392,28 @@ export function PrintRunOverlay({
           by an office printer’s unprintable margin. The print-ready PDF has no such border — the
           artwork runs to the trim edge at {cardSizeDimensions(size)}.
         </p>
-        {cropped !== null && cropped.count > 0 && (
-          <p className="order-last basis-full text-sm text-amber-700" role="status">
-            ⚠ {cropped.count} background image{cropped.count === 1 ? "" : "s"} in this run{" "}
-            {cropped.count === 1 ? "is" : "are"} being cropped to fit the card — up to{" "}
-            {cropped.worstPercent}% of the artwork is not printed. Artwork fits with nothing lost at
-            the card’s own proportion, 1:1.409.
+        {/* One line, whatever the run contains. This used to warn only at
+            `heavy`, on the argument that a per-card line appearing on nearly
+            every run gets scrolled past. The first real catalog measurement
+            showed 207 of 217 designs losing an identical 6% — so that threshold
+            meant saying nothing at all about almost every cropped card, which is
+            not the same thing as avoiding noise. Stated once, in millimetres,
+            with the reveal to hand. See docs/card-artwork-shape-plan.md. */}
+        {cropped !== null && cropped.anyCount > 0 && (
+          <p
+            className={`order-last basis-full text-sm ${
+              cropped.heavyCount > 0 ? "text-amber-700" : "text-black/70"
+            }`}
+            role="status"
+          >
+            {cropped.heavyCount > 0 ? "⚠ " : ""}
+            {cropped.anyCount} background image{cropped.anyCount === 1 ? "" : "s"} in this run{" "}
+            {cropped.anyCount === 1 ? "is" : "are"} cropped to fit the card — up to{" "}
+            {cropped.worstPerEdgeMm.toFixed(1)}mm off each{" "}
+            {cropped.worstAxis === "width" ? "side" : "of the top and bottom"},{" "}
+            {cropped.worstPercent}% of the artwork. Switch to Full artwork to see what that removes.
+            Artwork loses nothing at {idealArtworkPixels(size).width} ×{" "}
+            {idealArtworkPixels(size).height}.
           </p>
         )}
         <div className="flex items-center gap-3">
