@@ -71,9 +71,10 @@ interface StorageObject {
  *
  * The reaper is conservative by construction and ships dark: it only deletes
  * when STORAGE_REAPER_ENABLED is set, only objects referenced by NOTHING
- * (DesignAsset urls, CardDesign artwork, or any url embedded in a SavedDesign /
- * CardDesign document), only past a grace window, never catalog artwork, and
- * never more than a capped number per run. See
+ * (DesignAsset urls, CardDesign artwork, any url embedded in a SavedDesign /
+ * CardDesign document, or one a bought card kept in its own artwork), only past
+ * a grace window, never catalog artwork, and never more than a capped number
+ * per run. See
  * docs/adr/0074-orphaned-asset-reaper.md.
  */
 @Injectable()
@@ -193,6 +194,25 @@ export class StorageReaperService {
           ...this.page(cursor),
         }),
       (design) => addExtractedPaths(paths, JSON.stringify(design.document)),
+    );
+
+    // A card's own artwork, which is *not* reachable from any design.
+    //
+    // This walk used to be complete without it, because a card had no artwork
+    // of its own — anything it could print was reachable from the design it
+    // pointed at. Since docs/order-artwork-plan.md a card carries its own copy,
+    // and the two diverge exactly when somebody edits a design: remove an image
+    // from the library and drop it from the design, and its url survives only
+    // in the snapshot of a card already paid for. Without this page, the reaper
+    // would prove that url unreferenced and delete the artwork out from under a
+    // card waiting to print.
+    await this.forEachPage(
+      (cursor) =>
+        this.prisma.orderRecipient.findMany({
+          select: { id: true, documentSnapshot: true },
+          ...this.page(cursor),
+        }),
+      (card) => addExtractedPaths(paths, JSON.stringify(card.documentSnapshot)),
     );
 
     return paths;
