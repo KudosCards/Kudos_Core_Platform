@@ -37,10 +37,9 @@ import {
   unresolvedMergeTokens,
   type BatchOrderListRow,
   type BatchOrderPreflight,
-  type DesignPage,
-  literalNamesIn,
-  salutationNames,
+  namedByHandInDocument,
   stackedTextInDocument,
+  unacknowledgedNames,
   type DesignDocument,
   type MergeContext,
   type OccasionRedateCard,
@@ -310,14 +309,25 @@ export class BatchOrdersService {
     //  - new contact, saveToContacts !== false (the default) → the audited,
     //    cap-checked create, so the guided path can't sidestep the plan limit.
     //  - new contact, saveToContacts === false → a hidden one-off (archived).
+    const existing = dto.recipientId
+      ? await this.prisma.recipient.findFirst({ where: { id: dto.recipientId, accountId } })
+      : null;
+    if (dto.recipientId && !existing) {
+      throw new NotFoundException("Contact not found on this account");
+    }
+
+    // Before anything is created, so a refusal leaves no half-made contact for a
+    // second attempt to trip over. The name checked is the one the card will be
+    // addressed to: the stored contact's when one was picked, the typed one when
+    // this send is adding them.
+    this.assertNamesAcknowledged(
+      savedDesign.document,
+      [{ firstName: existing?.firstName ?? dto.firstName }],
+      dto.acknowledgeNames,
+    );
+
     let recipient: { id: string };
-    if (dto.recipientId) {
-      const existing = await this.prisma.recipient.findFirst({
-        where: { id: dto.recipientId, accountId },
-      });
-      if (!existing) {
-        throw new NotFoundException("Contact not found on this account");
-      }
+    if (existing) {
       recipient = existing;
     } else {
       const contactData = {
@@ -419,6 +429,11 @@ export class BatchOrdersService {
         `These contacts need a full UK postal address before you can send to them: ${names}`,
       );
     }
+
+    // Checked against the recipients this send actually has, after the address
+    // guard above so a run that cannot post at all fails on that first — the
+    // fixable problem, and the one the sender asked about.
+    this.assertNamesAcknowledged(savedDesign.document, recipients, dto.acknowledgeNames);
 
     // Which recipients are sending *via* a natural occasion (e.g. a birthday
     // picked from the birthday segment). For those we reuse that occasion as the
@@ -786,30 +801,59 @@ export class BatchOrdersService {
       pairs: face.stacked.length,
     }));
 
-    // Two ways of finding a name, because they catch different mistakes. A
-    // salutation names one person outright and needs nothing to compare against,
-    // so it finds "Dear alex," on a send that contains no Alex at all. A
-    // recipient's own first name appearing literally is wrong for every *other*
-    // card in the same send, which only a comparison can see.
+    // Who this design names, and how many of these cards are going to somebody
+    // else. Shared with the send itself (assertNamesAcknowledged), so what a
+    // sender is shown here is the same finding that will stand in their way.
     const firstNames = recipients.map((recipient) => recipient.firstName);
-    const named = [...salutationNames(document), ...literalNamesIn(document, firstNames)];
+    return { stackedText, namedByHand: namedByHandInDocument(document, firstNames) };
+  }
 
-    // One row per person per face, however many ways we found them.
-    const byKey = new Map<string, { name: string; face: DesignPage["name"]; wrongFor: number }>();
-    for (const finding of named) {
-      const key = `${finding.face}:${finding.name.toLowerCase()}`;
-      if (byKey.has(key)) continue;
-      byKey.set(key, {
-        name: finding.name,
-        face: finding.face,
-        // The cards that are *not* for this person — the number that makes the
-        // warning worth reading. A send of one to the wrong name reads "1 of 1".
-        wrongFor: firstNames.filter(
-          (firstName) => firstName.toLowerCase() !== finding.name.toLowerCase(),
-        ).length,
-      });
-    }
-    return { stackedText, namedByHand: [...byKey.values()] };
+  /**
+   * The half of the name check that does more than warn.
+   *
+   * Everything in `contentWarnings` is advisory for the reason given above, and
+   * that stays true — but a warning a sender can click past is exactly what
+   * happened: a card went out carrying the previous recipient's name. So a
+   * salutation that is wrong for at least one card in the run does not stop the
+   * send, it makes the sender **say they know**, naming the person back.
+   *
+   * Keyed to the name rather than a flag, so it cannot decay into a one-time
+   * dismissal: acknowledge "Florence", edit the design to say "Alex", and the
+   * send asks again.
+   *
+   * Only salutations qualify (D3) — `literalNamesIn` would refuse a card to Joy
+   * that says "wishing you joy". And only interactive sends reach here: auto-send
+   * and returns reprints run with nobody watching, where a card that silently
+   * never posts is the worse outcome (D4, ADR 0171).
+   */
+  private assertNamesAcknowledged(
+    document: Prisma.JsonValue,
+    recipients: { firstName: string }[],
+    acknowledged: string[] | undefined,
+  ): void {
+    const parsed = designDocumentSchema.safeParse(document);
+    if (!parsed.success) return;
+    const findings = namedByHandInDocument(
+      parsed.data,
+      recipients.map((recipient) => recipient.firstName),
+    );
+    const outstanding = unacknowledgedNames(findings, acknowledged);
+    if (outstanding.length === 0) return;
+
+    // Named in the message, and with the count, because this is also what an API
+    // client sees: the refusal has to carry enough to act on without a preflight.
+    const total = recipients.length;
+    const said = outstanding
+      .map((name) => {
+        const wrongFor = findings.find((finding) => finding.name === name)?.wrongFor ?? 0;
+        return `"${name}" (${wrongFor} of ${total} ${
+          total === 1 ? "card is" : "cards are"
+        } going to somebody else)`;
+      })
+      .join(", ");
+    throw new BadRequestException(
+      `This design greets ${said}. Confirm you want to send it as written, or use the First name field so each card is addressed to its own recipient.`,
+    );
   }
 
   /**

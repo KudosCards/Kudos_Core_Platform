@@ -20,6 +20,7 @@ import {
   occasionDatesInstruction,
   POSTAGE_MINOR as SHARED_POSTAGE_MINOR,
   ukPostcodeRegex,
+  unacknowledgedNames,
 } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -120,6 +121,19 @@ const OCCASION_TYPE_LABEL: Record<string, string> = {
  * chosen here. Editing a design hands off to the editor with a `returnTo` back to
  * this exact state.
  */
+/**
+ * The acknowledgements that still apply. A confirmation is about one design's
+ * text, so choosing a different card discards it rather than carrying a "yes"
+ * over to words the sender has not read. Kept out of the component so both the
+ * banner and the send read the rule from one place.
+ */
+function namesAcknowledgedFor(
+  held: { designId: string; names: string[] },
+  designId: string | null,
+): string[] {
+  return held.designId === designId ? held.names : [];
+}
+
 export function BulkSendClient({
   initialSelected,
   initialRecipientsPage,
@@ -181,6 +195,14 @@ export function BulkSendClient({
   } | null>(null);
   const [preflightBusy, setPreflightBusy] = useState(false);
   const [preflightError, setPreflightError] = useState<string | null>(null);
+  // Who the sender has confirmed this design may greet by hand, kept against the
+  // design it was confirmed for: pick a different card and the confirmation is
+  // about text that is no longer being sent. Derived rather than cleared by an
+  // effect, so there is no window where a stale acknowledgement counts.
+  const [acknowledged, setAcknowledged] = useState<{ designId: string; names: string[] }>({
+    designId: "",
+    names: [],
+  });
 
   const selectedIds = useMemo(() => new Set(selected.keys()), [selected]);
   const selectedList = useMemo(() => [...selected.values()], [selected]);
@@ -383,6 +405,7 @@ export function BulkSendClient({
 
   async function handleSend() {
     if (!selectedDesignId || sendable.length === 0 || !effectiveTiming) return;
+    const confirmedNames = namesAcknowledgedFor(acknowledged, selectedDesignId);
     setError(null);
     setBusy(true);
     try {
@@ -393,6 +416,10 @@ export function BulkSendClient({
           savedDesignId: selectedDesignId,
           recipientIds: sendable.map((r) => r.id),
           postageClass,
+          // The names the sender has said they know about. Sent every time: the
+          // server decides which of them it needed, and an empty list on a
+          // design that greets nobody is simply ignored.
+          acknowledgeNames: confirmedNames.length > 0 ? confirmedNames : undefined,
           // Attach the chosen message page to every card's QR (only meaningful
           // when the design carries a QR element). See docs/adr/0132.
           messagePageId: designHasQr && messagePageId ? messagePageId : undefined,
@@ -455,6 +482,27 @@ export function BulkSendClient({
   // flicker the pay button off on every change.
   const artworkBlocksSend = (preflight?.backArtworkClipped.elements ?? 0) > 0;
 
+  // A design that greets somebody by hand on a run where at least one card is
+  // going to anybody else has to be confirmed, naming them. The server refuses
+  // the send without it — this is the half the sender can act on, and it is the
+  // same function on both sides so they cannot disagree about who is still
+  // outstanding. See docs/card-message-guardrails-plan.md.
+  const acknowledgedNames = namesAcknowledgedFor(acknowledged, selectedDesignId);
+  const namesOutstanding = preflight
+    ? unacknowledgedNames(preflight.namedByHand, acknowledgedNames)
+    : [];
+
+  function onAcknowledgeName(name: string, confirmed: boolean) {
+    if (!selectedDesignId) return;
+    const kept = acknowledgedNames.filter(
+      (held) => held.trim().toLowerCase() !== name.trim().toLowerCase(),
+    );
+    setAcknowledged({
+      designId: selectedDesignId,
+      names: confirmed ? [...kept, name] : kept,
+    });
+  }
+
   // A send-timing choice is required — the picker starts unselected so it can't
   // be left on a default (ADR 0159).
   const canPay =
@@ -462,7 +510,8 @@ export function BulkSendClient({
     !!selectedDesignId &&
     sendable.length > 0 &&
     effectiveTiming !== null &&
-    !artworkBlocksSend;
+    !artworkBlocksSend &&
+    namesOutstanding.length === 0;
   // Scale-adaptive routing (ADR 0118): a large run pays through the deliberate
   // "Review & confirm" gate; a small run keeps the frictionless one-tap pay.
   const largeRun = sendable.length >= REVIEW_ALL_THRESHOLD;
@@ -797,6 +846,8 @@ export function BulkSendClient({
               error={preflightError}
               editDesignHref={editHref(selectedDesign.id)}
               onFixAddress={fixAddressFor}
+              acknowledgedNames={acknowledgedNames}
+              onAcknowledgeName={onAcknowledgeName}
             />
           )}
         </div>

@@ -383,3 +383,95 @@ export function salutationNames(document: DesignDocument): LiteralName[] {
   }
   return found;
 }
+
+/** A person a design names by hand, and how wrong that is for this send. */
+export interface NamedByHand {
+  face: DesignPage["name"];
+  name: string;
+  /**
+   * The cards in this send that are *not* for this person — the number that
+   * makes the finding worth reading. "1 of 1" is a card addressed to the wrong
+   * person; "7 of 7" is a batch carrying somebody else's name.
+   */
+  wrongFor: number;
+  /**
+   * Whether an interactive send has to be acknowledged before it will go
+   * through, rather than merely warned about.
+   *
+   * True only for a **salutation** that is wrong for at least one card. A
+   * salutation is the precise half of this check: `SALUTATION_LINE` matches a
+   * line that is nothing but a greeting naming one person, so it cannot fire on
+   * prose. A recipient's first name found loose in the text cannot make that
+   * claim — a card to Joy that says "wishing you joy" is not a mistake — so it
+   * stays a warning and never blocks. See docs/card-message-guardrails-plan.md
+   * (D3).
+   */
+  mustAcknowledge: boolean;
+}
+
+/** Compare names the way a person would: ignoring case and surrounding space. */
+function sameName(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * Everyone this document names by hand, checked against who the send is going
+ * to.
+ *
+ * Found two ways, because they catch different mistakes. A salutation names one
+ * person outright and needs nothing to compare against, so it finds "Dear alex,"
+ * on a send containing no Alex at all. A recipient's own first name appearing
+ * literally is wrong for every *other* card in the same send, which only a
+ * comparison can see.
+ *
+ * One row per person per face, however many ways they were found — and the row
+ * remembers whether a salutation is what found them, because only that half is
+ * precise enough to stand in the way of a send.
+ *
+ * Shared by the pre-send check and the send itself so the two can never disagree
+ * about who has been named.
+ */
+export function namedByHandInDocument(
+  document: DesignDocument,
+  firstNames: readonly string[],
+): NamedByHand[] {
+  const keyOf = (finding: LiteralName) => `${finding.face}:${finding.name.trim().toLowerCase()}`;
+  const salutations = salutationNames(document);
+  const fromSalutation = new Set(salutations.map(keyOf));
+
+  const byKey = new Map<string, NamedByHand>();
+  for (const finding of [...salutations, ...literalNamesIn(document, firstNames)]) {
+    const key = keyOf(finding);
+    if (byKey.has(key)) continue;
+    const wrongFor = firstNames.filter((firstName) => !sameName(firstName, finding.name)).length;
+    byKey.set(key, {
+      face: finding.face,
+      name: finding.name,
+      wrongFor,
+      mustAcknowledge: fromSalutation.has(key) && wrongFor > 0,
+    });
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * The names a send still has to own up to: every `mustAcknowledge` finding the
+ * request has not confirmed, deduplicated and in the spelling the card uses.
+ *
+ * Matched on the **name**, not on a flag, so the acknowledgement cannot become a
+ * one-time dismissal: a send confirmed for "Florence" that is then edited to say
+ * "Alex" has confirmed nothing about Alex and is asked again.
+ */
+export function unacknowledgedNames(
+  findings: readonly NamedByHand[],
+  acknowledged: readonly string[] = [],
+): string[] {
+  const outstanding: string[] = [];
+  for (const finding of findings) {
+    if (!finding.mustAcknowledge) continue;
+    if (acknowledged.some((name) => sameName(name, finding.name))) continue;
+    if (outstanding.some((name) => sameName(name, finding.name))) continue;
+    outstanding.push(finding.name);
+  }
+  return outstanding;
+}

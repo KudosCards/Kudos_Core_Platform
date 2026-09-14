@@ -4,8 +4,10 @@ import {
   estimatedTextBox,
   overlapFraction,
   literalNamesIn,
+  namedByHandInDocument,
   OVERLAP_MIN_FRACTION,
   salutationNames,
+  unacknowledgedNames,
   stackedTextInDocument,
   stackedTextOnPage,
 } from "@kudos/shared-types";
@@ -327,6 +329,113 @@ describe("salutationNames", () => {
 
   it("reads an unparseable document as nothing found rather than throwing", () => {
     expect(salutationNames({} as DesignDocument)).toEqual([]);
+  });
+});
+
+describe("namedByHandInDocument", () => {
+  it("counts the cards a hand-typed greeting is wrong for", () => {
+    // Kip McGrath's card: the design still said "To Florence," when it went to
+    // Elise. Two recipients, neither of them Florence, so both are wrong.
+    const document = doc([page("inside-right", [text({ text: "To Florence,\n\nWell done!" })])]);
+
+    expect(namedByHandInDocument(document, ["Elise", "Cole"])).toEqual([
+      { face: "inside-right", name: "Florence", wrongFor: 2, mustAcknowledge: true },
+    ]);
+  });
+
+  it("asks for nothing when everybody in the send has that name", () => {
+    // Two Florences and a card that greets Florence is simply a correct card.
+    const document = doc([page("front", [text({ text: "Dear Florence," })])]);
+
+    expect(namedByHandInDocument(document, ["Florence", "florence"])).toEqual([
+      { face: "front", name: "Florence", wrongFor: 0, mustAcknowledge: false },
+    ]);
+  });
+
+  it("warns about a first name found loose in the text but never blocks on it", () => {
+    // A card to Joy that says "wishing you joy" is not a mistake. This half of
+    // the check reports and stops there — the reason mustAcknowledge exists
+    // rather than the send keying off wrongFor alone.
+    const document = doc([page("inside-right", [text({ text: "Wishing you joy this year" })])]);
+
+    expect(namedByHandInDocument(document, ["Joy", "Elise"])).toEqual([
+      { face: "inside-right", name: "Joy", wrongFor: 1, mustAcknowledge: false },
+    ]);
+  });
+
+  it("blocks when a salutation also appears loose in the text", () => {
+    // Found both ways, one row — and the salutation is what decides, whichever
+    // order the findings arrive in.
+    const document = doc([
+      page("inside-right", [text({ text: "To Florence,\n\nFlorence, you were brilliant" })]),
+    ]);
+
+    expect(namedByHandInDocument(document, ["Florence", "Elise"])).toEqual([
+      { face: "inside-right", name: "Florence", wrongFor: 1, mustAcknowledge: true },
+    ]);
+  });
+
+  it("keeps one row per person per face", () => {
+    const document = doc([
+      page("front", [text({ text: "To Florence," })]),
+      page("inside-right", [
+        text({ text: "To Florence," }),
+        text({ id: "t2", text: "to florence," }),
+      ]),
+    ]);
+
+    expect(namedByHandInDocument(document, ["Elise"]).map((row) => row.face)).toEqual([
+      "front",
+      "inside-right",
+    ]);
+  });
+
+  it("finds a name belonging to nobody in the send at all", () => {
+    // What the recipient list cannot do: "Dear alex," on a send containing no
+    // Alex. Cole Fortes's card.
+    const document = doc([page("inside-right", [text({ text: "Dear alex,\n\nWell done!" })])]);
+
+    expect(namedByHandInDocument(document, ["Cole", "Elise"])).toEqual([
+      { face: "inside-right", name: "alex", wrongFor: 2, mustAcknowledge: true },
+    ]);
+  });
+
+  it("says nothing about a card written the right way", () => {
+    const document = doc([page("inside-right", [text({ text: "To {firstName}\n\nWell done!" })])]);
+
+    expect(namedByHandInDocument(document, ["Elise", "Cole"])).toEqual([]);
+  });
+});
+
+describe("unacknowledgedNames", () => {
+  const finding = (over: Partial<ReturnType<typeof namedByHandInDocument>[number]> = {}) => ({
+    face: "inside-right" as const,
+    name: "Florence",
+    wrongFor: 1,
+    mustAcknowledge: true,
+    ...over,
+  });
+
+  it("asks for the name the card actually says", () => {
+    expect(unacknowledgedNames([finding()])).toEqual(["Florence"]);
+  });
+
+  it("is satisfied by that name however it was typed back", () => {
+    expect(unacknowledgedNames([finding()], ["  florence "])).toEqual([]);
+  });
+
+  it("is not satisfied by acknowledging somebody else", () => {
+    // The whole point of keying on the name: confirm "Florence", edit the design
+    // to say "Alex", and the send has to ask again.
+    expect(unacknowledgedNames([finding({ name: "Alex" })], ["Florence"])).toEqual(["Alex"]);
+  });
+
+  it("ignores findings that only warn", () => {
+    expect(unacknowledgedNames([finding({ mustAcknowledge: false })])).toEqual([]);
+  });
+
+  it("asks once for a name written on two faces", () => {
+    expect(unacknowledgedNames([finding(), finding({ face: "front" })])).toEqual(["Florence"]);
   });
 });
 

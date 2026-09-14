@@ -1,3 +1,4 @@
+import type { NamedByHand } from "./card-content";
 import type { DesignPage } from "./card";
 import type { PricingBreakdown } from "./pricing";
 
@@ -106,17 +107,15 @@ export interface BatchOrderPreflight {
    * People this design names by hand rather than with a merge token, and how
    * many cards in *this* send are going to somebody else.
    *
-   * Found two ways, because they catch different mistakes. A salutation line
-   * ("Dear alex,") names one person unambiguously and needs no list to compare
-   * against, so it finds a name belonging to nobody in the send at all. A
-   * recipient's own first name appearing literally anywhere in the text is wrong
-   * for every *other* card in the same send.
+   * Computed by `namedByHandInDocument`, which the send itself also uses, so the
+   * check a sender reads and the check that stands in their way cannot disagree
+   * about who has been named.
    *
-   * `wrongFor` counts the cards that are not for that person, which is the
-   * number that makes the warning worth reading: "1 of 1" is a card addressed to
-   * the wrong person, "7 of 7" is a batch with somebody else's name on it.
+   * Rows carrying `mustAcknowledge` are the ones an interactive send refuses
+   * until the request names them back; the rest are warnings, as they always
+   * were. See docs/card-message-guardrails-plan.md.
    */
-  namedByHand: { name: string; face: DesignPage["name"]; wrongFor: number }[];
+  namedByHand: NamedByHand[];
 }
 
 /** The sender's timing choice, as the composer's picker reports it. `null` means

@@ -86,7 +86,8 @@ here rather than built.
 
 ## Phases
 
-Each phase is its own PR, merged when green before the next starts.
+Each phase is its own PR, merged when green before the next starts. Phases 1–3
+have landed; Phase 4 is outstanding.
 
 ### Phase 1 — The editor says it when it is typed
 
@@ -113,8 +114,9 @@ for it" is a warning people close.
 
 ### Phase 3 — The send makes them say they know
 
-- When any `namedByHand` finding has `wrongFor > 0`, the send is refused unless
-  the request carries an explicit acknowledgement of that person.
+- When a **salutation** is wrong for at least one card, the send is refused
+  unless the request carries an explicit acknowledgement of that person
+  (`acknowledgeNames`).
 - The pre-send UI presents it as a checkbox naming the person and the count —
   "This says Florence, and 1 of 1 cards is going to somebody else."
 - Interactive sends only (D4).
@@ -122,6 +124,18 @@ for it" is a warning people close.
 **Falsifying check**: the acknowledgement must be keyed to the _name_, not a
 bare boolean. A send acknowledged for "Florence" that is then edited to say
 "Alex" must ask again, or the gate is a one-time dismissal.
+
+**Both interactive paths, not just the bulk one.** The single-card send is the
+flow a school uses one pupil at a time, reusing one saved design — the likeliest
+route to the card that started this — so it carries the same gate, computed in
+the browser against the recipient being typed and enforced on `quick-send` the
+same way. Checking happens before any contact or occasion is created, so a
+refusal leaves nothing behind for the second attempt to trip over.
+
+**Only the salutation half blocks** (D3). `literalNamesIn` still reports, and
+still never refuses: a card to Joy that says "wishing you joy" is not a mistake.
+The distinction is carried on the finding itself as `mustAcknowledge`, decided
+server-side, so the UI cannot drift from the rule it is describing.
 
 ### Phase 4 — Ops can see the whole card
 

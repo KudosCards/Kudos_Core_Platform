@@ -1,6 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { OccasionType, PostageClass } from "@prisma/client";
-import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID, Length, Matches } from "class-validator";
+import {
+  ArrayMaxSize,
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Matches,
+} from "class-validator";
 import { UK_POSTCODE_REGEX } from "../../common/uk-postcode";
 import { BlankToUndefined } from "../../common/transforms";
 
@@ -87,4 +96,14 @@ export class QuickSendDto {
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "deliverBy must be an ISO date (YYYY-MM-DD)" })
   deliverBy?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Names this send has been confirmed for. A design that greets somebody by hand — "Dear Florence," — on a card going to anybody else is refused unless that name appears here. Keyed to the name (case-insensitive), so editing the design to greet a different person asks again rather than reusing an old confirmation.',
+  })
+  @IsOptional()
+  @IsString({ each: true })
+  @ArrayMaxSize(50)
+  acknowledgeNames?: string[];
 }
