@@ -6,6 +6,8 @@ import {
   cropLossPercent,
   cropVerdict,
   revealedCrop,
+  cropLossPerEdgeMm,
+  idealArtworkPixels,
   CARD_HEIGHT,
   CARD_WIDTH,
 } from "@kudos/shared-types";
@@ -239,5 +241,70 @@ describe("revealedCrop", () => {
     const { drawn, printed } = revealedCrop({ width: 0, height: 100 }, CARD);
     expect(drawn).toEqual({ x: 0, y: 0, width: 0, height: 0 });
     expect(printed).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+  });
+});
+
+/**
+ * Turning the fraction into the two things a person can act on: how much card
+ * is being thrown away, and what to export instead.
+ *
+ * "6% of the height" is true and almost useless — nobody briefs a designer in
+ * percentages of an axis. "4.5mm off the top and the bottom, export at
+ * 1240 x 1748" is the same fact in a form somebody can do something about.
+ */
+describe("cropLossPerEdgeMm", () => {
+  it("halves the loss, because a cover-crop takes from both edges", () => {
+    // The catalog's 2:3, on A6: 6% of 148mm is 8.9mm, and it comes off in two
+    // equal slices because the crop is centred.
+    const loss = backgroundCropLoss({ width: 1000, height: 1500 });
+    expect(cropLossPerEdgeMm(loss, "A6")).toBeCloseTo(4.49, 1);
+  });
+
+  it("measures against the axis that is actually being trimmed", () => {
+    // A landscape source loses width, so the number is millimetres off the
+    // *sides* — 105mm of card, not 148. Measured against the wrong axis this
+    // would overstate the loss by 40%.
+    const landscape = backgroundCropLoss({ width: 1500, height: 1000 });
+    expect(cropLossPerEdgeMm(landscape, "A6")).toBeCloseTo((105 * 0.5271) / 2, 1);
+  });
+
+  it("scales with the card, since a fraction of A5 is more millimetres", () => {
+    const loss = backgroundCropLoss({ width: 1000, height: 1500 });
+    expect(cropLossPerEdgeMm(loss, "A5")).toBeGreaterThan(cropLossPerEdgeMm(loss, "A6"));
+    expect(cropLossPerEdgeMm(loss, "A5") / cropLossPerEdgeMm(loss, "A6")).toBeCloseTo(210 / 148, 3);
+  });
+
+  it("is nothing when nothing is lost", () => {
+    expect(cropLossPerEdgeMm({ widthLost: 0, heightLost: 0 }, "A6")).toBe(0);
+  });
+});
+
+describe("idealArtworkPixels", () => {
+  it("is the card's own proportion at the print target, so one export clears both checks", () => {
+    // The single number to give an artwork supplier. It has to satisfy the crop
+    // (right shape) and the resolution pre-flight (enough pixels) at once, or
+    // fixing one reintroduces the other.
+    // A6 at 300dpi exactly. Not the canvas-exact 1240 x 1747: that is an
+    // artefact of the canvas being a third of a unit short of the paper, it is
+    // a number no design tool produces, and a supplier would reasonably
+    // "correct" it. The 0.06% it costs is inside the floor.
+    const a6 = idealArtworkPixels("A6");
+    expect(a6).toEqual({ width: 1240, height: 1748 });
+    expect(cropVerdict(backgroundCropLoss(a6))).toBe("ok");
+    expect(cropLossPercent(backgroundCropLoss(a6))).toBe(0);
+  });
+
+  it("is 300dpi at the card's real millimetres", () => {
+    for (const size of ["A6", "A5"] as const) {
+      const { width } = idealArtworkPixels(size);
+      const widthMm = size === "A6" ? 105 : 148;
+      expect(width / (widthMm / 25.4)).toBeCloseTo(300, 0);
+    }
+  });
+
+  it("loses nothing to the crop at either size", () => {
+    for (const size of ["A6", "A5"] as const) {
+      expect(cropVerdict(backgroundCropLoss(idealArtworkPixels(size)))).toBe("ok");
+    }
   });
 });

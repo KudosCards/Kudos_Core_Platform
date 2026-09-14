@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DEFAULT_CARD_SIZE, cardSizeDimensions, idealArtworkPixels } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 
@@ -30,6 +31,8 @@ interface CatalogSyncSummary {
     percent: number;
     axis: "width" | "height";
     verdict: "noticeable" | "heavy";
+    width?: number;
+    height?: number;
   }[];
   fieldMapping?: {
     fields: Record<string, CatalogFieldResolution>;
@@ -37,6 +40,55 @@ interface CatalogSyncSummary {
   };
   /** Whether the public marketing library was refreshed too — see below. */
   published?: { outcome: "published" | "not-configured" | "failed"; reason?: string };
+}
+
+/**
+ * Above this many designs losing the identical amount, the names stop being the
+ * useful part and start being a wall to scroll past — the group line already
+ * says everything that can be acted on.
+ */
+const NAMED_GROUP_LIMIT = 8;
+
+type CroppedDesign = NonNullable<CatalogSyncSummary["cropped"]>[number];
+
+/**
+ * Collapse designs losing the same amount off the same axis into one row.
+ *
+ * The first real sync returned 207 of 217 designs at an identical "6% of the
+ * height" — one wrong export preset, applied 207 times. Printed one per line
+ * that reads as 207 separate problems and gets scrolled past; printed once it
+ * reads as the single thing it is.
+ */
+function groupCropped(cropped: CroppedDesign[]): {
+  key: string;
+  percent: number;
+  axis: string;
+  verdict: string;
+  source: string | null;
+  designs: CroppedDesign[];
+}[] {
+  const groups = new Map<string, CroppedDesign[]>();
+  for (const design of cropped) {
+    const key = `${design.percent}:${design.axis}`;
+    groups.set(key, [...(groups.get(key) ?? []), design]);
+  }
+  return Array.from(groups.entries()).map(([key, designs]) => {
+    const first = designs[0]!;
+    // Only claim a source shape when the whole group shares one; a group can
+    // hold several sizes that happen to round to the same percentage.
+    const sizes = new Set(
+      designs.map((d) => (d.width && d.height ? `${d.width} × ${d.height}` : "")),
+    );
+    return {
+      key,
+      percent: first.percent,
+      axis: first.axis,
+      verdict: designs.some((d) => d.verdict === "heavy") ? "heavy" : "noticeable",
+      source:
+        sizes.size === 1 ? (designs[0]!.width ? `${first.width} × ${first.height}` : null) : null,
+      designs,
+    };
+  });
 }
 
 /** Which logical fields are worth showing, and what to call them. */
@@ -172,31 +224,54 @@ export function CatalogClient({ configured }: { configured: boolean }) {
             </div>
           )}
           {/* Which of our designs are being cut up — a question that had no
-              answer at all until the sync started measuring. A card is 1:1.409
-              and a background fills it, centred and cropped, so a square source
-              loses 29% of its width. Reported, not refused: blocking on a
-              threshold nobody has tested against real artwork risks emptying
-              the catalog, and this is the evidence to decide on.
-              See docs/card-artwork-crop-plan.md. */}
+              answer at all until the sync started measuring, and whose first
+              answer was 207 designs at an identical 6%. That is one wrong export
+              preset applied 207 times, not 207 problems, and a list that prints
+              it 207 times says the opposite. Grouped by what is actually lost;
+              named individually only where the group is small enough for the
+              names to be the useful part. See docs/card-artwork-shape-plan.md. */}
           {summary.cropped && summary.cropped.length > 0 && (
-            <div className="flex flex-col gap-1 border-t border-black/10 pt-2">
+            <div className="flex flex-col gap-2 border-t border-black/10 pt-2">
               <p className="font-medium text-amber-600">
                 Imported, but part of the artwork is cut off:
               </p>
               <p className="text-xs text-foreground/60">
-                A card is 105 × 148 mm and a background fills it edge to edge, centred and cropped —
-                so artwork of any other shape loses its sides or its top and bottom. Re-export at
-                1:1.409 (for example 1050 × 1480) and re-attach in Airtable to keep the whole
-                composition.
+                A card is {cardSizeDimensions(DEFAULT_CARD_SIZE)} and a background fills it edge to
+                edge, centred and cropped — so artwork of any other shape loses its sides or its top
+                and bottom. Re-export at{" "}
+                <span className="font-medium">
+                  {idealArtworkPixels(DEFAULT_CARD_SIZE).width} ×{" "}
+                  {idealArtworkPixels(DEFAULT_CARD_SIZE).height}
+                </span>{" "}
+                and re-attach in Airtable: that is the card’s own proportion at 300dpi, so it clears
+                this check and the resolution check together.
               </p>
-              {summary.cropped.map((c) => (
-                <p key={c.externalId} className="text-xs text-foreground/60">
-                  <span className={c.verdict === "heavy" ? "font-medium text-amber-700" : ""}>
-                    {c.percent}% of the {c.axis}
-                  </span>{" "}
-                  — {c.title}
-                  {c.sku ? ` (${c.sku})` : ""}
-                </p>
+              {groupCropped(summary.cropped).map((group) => (
+                <div key={group.key} className="flex flex-col gap-0.5">
+                  <p className="text-xs">
+                    <span
+                      className={
+                        group.verdict === "heavy"
+                          ? "font-medium text-amber-700"
+                          : "font-medium text-foreground/70"
+                      }
+                    >
+                      {group.designs.length === 1
+                        ? `1 design loses ${group.percent}% of its ${group.axis}`
+                        : `${group.designs.length} designs lose ${group.percent}% of their ${group.axis}`}
+                    </span>
+                    <span className="text-foreground/60">
+                      {group.source ? ` — artwork is ${group.source}` : ""}
+                    </span>
+                  </p>
+                  {group.designs.length <= NAMED_GROUP_LIMIT &&
+                    group.designs.map((c) => (
+                      <p key={c.externalId} className="pl-3 text-xs text-foreground/60">
+                        {c.title}
+                        {c.sku ? ` (${c.sku})` : ""}
+                      </p>
+                    ))}
+                </div>
               ))}
             </div>
           )}

@@ -291,3 +291,52 @@ describe("PrintRunOverlay — showing what will not be printed", () => {
     expect(screen.getByRole("button", { name: "Browser print" })).toBeDisabled();
   });
 });
+
+/**
+ * Phase 2 of docs/card-artwork-shape-plan.md: say it once, in millimetres.
+ *
+ * The run used to warn only at `heavy`, on the argument that a per-card line
+ * appearing on nearly every run gets scrolled past. Then the first real catalog
+ * measurement came back: 207 of 217 designs at an identical 6%. So that
+ * threshold meant saying *nothing at all* about almost every cropped card —
+ * which is not the same thing as avoiding noise.
+ */
+describe("PrintRunOverlay — one line about the crop, in millimetres", () => {
+  it("speaks up about the 6% the catalog actually loses", async () => {
+    // 2:3, the shape of 207 of our 217 designs. Under the old `heavy`-only rule
+    // this screen said nothing whatsoever about it.
+    stubImageLoader({ width: 1000, height: 1500 });
+    renderOverlay();
+
+    expect(await screen.findByText(/4\.5mm off each of the top and bottom/)).toBeInTheDocument();
+    // The remedy, in the only units an artwork brief can use.
+    expect(screen.getByText(/1240 × 1748/)).toBeInTheDocument();
+    // And it points at the view that answers "does that 4.5mm matter?".
+    expect(screen.getByText(/Switch to Full artwork/)).toBeInTheDocument();
+  });
+
+  it("measures off the sides when the sides are what is being trimmed", async () => {
+    // A landscape source loses width, and a card is 105mm that way, not 148.
+    // Measured against the wrong axis this would overstate the loss by 40%.
+    stubImageLoader({ width: 1500, height: 1000 });
+    renderOverlay();
+
+    expect(await screen.findByText(/mm off each side/)).toBeInTheDocument();
+  });
+
+  it("stays calm at 6% and raises its voice at 29%", async () => {
+    // Amber on 95% of runs is amber nobody sees. The tone has to track whether
+    // the composition is really being cut, even though the line itself is
+    // always present.
+    stubImageLoader({ width: 1000, height: 1500 });
+    const { unmount } = renderOverlay();
+    const quiet = await screen.findByText(/cropped to fit the card/);
+    expect(quiet.className).not.toContain("amber");
+    unmount();
+
+    stubImageLoader({ width: 1000, height: 1000 });
+    renderOverlay();
+    const loud = await screen.findByText(/cropped to fit the card/);
+    expect(loud.className).toContain("amber");
+  });
+});
