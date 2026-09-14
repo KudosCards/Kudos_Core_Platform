@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { CatalogPublisherService } from "./catalog-publisher.service";
 import type { CatalogCardRecord, CatalogSource } from "./catalog-source";
+import { isCatalogArtwork } from "@kudos/shared-types";
 import { CatalogSyncService } from "./catalog-sync.service";
 
 /**
@@ -54,6 +55,9 @@ interface UpsertArgs {
   update: Record<string, unknown>;
 }
 
+/** Where Supabase serves a public design asset from. */
+const PUBLIC_BUCKET_URL = "https://x.supabase.co/storage/v1/object/public/design-assets";
+
 interface Harness {
   service: CatalogSyncService;
   upserts: {
@@ -98,7 +102,12 @@ function makeService(
       updateBucket: jest.fn().mockResolvedValue({ error: null }),
       from: () => ({
         upload: jest.fn().mockResolvedValue({ error: null }),
-        getPublicUrl: (path: string) => ({ data: { publicUrl: `https://cdn.test/${path}` } }),
+        // Shaped like a real Supabase public URL, bucket segment and all —
+        // `isCatalogArtwork` reads that path back, so a looser stub would let
+        // the check pass here and fail in production.
+        getPublicUrl: (path: string) => ({
+          data: { publicUrl: `${PUBLIC_BUCKET_URL}/${path}` },
+        }),
       }),
     },
   } as unknown as SupabaseClient;
@@ -122,6 +131,19 @@ function makeService(
 }
 
 describe("CatalogSyncService — measuring artwork at the door", () => {
+  it("stores catalog artwork where isCatalogArtwork will recognise it", async () => {
+    // The editor decides whose problem a crop is by reading this path back. If
+    // the sync ever wrote somewhere else, every member would start being told to
+    // re-export artwork they have never seen.
+    const square = await png(1000, 1000);
+    const { service, upserts } = makeService([record("rec1", "Happy Tulips")], () => square);
+
+    await service.sync();
+
+    const url = (upserts[0]?.update as { thumbnailUrl: string }).thumbnailUrl;
+    expect(isCatalogArtwork(url)).toBe(true);
+  });
+
   it("stores the artwork's own pixel size on the design", async () => {
     const square = await png(1000, 1000);
     const { service, upserts } = makeService([record("rec1", "Happy Tulips")], () => square);
@@ -195,7 +217,13 @@ describe("CatalogSyncService — measuring artwork at the door", () => {
       () => "download-fails",
       // Already has artwork stored, so the sync falls back to it rather than
       // treating this as a failed import.
-      [{ externalId: "rec1", thumbnailUrl: "https://cdn.test/catalog/rec1.png", isActive: true }],
+      [
+        {
+          externalId: "rec1",
+          thumbnailUrl: `${PUBLIC_BUCKET_URL}/catalog/rec1.png`,
+          isActive: true,
+        },
+      ],
     );
 
     const summary = await service.sync();
