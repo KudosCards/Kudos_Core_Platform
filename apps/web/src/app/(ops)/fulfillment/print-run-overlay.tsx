@@ -7,7 +7,10 @@ import {
   CARD_SIZES,
   faceAssetUrls,
   cardSizeLabel,
+  backgroundCropLoss,
   collectPrintImageTargets,
+  cropLossPercent,
+  cropVerdict,
   DEFAULT_CARD_SIZE,
   fittedCardMm,
   imagePrintDpi,
@@ -111,6 +114,24 @@ function mostDemandingImageTargets(
   return map;
 }
 
+/**
+ * The background images in a run, by url.
+ *
+ * Only a *background* is cover-cropped: an image element is drawn to its own box
+ * (`doc.image(..., { width, height })` server-side, an explicit width/height on
+ * the Konva node in the browser), so it scales rather than loses its edges.
+ * Reporting a crop on one would be reporting something that is not happening.
+ */
+function backgroundUrls(cards: PrintRunCard[], size: CardSize): Set<string> {
+  const urls = new Set<string>();
+  for (const card of cards) {
+    for (const target of collectPrintImageTargets(card.document, size)) {
+      if (target.where === "background") urls.add(target.assetUrl);
+    }
+  }
+  return urls;
+}
+
 /** Load an image's natural pixel size, or null if it can't be loaded (a load
  * failure shouldn't produce a false low-res warning). */
 function loadNaturalSize(url: string): Promise<{ width: number; height: number } | null> {
@@ -146,18 +167,40 @@ export function PrintRunOverlay({
   // Pre-flight: how many source images are too low-resolution for print at this
   // size (null while checking). See docs/adr/0162.
   const [lowResCount, setLowResCount] = useState<number | null>(null);
+  // Pre-flight: background artwork whose shape means a real part of it is cut to
+  // reach the card's proportion. Only `heavy` is counted — a few per cent is a
+  // trim rather than a loss, and a line that appears on nearly every run is one
+  // an operator scrolls past, which costs as much as never showing it. The
+  // smaller losses are the customer's to see, in the editor, where they can
+  // still act on them. See docs/card-artwork-crop-plan.md.
+  const [cropped, setCropped] = useState<{ count: number; worstPercent: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const targets = mostDemandingImageTargets(cards, size);
+    const backgrounds = backgroundUrls(cards, size);
     void (async () => {
-      const flags = await Promise.all(
+      // One load per unique url, answering both questions. They are different
+      // questions — enough pixels, and the right shape — but the measurement
+      // they need is the same.
+      const findings = await Promise.all(
         Array.from(targets.entries()).map(async ([url, printed]) => {
           const natural = await loadNaturalSize(url);
-          return natural !== null && isLowPrintDpi(imagePrintDpi(natural, printed));
+          if (natural === null) return { lowRes: false, cropPercent: 0 };
+          const loss = backgrounds.has(url) ? backgroundCropLoss(natural) : null;
+          return {
+            lowRes: isLowPrintDpi(imagePrintDpi(natural, printed)),
+            cropPercent: loss && cropVerdict(loss) === "heavy" ? cropLossPercent(loss) : 0,
+          };
         }),
       );
-      if (!cancelled) setLowResCount(flags.filter(Boolean).length);
+      if (cancelled) return;
+      setLowResCount(findings.filter((f) => f.lowRes).length);
+      const heavy = findings.filter((f) => f.cropPercent > 0);
+      setCropped({
+        count: heavy.length,
+        worstPercent: heavy.reduce((worst, f) => Math.max(worst, f.cropPercent), 0),
+      });
     })();
     return () => {
       cancelled = true;
@@ -302,6 +345,14 @@ export function PrintRunOverlay({
             may look soft — consider a higher-resolution source.
           </p>
         )}
+        {cropped !== null && cropped.count > 0 && (
+          <p className="order-last basis-full text-sm text-amber-700" role="status">
+            ⚠ {cropped.count} background image{cropped.count === 1 ? "" : "s"} in this run{" "}
+            {cropped.count === 1 ? "is" : "are"} being cropped to fit the card — up to{" "}
+            {cropped.worstPercent}% of the artwork is not printed. Artwork fits with nothing lost at
+            the card&rsquo;s own proportion, 1:1.409.
+          </p>
+        )}
         <div className="flex items-center gap-3">
           {/* A5 / A6 size picker — changes the page size live so the preview is
               exactly what prints. */}
@@ -417,7 +468,7 @@ export function PrintRunOverlay({
                 with no sign of it. Phase 2 of docs/card-artwork-crop-plan.md is
                 where that gets said, and where this button stops being
                 back-only. */}
-            {entry.face === "back" && (
+            {faceAssetUrls(entry.document, entry.face).length > 0 && (
               <div className="flex flex-wrap justify-center gap-2 print:hidden">
                 {faceAssetUrls(entry.document, entry.face).map((assetUrl, i, all) => (
                   <button
