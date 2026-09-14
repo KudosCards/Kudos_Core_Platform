@@ -274,6 +274,11 @@ export function DesignEditorClient({
   // warning about one tile at a time would badly understate it.
   const [reservedFooterOverlap, setReservedFooterOverlap] = useState(false);
 
+  // Pairs of text on the active face written on top of each other. Page-level
+  // like the strip check above, and for the same reason: the case this exists
+  // for is a whole message left behind, not one tile out of place.
+  const [stackedTextPairs, setStackedTextPairs] = useState(0);
+
   // Natural pixel sizes of placed images, keyed by asset URL — measured on demand
   // so we can warn when an image is too low-resolution to print sharply at the
   // size it's placed (docs/adr/0162).
@@ -1380,6 +1385,7 @@ export function DesignEditorClient({
             onDeselect={() => selectElement(null)}
             onSelectedOverflowChange={setSelectedOverflow}
             onReservedFooterOverlapChange={setReservedFooterOverlap}
+            onStackedTextChange={setStackedTextPairs}
           />
           {/* Always on while the back is open, not only once something strays into
               the strip: a customer should know the rule before they lay anything
@@ -1410,6 +1416,17 @@ export function DesignEditorClient({
               ) : (
                 <>Something on this face reaches below the dashed line and won’t be printed.</>
               )}
+            </p>
+          )}
+          {/* Any face, not just the back. A card went out carrying two messages
+              — the recipient's and somebody else's — because a new message was
+              written beside the old one rather than over it, and nothing said so
+              until it had been printed and posted. Here is the one place where
+              it costs nothing to fix. See docs/card-content-preflight-plan.md. */}
+          {stackedTextPairs > 0 && (
+            <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Two pieces of text on this face are written on top of each other and will print that
+              way. If one of them is an older message, delete it.
             </p>
           )}
         </div>

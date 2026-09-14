@@ -136,6 +136,16 @@ batch. Two checks, two different mistakes.
   safe-area and reserved-footer warnings. This is the only surface where it costs
   the customer nothing to fix.
 
+**How it measures, and why that differs from phase 2.** The canvas reads the
+_rendered_ Konva nodes, exactly as the reserved-strip check already does, because
+a text element's real height depends on wrapping and on which font has loaded.
+The pre-send check has to estimate those boxes from the stored document, because
+a server has nothing else. What the two share is the **rule** —
+`overlapFraction` and `OVERLAP_MIN_FRACTION` — not the measurement. Sharing the
+measurement is impossible; sharing the rule is what stops them quietly
+disagreeing about what "overlapping" means, which is the failure ADR 0242 names
+and would be a poor thing to reintroduce three phases into fixing it.
+
 ### Phase 4 — Ops can read the card
 
 - Show the card's text content in the order cockpit, from its own
