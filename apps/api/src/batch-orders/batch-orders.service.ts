@@ -198,6 +198,27 @@ interface OrderReleaseResult {
 /** Nothing claimed, so nothing found and nothing to undo. */
 const EMPTY_RELEASE: OrderReleaseResult = { clickAndDropOrderIds: [], raced: [] };
 
+/**
+ * The card states an artwork correction is allowed from.
+ *
+ * `printed` is the first status where ink is on paper — past it the stored
+ * artwork and the physical card would disagree, and nothing would show it.
+ * `in_progress` is still safe: the queue's own next action from there is "Mark
+ * printed", so the sheet has not been run yet.
+ */
+export const RESYNCABLE_JOB_STATUSES: FulfillmentJobStatus[] = ["pending", "in_progress"];
+
+/** What one artwork correction did. */
+export interface CardArtworkResync {
+  orderRecipientId: string;
+  recipientName: string;
+  savedDesignId: string;
+  savedDesignName: string;
+  /** False when the card already matched its design — said plainly rather than
+   *  reported as a change that did nothing. */
+  changed: boolean;
+}
+
 @Injectable()
 export class BatchOrdersService {
   private readonly logger = new Logger(BatchOrdersService.name);
@@ -1603,6 +1624,106 @@ export class BatchOrdersService {
    * Idempotent. A second run finds each card already carrying its superseding
    * link and reports it unchanged rather than searching for another occasion.
    */
+  /**
+   * Re-copy one card's artwork from the design it was made with.
+   *
+   * The escape hatch that phase 2 owes ops. Editing a design used to reach
+   * every order that had ever used it — which is the defect — and it was also
+   * how a wrong card got corrected before printing. Taking the first away
+   * without replacing the second would leave an operator looking at a card they
+   * can see is wrong and no way to fix it.
+   *
+   * So the correction is still available, and now it is deliberate: one card at
+   * a time, named in the audit log, by a super admin. A design edit has no
+   * invisible consequences; this has visible ones.
+   *
+   * Refused once the card has been printed. `printed` is the first status where
+   * ink is on paper, and past it the stored artwork and the physical card would
+   * disagree — which is a worse failure than the one this fixes, because
+   * nothing would show it.
+   *
+   * Serializable, because the race it loses is exactly the harm: an operator
+   * re-syncing while another marks the card printed would change the artwork
+   * after the sheet came off the printer.
+   *
+   * See docs/order-artwork-plan.md.
+   */
+  async resyncCardArtwork(
+    actorUserId: string,
+    orderRecipientId: string,
+  ): Promise<CardArtworkResync> {
+    return runSerializable(this.prisma, async (tx): Promise<CardArtworkResync> => {
+      const card = await tx.orderRecipient.findUnique({
+        where: { id: orderRecipientId },
+        select: {
+          documentSnapshot: true,
+          savedDesignId: true,
+          batchOrder: { select: { accountId: true } },
+          fulfillmentJob: { select: { status: true } },
+          recipient: { select: { firstName: true, lastName: true } },
+          savedDesign: { select: { name: true, document: true } },
+        },
+      });
+      if (!card) {
+        throw new NotFoundException("Card not found");
+      }
+
+      const jobStatus = card.fulfillmentJob?.status ?? null;
+      if (jobStatus !== null && !RESYNCABLE_JOB_STATUSES.includes(jobStatus)) {
+        throw new ConflictException(
+          `This card is already "${jobStatus}" — its artwork can only be corrected before it is printed.`,
+        );
+      }
+
+      // Defence in depth, and honestly labelled as such: every writer of a
+      // design's document goes through SavedDesignsService, and all three that
+      // touch it validate first, so a stored design is printable by
+      // construction and this cannot fire today. It is here because order
+      // creation does the same thing for the same reason — the day a design
+      // arrives by some other route, neither path is the one that let it
+      // through.
+      this.assertDesignPrintable(card.savedDesign.document, card.savedDesign.name);
+
+      // Said plainly rather than reported as a change that did nothing: an
+      // operator pressing this wants to know whether it moved.
+      const changed =
+        JSON.stringify(card.documentSnapshot) !== JSON.stringify(card.savedDesign.document);
+      if (changed) {
+        await tx.orderRecipient.update({
+          where: { id: orderRecipientId },
+          data: { documentSnapshot: card.savedDesign.document as Prisma.InputJsonValue },
+        });
+      }
+
+      await this.audit.record(
+        {
+          accountId: card.batchOrder.accountId,
+          actorUserId,
+          action: "card_artwork_resynced",
+          targetType: "OrderRecipient",
+          targetId: orderRecipientId,
+          // The documents themselves are not recorded — they are large and the
+          // design is still there to read. What is worth keeping is which design
+          // was pulled in, and whether anything moved.
+          metadata: {
+            savedDesignId: card.savedDesignId,
+            savedDesignName: card.savedDesign.name,
+            changed,
+          },
+        },
+        tx,
+      );
+
+      return {
+        orderRecipientId,
+        recipientName: `${card.recipient.firstName} ${card.recipient.lastName}`,
+        savedDesignId: card.savedDesignId,
+        savedDesignName: card.savedDesign.name,
+        changed,
+      };
+    });
+  }
+
   async redateToRecipientOccasions(
     actorUserId: string,
     batchOrderId: string,
