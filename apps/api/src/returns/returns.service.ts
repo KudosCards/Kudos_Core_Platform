@@ -50,6 +50,7 @@ const CASE_INCLUDE = {
     select: {
       id: true,
       savedDesignId: true,
+      documentSnapshot: true,
       occasionId: true,
       postageClass: true,
       batchOrder: { select: { orderNumber: true, accountId: true } },
@@ -568,6 +569,11 @@ export class ReturnsService {
           recipientId: found.recipientId,
           occasionId: found.orderRecipient.occasionId,
           savedDesignId: found.orderRecipient.savedDesignId,
+          // The card that comes back is the card that was sent — copied from
+          // the original line rather than re-read from the design, which may
+          // have moved on in the weeks a return takes. Recovering a returned
+          // card is precisely when you want the same card again.
+          documentSnapshot: found.orderRecipient.documentSnapshot as Prisma.InputJsonValue,
           shippingAddressLine1: address.line1,
           shippingAddressLine2: address.line2,
           shippingAddressCity: address.city,

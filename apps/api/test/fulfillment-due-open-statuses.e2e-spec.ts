@@ -87,6 +87,7 @@ describe("Fulfillment due buckets span the open statuses (e2e)", () => {
         batchOrderId: order.id,
         recipientId: recipient.id,
         savedDesignId: saved.id,
+        documentSnapshot: { version: 1, pages: [{ name: "front", elements: [] }] },
         shippingAddressLine1: "1 Test Street",
         shippingAddressCity: "London",
         shippingAddressPostcode: "SW1A 1AA",

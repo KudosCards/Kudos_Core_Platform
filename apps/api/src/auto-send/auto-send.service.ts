@@ -1,6 +1,6 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ConflictException, Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import type { Occasion, Recipient } from "@prisma/client";
+import { Prisma, type Occasion, type Recipient } from "@prisma/client";
 import { type DesignDocument, linkedMessagePageId } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
@@ -189,7 +189,12 @@ export class AutoSendService {
         where: { id: savedDesignId },
         select: { document: true },
       });
-      const linkedPageId = linkedMessagePageId(design?.document as DesignDocument | null);
+      if (!design) {
+        // The FK guarantees the row, so this is a "cannot happen" — said out
+        // loud rather than sending a card with no artwork in it.
+        throw new ConflictException(`Design ${savedDesignId} is missing`);
+      }
+      const linkedPageId = linkedMessagePageId(design.document as DesignDocument | null);
       let messagePageId: string | null = null;
       if (linkedPageId) {
         const page = await tx.messagePage.findFirst({
@@ -216,6 +221,9 @@ export class AutoSendService {
           recipientId: recipient.id,
           occasionId: occasion.id,
           savedDesignId,
+          // The card's own copy, taken in the same transaction that reads the
+          // design — see docs/order-artwork-plan.md.
+          documentSnapshot: design.document as Prisma.InputJsonValue,
           messagePageId,
           shippingAddressLine1: addressLine1,
           shippingAddressLine2: recipient.addressLine2,

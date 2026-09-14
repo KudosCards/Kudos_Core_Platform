@@ -225,6 +225,7 @@ describe("Occasions (e2e)", () => {
         recipientId,
         occasionId,
         savedDesignId,
+        documentSnapshot: { version: 1, pages: [{ name: "front", elements: [] }] },
         shippingAddressLine1: "1 Test Street",
         shippingAddressCity: "London",
         shippingAddressPostcode: "E1 6AN",
