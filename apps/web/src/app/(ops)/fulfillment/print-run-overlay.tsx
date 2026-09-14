@@ -26,6 +26,7 @@ import { createPortal } from "react-dom";
 import { facesOf } from "@/components/card-preview-lightbox";
 import { CardTextReadout } from "./card-text-readout";
 import { clientApiDownload } from "@/lib/api.client";
+import { loadNaturalSize } from "@/lib/image-natural-size";
 
 const CardFacePreview = dynamic(
   () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
@@ -138,20 +139,6 @@ function backgroundUrls(cards: PrintRunCard[], size: CardSize): Set<string> {
     }
   }
   return urls;
-}
-
-/** Load an image's natural pixel size, or null if it can't be loaded (a load
- * failure shouldn't produce a false low-res warning). */
-function loadNaturalSize(url: string): Promise<{ width: number; height: number } | null> {
-  return new Promise((resolve) => {
-    const img = new window.Image();
-    // No crossOrigin: we only read naturalWidth/Height, which needs no CORS, and
-    // requesting it makes assets served without CORS headers fail to load —
-    // which would silently suppress the low-res warning. Matches the editor path.
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
 }
 
 export function PrintRunOverlay({

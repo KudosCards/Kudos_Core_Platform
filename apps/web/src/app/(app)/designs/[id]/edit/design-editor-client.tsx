@@ -10,7 +10,7 @@ import type {
   SavedDesign,
   ShapeKind,
 } from "@kudos/shared-types";
-import type { LayerMove } from "@kudos/shared-types";
+import type { CropVerdict, LayerMove } from "@kudos/shared-types";
 import {
   BACK_RESERVED_FOOTER_MM,
   CARD_HEIGHT,
@@ -21,6 +21,10 @@ import {
   FONT_CATEGORY_ORDER,
   MERGE_FIELDS,
   PRINT_DPI_TARGET,
+  backgroundCropLoss,
+  cropLossPercent,
+  cropVerdict,
+  croppedAxis,
   elementPrintedSizeMm,
   findDesignBracketTokenMistakes,
   fixDesignBracketTokens,
@@ -38,6 +42,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { createClient } from "@/lib/supabase/client";
+import { loadNaturalSize } from "@/lib/image-natural-size";
+
+/**
+ * What we know about a background image. The states are kept apart rather than
+ * collapsed into "nothing to say", because "not measured yet", "could not read
+ * it" and "measured, and fine" are three different facts and only the last one
+ * licenses silence.
+ */
+type BackgroundCropResult =
+  | { state: "measuring" }
+  | { state: "unreadable" }
+  | { state: "measured"; percent: number; axis: "width" | "height" | null; verdict: CropVerdict };
 
 const DesignCanvas = dynamic(() => import("./design-canvas").then((mod) => mod.DesignCanvas), {
   ssr: false,
@@ -225,6 +241,15 @@ export function DesignEditorClient({
   // image upload above), so only the relevant button shows "Uploading…".
   const [bgUploading, setBgUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // What we found out about a background image, kept beside the url it
+  // describes. Keyed, rather than reset on every face change, so a measurement
+  // that lands after the person has moved on cannot be read as the new face's:
+  // it simply no longer matches. A confident wrong number beside somebody's
+  // artwork is worse than no number. See docs/card-artwork-crop-plan.md.
+  const [backgroundCrop, setBackgroundCrop] = useState<{
+    url: string;
+    result: BackgroundCropResult;
+  } | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   // A save/send failure, kept as a persistent, actionable banner (not a
   // disappearing line) so the member always has a clear next step. `authExpired`
@@ -544,6 +569,44 @@ export function DesignEditorClient({
     : -1;
   const isFrontmost = selectedIndex === page.elements.length - 1;
   const isBackmost = selectedIndex === 0;
+
+  // Measure the active face's background image, so the person laying the card
+  // out is told what a full-bleed centre-crop is about to discard — while it is
+  // still free to fix. Only this face: a warning about artwork on a face they
+  // are not editing is one they cannot act on.
+  const backgroundUrl = page.background?.type === "image" ? page.background.assetUrl : null;
+  useEffect(() => {
+    if (backgroundUrl === null) return;
+    void (async () => {
+      const natural = await loadNaturalSize(backgroundUrl);
+      // A load failure must not produce a warning about artwork we never
+      // measured — but it must not read as "measured and fine" either.
+      if (natural === null) {
+        setBackgroundCrop({ url: backgroundUrl, result: { state: "unreadable" } });
+        return;
+      }
+      const loss = backgroundCropLoss(natural);
+      setBackgroundCrop({
+        url: backgroundUrl,
+        result: {
+          state: "measured",
+          percent: cropLossPercent(loss),
+          axis: croppedAxis(loss),
+          verdict: cropVerdict(loss),
+        },
+      });
+    })();
+  }, [backgroundUrl]);
+
+  /** What this face's background is, as far as we currently know: null when the
+   *  face has no image background, "measuring" until a measurement for *this*
+   *  url has come back, and then what it found. */
+  const faceBackgroundCrop: BackgroundCropResult | null =
+    backgroundUrl === null
+      ? null
+      : backgroundCrop?.url === backgroundUrl
+        ? backgroundCrop.result
+        : { state: "measuring" };
 
   /** Set (or clear) the active page's background fill. */
   function setPageBackground(background: PageBackground | undefined) {
@@ -1434,7 +1497,20 @@ export function DesignEditorClient({
         <aside className="flex w-full flex-col gap-3 rounded-lg border border-black/10 p-4 sm:w-64 lg:sticky lg:top-4 lg:w-72 lg:self-start">
           {/* Page-level background (applies to the active face), independent of
               any element selection. */}
-          <div className="flex flex-col gap-2 border-b border-black/10 pb-3">
+          <div
+            className="flex flex-col gap-2 border-b border-black/10 pb-3"
+            // What we know about this face's background artwork, as state a
+            // person (or a test) can read: none / measuring / unreadable, or the
+            // crop verdict. Silence below means "measured, and fine" — this is
+            // what makes that distinguishable from "has not looked yet".
+            data-background-crop={
+              faceBackgroundCrop === null
+                ? "none"
+                : faceBackgroundCrop.state === "measured"
+                  ? faceBackgroundCrop.verdict
+                  : faceBackgroundCrop.state
+            }
+          >
             <span className="text-sm font-semibold">Background — {activePage}</span>
             <div className="flex gap-1">
               {(
@@ -1482,6 +1558,28 @@ export function DesignEditorClient({
                 Replace background image
               </button>
             )}
+            {/* What a full-bleed centre-crop is about to throw away. A square
+                source — the default output of most illustration tools — loses
+                29% of its width, and until now nothing said so anywhere: not
+                here, not at checkout, not in the print run. Loud only when the
+                composition is really being cut; a few per cent is a trim, worth
+                stating but not worth alarming anyone over. */}
+            {faceBackgroundCrop?.state === "measured" &&
+              faceBackgroundCrop.verdict !== "ok" &&
+              faceBackgroundCrop.axis !== null && (
+                <p
+                  className={`rounded-md px-2 py-1.5 text-xs ${
+                    faceBackgroundCrop.verdict === "heavy"
+                      ? "border border-amber-300 bg-amber-50 text-amber-900"
+                      : "text-foreground/60"
+                  }`}
+                >
+                  {faceBackgroundCrop.percent}% of the {faceBackgroundCrop.axis} of this image will
+                  not be printed. A background fills the card and is centred and cropped to its
+                  shape — artwork proportioned 1:1.409, for example 1050 × 1480, fits with nothing
+                  lost.
+                </p>
+              )}
             <input
               ref={bgFileInputRef}
               type="file"
