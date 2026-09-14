@@ -7,7 +7,8 @@ import { SUPABASE_ADMIN_CLIENT } from "../supabase/supabase-admin.provider";
 import { PlatformNotificationService } from "../platform-notifications/platform-notification.service";
 import { mapWithConcurrency } from "../common/map-with-concurrency";
 import { CAMPAIGN_SWEEP_BUDGET_MS, startFetchBudget } from "../common/fetch-budget";
-import { CAMPAIGN_REFERENCE_PREFIX, WalletService } from "./wallet.service";
+import { runSerializable } from "../common/run-serializable";
+import { CAMPAIGN_REFERENCE_PREFIX, campaignReference, WalletService } from "./wallet.service";
 
 /**
  * Accounts one sweep will consider per campaign per run.
@@ -112,21 +113,27 @@ export class WalletCampaignsService {
         summary.truncated = true;
         break;
       }
-      const exhausted = await this.sweepOne(campaign, summary, budget);
-      if (exhausted) {
+      await this.sweepOne(campaign, summary, budget);
+      if (await this.markExhaustedIfSpent(campaign.id)) {
         summary.exhausted.push(campaign.id);
-        await this.markExhausted(campaign);
       }
     }
     return summary;
   }
 
-  /** One campaign's batch. Returns whether it ran out of budget. */
+  /**
+   * One campaign's batch.
+   *
+   * Stops early once a credit comes back `budget_exhausted`, because the rest
+   * of the batch would only be refused for the same reason. Whether the
+   * campaign is *actually* spent is not decided here — see
+   * `markExhaustedIfSpent`.
+   */
   private async sweepOne(
     campaign: WalletCampaign,
     summary: CampaignSweepSummary,
     budget: { expired: () => boolean },
-  ): Promise<boolean> {
+  ): Promise<void> {
     const candidates = await this.prisma.account.findMany({
       where: {
         createdAt: { gte: campaign.startsAt, lt: campaign.endsAt },
@@ -178,33 +185,64 @@ export class WalletCampaignsService {
         this.logger.error(`Campaign ${campaign.id} could not credit ${account.id}: ${reason}`);
       }
     });
-    return exhausted;
   }
 
   /**
-   * A campaign that has spent its budget stops, and says so.
+   * A campaign that can no longer afford its next credit stops, and says so.
    *
-   * Status-guarded on `live`, so two overlapping sweeps cannot both move it and
-   * file the alert twice. `notifyAllAdmins` is keyed on the campaign id as
-   * well, which is the belt to that braces: a campaign that silently stops is a
-   * campaign nobody knows has stopped.
+   * Derived from the ledger at the moment of the write, not from what the batch
+   * happened to observe. Inferring it from a refused credit meant exhaustion
+   * could only ever be noticed by an account arriving *after* the money ran
+   * out: spend a budget exactly and the campaign sat at `live` with no alert
+   * until the next eligible sign-up, which for a £100 campaign at £5 a head is
+   * the gap between the twentieth account and the twenty-first. It also meant
+   * the decision was taken from a campaign row read at the start of a batch
+   * that may have run for minutes — an operator topping the budget up during it
+   * would have had the campaign stopped underneath them.
+   *
+   * Serializable and re-read, so the status, the budget and the spend it is
+   * compared against all come from the same instant. Status-guarded on `live`,
+   * so two overlapping sweeps cannot both move it and file the alert twice; the
+   * notification is keyed on the campaign id as well, which is the belt to that
+   * braces.
+   *
+   * Returns whether this call is the one that stopped it.
    */
-  private async markExhausted(campaign: WalletCampaign): Promise<void> {
-    const { count } = await this.prisma.walletCampaign.updateMany({
-      where: { id: campaign.id, status: "live" },
-      data: { status: "exhausted" },
+  private async markExhaustedIfSpent(campaignId: string): Promise<boolean> {
+    const stopped = await runSerializable(this.prisma, async (tx) => {
+      const campaign = await tx.walletCampaign.findUnique({ where: { id: campaignId } });
+      if (!campaign || campaign.status !== "live") return null;
+
+      const { _sum } = await tx.walletLedgerEntry.aggregate({
+        where: { reference: campaignReference(campaign.id) },
+        _sum: { amountMinor: true },
+      });
+      const spent = _sum.amountMinor ?? 0;
+      // Room for one more credit is room: the campaign is spent when it can no
+      // longer pay the amount it promises, not when it hits the number exactly.
+      if (spent + campaign.amountMinor <= campaign.budgetMinor) return null;
+
+      await tx.walletCampaign.update({
+        where: { id: campaign.id },
+        data: { status: "exhausted" },
+      });
+      return campaign;
     });
-    if (count === 0) return;
+    if (!stopped) return false;
+
+    // After the commit, and from the row the decision was actually made on — an
+    // alert about money that quotes a budget nobody set is worse than no alert.
     await this.platformNotifications.notifyAllAdmins({
       kind: "wallet_campaign_exhausted",
-      title: `Wallet campaign "${campaign.name}" has spent its budget`,
+      title: `Wallet campaign "${stopped.name}" has spent its budget`,
       body:
-        `The campaign stopped crediting at its £${(campaign.budgetMinor / 100).toFixed(2)} ` +
+        `The campaign stopped crediting at its £${(stopped.budgetMinor / 100).toFixed(2)} ` +
         `budget. New sign-ups in its window are no longer being credited.`,
       href: "/admin",
       entityType: "WalletCampaign",
-      entityId: campaign.id,
+      entityId: stopped.id,
     });
+    return true;
   }
 
   /**
