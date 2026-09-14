@@ -11,6 +11,7 @@ import {
   printedCropLoss,
 } from "@kudos/shared-types";
 import { CatalogSyncService } from "./catalog-sync.service";
+import { CatalogCropGateService } from "./catalog-crop-gate.service";
 
 /**
  * The catalog sync is the door.
@@ -66,6 +67,8 @@ const PUBLIC_BUCKET_URL = "https://x.supabase.co/storage/v1/object/public/design
 
 interface Harness {
   service: CatalogSyncService;
+  /** The storage upload, so a test can assert refused artwork is never stored. */
+  upload: jest.Mock;
   upserts: {
     externalId: string;
     create: Record<string, unknown>;
@@ -78,6 +81,9 @@ function makeService(
   bytesFor: (url: string) => Buffer | "download-fails" | "not-an-image",
   /** Designs already in the library, as `findMany` would return them. */
   existing: { externalId: string; thumbnailUrl: string; isActive: boolean }[] = [],
+  /** Whether the sync refuses artwork that would be cropped. Off in production
+   *  until the catalog is re-exported, so off here unless a test says otherwise. */
+  cropGateEnabled = false,
 ): Harness {
   const upserts: Harness["upserts"] = [];
 
@@ -102,12 +108,13 @@ function makeService(
     fetchActiveCards: () => Promise.resolve(records),
   };
 
+  const upload = jest.fn().mockResolvedValue({ error: null });
   const storage = {
     storage: {
       createBucket: jest.fn().mockResolvedValue({ error: null }),
       updateBucket: jest.fn().mockResolvedValue({ error: null }),
       from: () => ({
-        upload: jest.fn().mockResolvedValue({ error: null }),
+        upload,
         // Shaped like a real Supabase public URL, bucket segment and all —
         // `isCatalogArtwork` reads that path back, so a looser stub would let
         // the check pass here and fail in production.
@@ -133,7 +140,16 @@ function makeService(
     return Promise.resolve(new Response(new Uint8Array(body), { status: 200 }));
   }) as unknown as typeof fetch;
 
-  return { service: new CatalogSyncService(prisma, source, storage, publisher), upserts };
+  const cropGate = new CatalogCropGateService({
+    get: jest.fn().mockResolvedValue(cropGateEnabled ? "true" : "false"),
+    set: jest.fn(),
+  } as unknown as ConstructorParameters<typeof CatalogCropGateService>[0]);
+
+  return {
+    service: new CatalogSyncService(prisma, source, storage, publisher, cropGate),
+    upserts,
+    upload,
+  };
 }
 
 describe("CatalogSyncService — measuring artwork at the door", () => {
@@ -258,5 +274,127 @@ describe("CatalogSyncService — measuring artwork at the door", () => {
     expect(summary.cropped[0]?.percent).toBe(cropLossPercent(expected));
     // And that is the 6% the catalog actually shows, on 207 of 217 designs.
     expect(summary.cropped[0]?.percent).toBe(6);
+  });
+});
+
+/**
+ * The gate closed — what happens on the day the catalog has been re-exported
+ * and ops switch it on. See docs/card-artwork-shape-plan.md, Phase 5.
+ */
+describe("CatalogSyncService — refusing cropped artwork", () => {
+  it("lets the catalog in untouched while the gate is open", async () => {
+    // Today. 207 of 217 designs are 2:3, so a gate that refused by default
+    // would empty the library on the next sync.
+    const twoThree = await png(1000, 1500);
+    const { service, upload } = makeService([record("rec1", "Happy Tulips")], () => twoThree);
+
+    const summary = await service.sync();
+
+    expect(summary.imagesCopied).toBe(1);
+    expect(summary.artworkFailed).toHaveLength(0);
+    expect(upload).toHaveBeenCalled();
+  });
+
+  it("refuses the 6% crop once it is closed, and says what to export", async () => {
+    const twoThree = await png(1000, 1500);
+    const { service } = makeService(
+      [record("rec1", "Happy Tulips")],
+      () => twoThree,
+      [
+        {
+          externalId: "rec1",
+          thumbnailUrl: `${PUBLIC_BUCKET_URL}/catalog/rec1.png`,
+          isActive: true,
+        },
+      ],
+      true,
+    );
+
+    const summary = await service.sync();
+
+    expect(summary.artworkFailed).toHaveLength(1);
+    expect(summary.artworkFailed[0]?.reason).toContain("6% of its height");
+    expect(summary.artworkFailed[0]?.reason).toContain("1240 × 1748");
+  });
+
+  it("does not store artwork it has refused", async () => {
+    // The refusal happens before the upload. Writing a file we have just
+    // declined would leave the bucket holding artwork nothing references.
+    const twoThree = await png(1000, 1500);
+    const { service, upload } = makeService(
+      [record("rec1", "Happy Tulips")],
+      () => twoThree,
+      [
+        {
+          externalId: "rec1",
+          thumbnailUrl: `${PUBLIC_BUCKET_URL}/catalog/rec1.png`,
+          isActive: true,
+        },
+      ],
+      true,
+    );
+
+    await service.sync();
+
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("keeps a card's existing artwork and still updates its text", async () => {
+    // A refusal is not a reason to take a card off the shelf. The name, SKU and
+    // inside message are current; only the new picture was declined.
+    const twoThree = await png(1000, 1500);
+    const { service, upserts } = makeService(
+      [record("rec1", "Renamed Tulips")],
+      () => twoThree,
+      [
+        {
+          externalId: "rec1",
+          thumbnailUrl: `${PUBLIC_BUCKET_URL}/catalog/rec1.png`,
+          isActive: true,
+        },
+      ],
+      true,
+    );
+
+    const summary = await service.sync();
+
+    expect(summary.errors).toHaveLength(0);
+    expect(upserts[0]?.update).toMatchObject({
+      name: "Renamed Tulips",
+      thumbnailUrl: `${PUBLIC_BUCKET_URL}/catalog/rec1.png`,
+      isActive: true,
+    });
+    // And the size measured for the artwork still on the card is not blanked.
+    expect(upserts[0]?.update).not.toHaveProperty("artworkWidth");
+  });
+
+  it("keeps a brand-new card out rather than importing it with no artwork", async () => {
+    // Nothing to fall back on, so this is a genuine import failure — the same
+    // shape as a card whose artwork could not be copied at all.
+    const twoThree = await png(1000, 1500);
+    const { service, upserts } = makeService(
+      [record("rec1", "Happy Tulips")],
+      () => twoThree,
+      [],
+      true,
+    );
+
+    const summary = await service.sync();
+
+    expect(summary.errors).toHaveLength(1);
+    expect(summary.errors[0]?.reason).toContain("would be cropped off");
+    expect(upserts).toHaveLength(0);
+  });
+
+  it("admits artwork at the size it asks for", async () => {
+    // Or the gate would be a trap: closing it could never be satisfied.
+    const ideal = await png(1240, 1748);
+    const { service } = makeService([record("rec1", "Made For Us")], () => ideal, [], true);
+
+    const summary = await service.sync();
+
+    expect(summary.imagesCopied).toBe(1);
+    expect(summary.errors).toHaveLength(0);
+    expect(summary.cropped).toHaveLength(0);
   });
 });

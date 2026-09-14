@@ -4,6 +4,7 @@ import { useState } from "react";
 import { DEFAULT_CARD_SIZE, cardSizeDimensions, idealArtworkPixels } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { SuperAdminEditable } from "../ops-role";
 
 interface CatalogFieldResolution {
   /** The Airtable column the sync read, or null if none matched. */
@@ -101,10 +102,38 @@ const FIELD_LABELS: Record<string, string> = {
   status: "Status",
 };
 
-export function CatalogClient({ configured }: { configured: boolean }) {
+export function CatalogClient({
+  configured,
+  cropGateEnabled = false,
+}: {
+  configured: boolean;
+  cropGateEnabled?: boolean;
+}) {
   const [syncing, setSyncing] = useState(false);
   const [summary, setSummary] = useState<CatalogSyncSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [gateOn, setGateOn] = useState(cropGateEnabled);
+  const [gateSaving, setGateSaving] = useState(false);
+
+  async function setGate(enabled: boolean) {
+    setError(null);
+    setGateSaving(true);
+    // Optimistic, then corrected by what the server says it stored — a toggle
+    // that lags a round trip invites a second click and a race.
+    setGateOn(enabled);
+    try {
+      const result = await clientApiFetch<{ enabled: boolean }>("/catalog/crop-gate", {
+        method: "PUT",
+        body: JSON.stringify({ enabled }),
+      });
+      setGateOn(result.enabled);
+    } catch (gateError) {
+      setGateOn(!enabled);
+      setError(gateError instanceof ApiError ? gateError.message : "Could not change the setting");
+    } finally {
+      setGateSaving(false);
+    }
+  }
 
   async function refresh() {
     setError(null);
@@ -138,6 +167,35 @@ export function CatalogClient({ configured }: { configured: boolean }) {
           <code>AIRTABLE_BASE_ID</code> on the API service, then reload this page.
         </p>
       )}
+
+      {/* The refusal the crop plan reserved for the sync. Off until the catalog
+          is re-exported at 1240 × 1748 — closing it today would reject 207 of
+          217 designs and empty the library — and on afterwards, so the problem
+          cannot come back. A runtime setting precisely so there is no window
+          where the gate is on and the artwork is not ready.
+          See docs/card-artwork-shape-plan.md, Phase 5. */}
+      <div className="flex flex-col gap-2 rounded-lg border border-black/10 p-4">
+        <span className="text-sm font-semibold">Refuse artwork that would be cropped</span>
+        <p className="text-xs text-foreground/60">
+          When this is on, a card whose artwork is not the card’s shape is not imported: it keeps
+          the artwork it already had and the sync says so. Leave it off until every design has been
+          re-exported at {idealArtworkPixels(DEFAULT_CARD_SIZE).width} ×{" "}
+          {idealArtworkPixels(DEFAULT_CARD_SIZE).height} — switching it on before then would turn
+          away almost the whole catalog.
+        </p>
+        <SuperAdminEditable>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={gateOn}
+              disabled={gateSaving}
+              onChange={(e) => void setGate(e.target.checked)}
+              className="h-4 w-4"
+            />
+            {gateOn ? "On — cropped artwork is refused" : "Off — cropped artwork is imported"}
+          </label>
+        </SuperAdminEditable>
+      </div>
 
       <div>
         <button

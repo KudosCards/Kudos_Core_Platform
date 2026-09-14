@@ -32,6 +32,11 @@ const CONTROLLERS = [
   join(__dirname, "..", "wallet", "wallet-campaigns.controller.ts"),
   // The operator team itself — the other half of what ADR 0040 names.
   join(__dirname, "admin-team.controller.ts"),
+  // The catalog crop gate: one switch that decides whether artwork is accepted
+  // into the shop every tenant buys from. Closing it while the catalog is still
+  // 2:3 would refuse 207 of 217 designs, which is a decision about the business
+  // rather than a routine ops action. See docs/card-artwork-shape-plan.md.
+  join(__dirname, "..", "catalog", "catalog.controller.ts"),
 ];
 
 /**
@@ -43,6 +48,10 @@ const CONTROLLERS = [
  */
 const EXEMPT = new Map([
   ["admin-team.controller.ts:37", "the sign-in bootstrap — see the route's own comment"],
+  // Pulling the catalog from Airtable is ops work, not a platform setting: it
+  // imports what Airtable already says is live and changes no configuration.
+  // Its controller is listed for the crop gate beside it.
+  ["catalog.controller.ts:34", "running a catalog sync is ordinary ops work"],
 ]);
 const MUTATING = /@(Post|Put|Patch|Delete)\(/;
 const GUARD = "@UseGuards(PlatformAdminGuard, SuperAdminGuard)";

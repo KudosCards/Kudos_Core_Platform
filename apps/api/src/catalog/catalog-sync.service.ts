@@ -37,6 +37,7 @@ import {
 } from "./catalog-source";
 import { buildCardDocument } from "./card-document.util";
 import { CatalogPublisherService, type CatalogPublishResult } from "./catalog-publisher.service";
+import { CatalogCropGateService } from "./catalog-crop-gate.service";
 import { mapWithConcurrency } from "../common/map-with-concurrency";
 
 export interface CatalogSyncSummary {
@@ -165,6 +166,7 @@ export class CatalogSyncService {
     @Inject(CATALOG_SOURCE) private readonly source: CatalogSource,
     @Inject(DESIGN_ASSET_STORAGE_CLIENT) private readonly storage: SupabaseClient,
     private readonly publisher: CatalogPublisherService,
+    private readonly cropGate: CatalogCropGateService,
   ) {}
 
   isConfigured(): boolean {
@@ -195,6 +197,10 @@ export class CatalogSyncService {
     // every artwork copy into "Bucket not found". Idempotent — a no-op when it
     // already exists.
     await this.ensureBucket();
+
+    // Read once for the whole run, so a setting flipped mid-sync cannot let
+    // half the catalog through and refuse the other half.
+    const cropGateEnabled = await this.cropGate.isEnabled();
 
     const summary: CatalogSyncSummary = {
       fetched: records.length,
@@ -269,7 +275,9 @@ export class CatalogSyncService {
         let copied: CopiedArtwork | null = null;
         let artworkFailure: string | null = null;
         try {
-          copied = await this.copyImage(record.externalId, record.frontImage);
+          copied = await this.copyImage(record.externalId, record.frontImage, (natural) =>
+            this.cropGate.refusalReason(natural, cropGateEnabled),
+          );
         } catch (error) {
           artworkFailure = error instanceof Error ? error.message : "Unknown error";
         }
@@ -470,6 +478,9 @@ export class CatalogSyncService {
   private async copyImage(
     externalId: string,
     image: NonNullable<CatalogCardRecord["frontImage"]>,
+    /** Why this artwork may not be stored, or null to allow it. Applied before
+     *  the upload, so refused artwork is never written at all. */
+    refuse: (natural: PixelSize) => string | null,
   ): Promise<CopiedArtwork> {
     // The artwork download is a read of a signed Airtable attachment URL, so a
     // rate-limited or briefly-broken response is worth another go rather than
@@ -490,6 +501,17 @@ export class CatalogSyncService {
     // silently start telling members to re-export our artwork.
     const path = `${CATALOG_ASSET_PREFIX}${externalId}.${ext}`;
 
+    // Measured before the upload, not after: artwork the gate refuses must not
+    // be written at all, and the measurement is a local header read either way.
+    const natural = await measurePixels(buffer);
+    const refusal = natural === null ? null : refuse(natural);
+    if (refusal !== null) {
+      // Thrown, so it lands in the same handling as a failed copy: the card
+      // keeps whatever artwork it already had and its text still updates, and
+      // only a brand-new card with nothing to fall back on fails to import.
+      throw new Error(refusal);
+    }
+
     const { error } = await this.storage.storage
       .from(DESIGN_ASSETS_BUCKET)
       .upload(path, buffer, { contentType, upsert: true });
@@ -505,7 +527,7 @@ export class CatalogSyncService {
     const {
       data: { publicUrl },
     } = this.storage.storage.from(DESIGN_ASSETS_BUCKET).getPublicUrl(path);
-    return { url: publicUrl, natural: await measurePixels(buffer) };
+    return { url: publicUrl, natural };
   }
 
   /** Deactivates external-sourced designs no longer present upstream. Skipped

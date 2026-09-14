@@ -1,5 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ApiError } from "@/lib/api";
+import { OpsRoleProvider } from "../ops-role";
 import { CatalogClient } from "./catalog-client";
 
 const clientApiFetch = jest.fn();
@@ -79,8 +81,9 @@ describe("CatalogClient — designs whose artwork is being cut up", () => {
     expect(screen.getByText("Artwork being cropped: 2")).toBeInTheDocument();
     // Say what to do about it, or the list is just bad news. 1240 x 1748 is A6
     // at 300dpi — the one export that clears the crop and the resolution check
-    // together.
-    expect(screen.getByText(/1240 × 1748/)).toBeInTheDocument();
+    // together. Scoped to the cropped section: the crop-gate panel names the
+    // same size, so a bare matcher finds two.
+    expect(screen.getByText(/re-attach in Airtable/)).toHaveTextContent(/1240 × 1748/);
   });
 
   it("collapses a whole catalog losing the same amount into one line", async () => {
@@ -133,5 +136,76 @@ describe("CatalogClient — designs whose artwork is being cut up", () => {
 
     expect(screen.getByText("Artwork being cropped: 0")).toBeInTheDocument();
     expect(screen.queryByText(/part of the artwork is cut off/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The refusal, and the reason it is a switch rather than a rule.
+ *
+ * Closing it today would reject 207 of 217 designs and empty the library. It
+ * exists so that the day the catalog is re-exported, ops can close it and the
+ * problem cannot come back — with no window in between where the gate is on and
+ * the artwork is not ready. See docs/card-artwork-shape-plan.md, Phase 5.
+ */
+describe("CatalogClient — the crop gate", () => {
+  afterEach(() => clientApiFetch.mockReset());
+
+  it("starts from whatever the server says, and says which way round it is", () => {
+    render(<CatalogClient configured cropGateEnabled />);
+    expect(screen.getByLabelText(/cropped artwork is refused/)).toBeChecked();
+  });
+
+  it("is off when the API has not been asked, or has no answer", () => {
+    // An API that predates the gate is the same thing as the gate being open,
+    // and the page must not imply a protection that is not there.
+    render(<CatalogClient configured />);
+    expect(screen.getByLabelText(/cropped artwork is imported/)).not.toBeChecked();
+  });
+
+  it("warns against closing it before the catalog is ready", () => {
+    render(<CatalogClient configured />);
+    expect(screen.getByText(/turn away almost the whole catalog/)).toBeInTheDocument();
+  });
+
+  /** The panel is readable by any operator and changeable only by a super
+   *  admin, so a test that means to click has to say who is clicking. */
+  const asSuperAdmin = () =>
+    render(
+      <OpsRoleProvider role="super_admin">
+        <CatalogClient configured />
+      </OpsRoleProvider>,
+    );
+
+  it("lets an ops operator read the setting without changing it", () => {
+    // Emptying the shop is a decision about the business, not a routine ops
+    // action — but seeing how the catalog is configured is an operator's job.
+    render(<CatalogClient configured />);
+
+    expect(screen.getByRole("checkbox")).toBeDisabled();
+    expect(screen.getByText(/Super admins only/)).toBeInTheDocument();
+  });
+
+  it("stores the change", async () => {
+    clientApiFetch.mockResolvedValue({ enabled: true });
+    asSuperAdmin();
+
+    await userEvent.click(screen.getByRole("checkbox"));
+
+    expect(clientApiFetch).toHaveBeenCalledWith("/catalog/crop-gate", {
+      method: "PUT",
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(await screen.findByLabelText(/cropped artwork is refused/)).toBeChecked();
+  });
+
+  it("puts the switch back if the server refuses", async () => {
+    // A toggle left showing "on" after a failed write is the worst outcome
+    // here: it claims a protection the catalog does not have.
+    clientApiFetch.mockRejectedValue(new ApiError("Nope", 403, null));
+    asSuperAdmin();
+
+    await userEvent.click(screen.getByRole("checkbox"));
+
+    expect(await screen.findByLabelText(/cropped artwork is imported/)).not.toBeChecked();
   });
 });

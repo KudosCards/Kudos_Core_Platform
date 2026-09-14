@@ -15,6 +15,11 @@ export const PLATFORM_SETTING_KEYS = {
   /** The default card size ("A5" | "A6") a print run opens on; ops can override
    * it per run. See docs/adr/0138-print-card-sizes.md. */
   defaultPrintCardSize: "default_print_card_size",
+  /** "true" | "false" — whether the catalog sync refuses artwork that would be
+   * cropped to fit the card. Off until the catalog is re-exported at the card's
+   * proportion; on afterwards, so it cannot regress. See
+   * docs/card-artwork-shape-plan.md. */
+  catalogRejectCroppedArtwork: "catalog_reject_cropped_artwork",
 } as const;
 
 /**
