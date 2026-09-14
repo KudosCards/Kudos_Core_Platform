@@ -22,7 +22,7 @@ import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import type { Paginated } from "../common/paginated";
 import { SeatBillingService, type SeatPriceStatus } from "../billing/seat-billing.service";
 import { DispatchConfigService } from "../dispatch/dispatch-config.service";
-import { BatchOrdersService } from "../batch-orders/batch-orders.service";
+import { BatchOrdersService, type CardArtworkResync } from "../batch-orders/batch-orders.service";
 import { CardSizeConfigService } from "./card-size-config.service";
 import { UpdateSeasonalRulesDto } from "./dto/update-seasonal-rules.dto";
 import { UpdateReminderConfigDto } from "./dto/update-reminder-config.dto";
@@ -127,6 +127,28 @@ export class AdminController {
     @Param("id", ParseUUIDPipe) id: string,
   ): Promise<OccasionRedateSummary> {
     return this.batchOrders.redateToRecipientOccasions(admin.userId, id);
+  }
+
+  /**
+   * Re-copy one card's artwork from the design it was made with.
+   *
+   * The deliberate version of what a design edit used to do by accident. A
+   * saved design is a reusable template, and editing one used to rewrite every
+   * order that had ever used it — the defect in docs/order-artwork-plan.md —
+   * but it was also how a wrong card got corrected before printing. This keeps
+   * the correction and drops the accident: one card, by a super admin, in the
+   * audit log.
+   *
+   * Refused once the card is printed. Safe to press twice: it reports whether
+   * anything actually moved.
+   */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
+  @Post("cards/:orderRecipientId/resync-artwork")
+  resyncCardArtwork(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Param("orderRecipientId", ParseUUIDPipe) orderRecipientId: string,
+  ): Promise<CardArtworkResync> {
+    return this.batchOrders.resyncCardArtwork(admin.userId, orderRecipientId);
   }
 
   @UseGuards(PlatformAdminGuard, SuperAdminGuard)

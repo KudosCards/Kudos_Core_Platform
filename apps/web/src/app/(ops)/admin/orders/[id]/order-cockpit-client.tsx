@@ -144,6 +144,8 @@ export function OrderCockpit({
   const printedIds = lines.flatMap((l) => (l.jobId && l.jobStatus === "printed" ? [l.jobId] : []));
   const postedIds = lines.flatMap((l) => (l.jobId && l.jobStatus === "posted" ? [l.jobId] : []));
   const busy = busyJob !== null || bulkBusy !== null;
+  const [resyncing, setResyncing] = useState<string | null>(null);
+  const [resynced, setResynced] = useState<string | null>(null);
 
   // Mirror the server's guard so the button isn't offered where it would only
   // 409: a paid, not-yet-started order, every card still pending. A printed card
@@ -156,6 +158,38 @@ export function OrderCockpit({
 
   function reportError(e: unknown) {
     setError(e instanceof ApiError ? e.message : "Something went wrong — try again.");
+  }
+
+  /**
+   * Pull this card's artwork from the design it was made with.
+   *
+   * A card prints its own stored copy, so editing the design no longer reaches
+   * it — which is the fix, and which is why this exists: it is the deliberate
+   * version of what a design edit used to do by accident. Correct the design,
+   * then press this on the card that needs it. See docs/order-artwork-plan.md.
+   */
+  async function resyncArtwork(line: AdminOrderLine) {
+    setResyncing(line.orderRecipientId);
+    setError(null);
+    setResynced(null);
+    try {
+      const result = await clientApiFetch<{ changed: boolean; recipientName: string }>(
+        `/admin/cards/${line.orderRecipientId}/resync-artwork`,
+        { method: "POST" },
+      );
+      // "Nothing moved" is the useful answer when it happens — otherwise an
+      // operator presses it again wondering whether it worked.
+      setResynced(
+        result.changed
+          ? `${result.recipientName}'s card now matches its design.`
+          : `${result.recipientName}'s card already matched its design — nothing changed.`,
+      );
+      router.refresh();
+    } catch (e) {
+      reportError(e);
+    } finally {
+      setResyncing(null);
+    }
   }
 
   /** Open the print-run overlay (view + print) for a set of cards. */
@@ -404,6 +438,14 @@ export function OrderCockpit({
         </p>
       )}
 
+      {/* What the correction did, including when it did nothing — an operator
+          who can't tell whether it worked presses it again. */}
+      {resynced && (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {resynced}
+        </p>
+      )}
+
       {/* The re-date report, card by card. Kept on screen until dismissed —
           it's the only record of what the repair actually did, and the
           "left alone" rows are the ones that need a human. */}
@@ -603,6 +645,23 @@ export function OrderCockpit({
                           {rowBusy ? "…" : step.label}
                         </button>
                       )}
+                      {/* Mirrors the server's own rule, so the button isn't
+                          offered where it would only 409: before the sheet is
+                          run, and super-admin only. */}
+                      {isSuperAdmin &&
+                        (line.jobStatus === null ||
+                          line.jobStatus === "pending" ||
+                          line.jobStatus === "in_progress") && (
+                          <button
+                            type="button"
+                            disabled={rowBusy || resyncing !== null}
+                            onClick={() => void resyncArtwork(line)}
+                            title="Re-copy this card's artwork from its design — for a card whose message needs correcting before it prints."
+                            className="rounded-full border border-border px-3 py-1 text-xs hover:bg-foreground/5 disabled:opacity-40"
+                          >
+                            {resyncing === line.orderRecipientId ? "…" : "Refresh artwork"}
+                          </button>
+                        )}
                     </div>
                   </td>
                 </tr>
