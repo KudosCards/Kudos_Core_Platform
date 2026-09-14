@@ -266,6 +266,72 @@ describe("Wallet campaign credit (e2e)", () => {
     expect(_sum.amountMinor).toBe(500);
   });
 
+  it("refuses on the campaign as it stands now, not as the caller read it", async () => {
+    // The sweep reads its campaigns once, then credits up to a batch of
+    // accounts from that one snapshot — minutes of work from a row read at the
+    // start. An operator who presses Pause during that batch has said stop, and
+    // "stop" cannot mean "after another 200 accounts".
+    //
+    // Passing a stale object is not a contrivance to make a race reproducible:
+    // it is precisely what the sweep does on every run.
+    const accountId = await accountCreatedAt(IN_WINDOW);
+    const stale = await campaign();
+    await prisma.walletCampaign.update({ where: { id: stale.id }, data: { status: "paused" } });
+
+    expect(await wallet.creditCampaign(accountId, stale, "buyer@example.com")).toEqual({
+      status: "not_eligible",
+      reason: "campaign_not_live",
+    });
+    expect(await balanceOf(accountId)).toBe(0);
+  });
+
+  it("honours a budget lowered after the caller read the campaign", async () => {
+    // Same staleness, costing money rather than stopping it. The spend is
+    // re-aggregated inside the transaction, so only the budget it is compared
+    // against can be out of date — which is enough on its own to pay out past a
+    // ceiling an operator has already lowered.
+    const accountId = await accountCreatedAt(IN_WINDOW);
+    const stale = await campaign({ amountMinor: 500, budgetMinor: 100_000 });
+    await prisma.walletCampaign.update({
+      where: { id: stale.id },
+      data: { budgetMinor: 0 },
+    });
+
+    expect(await wallet.creditCampaign(accountId, stale, "buyer@example.com")).toEqual({
+      status: "budget_exhausted",
+    });
+    expect(await balanceOf(accountId)).toBe(0);
+  });
+
+  it("credits the amount the campaign carries now, not the one the caller held", async () => {
+    // `update` freezes amountMinor once a campaign leaves draft, so today this
+    // can only differ if a row is edited by some other route. Asserted anyway,
+    // because the fix is to read the campaign rather than to trust it, and a
+    // fix that only covers the two fields we happened to think of is the same
+    // mistake one field along.
+    const accountId = await accountCreatedAt(IN_WINDOW);
+    const stale = await campaign({ amountMinor: 500 });
+    await prisma.walletCampaign.update({ where: { id: stale.id }, data: { amountMinor: 250 } });
+
+    expect(await wallet.creditCampaign(accountId, stale, "buyer@example.com")).toEqual({
+      status: "credited",
+      amountMinor: 250,
+    });
+    expect(await balanceOf(accountId)).toBe(250);
+  });
+
+  it("refuses a campaign deleted since the caller read it", async () => {
+    const accountId = await accountCreatedAt(IN_WINDOW);
+    const stale = await campaign();
+    await prisma.walletCampaign.delete({ where: { id: stale.id } });
+
+    expect(await wallet.creditCampaign(accountId, stale, "buyer@example.com")).toEqual({
+      status: "not_eligible",
+      reason: "campaign_missing",
+    });
+    expect(await balanceOf(accountId)).toBe(0);
+  });
+
   it("leaves a campaign credit spendable like any other balance", async () => {
     // It is not a separate pot: the wallet's balance is the sum of the ledger,
     // and a campaign entry is an entry.

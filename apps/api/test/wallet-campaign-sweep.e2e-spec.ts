@@ -244,6 +244,50 @@ describe("Wallet campaign delivery (e2e)", () => {
     expect(_sum.amountMinor).toBe(1_000);
   });
 
+  it("stops a campaign whose budget is spent, without waiting for the next sign-up", async () => {
+    // Exhaustion used to be inferred from a credit being refused, which means
+    // it could only ever be noticed by an account arriving *after* the money
+    // ran out. Spend the budget exactly and the campaign sat at "live" in the
+    // ops panel, with no alert, until somebody else happened to sign up — for a
+    // £100 campaign at £5 a head, from the twentieth account to the
+    // twenty-first, however long that takes.
+    const operator = randomUUID();
+    await prisma.platformAdmin.create({ data: { userId: operator, role: "super_admin" } });
+    await signedUpAt(IN_WINDOW);
+    const c = await campaign({ amountMinor: 500, budgetMinor: 500 });
+
+    const summary = await campaigns.sweep();
+
+    expect(summary.credited).toBe(1);
+    expect(summary.exhausted).toEqual([c.id]);
+    expect((await prisma.walletCampaign.findUniqueOrThrow({ where: { id: c.id } })).status).toBe(
+      "exhausted",
+    );
+    const alert = await prisma.platformNotification.findFirst({
+      where: { kind: "wallet_campaign_exhausted", entityId: c.id },
+    });
+    expect(alert).not.toBeNull();
+  });
+
+  it("leaves a campaign live while it can still afford another credit", async () => {
+    // The discriminator for the test above: deriving exhaustion from the ledger
+    // must not mean stopping a campaign that still has money in it.
+    await signedUpAt(IN_WINDOW);
+    const c = await campaign({ amountMinor: 500, budgetMinor: 1_000 });
+
+    const summary = await campaigns.sweep();
+
+    expect(summary.credited).toBe(1);
+    expect(summary.exhausted).toEqual([]);
+    expect((await prisma.walletCampaign.findUniqueOrThrow({ where: { id: c.id } })).status).toBe(
+      "live",
+    );
+    const alert = await prisma.platformNotification.findFirst({
+      where: { kind: "wallet_campaign_exhausted", entityId: c.id },
+    });
+    expect(alert).toBeNull();
+  });
+
   it("does not credit again once a campaign is exhausted", async () => {
     const c = await campaign({ status: "exhausted" });
     const accountId = await signedUpAt(IN_WINDOW);

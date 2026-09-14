@@ -39,7 +39,12 @@ export type CampaignCreditOutcome =
   | { status: "budget_exhausted" }
   | {
       status: "not_eligible";
-      reason: "campaign_not_live" | "outside_window" | "email_unverified" | "account_missing";
+      reason:
+        | "campaign_not_live"
+        | "campaign_missing"
+        | "outside_window"
+        | "email_unverified"
+        | "account_missing";
     };
 
 /** The prefix every campaign credit's ledger `reference` carries, so one
@@ -412,6 +417,10 @@ export class WalletService {
     campaign: WalletCampaign,
     verifiedEmail: string | null,
   ): Promise<CampaignCreditOutcome> {
+    // Cheap refusals on what the caller already holds, to avoid opening a
+    // transaction for an answer that cannot change to "yes". Neither is
+    // authoritative: `status` is re-read inside, and a campaign that has since
+    // gone live is one the *next* sweep credits.
     if (campaign.status !== "live") {
       return { status: "not_eligible", reason: "campaign_not_live" };
     }
@@ -421,6 +430,26 @@ export class WalletService {
 
     const reference = campaignReference(campaign.id);
     return runSerializable(this.prisma, async (tx): Promise<CampaignCreditOutcome> => {
+      // The campaign as it stands now, not as the caller read it.
+      //
+      // The sweep reads its campaigns once and then works a batch of up to 200
+      // accounts from that one row — minutes of crediting from a snapshot taken
+      // at the start. An operator who presses Pause during that batch has said
+      // stop, and every field that decides this outcome has to come from the
+      // same read as the spend it is compared against, or the money moves on a
+      // decision already reversed.
+      //
+      // Reading it in here is also what makes Serializable do the work: the
+      // read conflicts with the operator's write, so one of the two aborts and
+      // retries against the settled value instead of racing it.
+      const current = await tx.walletCampaign.findUnique({ where: { id: campaign.id } });
+      if (!current) {
+        return { status: "not_eligible", reason: "campaign_missing" };
+      }
+      if (current.status !== "live") {
+        return { status: "not_eligible", reason: "campaign_not_live" };
+      }
+
       const account = await tx.account.findUnique({
         where: { id: accountId },
         select: { createdAt: true },
@@ -429,7 +458,7 @@ export class WalletService {
         return { status: "not_eligible", reason: "account_missing" };
       }
       // Half-open: [startsAt, endsAt).
-      if (account.createdAt < campaign.startsAt || account.createdAt >= campaign.endsAt) {
+      if (account.createdAt < current.startsAt || account.createdAt >= current.endsAt) {
         return { status: "not_eligible", reason: "outside_window" };
       }
 
@@ -446,7 +475,7 @@ export class WalletService {
         _sum: { amountMinor: true },
       });
       const spent = _sum.amountMinor ?? 0;
-      if (spent + campaign.amountMinor > campaign.budgetMinor) {
+      if (spent + current.amountMinor > current.budgetMinor) {
         return { status: "budget_exhausted" };
       }
 
@@ -455,8 +484,8 @@ export class WalletService {
         data: {
           accountId,
           type: "campaign",
-          amountMinor: campaign.amountMinor,
-          balanceAfterMinor: balance + campaign.amountMinor,
+          amountMinor: current.amountMinor,
+          balanceAfterMinor: balance + current.amountMinor,
           reference,
         },
       });
@@ -468,14 +497,14 @@ export class WalletService {
           targetType: "Wallet",
           targetId: accountId,
           metadata: {
-            campaignId: campaign.id,
-            campaignName: campaign.name,
-            amountMinor: campaign.amountMinor,
+            campaignId: current.id,
+            campaignName: current.name,
+            amountMinor: current.amountMinor,
           },
         },
         tx,
       );
-      return { status: "credited", amountMinor: campaign.amountMinor };
+      return { status: "credited", amountMinor: current.amountMinor };
     });
   }
 
