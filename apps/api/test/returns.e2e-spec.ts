@@ -91,6 +91,7 @@ describe("Returns / RTS (e2e)", () => {
         recipientId: recipient.id,
         occasionId: occasion?.id,
         savedDesignId,
+        documentSnapshot: { version: 1, pages: [{ name: "front", elements: [] }] },
         shippingAddressLine1: "1 Old Road",
         shippingAddressCity: "Leeds",
         shippingAddressPostcode: "LS1 1AA",

@@ -1033,13 +1033,18 @@ export class BatchOrdersService {
       const designIds = [
         ...new Set(occasions.map((o) => o.savedDesignId).filter((id): id is string => id !== null)),
       ];
+      // The same read serves two purposes: the printability check, and the copy
+      // each card keeps. Taken here, inside the transaction that consumes the
+      // occasions, so what is checked is exactly what is stored.
+      const documentsById = new Map<string, Prisma.JsonValue>();
       if (designIds.length > 0) {
         const designs = await tx.savedDesign.findMany({
           where: { id: { in: designIds }, accountId },
-          select: { name: true, document: true },
+          select: { id: true, name: true, document: true },
         });
         for (const design of designs) {
           this.assertDesignPrintable(design.document, design.name);
+          documentsById.set(design.id, design.document);
         }
       }
 
@@ -1070,11 +1075,24 @@ export class BatchOrdersService {
             `Occasion ${line.occasionId} is missing a recipient or design`,
           );
         }
+        // A card prints its own copy, not the design's current state. The
+        // design is a reusable template an account edits between sends; a
+        // pointer to it made every past order follow along. See
+        // docs/order-artwork-plan.md.
+        const documentSnapshot = documentsById.get(occasion.savedDesignId);
+        if (documentSnapshot === undefined) {
+          // Unreachable via the query above (the design ids come from these very
+          // occasions), and worth saying rather than storing an empty card.
+          throw new ConflictException(
+            `Occasion ${line.occasionId}'s design is not available on this account`,
+          );
+        }
         return {
           batchOrderId: "", // set after the order is created
           recipientId: occasion.recipientId,
           occasionId: occasion.id,
           savedDesignId: occasion.savedDesignId,
+          documentSnapshot: documentSnapshot as Prisma.InputJsonValue,
           messagePageId: line.messagePageId ?? null,
           shippingAddressLine1: line.shippingAddressLine1,
           shippingAddressLine2: line.shippingAddressLine2 ?? null,

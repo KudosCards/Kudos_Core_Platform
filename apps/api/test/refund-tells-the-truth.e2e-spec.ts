@@ -111,6 +111,7 @@ describe("A refund tells the truth about what it could not stop (e2e)", () => {
         batchOrderId: order.id,
         recipientId: recipient.id,
         savedDesignId: (saved.body as { id: string }).id,
+        documentSnapshot: { version: 1, pages: [{ name: "front", elements: [] }] },
         status: "queued",
         dispatchOption: "asap",
         postageClass: "second_class",

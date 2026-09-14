@@ -174,6 +174,7 @@ describe("Account deletion (e2e)", () => {
         batchOrderId: order.id,
         recipientId: recipient.id,
         savedDesignId: design.id,
+        documentSnapshot: { version: 1, pages: [{ name: "front", elements: [] }] },
         shippingAddressLine1: "1 Navy Way",
         shippingAddressCity: "London",
         shippingAddressPostcode: "SW1A 1AA",
