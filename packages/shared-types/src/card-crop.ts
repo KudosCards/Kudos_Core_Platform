@@ -19,7 +19,8 @@
  * See docs/card-artwork-crop-plan.md.
  */
 
-import { CARD_HEIGHT, CARD_WIDTH } from "./design-layout";
+import { CARD_HEIGHT, CARD_WIDTH, coverCrop } from "./design-layout";
+
 // The same "an image's natural size" the resolution pre-flight uses. One
 // definition, so a caller can hand the same measurement to both questions.
 import type { PixelSize } from "./print-quality";
@@ -109,4 +110,63 @@ export function cropLossPercent(loss: CropLoss): number {
 export function croppedAxis(loss: CropLoss): "width" | "height" | null {
   if (loss.widthLost <= 0 && loss.heightLost <= 0) return null;
   return loss.widthLost >= loss.heightLost ? "width" : "height";
+}
+
+/** A rectangle in the coordinate space of the box being drawn into. */
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Where to draw the whole of a piece of artwork inside `box`, and which part of
+ * that drawing actually reaches the card.
+ *
+ * A cropped render is the one view guaranteed not to contain the answer to
+ * "does the discarded 4.46mm matter on this card?" — the part in question is
+ * the part that is gone. So the reveal contains the source rather than covering
+ * it: the whole image, shrunk to fit, with the printed rectangle marked inside
+ * it. `printed` is exactly `coverCrop` mapped into that drawing, so the band a
+ * person sees and the percentage they are told come from the same arithmetic.
+ *
+ * Both rectangles are uniformly scaled from the source, so the card's own
+ * content can be drawn into `printed` without distorting.
+ *
+ * See docs/card-artwork-shape-plan.md, Phase 1.
+ */
+export interface RevealedCrop {
+  /** The full source, fitted inside the box and centred. */
+  drawn: CropRect;
+  /** The sub-rectangle of `drawn` that survives the crop and prints. */
+  printed: CropRect;
+}
+
+const EMPTY_RECT: CropRect = { x: 0, y: 0, width: 0, height: 0 };
+
+/** Pure. A degenerate size draws nothing rather than dividing by zero. */
+export function revealedCrop(natural: PixelSize, box: PixelSize): RevealedCrop {
+  if (natural.width <= 0 || natural.height <= 0 || box.width <= 0 || box.height <= 0) {
+    return { drawn: { ...EMPTY_RECT }, printed: { ...EMPTY_RECT } };
+  }
+  // Contain, not cover: the whole source has to be visible, which is the entire
+  // point of the view.
+  const scale = Math.min(box.width / natural.width, box.height / natural.height);
+  const drawn: CropRect = {
+    x: (box.width - natural.width * scale) / 2,
+    y: (box.height - natural.height * scale) / 2,
+    width: natural.width * scale,
+    height: natural.height * scale,
+  };
+  const crop = coverCrop(natural, box);
+  return {
+    drawn,
+    printed: {
+      x: drawn.x + crop.x * scale,
+      y: drawn.y + crop.y * scale,
+      width: crop.width * scale,
+      height: crop.height * scale,
+    },
+  };
 }

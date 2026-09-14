@@ -155,7 +155,7 @@ export function PrintRunOverlay({
   // or is drawn over it (what the customer supplied). Defaults to what prints;
   // "Full artwork" exists because reviewing a full-bleed back is impossible when
   // the hidden part is exactly the part in question. See ADR 0166.
-  const [reservedFooter, setReservedFooter] = useState<"clip" | "reveal">("clip");
+  const [artworkView, setArtworkView] = useState<"as-printed" | "full">("as-printed");
   const [downloading, setDownloading] = useState(false);
   const [artworkBusy, setArtworkBusy] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -168,7 +168,13 @@ export function PrintRunOverlay({
   // an operator scrolls past, which costs as much as never showing it. The
   // smaller losses are the customer's to see, in the editor, where they can
   // still act on them. See docs/card-artwork-crop-plan.md.
-  const [cropped, setCropped] = useState<{ count: number; worstPercent: number } | null>(null);
+  const [cropped, setCropped] = useState<{
+    count: number;
+    worstPercent: number;
+    /** Backgrounds losing anything at all, at any verdict — what decides whether
+     *  there is something for "Full artwork" to reveal. */
+    anyCount: number;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,11 +187,15 @@ export function PrintRunOverlay({
       const findings = await Promise.all(
         Array.from(targets.entries()).map(async ([url, printed]) => {
           const natural = await loadNaturalSize(url);
-          if (natural === null) return { lowRes: false, cropPercent: 0 };
+          if (natural === null) return { lowRes: false, cropPercent: 0, cropped: false };
           const loss = backgrounds.has(url) ? backgroundCropLoss(natural) : null;
           return {
             lowRes: isLowPrintDpi(imagePrintDpi(natural, printed)),
             cropPercent: loss && cropVerdict(loss) === "heavy" ? cropLossPercent(loss) : 0,
+            // Anything the floor does not forgive — the threshold for *offering
+            // to show* somebody the discarded band is lower than the threshold
+            // for interrupting them with a warning about it.
+            cropped: loss !== null && cropVerdict(loss) !== "ok",
           };
         }),
       );
@@ -195,6 +205,7 @@ export function PrintRunOverlay({
       setCropped({
         count: heavy.length,
         worstPercent: heavy.reduce((worst, f) => Math.max(worst, f.cropPercent), 0),
+        anyCount: findings.filter((f) => f.cropped).length,
       });
     })();
     return () => {
@@ -312,6 +323,9 @@ export function PrintRunOverlay({
   // Whether this run has a back face at all — the toggle is meaningless without
   // one, and a dead control invites a support ticket.
   const hasBack = faces.some((entry) => entry.face === "back");
+  // Something for "Full artwork" to show: a back whose reserved strip is clipped
+  // out of the render, or a background whose shape is costing it its edges.
+  const hasHiddenArtwork = hasBack || (cropped?.anyCount ?? 0) > 0;
 
   return createPortal(
     <div data-print-run className="fixed inset-0 z-[60] overflow-auto bg-white">
@@ -330,12 +344,13 @@ export function PrintRunOverlay({
             {downloadError}
           </p>
         )}
-        {reservedFooter === "reveal" && (
+        {artworkView === "full" && (
           <p className="order-last basis-full text-sm text-black/70" role="status">
-            Showing the customer’s full uploaded artwork. Everything below the red dashed line falls
-            in the bottom {BACK_RESERVED_FOOTER_MM}mm that is already printed on the card with the
-            Kudos logo and QR, so it will not be printed. The print-ready PDF is unaffected by this
-            view.
+            Showing the whole of each image. The card is drawn inside the red dashed line and
+            everything dimmed outside it is artwork that will not be printed — either the bottom{" "}
+            {BACK_RESERVED_FOOTER_MM}mm of the back, which is already printed with the Kudos logo
+            and QR, or the edges a background loses to fit the card’s shape. The print-ready PDF is
+            unaffected by this view.
           </p>
         )}
         {lowResCount !== null && lowResCount > 0 && (
@@ -391,30 +406,30 @@ export function PrintRunOverlay({
           {/* Back-artwork view. Only offered when the run actually has a back to
               look at, so it isn't a permanently inert control on a run of
               front-only cards. */}
-          {hasBack && (
+          {hasHiddenArtwork && (
             <div
               className="flex items-center overflow-hidden rounded-full border border-black/20"
               role="group"
-              aria-label="Back artwork view"
+              aria-label="Artwork view"
             >
               {(
                 [
-                  ["clip", "As printed"],
-                  ["reveal", "Full artwork"],
+                  ["as-printed", "As printed"],
+                  ["full", "Full artwork"],
                 ] as const
               ).map(([mode, label]) => (
                 <button
                   key={mode}
                   type="button"
-                  onClick={() => setReservedFooter(mode)}
-                  aria-pressed={reservedFooter === mode}
+                  onClick={() => setArtworkView(mode)}
+                  aria-pressed={artworkView === mode}
                   title={
-                    mode === "clip"
-                      ? "Show the back exactly as it will print — the bottom 30mm is pre-printed with the Kudos logo and QR"
-                      : "Show the customer's full uploaded artwork, with the reserved strip marked"
+                    mode === "as-printed"
+                      ? "Show each face exactly as it will print"
+                      : "Show the whole of each image, with everything that will not be printed dimmed"
                   }
                   className={`px-3 py-1.5 text-sm font-medium ${
-                    reservedFooter === mode
+                    artworkView === mode
                       ? "bg-black text-white"
                       : "bg-white text-black hover:bg-black/5"
                   }`}
@@ -436,9 +451,9 @@ export function PrintRunOverlay({
           <button
             type="button"
             onClick={() => window.print()}
-            disabled={reservedFooter === "reveal"}
+            disabled={artworkView === "full"}
             title={
-              reservedFooter === "reveal"
+              artworkView === "full"
                 ? "Switch back to \u201cAs printed\u201d first — browser print rasterises what is on screen, and this view deliberately shows artwork that must not be printed"
                 : "Print from the browser (rasterised, no bleed or crop marks)"
             }
@@ -527,7 +542,7 @@ export function PrintRunOverlay({
                 // The run's chosen trim, so the back's reserved footer lands on
                 // the right line — 30mm is a different fraction of an A5.
                 size={size}
-                reservedFooter={reservedFooter}
+                artworkView={artworkView}
               />
             </div>
           </div>

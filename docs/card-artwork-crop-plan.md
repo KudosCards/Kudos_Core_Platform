@@ -4,6 +4,19 @@ A super admin opened a card in the order cockpit and said the artwork looked cut
 off at the edges. It is. This is what is happening, what is not happening, and
 what we are going to do about it.
 
+> **Corrected by the first real measurement — see
+> [docs/card-artwork-shape-plan.md](./card-artwork-shape-plan.md).**
+>
+> The five phases below shipped, and the very first catalog sync measured 217
+> designs. The diagnosis in this document was **wrong**: there is not one square
+> source in the catalog. **207 of 217 designs are authored at 2:3** and lose
+> **6% of their height** — 4.46mm off the top and 4.46mm off the bottom. Nothing
+> is in the `heavy` bucket at all.
+>
+> The measuring work here is what found that, and the mechanics below are
+> accurate. The guess laid on top of them was not. Read this document for how
+> the crop works; read the shape plan for what is actually wrong and the fix.
+
 ## What is happening
 
 A catalog card's artwork is not an image _element_. `buildCardDocument`
@@ -26,9 +39,15 @@ other shape loses its edges. Computed from our own `coverCrop`:
 | A6 (105:148)   | 100%  | —                       |
 | landscape 3:2  | 47.3% | 26.3%                   |
 
-A square source — the default output of most illustration tools — loses **29% of
-its width**. That is the signature in the screenshot: a composition sliced by a
-hard vertical line at the card edge.
+A square source — the default output of most illustration tools — would lose
+**29% of its width**. When this was written that was assumed to be the signature
+in the screenshot: a composition sliced by a hard vertical line at the card edge.
+
+**Measurement says otherwise.** The catalog contains no square artwork. It is
+authored at 2:3, which loses 6% of its _height_ — top and bottom, not the sides.
+The card in that screenshot (KC-BDAY-GEN-007) is one of the 207. The table above
+is still a correct description of `coverCrop`; the sentence that used to follow
+it was a hypothesis dressed as a finding.
 
 **Nothing measures this.** The pre-flight in the print overlay checks resolution
 only: it will say an image is soft and stay silent while a third of it is
@@ -104,6 +123,11 @@ part of a non-conforming image survives (a crop offset per design) is a real
 feature and a bigger one. If the measurements in Phase 5 say a lot of the catalog
 is heavily cropped, that is the argument for building it, and we will have the
 evidence rather than the hunch.
+
+**Answered.** The evidence came back uniform: one loss, 6% of the height, on 95%
+of the catalog. A feature for choosing _which_ 6% to discard is the wrong answer
+to artwork that should not be discarding any. Ruled out — see the shape plan's
+D6.
 
 ## Phases
 

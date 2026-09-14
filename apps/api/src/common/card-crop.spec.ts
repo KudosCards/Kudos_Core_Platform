@@ -5,6 +5,7 @@ import {
   croppedAxis,
   cropLossPercent,
   cropVerdict,
+  revealedCrop,
   CARD_HEIGHT,
   CARD_WIDTH,
 } from "@kudos/shared-types";
@@ -123,5 +124,120 @@ describe("cropLossPercent", () => {
   it("rounds to something a person reads", () => {
     expect(cropLossPercent(backgroundCropLoss({ width: 1000, height: 1000 }))).toBe(29);
     expect(cropLossPercent({ widthLost: 0, heightLost: 0 })).toBe(0);
+  });
+});
+
+/**
+ * The geometry behind "show me what is being cut off".
+ *
+ * A cropped render is the one view guaranteed not to contain the answer to
+ * "does this 4.46mm matter?" — the missing part is missing. So the reveal draws
+ * the *whole* source, shrunk to fit, and marks the rectangle that actually
+ * prints. Everything a person is shown comes from here, so the picture and the
+ * percentage beside it cannot disagree.
+ *
+ * See docs/card-artwork-shape-plan.md, Phase 1.
+ */
+describe("revealedCrop", () => {
+  const CARD = { width: CARD_WIDTH, height: CARD_HEIGHT };
+  /** The catalog's shape: 2:3, which is 207 of our 217 designs. */
+  const TWO_THREE = { width: 1000, height: 1500 };
+
+  it("fits the whole source inside the box, centred and undistorted", () => {
+    const { drawn } = revealedCrop(TWO_THREE, CARD);
+    // Contained, not covered: the full 2:3 image inside a 450x634 box is as tall
+    // as the box and narrower, with equal slivers either side.
+    expect(drawn.height).toBeCloseTo(CARD_HEIGHT, 6);
+    expect(drawn.width).toBeCloseTo((CARD_HEIGHT * 1000) / 1500, 4);
+    expect(drawn.x).toBeCloseTo((CARD_WIDTH - drawn.width) / 2, 6);
+    expect(drawn.y).toBeCloseTo(0, 6);
+    // Same scale on both axes — a reveal that stretched the artwork would be
+    // lying about the very thing it exists to show.
+    expect(drawn.width / 1000).toBeCloseTo(drawn.height / 1500, 9);
+  });
+
+  // Both orientations, because they exercise different halves of the mapping: a
+  // portrait source is trimmed top and bottom (crop.x is 0) and a landscape one
+  // is trimmed at the sides (crop.y is 0). Tested on only one, half the offset
+  // arithmetic can be deleted with the suite still green.
+  it.each([
+    ["portrait 2:3, trimmed top and bottom", TWO_THREE],
+    ["landscape 3:2, trimmed at the sides", { width: 1500, height: 1000 }],
+  ])("marks a printed window that is exactly the cover-crop — %s", (_name, natural) => {
+    const { drawn, printed } = revealedCrop(natural, CARD);
+    const crop = coverCrop(natural, CARD);
+    const scale = drawn.width / natural.width;
+
+    expect(printed.x).toBeCloseTo(drawn.x + crop.x * scale, 6);
+    expect(printed.y).toBeCloseTo(drawn.y + crop.y * scale, 6);
+    expect(printed.width).toBeCloseTo(crop.width * scale, 6);
+    expect(printed.height).toBeCloseTo(crop.height * scale, 6);
+    // The window must sit inside the drawing, or the reveal is marking artwork
+    // that is not there.
+    expect(printed.x).toBeGreaterThanOrEqual(drawn.x - 1e-9);
+    expect(printed.y).toBeGreaterThanOrEqual(drawn.y - 1e-9);
+  });
+
+  it("keeps the card square with itself, so content drawn inside is never stretched", () => {
+    // The card's own 450x634 is scaled into `printed`; if the two axes scaled
+    // differently every element on the face would distort in the reveal.
+    for (const natural of [
+      TWO_THREE,
+      { width: 1500, height: 1000 },
+      { width: 1000, height: 1000 },
+    ]) {
+      const { printed } = revealedCrop(natural, CARD);
+      expect(printed.width / CARD_WIDTH).toBeCloseTo(printed.height / CARD_HEIGHT, 9);
+    }
+  });
+
+  it("marks a band that is the loss the percentage claims", () => {
+    // The falsifying tie: if the drawn band and the reported number ever drift,
+    // the screen shows one thing and says another.
+    const { drawn, printed } = revealedCrop(TWO_THREE, CARD);
+    const loss = coverCropLoss(TWO_THREE, CARD);
+    expect((drawn.height - printed.height) / drawn.height).toBeCloseTo(loss.heightLost, 9);
+    expect((drawn.width - printed.width) / drawn.width).toBeCloseTo(loss.widthLost, 9);
+  });
+
+  it("puts the 2:3 band at about 4.5mm top and bottom of a 148mm card", () => {
+    const bandMm = (natural: { width: number; height: number }, box: typeof CARD) => {
+      const { drawn, printed } = revealedCrop(natural, box);
+      return ((printed.y - drawn.y) / drawn.height) * 148;
+    };
+
+    // Against the authored canvas, which is the box the reveal actually draws
+    // into.
+    expect(bandMm(TWO_THREE, CARD)).toBeCloseTo(4.495, 2);
+
+    // And against the trim, which is what the press cuts to. These are not the
+    // same number: the canvas is 450 x 634 while 450 x 148/105 is 634.29, so
+    // the two boxes are a third of a unit apart. It comes to 0.03mm an edge —
+    // the 0.063mm total recorded in docs/card-artwork-shape-plan.md, below what
+    // a person or a guillotine can resolve. Pinned in both forms rather than
+    // quietly picking the flattering one.
+    expect(bandMm(TWO_THREE, { width: 105, height: 148 })).toBeCloseTo(4.46, 2);
+  });
+
+  it("has nothing to mark when the artwork is already the card's shape", () => {
+    // 900 x 1268 is 450:634 doubled. The reveal must be a no-op here, or it
+    // would draw a band on every card in the catalog that is already correct.
+    const { drawn, printed } = revealedCrop({ width: 900, height: 1268 }, CARD);
+    expect(printed.x).toBeCloseTo(drawn.x, 6);
+    expect(printed.y).toBeCloseTo(drawn.y, 6);
+    expect(printed.width).toBeCloseTo(drawn.width, 6);
+    expect(printed.height).toBeCloseTo(drawn.height, 6);
+  });
+
+  it("trims the sides, not the top, for a landscape source", () => {
+    const { drawn, printed } = revealedCrop({ width: 1500, height: 1000 }, CARD);
+    expect(printed.height).toBeCloseTo(drawn.height, 6);
+    expect(printed.width).toBeLessThan(drawn.width);
+  });
+
+  it("returns an empty box for a degenerate size rather than dividing by zero", () => {
+    const { drawn, printed } = revealedCrop({ width: 0, height: 100 }, CARD);
+    expect(drawn).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+    expect(printed).toEqual({ x: 0, y: 0, width: 0, height: 0 });
   });
 });
