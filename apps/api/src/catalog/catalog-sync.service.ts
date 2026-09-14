@@ -8,7 +8,17 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { httpRequest } from "../common/http-request";
 import type { Prisma } from "@prisma/client";
-import { deriveCardSlugBase, uniqueCardSlug } from "@kudos/shared-types";
+import sharp from "sharp";
+import {
+  backgroundCropLoss,
+  cropLossPercent,
+  cropVerdict,
+  croppedAxis,
+  deriveCardSlugBase,
+  uniqueCardSlug,
+  type CropVerdict,
+  type PixelSize,
+} from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { DESIGN_ASSET_STORAGE_CLIENT } from "../storage/design-asset-storage.provider";
 import {
@@ -43,6 +53,33 @@ export interface CatalogSyncSummary {
   artworkFailed: { externalId: string; sku: string | null; title: string; reason: string }[];
   /** Per-card failures that kept the card out of the library entirely. */
   errors: { externalId: string; sku: string | null; reason: string }[];
+  /**
+   * Designs whose artwork is not the card's shape, so part of it is cut off to
+   * make it fit — worst first.
+   *
+   * A background is drawn full-bleed and centre-cropped to 1:1.409, which is
+   * correct and undistorted and, until now, silent: a square source loses 29%
+   * of its width and nothing anywhere said so. The sync is the door — the one
+   * place where the artwork is ours and a person can go and fix it before a
+   * customer ever sees it.
+   *
+   * Reports, does not refuse. Blocking on a threshold nobody has tested against
+   * real artwork risks emptying the catalog; this is what produces the evidence
+   * to decide on. See docs/card-artwork-crop-plan.md, D4 and phase 5.
+   *
+   * Only covers artwork actually copied in this run. A card whose new image
+   * could not be stored is in `artworkFailed` and keeps whatever was measured
+   * last time.
+   */
+  cropped: {
+    externalId: string;
+    sku: string | null;
+    title: string;
+    /** Whole-number percentage of the worst axis that is not printed. */
+    percent: number;
+    axis: "width" | "height";
+    verdict: Exclude<CropVerdict, "ok">;
+  }[];
   /**
    * Which upstream columns the sync actually read. Present when the source can
    * report it (Airtable can; a fixed-schema source has nothing to explain).
@@ -164,6 +201,7 @@ export class CatalogSyncService {
       // Overwritten once the rows are written; a run that throws before then
       // never claims to have published.
       published: { outcome: "failed", reason: "Sync did not complete" },
+      cropped: [],
     };
 
     const existing = await this.prisma.cardDesign.findMany({
@@ -221,13 +259,14 @@ export class CatalogSyncService {
         // inside message all silently kept their old values** while the sync
         // reported a clean finish. Renaming a card in Airtable and re-syncing
         // did nothing, for a reason nothing on screen connected to the name.
-        let imageUrl: string | null = null;
+        let copied: CopiedArtwork | null = null;
         let artworkFailure: string | null = null;
         try {
-          imageUrl = await this.copyImage(record.externalId, record.frontImage);
+          copied = await this.copyImage(record.externalId, record.frontImage);
         } catch (error) {
           artworkFailure = error instanceof Error ? error.message : "Unknown error";
         }
+        const imageUrl = copied?.url ?? null;
 
         // Fall back to the artwork already stored for this card, so the rest of
         // the record still updates. Only a card with nothing to show at all —
@@ -249,12 +288,37 @@ export class CatalogSyncService {
           thumbnailUrl,
           document: buildCardDocument(thumbnailUrl, record.insideMessage) as Prisma.InputJsonValue,
           isActive: true,
+          // Only when this run actually copied an image. A card falling back to
+          // its previously stored artwork must keep the size measured for that
+          // artwork, not have it blanked by a copy that never happened.
+          ...(copied
+            ? {
+                artworkWidth: copied.natural?.width ?? null,
+                artworkHeight: copied.natural?.height ?? null,
+              }
+            : {}),
         };
 
         // The slug is assigned once, on create, and deliberately absent from
         // `update`: renaming a card in Airtable must not change a published URL
         // or break the QR codes on cards already in the post (ADR 0163).
         await this.upsertWithSlug(record, data, takenSlugs);
+
+        if (copied?.natural) {
+          const loss = backgroundCropLoss(copied.natural);
+          const verdict = cropVerdict(loss);
+          const axis = croppedAxis(loss);
+          if (verdict !== "ok" && axis !== null) {
+            summary.cropped.push({
+              externalId: record.externalId,
+              sku: record.sku,
+              title: record.title,
+              percent: cropLossPercent(loss),
+              axis,
+              verdict,
+            });
+          }
+        }
 
         if (imageUrl) {
           summary.imagesCopied += 1;
@@ -279,6 +343,10 @@ export class CatalogSyncService {
         summary.errors.push({ externalId: record.externalId, sku: record.sku, reason });
       }
     });
+
+    // Worst first: the list exists to be read from the top and acted on, and
+    // the design losing half its composition is not the one to bury.
+    summary.cropped.sort((a, b) => b.percent - a.percent);
 
     summary.deactivated = await this.deactivateRetired(records);
     summary.fieldMapping = this.source.lastFieldMapping?.() ?? undefined;
@@ -373,12 +441,20 @@ export class CatalogSyncService {
     }
   }
 
-  /** Downloads the Airtable attachment and re-uploads it to our storage under a
-   * stable per-card path, returning the permanent public URL. */
+  /**
+   * Downloads the Airtable attachment, re-uploads it to our storage under a
+   * stable per-card path, and reports the permanent public URL along with the
+   * artwork's own pixel size.
+   *
+   * The size comes free: the bytes are already in a Buffer here, so measuring
+   * costs one local `sharp` metadata read and no extra download. It is the only
+   * moment in the whole pipeline where we hold the original file and know it is
+   * ours to fix.
+   */
   private async copyImage(
     externalId: string,
     image: NonNullable<CatalogCardRecord["frontImage"]>,
-  ): Promise<string> {
+  ): Promise<CopiedArtwork> {
     // The artwork download is a read of a signed Airtable attachment URL, so a
     // rate-limited or briefly-broken response is worth another go rather than
     // failing that card's sync for the night.
@@ -410,7 +486,7 @@ export class CatalogSyncService {
     const {
       data: { publicUrl },
     } = this.storage.storage.from(DESIGN_ASSETS_BUCKET).getPublicUrl(path);
-    return publicUrl;
+    return { url: publicUrl, natural: await measurePixels(buffer) };
   }
 
   /** Deactivates external-sourced designs no longer present upstream. Skipped
@@ -427,6 +503,32 @@ export class CatalogSyncService {
       data: { isActive: false },
     });
     return count;
+  }
+}
+
+/** A stored artwork: where it now lives, and what shape it actually is. */
+interface CopiedArtwork {
+  url: string;
+  /** The source's own pixel size, or null when the file could not be read. */
+  natural: PixelSize | null;
+}
+
+/**
+ * The artwork's pixel dimensions, or null if the bytes cannot be read.
+ *
+ * Deliberately total. The upload has already succeeded by the time this runs,
+ * so a file `sharp` cannot parse — a format it does not know, a truncated
+ * download — must leave the card unmeasured rather than fail a sync that has
+ * otherwise worked. Unmeasured and wrongly-measured are different, and only one
+ * of them is safe.
+ */
+async function measurePixels(buffer: Buffer): Promise<PixelSize | null> {
+  try {
+    // `metadata()` on a Buffer reads the header only — no decode, no pixels.
+    const { width, height } = await sharp(buffer).metadata();
+    return width && height ? { width, height } : null;
+  } catch {
+    return null;
   }
 }
 
