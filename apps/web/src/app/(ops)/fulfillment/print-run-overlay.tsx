@@ -84,7 +84,8 @@ interface PrintFace {
  * A print-ready sheet of an entire run's personalised card faces — **every face
  * a design has** (front, the inside message, and back), one face per physical
  * page at a true A5 or A6 size, so what the operator saves as a PDF is the exact
- * card that gets printed. The design (authored 3:4) is scaled to fit the A-page
+ * card that gets printed. The design is authored at 450x634 — the A6 proportion
+ * since #284, not the 3:4 this used to say — and is scaled to fit the A-page
  * without distortion and centred with a small safe margin; the same millimetre
  * page box is both the on-screen preview and the printed page, so preview =
  * print. Ops picks A5/A6 per run (defaulting to the super-admin default); the
@@ -407,7 +408,15 @@ export function PrintRunOverlay({
             {/* Offered on the back only — for the *file*, which is a different
                 question. The back's render is unfaithful by design (the reserved
                 footer is clipped out of it), so the original upload is the only
-                way to see what the customer actually sent. */}
+                way to see what the customer actually sent.
+                
+                This used to say the back was "the one face whose render is
+                unfaithful", and that stopped being true without anyone noticing:
+                a background is centre-cropped to the card's proportion on every
+                face, so a square source loses 29% of its width off the front
+                with no sign of it. Phase 2 of docs/card-artwork-crop-plan.md is
+                where that gets said, and where this button stops being
+                back-only. */}
             {entry.face === "back" && (
               <div className="flex flex-wrap justify-center gap-2 print:hidden">
                 {faceAssetUrls(entry.document, entry.face).map((assetUrl, i, all) => (

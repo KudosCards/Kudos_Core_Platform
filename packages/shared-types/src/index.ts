@@ -13,6 +13,7 @@ export * from "./key-date";
 export * from "./segment";
 export * from "./pricing";
 export * from "./card-content";
+export * from "./card-crop";
 export * from "./card-format";
 export * from "./preflight";
 export * from "./plans";
