@@ -1,6 +1,7 @@
 import type { DesignDocument, DesignElement, DesignPage, TextElement } from "@kudos/shared-types";
 import {
   estimatedTextBox,
+  overlapFraction,
   literalNamesIn,
   OVERLAP_MIN_FRACTION,
   salutationNames,
@@ -325,5 +326,39 @@ describe("salutationNames", () => {
 
   it("reads an unparseable document as nothing found rather than throwing", () => {
     expect(salutationNames({} as DesignDocument)).toEqual([]);
+  });
+});
+
+describe("overlapFraction", () => {
+  // The rule, separated from where the boxes came from. The pre-send check
+  // estimates them from the document; the editor measures the rendered nodes.
+  // Sharing this is what stops the two disagreeing about what "overlapping"
+  // means. See docs/card-content-preflight-plan.md.
+  const box = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
+
+  it("is zero for boxes that do not touch", () => {
+    expect(overlapFraction(box(0, 0, 10, 10), box(100, 100, 10, 10))).toBe(0);
+  });
+
+  it("is zero for boxes that only share an edge", () => {
+    // Touching is not overlapping — two blocks stacked flush look right on a card.
+    expect(overlapFraction(box(0, 0, 10, 10), box(10, 0, 10, 10))).toBe(0);
+  });
+
+  it("is one when the smaller box sits entirely inside the larger", () => {
+    expect(overlapFraction(box(0, 0, 100, 100), box(10, 10, 10, 10))).toBe(1);
+  });
+
+  it("measures against the smaller box, not the larger", () => {
+    // A short line lost inside a long message is the case that matters. Judged
+    // against the larger box it scores 1%, and the warning never fires.
+    const long = box(0, 0, 100, 100);
+    const short = box(0, 0, 10, 10);
+    expect(overlapFraction(long, short)).toBe(1);
+    expect(overlapFraction(long, short)).toBe(overlapFraction(short, long));
+  });
+
+  it("is zero for a box with no area", () => {
+    expect(overlapFraction(box(0, 0, 0, 10), box(0, 0, 10, 10))).toBe(0);
   });
 });

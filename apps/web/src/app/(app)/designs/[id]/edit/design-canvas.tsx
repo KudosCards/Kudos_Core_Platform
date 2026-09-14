@@ -17,6 +17,8 @@ import type { DesignElement, DesignPage, SnapLine } from "@kudos/shared-types";
 import {
   BACK_RESERVED_FOOTER_MM,
   backReservedFooterTop,
+  overlapFraction,
+  OVERLAP_MIN_FRACTION,
   bakeScale,
   isInBackReservedFooter,
   CARD_HEIGHT,
@@ -398,6 +400,7 @@ export function DesignCanvas({
   onDeselect,
   onSelectedOverflowChange,
   onReservedFooterOverlapChange,
+  onStackedTextChange,
 }: {
   page: DesignPage;
   selectedElementId: string | null;
@@ -414,6 +417,8 @@ export function DesignCanvas({
    * the current selection — a back filled with a grid of adverts is the case
    * this exists for, and every tile in it is equally wrong. */
   onReservedFooterOverlapChange?: (overlapping: boolean) => void;
+  /** How many pairs of text on this face are written on top of each other. */
+  onStackedTextChange?: (pairs: number) => void;
 }) {
   // The card is authored at a fixed 450×634, but on a phone that's wider than
   // the viewport. Scale the whole Stage down to fit the container so the entire
@@ -507,6 +512,44 @@ export function DesignCanvas({
     });
     onReservedFooterOverlapChange(overlaps);
   }, [onReservedFooterOverlapChange, page.elements, reservedTop, fontsTick]);
+
+  // Report pairs of text written on top of each other — a message left behind
+  // when a new one was added, which is how a card went out carrying two.
+  //
+  // Measured from the rendered nodes for the same reason the strip check is: a
+  // text element's height depends on wrapping and on which font has loaded. The
+  // pre-send check has to estimate those boxes from the stored document, because
+  // a server has nothing else; here we can do better. What both share is the
+  // *rule* — `overlapFraction` and `OVERLAP_MIN_FRACTION` — rather than a second
+  // copy of "how much counts as overlapping" that could drift from it.
+  //
+  // Rotated text is skipped: an axis-aligned box is the wrong shape for it, and
+  // a rotated block is a deliberate act of design rather than this accident.
+  useLayoutEffect(() => {
+    if (!onStackedTextChange) return;
+    const layer = layerRef.current;
+    if (!layer) {
+      onStackedTextChange(0);
+      return;
+    }
+    const measurable = new Set(
+      page.elements
+        .filter((el) => el.kind === "text" && el.text.trim() !== "" && !el.rotation)
+        .map((el) => el.id),
+    );
+    const boxes = layer
+      .find(".element")
+      .filter((node) => measurable.has(node.id()))
+      .map((node) => node.getClientRect({ relativeTo: layer }));
+
+    let pairs = 0;
+    for (let i = 0; i < boxes.length; i += 1) {
+      for (let j = i + 1; j < boxes.length; j += 1) {
+        if (overlapFraction(boxes[i]!, boxes[j]!) > OVERLAP_MIN_FRACTION) pairs += 1;
+      }
+    }
+    onStackedTextChange(pairs);
+  }, [onStackedTextChange, page.elements, fontsTick]);
 
   const selected = page.elements.find((el) => el.id === selectedElementId) ?? null;
   // Text + QR scale uniformly (font/box together, square QR). A shape resizes

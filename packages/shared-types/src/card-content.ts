@@ -113,6 +113,26 @@ function intersectionArea(a: Rect, b: Rect): number {
   return overlapX * overlapY;
 }
 
+/**
+ * How much two boxes share, as a fraction of the **smaller** one.
+ *
+ * The rule, separated from where the boxes came from. The pre-send check
+ * estimates them from the stored document because that is all a server has; the
+ * editor measures the rendered Konva nodes, which is strictly better informed.
+ * Sharing this rather than the measurement is what stops the two quietly
+ * disagreeing about what "overlapping" means — the same reason the canvas reuses
+ * `isInBackReservedFooter` instead of keeping its own copy of where the band is.
+ *
+ * Judged against the smaller box on purpose: a short line lost inside a long
+ * message is exactly the case that matters, and measuring against the larger box
+ * would score that at a few per cent and say nothing. Zero for a degenerate box.
+ */
+export function overlapFraction(a: Rect, b: Rect): number {
+  const smaller = Math.min(a.width * a.height, b.width * b.height);
+  if (smaller <= 0) return 0;
+  return intersectionArea(a, b) / smaller;
+}
+
 /** Two text elements found sitting on top of each other, and by how much. */
 export interface StackedText {
   /** The two element ids, in the order they appear in the page. */
@@ -146,9 +166,7 @@ export function stackedTextOnPage(page: DesignPage, cardWidth: number = CARD_WID
     for (let j = i + 1; j < boxed.length; j += 1) {
       const a = boxed[i]!;
       const b = boxed[j]!;
-      const smaller = Math.min(a.box.width * a.box.height, b.box.width * b.box.height);
-      if (smaller <= 0) continue;
-      const fraction = intersectionArea(a.box, b.box) / smaller;
+      const fraction = overlapFraction(a.box, b.box);
       if (fraction > OVERLAP_MIN_FRACTION) {
         found.push({
           ids: [a.element.id, b.element.id],
