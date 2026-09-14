@@ -1,12 +1,18 @@
 "use client";
 
 import type { BatchOrder, DesignDocument, MessagePageSummary } from "@kudos/shared-types";
-import { hasQrElement, linkedMessagePageId } from "@kudos/shared-types";
+import {
+  hasQrElement,
+  linkedMessagePageId,
+  namedByHandInDocument,
+  unacknowledgedNames,
+} from "@kudos/shared-types";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { useLatestOnly } from "@/lib/use-latest-only";
+import { NamedByHandNotice } from "@/components/named-by-hand-notice";
 import { SendTimingPicker, timingDeliverBy, type SendTiming } from "@/components/send-timing";
 
 /** Card price and postage in pence, for the on-screen estimate. The server is
@@ -92,6 +98,9 @@ export function SendCardClient({
   const [timing, setTiming] = useState<SendTiming | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Names the sender has confirmed this card may greet by hand. Kept as typed
+  // and matched case-insensitively, exactly as the server matches them.
+  const [acknowledgedNames, setAcknowledgedNames] = useState<string[]>([]);
 
   // Offer a message page only when the design carries a QR element to point it
   // at — mirroring the bulk composer (ADR 0132). The endpoint already accepts
@@ -183,11 +192,40 @@ export function SendCardClient({
 
   const estimate = CARD_MINOR + (POSTAGE_MINOR[postageClass] ?? 0);
 
+  // Whether this design greets somebody by hand, checked against the person this
+  // card is actually going to. The single-card path is the one a school uses one
+  // pupil at a time, reusing the same saved design — which is how a card came to
+  // greet the previous recipient. Computed with the same function the server
+  // gates on, so the two cannot disagree about who has been named. See
+  // docs/card-message-guardrails-plan.md.
+  const recipientFirstName = form.firstName.trim();
+  const namedByHand = useMemo(
+    () =>
+      namedByHandInDocument(designDocument, recipientFirstName ? [recipientFirstName] : []).filter(
+        (finding) => finding.mustAcknowledge,
+      ),
+    [designDocument, recipientFirstName],
+  );
+  const namesOutstanding = unacknowledgedNames(namedByHand, acknowledgedNames);
+
+  function onAcknowledgeName(name: string, confirmed: boolean) {
+    const kept = acknowledgedNames.filter(
+      (held) => held.trim().toLowerCase() !== name.trim().toLowerCase(),
+    );
+    setAcknowledgedNames(confirmed ? [...kept, name] : kept);
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     if (!timing) {
       setError("Please choose when to send — Send now or Schedule delivery.");
+      return;
+    }
+    if (namesOutstanding.length > 0) {
+      setError(
+        `This card greets ${namesOutstanding.join(", ")} by name. Confirm you want to send it as written, or open the design and use the First name field.`,
+      );
       return;
     }
     const trimmed: AddressForm = {
@@ -217,6 +255,10 @@ export function SendCardClient({
           postageClass,
           // Undefined for "send now"; an arrive-by date for a scheduled send.
           deliverBy: timingDeliverBy(timing),
+          // The names the sender has said they know about. The server decides
+          // which of them it needed; a list on a card that greets nobody by hand
+          // is simply ignored.
+          ...(acknowledgedNames.length > 0 ? { acknowledgeNames: acknowledgedNames } : {}),
           // Attach the chosen message page to this card's QR — only meaningful
           // when the design carries a QR element (ADR 0132).
           ...(designHasQr && messagePageId ? { messagePageId } : {}),
@@ -477,6 +519,17 @@ export function SendCardClient({
             Card price includes VAT. Any plan discount and the exact total are shown on the secure
             payment page.
           </p>
+          {namedByHand.map((finding) => (
+            <NamedByHandNotice
+              key={`named-${finding.face}-${finding.name}`}
+              finding={finding}
+              total={1}
+              editDesignHref={`/designs/${designId}/edit`}
+              acknowledgedNames={acknowledgedNames}
+              onAcknowledgeName={onAcknowledgeName}
+            />
+          ))}
+
           <div className="border-t border-border pt-3">
             <SendTimingPicker postageClass={postageClass} value={timing} onChange={setTiming} />
             {timing === null && (
@@ -487,7 +540,7 @@ export function SendCardClient({
               the sticky bar below so the total + Pay are always in reach. */}
           <button
             type="submit"
-            disabled={busy || !timing}
+            disabled={busy || !timing || namesOutstanding.length > 0}
             className="btn-accent hidden w-full disabled:opacity-50 lg:block"
           >
             {busy
@@ -510,7 +563,7 @@ export function SendCardClient({
           <button
             type="submit"
             form="send-card-form"
-            disabled={busy || !timing}
+            disabled={busy || !timing || namesOutstanding.length > 0}
             className="btn-accent flex-1 whitespace-nowrap disabled:opacity-50"
           >
             {busy

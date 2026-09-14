@@ -504,6 +504,107 @@ describe("Batch orders (e2e)", () => {
       };
     }
 
+    /** Replace the inside-right face of a saved design with these text blocks. */
+    async function setInsideRight(savedDesignId: string, text: string): Promise<void> {
+      const design = await prisma.savedDesign.findUniqueOrThrow({ where: { id: savedDesignId } });
+      const document = design.document as { pages: { name: string }[] };
+      await prisma.savedDesign.update({
+        where: { id: savedDesignId },
+        data: {
+          document: {
+            ...document,
+            pages: document.pages.map((page) =>
+              page.name === "inside-right"
+                ? {
+                    ...page,
+                    elements: [
+                      {
+                        kind: "text",
+                        id: "message",
+                        text,
+                        x: 60,
+                        y: 120,
+                        fontFamily: "Helvetica",
+                        fontSize: 18,
+                        color: "#1a1a1a",
+                        width: 330,
+                      },
+                    ],
+                  }
+                : page,
+            ),
+          } as never,
+        },
+      });
+    }
+
+    it("refuses a card that greets the last person it was sent to", async () => {
+      // The single-card path is the one a school actually uses one pupil at a
+      // time, reusing the same saved design — which is how a card came to greet
+      // the previous recipient. See docs/card-message-guardrails-plan.md.
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      await setInsideRight(savedDesignId, "To Florence,\n\nWell done!");
+
+      const refused = await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send(quickSendBody(savedDesignId))
+        .expect(400);
+      expect((refused.body as { message: string }).message).toContain("Florence");
+      // Refused before the contact was created, so trying again does not leave a
+      // duplicate behind in the address book.
+      expect(await prisma.recipient.count({ where: { accountId } })).toBe(0);
+      expect(await prisma.occasion.count({ where: { accountId } })).toBe(0);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ ...quickSendBody(savedDesignId), acknowledgeNames: ["Florence"] })
+        .expect(201);
+    });
+
+    it("checks the greeting against the contact the card is actually going to", async () => {
+      // With an existing contact picked, the stored record is what the card is
+      // addressed to — so that is the name the greeting has to match, not
+      // whatever the form happens to carry.
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      await setInsideRight(savedDesignId, "To Florence,\n\nWell done!");
+      const contact = await request(app.getHttpServer())
+        .post("/recipients")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          firstName: "Florence",
+          lastName: "Farrow",
+          addressLine1: "1 Test Street",
+          addressCity: "London",
+          addressPostcode: "SW1A 1AA",
+        })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          ...quickSendBody(savedDesignId),
+          recipientId: (contact.body as { id: string }).id,
+        })
+        .expect(201);
+    });
+
+    it("does not stand in the way of a card written with a merge field", async () => {
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      await setInsideRight(savedDesignId, "To {firstName}\n\nWell done!");
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/quick-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send(quickSendBody(savedDesignId))
+        .expect(201);
+    });
+
     it("turns a saved design + recipient into a ready-to-pay draft order in one call", async () => {
       const { token, accountId } = await signUp();
       const savedDesignId = await createSavedDesign(token);
@@ -1690,9 +1791,130 @@ describe("Batch orders (e2e)", () => {
         .expect(201);
 
       const { namedByHand } = flagged.body as {
-        namedByHand: { name: string; face: string; wrongFor: number }[];
+        namedByHand: { name: string; face: string; wrongFor: number; mustAcknowledge: boolean }[];
       };
-      expect(namedByHand).toEqual([{ name: "alex", face: "inside-right", wrongFor: 2 }]);
+      expect(namedByHand).toEqual([
+        { name: "alex", face: "inside-right", wrongFor: 2, mustAcknowledge: true },
+      ]);
+    });
+
+    it("refuses the send until the sender names the person back", async () => {
+      // The gap this closes: every check above is a warning, and a warning can
+      // be clicked past — which is how a card went out greeting the previous
+      // recipient. See docs/card-message-guardrails-plan.md.
+      const { token, accountId } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const elise = await createRecipientWithAddress(token, { firstName: "Elise" });
+
+      await setInsideRightText(savedDesignId, [
+        messageBlock("message", "To Florence,\n\nWell done!\n\nFrom all at Kip x", 120),
+      ]);
+
+      const refused = await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [elise], postageClass: "second_class" })
+        .expect(400);
+      // The refusal carries the name and the count, so an API client that never
+      // ran a preflight still knows what it is being asked.
+      expect((refused.body as { message: string }).message).toContain("Florence");
+      expect((refused.body as { message: string }).message).toContain("1 of 1");
+      // Refused before anything was created, so a second attempt is not left
+      // stepping over an orphaned order or a stranded approved occasion.
+      expect(await prisma.batchOrder.count({ where: { accountId } })).toBe(0);
+      expect(await prisma.occasion.count({ where: { accountId } })).toBe(0);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [elise],
+          postageClass: "second_class",
+          acknowledgeNames: ["Florence"],
+        })
+        .expect(201);
+    });
+
+    it("does not accept an acknowledgement of somebody else", async () => {
+      // Keyed to the name, not to a flag: confirm "Florence", edit the design to
+      // greet Alex, and the send has to ask again. A bare boolean would have
+      // been a one-time dismissal.
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const elise = await createRecipientWithAddress(token, { firstName: "Elise" });
+
+      await setInsideRightText(savedDesignId, [
+        messageBlock("message", "To Alex,\n\nWell done!", 120),
+      ]);
+
+      const refused = await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          savedDesignId,
+          recipientIds: [elise],
+          postageClass: "second_class",
+          acknowledgeNames: ["Florence"],
+        })
+        .expect(400);
+      expect((refused.body as { message: string }).message).toContain("Alex");
+    });
+
+    it("does not stand in the way of a card written the right way", async () => {
+      // The falsifying case. `To {firstName}` is correct, and a gate that stops
+      // it would be trained out of people within a day.
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const elise = await createRecipientWithAddress(token, { firstName: "Elise" });
+
+      await setInsideRightText(savedDesignId, [
+        messageBlock("message", "To {firstName}\n\nWell done!", 120),
+      ]);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [elise], postageClass: "second_class" })
+        .expect(201);
+    });
+
+    it("lets a card greeting its own recipient through unasked", async () => {
+      // "Dear Florence," on a card to Florence is simply a correct card, and a
+      // nickname is why this is a confirmation rather than a refusal at all.
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const florence = await createRecipientWithAddress(token, { firstName: "Florence" });
+
+      await setInsideRightText(savedDesignId, [
+        messageBlock("message", "Dear Florence,\n\nWell done!", 120),
+      ]);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [florence], postageClass: "second_class" })
+        .expect(201);
+    });
+
+    it("never refuses over a first name found loose in the message", async () => {
+      // A card to Joy that says "wishing you joy" is not a mistake. That half of
+      // the check estimates nothing, but it reads prose, so it warns and stops
+      // there (D3).
+      const { token } = await signUp();
+      const savedDesignId = await createSavedDesign(token);
+      const joy = await createRecipientWithAddress(token, { firstName: "Joy" });
+      const elise = await createRecipientWithAddress(token, { firstName: "Elise" });
+
+      await setInsideRightText(savedDesignId, [
+        messageBlock("message", "Wishing you joy this year", 120),
+      ]);
+
+      await request(app.getHttpServer())
+        .post("/batch-orders/bulk-send")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ savedDesignId, recipientIds: [joy, elise], postageClass: "second_class" })
+        .expect(201);
     });
 
     it("says nothing about a design that addresses its recipient with a token", async () => {

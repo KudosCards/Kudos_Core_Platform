@@ -3,6 +3,7 @@
 import type { BatchOrderPreflight, PreflightBucket, PreflightIssue } from "@kudos/shared-types";
 import { BACK_RESERVED_FOOTER_MM } from "@kudos/shared-types";
 import Link from "next/link";
+import { NamedByHandNotice } from "@/components/named-by-hand-notice";
 import { useState } from "react";
 import { MailX, MapPin, PenLine, Repeat, type LucideIcon } from "lucide-react";
 
@@ -169,12 +170,18 @@ export function PreSendCheck({
   error,
   editDesignHref,
   onFixAddress,
+  acknowledgedNames = [],
+  onAcknowledgeName = () => {},
 }: {
   preflight: BatchOrderPreflight | null;
   busy: boolean;
   error: string | null;
   editDesignHref: string;
   onFixAddress: (recipientId: string) => void;
+  /** Names the sender has already confirmed, in whatever spelling they came
+   * back as — matched case-insensitively, as the server matches them. */
+  acknowledgedNames?: string[];
+  onAcknowledgeName?: (name: string, acknowledged: boolean) => void;
 }) {
   // First check in flight, nothing to show yet.
   if (!preflight && busy) {
@@ -297,27 +304,19 @@ export function PreSendCheck({
 
       {/* A person named by hand — the card for Cole Fortes that opened "Dear
           alex,". `wrongFor` is the count that makes it worth reading: how many
-          of these cards are going to somebody else. */}
+          of these cards are going to somebody else, and the rows the server
+          marks `mustAcknowledge` are the ones it will refuse without a
+          confirmation. Shared with the single-card send so one design cannot be
+          described two ways. */}
       {preflight.namedByHand.map((named) => (
-        <div
+        <NamedByHandNotice
           key={`named-${named.face}-${named.name}`}
-          className="flex flex-col gap-1 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-foreground"
-        >
-          <span className="font-medium">
-            This design says “{named.name}” on the {FACE_LABEL[named.face] ?? named.face}
-          </span>
-          <span className="text-xs">
-            {named.wrongFor === 0
-              ? "Everyone in this send has that name, so it may be fine."
-              : `${named.wrongFor} of ${preflight.total} ${
-                  preflight.total === 1 ? "card is" : "cards are"
-                } going to somebody else, and will still say “${named.name}”.`}{" "}
-            <Link href={editDesignHref} className="font-medium underline">
-              Open the design
-            </Link>{" "}
-            and use the First name field so each card is addressed to its own recipient.
-          </span>
-        </div>
+          finding={named}
+          total={preflight.total}
+          editDesignHref={editDesignHref}
+          acknowledgedNames={acknowledgedNames}
+          onAcknowledgeName={onAcknowledgeName}
+        />
       ))}
 
       {!allReady && (

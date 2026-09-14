@@ -2,11 +2,13 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { OccasionType, PostageClass } from "@prisma/client";
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
   IsBoolean,
   IsEnum,
   IsOptional,
+  IsString,
   IsUUID,
   Matches,
   ValidateNested,
@@ -78,6 +80,16 @@ export class BulkSendDto {
   @IsOptional()
   @IsBoolean()
   useOccasionDates?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Names this send has been confirmed for. A design that greets somebody by hand — "Dear Florence," — on a run where at least one card is going to anybody else is refused unless that name appears here. Keyed to the name (case-insensitive), so editing the design to greet a different person asks again rather than reusing an old confirmation. Interactive sends only.',
+  })
+  @IsOptional()
+  @IsString({ each: true })
+  @ArrayMaxSize(50)
+  acknowledgeNames?: string[];
 
   @ApiPropertyOptional({
     type: [BulkSendReconcileDto],
