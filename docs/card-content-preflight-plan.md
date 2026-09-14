@@ -154,6 +154,13 @@ and would be a poor thing to reintroduce three phases into fixing it.
   full loop: see that it is wrong, see what it says, correct the design, re-copy
   it onto the card, all before print.
 
+**Smaller than planned, for a good reason.** `/fulfillment/print-run` has
+returned each card's own `documentSnapshot` as `document` since #430 — the print
+overlay is already holding the text, it simply throws it away and draws a
+picture. So this needs nothing from the server: it lives in the overlay an
+operator already has open, beside the face it describes, and opens itself only
+when something on that face overlaps.
+
 ## What this does not fix
 
 Cards already printed and posted. And cards already damaged but not yet printed

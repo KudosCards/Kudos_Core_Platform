@@ -19,6 +19,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { facesOf } from "@/components/card-preview-lightbox";
+import { CardTextReadout } from "./card-text-readout";
 import { clientApiDownload } from "@/lib/api.client";
 
 const CardFacePreview = dynamic(
@@ -398,10 +399,15 @@ export function PrintRunOverlay({
             <span className="text-xs text-black/60 print:hidden">
               {entry.recipientName} · {entry.savedDesignName} · {FACE_LABEL[entry.face]}
             </span>
-            {/* Offered on the back only. It is the one face whose render is
-                unfaithful by design — the reserved footer is clipped out of it —
-                so it is the one face where "what did they actually send us?"
-                cannot be answered by looking. */}
+            {/* What the card says, in words. The render is the thing under
+                suspicion whenever an operator opens this, so reading it back is
+                not a duplicate of the picture — it is the only representation
+                that can answer "which message is on here twice?". */}
+            <CardTextReadout document={entry.document} face={entry.face} />
+            {/* Offered on the back only — for the *file*, which is a different
+                question. The back's render is unfaithful by design (the reserved
+                footer is clipped out of it), so the original upload is the only
+                way to see what the customer actually sent. */}
             {entry.face === "back" && (
               <div className="flex flex-wrap justify-center gap-2 print:hidden">
                 {faceAssetUrls(entry.document, entry.face).map((assetUrl, i, all) => (
