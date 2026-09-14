@@ -17,8 +17,7 @@ import type { DesignElement, DesignPage, SnapLine } from "@kudos/shared-types";
 import {
   BACK_RESERVED_FOOTER_MM,
   backReservedFooterTop,
-  overlapFraction,
-  OVERLAP_MIN_FRACTION,
+  overlappingBoxes,
   bakeScale,
   isInBackReservedFooter,
   CARD_HEIGHT,
@@ -417,8 +416,12 @@ export function DesignCanvas({
    * the current selection — a back filled with a grid of adverts is the case
    * this exists for, and every tile in it is equally wrong. */
   onReservedFooterOverlapChange?: (overlapping: boolean) => void;
-  /** How many pairs of text on this face are written on top of each other. */
-  onStackedTextChange?: (pairs: number) => void;
+  /** Which pairs of text on this face are written on top of each other, as
+   *  element ids. Ids rather than a count, so the editor can name each block by
+   *  what it says and offer to remove it — a warning whose remedy is "go and
+   *  find it yourself" on a canvas where one block is underneath the other is a
+   *  warning people close. */
+  onStackedTextChange?: (pairs: [string, string][]) => void;
 }) {
   // The card is authored at a fixed 450×634, but on a phone that's wider than
   // the viewport. Scale the whole Stage down to fit the container so the entire
@@ -520,8 +523,8 @@ export function DesignCanvas({
   // text element's height depends on wrapping and on which font has loaded. The
   // pre-send check has to estimate those boxes from the stored document, because
   // a server has nothing else; here we can do better. What both share is the
-  // *rule* — `overlapFraction` and `OVERLAP_MIN_FRACTION` — rather than a second
-  // copy of "how much counts as overlapping" that could drift from it.
+  // *rule* — `overlappingBoxes`, threshold and all — rather than a second copy
+  // of "how much counts as overlapping" that could drift from it.
   //
   // Rotated text is skipped: an axis-aligned box is the wrong shape for it, and
   // a rotated block is a deliberate act of design rather than this accident.
@@ -529,7 +532,7 @@ export function DesignCanvas({
     if (!onStackedTextChange) return;
     const layer = layerRef.current;
     if (!layer) {
-      onStackedTextChange(0);
+      onStackedTextChange([]);
       return;
     }
     const measurable = new Set(
@@ -537,18 +540,14 @@ export function DesignCanvas({
         .filter((el) => el.kind === "text" && el.text.trim() !== "" && !el.rotation)
         .map((el) => el.id),
     );
-    const boxes = layer
+    const measured = layer
       .find(".element")
       .filter((node) => measurable.has(node.id()))
-      .map((node) => node.getClientRect({ relativeTo: layer }));
+      .map((node) => ({ id: node.id(), box: node.getClientRect({ relativeTo: layer }) }));
 
-    let pairs = 0;
-    for (let i = 0; i < boxes.length; i += 1) {
-      for (let j = i + 1; j < boxes.length; j += 1) {
-        if (overlapFraction(boxes[i]!, boxes[j]!) > OVERLAP_MIN_FRACTION) pairs += 1;
-      }
-    }
-    onStackedTextChange(pairs);
+    // The shared rule, not a second copy of it: the pre-send check runs the same
+    // function over boxes it had to estimate from the stored document.
+    onStackedTextChange(overlappingBoxes(measured).map(({ a, b }) => [a.id, b.id]));
   }, [onStackedTextChange, page.elements, fontsTick]);
 
   const selected = page.elements.find((el) => el.id === selectedElementId) ?? null;

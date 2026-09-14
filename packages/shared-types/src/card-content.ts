@@ -151,6 +151,38 @@ export interface StackedText {
  * message is exactly the case that matters, and measuring against the larger box
  * would score that as a few per cent and say nothing.
  */
+/** Two boxes found sitting on each other, and by how much. */
+export interface BoxOverlap<T> {
+  a: T;
+  b: T;
+  /** Fraction of the *smaller* box the two share, 0..1. */
+  fraction: number;
+}
+
+/**
+ * Every pair of boxes overlapping by more than {@link OVERLAP_MIN_FRACTION} of
+ * the smaller one. Each pair once, in the order given. Pure.
+ *
+ * Extracted because two callers need it from different measurements and must
+ * not answer differently: the pre-send check estimates boxes from the stored
+ * document because a server has nothing else, while the editor canvas measures
+ * the rendered Konva nodes and can account for wrapping and the font that
+ * actually loaded. What they share is the *rule* — anything else is two
+ * definitions of "overlapping" waiting to disagree in front of a customer.
+ */
+export function overlappingBoxes<T extends { box: Rect }>(items: readonly T[]): BoxOverlap<T>[] {
+  const found: BoxOverlap<T>[] = [];
+  for (let i = 0; i < items.length; i += 1) {
+    for (let j = i + 1; j < items.length; j += 1) {
+      const a = items[i]!;
+      const b = items[j]!;
+      const fraction = overlapFraction(a.box, b.box);
+      if (fraction > OVERLAP_MIN_FRACTION) found.push({ a, b, fraction });
+    }
+  }
+  return found;
+}
+
 export function stackedTextOnPage(page: DesignPage, cardWidth: number = CARD_WIDTH): StackedText[] {
   const boxed: { element: TextElement; box: Rect }[] = [];
   for (const element of page.elements) {
@@ -161,22 +193,11 @@ export function stackedTextOnPage(page: DesignPage, cardWidth: number = CARD_WID
     if (box && element.text.trim() !== "") boxed.push({ element, box });
   }
 
-  const found: StackedText[] = [];
-  for (let i = 0; i < boxed.length; i += 1) {
-    for (let j = i + 1; j < boxed.length; j += 1) {
-      const a = boxed[i]!;
-      const b = boxed[j]!;
-      const fraction = overlapFraction(a.box, b.box);
-      if (fraction > OVERLAP_MIN_FRACTION) {
-        found.push({
-          ids: [a.element.id, b.element.id],
-          texts: [a.element.text, b.element.text],
-          fraction,
-        });
-      }
-    }
-  }
-  return found;
+  return overlappingBoxes(boxed).map(({ a, b, fraction }) => ({
+    ids: [a.element.id, b.element.id],
+    texts: [a.element.text, b.element.text],
+    fraction,
+  }));
 }
 
 /** A face of a document, with the stacked pairs found on it. */
