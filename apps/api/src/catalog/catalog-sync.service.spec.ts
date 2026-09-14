@@ -39,10 +39,10 @@ function png(width: number, height: number): Promise<Buffer> {
     .toBuffer();
 }
 
-function record(externalId: string, title: string): CatalogCardRecord {
+function record(externalId: string, title: string, sku?: string | null): CatalogCardRecord {
   return {
     externalId,
-    sku: `KC-${externalId}`,
+    sku: sku === undefined ? `KC-${externalId}` : sku,
     title,
     category: "birthday",
     frontImage: {
@@ -396,5 +396,83 @@ describe("CatalogSyncService — refusing cropped artwork", () => {
     expect(summary.imagesCopied).toBe(1);
     expect(summary.errors).toHaveLength(0);
     expect(summary.cropped).toHaveLength(0);
+  });
+});
+
+/**
+ * What the catalog data itself can be wrong about. None of it corrupts
+ * anything — all three are fixed in Airtable — which is exactly why none of it
+ * was visible until the sync started saying so.
+ */
+describe("CatalogSyncService — reporting the data, not just the artwork", () => {
+  it("names the cards sharing one product code", async () => {
+    // Every list here reads "Title (SKU)", and the crop worklist is handed to
+    // somebody as codes to re-export. Two cards on one code cannot be worked
+    // from: finishing one looks identical to finishing both.
+    const art = await png(1240, 1748);
+    const { service } = makeService(
+      [
+        record("rec1", "Lewis Carroll", "KC-INSPIRATIONAL-GEN-011"),
+        record("rec2", "Henry Fielding Habits", "KC-INSPIRATIONAL-GEN-011"),
+        record("rec3", "Jane Austen", "KC-INSPIRATIONAL-GEN-009"),
+      ],
+      () => art,
+    );
+
+    const summary = await service.sync();
+
+    expect(summary.duplicateSkus).toHaveLength(1);
+    expect(summary.duplicateSkus[0]?.sku).toBe("KC-INSPIRATIONAL-GEN-011");
+    expect(summary.duplicateSkus[0]?.designs.map((d) => d.title)).toEqual([
+      "Lewis Carroll",
+      "Henry Fielding Habits",
+    ]);
+  });
+
+  it("names the cards that will collide on their URL, permanently", async () => {
+    const art = await png(1240, 1748);
+    const { service } = makeService(
+      [record("rec1", "Well Done - Flowers"), record("rec2", "Well Done - Flowers")],
+      () => art,
+    );
+
+    const summary = await service.sync();
+
+    expect(summary.duplicateNames).toHaveLength(1);
+    expect(summary.duplicateNames[0]?.slug).toBe("well-done-flowers");
+  });
+
+  it("counts the categories with no landing page to sit on", async () => {
+    const art = await png(1240, 1748);
+    const { service } = makeService(
+      [
+        { ...record("rec1", "Snowy Penguin"), category: "christmas" },
+        { ...record("rec2", "Snow Globe"), category: "christmas" },
+        { ...record("rec3", "Happy Tulips"), category: "birthday" },
+      ],
+      () => art,
+    );
+
+    const summary = await service.sync();
+
+    // Birthday publishes; christmas does not, so those two cards are living at
+    // /cards/other/… with nothing for a customer to search for.
+    expect(summary.unpublishedCategories).toEqual([{ category: "christmas", count: 2 }]);
+  });
+
+  it("says nothing about a catalog that is in good order", async () => {
+    // The discriminator: three sections that appear on every sync are three
+    // sections nobody reads.
+    const art = await png(1240, 1748);
+    const { service } = makeService(
+      [record("rec1", "Happy Tulips"), record("rec2", "Snowy Penguin")],
+      () => art,
+    );
+
+    const summary = await service.sync();
+
+    expect(summary.duplicateSkus).toEqual([]);
+    expect(summary.duplicateNames).toEqual([]);
+    expect(summary.unpublishedCategories).toEqual([]);
   });
 });

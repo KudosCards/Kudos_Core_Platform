@@ -38,6 +38,14 @@ import {
 import { buildCardDocument } from "./card-document.util";
 import { CatalogPublisherService, type CatalogPublishResult } from "./catalog-publisher.service";
 import { CatalogCropGateService } from "./catalog-crop-gate.service";
+import {
+  duplicateNames,
+  duplicateSkus,
+  unpublishedCategories,
+  type DuplicateName,
+  type DuplicateSku,
+  type UnpublishedCategory,
+} from "./catalog-data-quality";
 import { mapWithConcurrency } from "../common/map-with-concurrency";
 
 export interface CatalogSyncSummary {
@@ -75,6 +83,32 @@ export interface CatalogSyncSummary {
    * could not be stored is in `artworkFailed` and keeps whatever was measured
    * last time.
    */
+  /**
+   * Product codes carried by more than one card upstream — worst tangle first.
+   *
+   * Nothing is keyed on `sku`, so this corrupts nothing. It ruins the reports:
+   * every list here names a card as "Title (SKU)", and the crop worklist above
+   * is handed to somebody as a list of codes to re-export. Two cards sharing
+   * one cannot be worked from.
+   */
+  duplicateSkus: DuplicateSku[];
+  /**
+   * Cards whose names collide on the URL slug — worst tangle first.
+   *
+   * The only one of these with a permanent, customer-visible consequence: a
+   * slug is assigned once and never recomputed (ADR 0163), so the second card
+   * to claim a name keeps its `-2` for good.
+   */
+  duplicateNames: DuplicateName[];
+  /**
+   * Upstream categories with no published landing page, most cards first.
+   *
+   * Not a defect: these cards sync, browse and index perfectly well under
+   * `/cards/other/<slug>`. It is a list of category pages the catalog is asking
+   * for — twelve Christmas cards under "other" means there is no
+   * `/cards/christmas` for anyone to find. See ADR 0163.
+   */
+  unpublishedCategories: UnpublishedCategory[];
   cropped: {
     externalId: string;
     sku: string | null;
@@ -215,6 +249,9 @@ export class CatalogSyncService {
       // never claims to have published.
       published: { outcome: "failed", reason: "Sync did not complete" },
       cropped: [],
+      duplicateSkus: duplicateSkus(records),
+      duplicateNames: duplicateNames(records),
+      unpublishedCategories: unpublishedCategories(records),
     };
 
     const existing = await this.prisma.cardDesign.findMany({

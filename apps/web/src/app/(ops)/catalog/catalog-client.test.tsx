@@ -209,3 +209,79 @@ describe("CatalogClient — the crop gate", () => {
     expect(await screen.findByLabelText(/cropped artwork is imported/)).not.toBeChecked();
   });
 });
+
+/**
+ * What the catalog *data* can be wrong about, as opposed to its artwork.
+ *
+ * None of it corrupts anything — all three are fixed in Airtable — which is
+ * exactly why none of it was visible until the sync started saying so.
+ */
+describe("CatalogClient — the catalog's own data", () => {
+  afterEach(() => clientApiFetch.mockReset());
+
+  it("names the cards sharing one product code", async () => {
+    await syncReturning({
+      duplicateSkus: [
+        {
+          sku: "KC-INSPIRATIONAL-GEN-011",
+          designs: [
+            { externalId: "a", title: "Lewis Carroll" },
+            { externalId: "b", title: "Henry Fielding Habits" },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.getByText(/KC-INSPIRATIONAL-GEN-011/)).toBeInTheDocument();
+    expect(screen.getByText(/Lewis Carroll, Henry Fielding Habits/)).toBeInTheDocument();
+    expect(screen.getByText("Shared product codes: 1")).toBeInTheDocument();
+  });
+
+  it("explains that a name clash is permanent", async () => {
+    // The reason this one is worth acting on before publishing rather than
+    // after: the slug is assigned once and never recalculated.
+    await syncReturning({
+      duplicateNames: [
+        {
+          slug: "well-done-flowers",
+          designs: [
+            { externalId: "a", title: "Well Done - Flowers" },
+            { externalId: "b", title: "Well Done — Flowers" },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.getByText("/well-done-flowers")).toBeInTheDocument();
+    expect(screen.getByText(/assigned once, never recalculated/)).toBeInTheDocument();
+    expect(screen.getByText("Clashing card names: 1")).toBeInTheDocument();
+  });
+
+  it("frames a missing category page as a decision, not a fault", async () => {
+    // These cards are fine. Reporting them as broken would send somebody
+    // hunting for a defect that is not there.
+    await syncReturning({ unpublishedCategories: [{ category: "christmas", count: 12 }] });
+
+    const heading = screen.getByText("Categories with no landing page");
+    expect(heading).toBeInTheDocument();
+    expect(heading.className).not.toContain("amber");
+    expect(screen.getByText(/12 cards/)).toBeInTheDocument();
+    expect(screen.getByText(/they sync, they browse/)).toBeInTheDocument();
+  });
+
+  it("says nothing at all when the catalog is in good order", async () => {
+    // Three sections that appear on every sync are three sections nobody reads.
+    await syncReturning({ duplicateSkus: [], duplicateNames: [], unpublishedCategories: [] });
+
+    expect(screen.queryByText(/more than one card/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Two cards, one address/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Categories with no landing page/)).not.toBeInTheDocument();
+  });
+
+  it("survives a summary from an API that has not been deployed yet", async () => {
+    await syncReturning({});
+
+    expect(screen.getByText("Shared product codes: 0")).toBeInTheDocument();
+    expect(screen.queryByText(/Two cards, one address/)).not.toBeInTheDocument();
+  });
+});
