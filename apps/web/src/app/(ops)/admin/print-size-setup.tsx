@@ -5,6 +5,7 @@ import { CARD_SIZES, cardSizeLabel } from "@kudos/shared-types";
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { SuperAdminEditable } from "../ops-role";
 
 interface SizeResponse {
   size: CardSize;
@@ -69,39 +70,41 @@ export function PrintSizeSetup() {
 
       {error && <p className="text-sm font-medium text-danger">{error}</p>}
 
-      {size === null ? (
-        <p className="text-sm text-muted">Loading…</p>
-      ) : (
-        <div className="flex flex-wrap items-center gap-3">
-          <div
-            className="flex items-center overflow-hidden rounded-full border border-border"
-            role="group"
-            aria-label="Default print size"
-          >
-            {CARD_SIZES.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => save(option)}
-                disabled={busy}
-                aria-pressed={size === option}
-                title={cardSizeLabel(option)}
-                className={`px-4 py-1.5 text-sm font-medium disabled:opacity-50 ${
-                  size === option
-                    ? "bg-foreground text-surface"
-                    : "bg-surface text-foreground hover:bg-border/40"
-                }`}
-              >
-                {option}
-              </button>
-            ))}
+      <SuperAdminEditable>
+        {size === null ? (
+          <p className="text-sm text-muted">Loading…</p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <div
+              className="flex items-center overflow-hidden rounded-full border border-border"
+              role="group"
+              aria-label="Default print size"
+            >
+              {CARD_SIZES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => save(option)}
+                  disabled={busy}
+                  aria-pressed={size === option}
+                  title={cardSizeLabel(option)}
+                  className={`px-4 py-1.5 text-sm font-medium disabled:opacity-50 ${
+                    size === option
+                      ? "bg-foreground text-surface"
+                      : "bg-surface text-foreground hover:bg-border/40"
+                  }`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            <span className="text-sm text-muted">{cardSizeLabel(size)}</span>
+            {houseDefault && size !== houseDefault && (
+              <span className="text-xs text-muted">House default: {houseDefault}</span>
+            )}
           </div>
-          <span className="text-sm text-muted">{cardSizeLabel(size)}</span>
-          {houseDefault && size !== houseDefault && (
-            <span className="text-xs text-muted">House default: {houseDefault}</span>
-          )}
-        </div>
-      )}
+        )}
+      </SuperAdminEditable>
     </div>
   );
 }

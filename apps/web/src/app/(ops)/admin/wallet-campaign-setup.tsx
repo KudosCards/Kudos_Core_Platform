@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { WalletCampaignStatus, WalletCampaignView } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { SuperAdminEditable, useIsSuperAdmin } from "../ops-role";
 
 /** A campaign as it arrives over JSON — `createdAt` is a string on the wire,
  *  and the list is already ordered server-side, so it isn't read here. */
@@ -212,6 +213,10 @@ function CampaignForm({
  * See docs/wallet-campaigns-plan.md.
  */
 export function WalletCampaignSetup() {
+  // Read here rather than only inside SuperAdminEditable: the "New campaign"
+  // link sits in the panel header, outside the fieldset, and a disabled-looking
+  // link is worse than no link at all.
+  const isSuper = useIsSuperAdmin();
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -309,7 +314,7 @@ export function WalletCampaignSetup() {
     <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-5">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-xs font-medium tracking-wide text-muted uppercase">Wallet campaigns</h2>
-        {!creating && (
+        {!creating && isSuper && (
           <button
             type="button"
             onClick={() => {
@@ -328,131 +333,133 @@ export function WalletCampaignSetup() {
         campaign stops on its own when it reaches its budget.
       </p>
 
-      {error && <p className="text-sm font-medium text-danger">{error}</p>}
+      <SuperAdminEditable>
+        {error && <p className="text-sm font-medium text-danger">{error}</p>}
 
-      {creating && (
-        <CampaignForm
-          initial={EMPTY}
-          locked={false}
-          busy={busy}
-          submitLabel="Create as draft"
-          onSubmit={create}
-          onCancel={() => setCreating(false)}
-        />
-      )}
+        {creating && (
+          <CampaignForm
+            initial={EMPTY}
+            locked={false}
+            busy={busy}
+            submitLabel="Create as draft"
+            onSubmit={create}
+            onCancel={() => setCreating(false)}
+          />
+        )}
 
-      {campaigns === null ? (
-        <p className="text-sm text-muted">Loading…</p>
-      ) : campaigns.length === 0 ? (
-        !creating && <p className="text-sm text-muted">No campaigns yet.</p>
-      ) : (
-        <div className="flex flex-col divide-y divide-border">
-          {campaigns.map((campaign) => {
-            const spentPct = Math.min(
-              100,
-              Math.round((campaign.creditedMinor / Math.max(1, campaign.budgetMinor)) * 100),
-            );
-            return (
-              <div key={campaign.id} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="truncate text-sm font-semibold">{campaign.name}</span>
-                    <StatusPill status={campaign.status} />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {(campaign.status === "draft" || campaign.status === "paused") && (
-                      <button
-                        type="button"
-                        onClick={() => setStatus(campaign.id, "live")}
-                        disabled={busy}
-                        className={action}
-                      >
-                        {campaign.status === "draft" ? "Set live" : "Resume"}
-                      </button>
-                    )}
-                    {campaign.status === "live" && (
-                      <button
-                        type="button"
-                        onClick={() => setStatus(campaign.id, "paused")}
-                        disabled={busy}
-                        className={action}
-                      >
-                        Pause
-                      </button>
-                    )}
-                    {campaign.status !== "ended" && (
-                      <>
+        {campaigns === null ? (
+          <p className="text-sm text-muted">Loading…</p>
+        ) : campaigns.length === 0 ? (
+          !creating && <p className="text-sm text-muted">No campaigns yet.</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-border">
+            {campaigns.map((campaign) => {
+              const spentPct = Math.min(
+                100,
+                Math.round((campaign.creditedMinor / Math.max(1, campaign.budgetMinor)) * 100),
+              );
+              return (
+                <div key={campaign.id} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-sm font-semibold">{campaign.name}</span>
+                      <StatusPill status={campaign.status} />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {(campaign.status === "draft" || campaign.status === "paused") && (
                         <button
                           type="button"
-                          onClick={() => {
-                            setEditing(editing === campaign.id ? null : campaign.id);
-                            setCreating(false);
-                          }}
+                          onClick={() => setStatus(campaign.id, "live")}
                           disabled={busy}
                           className={action}
                         >
-                          {editing === campaign.id ? "Close" : "Edit"}
+                          {campaign.status === "draft" ? "Set live" : "Resume"}
                         </button>
+                      )}
+                      {campaign.status === "live" && (
                         <button
                           type="button"
-                          onClick={() => setStatus(campaign.id, "ended")}
+                          onClick={() => setStatus(campaign.id, "paused")}
                           disabled={busy}
                           className={action}
                         >
-                          End
+                          Pause
                         </button>
-                      </>
-                    )}
+                      )}
+                      {campaign.status !== "ended" && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditing(editing === campaign.id ? null : campaign.id);
+                              setCreating(false);
+                            }}
+                            disabled={busy}
+                            className={action}
+                          >
+                            {editing === campaign.id ? "Close" : "Edit"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setStatus(campaign.id, "ended")}
+                            disabled={busy}
+                            className={action}
+                          >
+                            End
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                <p className="text-sm text-muted">
-                  {gbp(campaign.amountMinor)} per sign-up, {campaign.startsOn} to {campaign.endsOn}{" "}
-                  (UK, both included).
-                </p>
+                  <p className="text-sm text-muted">
+                    {gbp(campaign.amountMinor)} per sign-up, {campaign.startsOn} to{" "}
+                    {campaign.endsOn} (UK, both included).
+                  </p>
 
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted">
-                      {campaign.creditedCount} account{campaign.creditedCount === 1 ? "" : "s"}{" "}
-                      credited
-                    </span>
-                    <span className="tabular-nums text-muted">
-                      {gbp(campaign.creditedMinor)} of {gbp(campaign.budgetMinor)} —{" "}
-                      {gbp(campaign.budgetMinor - campaign.creditedMinor)} left
-                    </span>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted">
+                        {campaign.creditedCount} account{campaign.creditedCount === 1 ? "" : "s"}{" "}
+                        credited
+                      </span>
+                      <span className="tabular-nums text-muted">
+                        {gbp(campaign.creditedMinor)} of {gbp(campaign.budgetMinor)} —{" "}
+                        {gbp(campaign.budgetMinor - campaign.creditedMinor)} left
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-foreground/[0.06]">
+                      <div
+                        className={`h-full rounded-full ${spentPct >= 100 ? "bg-red-500" : "bg-accent"}`}
+                        style={{ width: `${spentPct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-foreground/[0.06]">
-                    <div
-                      className={`h-full rounded-full ${spentPct >= 100 ? "bg-red-500" : "bg-accent"}`}
-                      style={{ width: `${spentPct}%` }}
+
+                  <p className="text-xs text-muted">{STATUS_HELP[campaign.status]}</p>
+
+                  {editing === campaign.id && (
+                    <CampaignForm
+                      initial={{
+                        name: campaign.name,
+                        amount: (campaign.amountMinor / 100).toFixed(2),
+                        startsOn: campaign.startsOn,
+                        endsOn: campaign.endsOn,
+                        budget: (campaign.budgetMinor / 100).toFixed(2),
+                      }}
+                      locked={campaign.status !== "draft"}
+                      busy={busy}
+                      submitLabel="Save changes"
+                      onSubmit={(draft) => update(campaign, draft)}
+                      onCancel={() => setEditing(null)}
                     />
-                  </div>
+                  )}
                 </div>
-
-                <p className="text-xs text-muted">{STATUS_HELP[campaign.status]}</p>
-
-                {editing === campaign.id && (
-                  <CampaignForm
-                    initial={{
-                      name: campaign.name,
-                      amount: (campaign.amountMinor / 100).toFixed(2),
-                      startsOn: campaign.startsOn,
-                      endsOn: campaign.endsOn,
-                      budget: (campaign.budgetMinor / 100).toFixed(2),
-                    }}
-                    locked={campaign.status !== "draft"}
-                    busy={busy}
-                    submitLabel="Save changes"
-                    onSubmit={(draft) => update(campaign, draft)}
-                    onCancel={() => setEditing(null)}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
+      </SuperAdminEditable>
     </div>
   );
 }

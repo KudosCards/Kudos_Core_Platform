@@ -249,5 +249,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0238 — Checking the claims the last two ADRs made](./0238-checking-the-claims-the-last-two-adrs-made.md)
 - [0239 — Crossing the ESM wall in front of the sanitiser](./0239-crossing-the-esm-wall-in-front-of-the-sanitiser.md)
 - [0240 — Money given to a stranger, on a schedule](./0240-money-given-to-a-stranger-on-a-schedule.md)
+- [0241 — A button an operator cannot press](./0241-a-button-an-operator-cannot-press.md)
 
 <!-- adr-index:end -->
