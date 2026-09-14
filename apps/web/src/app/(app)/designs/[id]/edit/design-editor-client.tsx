@@ -315,7 +315,9 @@ export function DesignEditorClient({
   // Pairs of text on the active face written on top of each other. Page-level
   // like the strip check above, and for the same reason: the case this exists
   // for is a whole message left behind, not one tile out of place.
-  const [stackedTextPairs, setStackedTextPairs] = useState(0);
+  /** Pairs of text on the active face written on top of each other, as element
+   *  ids, reported by the canvas after it has measured the rendered nodes. */
+  const [stackedTextPairs, setStackedTextPairs] = useState<[string, string][]>([]);
 
   // Natural pixel sizes of placed images, keyed by asset URL — measured on demand
   // so we can warn when an image is too low-resolution to print sharply at the
@@ -622,6 +624,37 @@ export function DesignEditorClient({
       : backgroundCrop?.url === backgroundUrl
         ? backgroundCrop.result
         : { state: "measuring" };
+
+  /**
+   * The distinct text blocks involved in an overlap on this face, each with
+   * enough of what it says to be told apart.
+   *
+   * Derived from the ids the canvas reports rather than re-measuring here: the
+   * canvas is the only place that can see wrapped, font-loaded text, and a
+   * second opinion about what overlaps would eventually disagree with the first.
+   */
+  const stackedTextBlocks = useMemo(() => {
+    const ids = new Set(stackedTextPairs.flat());
+    return page.elements
+      .filter((element) => element.kind === "text" && ids.has(element.id))
+      .map((element) => ({
+        id: element.id,
+        // The opening line is what tells two messages apart at a glance; the
+        // rest is the same "Happy Birthday!" on both.
+        preview:
+          element.kind === "text"
+            ? (element.text.split("\n").find((line) => line.trim() !== "") ?? element.text)
+            : "",
+      }));
+  }, [stackedTextPairs, page.elements]);
+
+  /** Remove one element by id — the overlap banner's remedy. Separate from
+   *  `deleteSelected` because the block being removed is usually not the one
+   *  selected, and may be the one hidden underneath. */
+  function deleteElementById(id: string) {
+    updatePage(activePage, (p) => ({ ...p, elements: p.elements.filter((el) => el.id !== id) }));
+    if (selectedElementId === id) selectElement(null);
+  }
 
   /**
    * People this face addresses by hand — "To Florence," rather than
@@ -1541,11 +1574,37 @@ export function DesignEditorClient({
               design will say the same name.
             </p>
           )}
-          {stackedTextPairs > 0 && (
-            <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              Two pieces of text on this face are written on top of each other and will print that
-              way. If one of them is an older message, delete it.
-            </p>
+          {/* Naming both blocks and offering to remove either, rather than
+              telling somebody to go and find them. One of the two is underneath
+              the other on the canvas, which is the whole reason this went
+              unnoticed until it had been printed. The text is shown because
+              there is no undo here: deleting the wrong block would be a second
+              accident on top of the first. */}
+          {stackedTextBlocks.length > 0 && (
+            <div className="mt-2 flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <p>
+                Two pieces of text on this face are written on top of each other and will print that
+                way. This usually means an older message was left behind when a new one was added —
+                delete the one you do not want.
+              </p>
+              {stackedTextBlocks.map((block) => (
+                <div
+                  key={block.id}
+                  className="flex items-start justify-between gap-2 rounded border border-amber-300/70 bg-white/70 px-2 py-1.5"
+                >
+                  <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-black">
+                    {block.preview}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => deleteElementById(block.id)}
+                    className="shrink-0 rounded-full border border-amber-400 px-2 py-1 font-medium text-amber-900 hover:bg-amber-100"
+                  >
+                    Delete this block
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 

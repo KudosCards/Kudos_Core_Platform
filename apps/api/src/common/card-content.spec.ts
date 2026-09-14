@@ -1,5 +1,6 @@
 import type { DesignDocument, DesignElement, DesignPage, TextElement } from "@kudos/shared-types";
 import {
+  overlappingBoxes,
   estimatedTextBox,
   overlapFraction,
   literalNamesIn,
@@ -360,5 +361,59 @@ describe("overlapFraction", () => {
 
   it("is zero for a box with no area", () => {
     expect(overlapFraction(box(0, 0, 0, 10), box(0, 0, 10, 10))).toBe(0);
+  });
+});
+
+/**
+ * The pairing rule both overlap checks now share.
+ *
+ * The pre-send check estimates text boxes from the stored document because a
+ * server has nothing else; the editor canvas measures the rendered nodes and can
+ * see wrapping and the font that actually loaded. Two measurements, one rule —
+ * anything else is two definitions of "overlapping" waiting to disagree in front
+ * of a customer. Until now each carried its own copy of this loop.
+ */
+describe("overlappingBoxes", () => {
+  const at = (id: string, x: number, y: number, width = 100, height = 100) => ({
+    id,
+    box: { x, y, width, height },
+  });
+
+  it("pairs boxes sitting on each other", () => {
+    const found = overlappingBoxes([at("a", 0, 0), at("b", 10, 10)]);
+    expect(found).toHaveLength(1);
+    expect([found[0]?.a.id, found[0]?.b.id]).toEqual(["a", "b"]);
+  });
+
+  it("leaves boxes that barely graze each other alone", () => {
+    // 10x10 of a 100x100 box is 1% — a laid-out card where two blocks touch is
+    // not the accident this exists to catch.
+    expect(overlappingBoxes([at("a", 0, 0), at("b", 90, 90)])).toEqual([]);
+  });
+
+  it("ignores boxes that do not meet at all", () => {
+    expect(overlappingBoxes([at("a", 0, 0), at("b", 500, 500)])).toEqual([]);
+  });
+
+  it("reports each pair once, not once per direction", () => {
+    const found = overlappingBoxes([at("a", 0, 0), at("b", 5, 5), at("c", 10, 10)]);
+    expect(found).toHaveLength(3);
+    expect(found.map((pair) => [pair.a.id, pair.b.id])).toEqual([
+      ["a", "b"],
+      ["a", "c"],
+      ["b", "c"],
+    ]);
+  });
+
+  it("carries how much they share, measured against the smaller box", () => {
+    // A short line lost inside a long message is the case that matters, and
+    // measuring against the larger box would score it at a few per cent.
+    const found = overlappingBoxes([at("big", 0, 0, 200, 200), at("small", 0, 0, 50, 50)]);
+    expect(found[0]?.fraction).toBeCloseTo(1, 6);
+  });
+
+  it("has nothing to say about fewer than two boxes", () => {
+    expect(overlappingBoxes([])).toEqual([]);
+    expect(overlappingBoxes([at("a", 0, 0)])).toEqual([]);
   });
 });
