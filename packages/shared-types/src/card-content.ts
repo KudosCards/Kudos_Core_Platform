@@ -230,20 +230,115 @@ export function literalNamesIn(document: DesignDocument, names: readonly string[
   const wanted = names.map((name) => name.trim()).filter((name) => name.length > 0);
   if (wanted.length === 0) return [];
 
+  // Built once per call rather than once per element: a send is checked against
+  // every first name it is going to, so this is names x elements otherwise.
+  const patterns = wanted.map((name) => ({
+    name,
+    pattern: new RegExp(`(?<![\\p{L}\\p{N}])${escapeForRegExp(name)}(?![\\p{L}\\p{N}])`, "iu"),
+  }));
+
   const found: LiteralName[] = [];
   for (const page of pages) {
     if (!page || !Array.isArray(page.elements)) continue;
     for (const element of page.elements) {
       if (element.kind !== "text") continue;
       const withoutTokens = element.text.replace(MERGE_TOKEN, " ");
-      for (const name of wanted) {
-        const pattern = new RegExp(
-          `(?<![\\p{L}\\p{N}])${escapeForRegExp(name)}(?![\\p{L}\\p{N}])`,
-          "iu",
-        );
+      for (const { name, pattern } of patterns) {
         if (pattern.test(withoutTokens)) {
           found.push({ face: page.name, name, text: element.text });
         }
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * Words that follow a salutation and are not somebody's name.
+ *
+ * Relationship words are here deliberately, not by oversight: "To Mum" and "To
+ * the team" are perfectly good cards and flagging them would be exactly the
+ * false positive that teaches people to ignore the warning. See
+ * docs/card-content-preflight-plan.md (D2).
+ */
+const NOT_A_NAME = new Set([
+  "a",
+  "all",
+  "auntie",
+  "aunty",
+  "both",
+  "class",
+  "colleagues",
+  "dad",
+  "daddy",
+  "everybody",
+  "everyone",
+  "father",
+  "friend",
+  "friends",
+  "gran",
+  "grandad",
+  "grandma",
+  "grandpa",
+  "granny",
+  "madam",
+  "mother",
+  "mum",
+  "mummy",
+  "my",
+  "nan",
+  "nana",
+  "our",
+  "sir",
+  "somebody",
+  "someone",
+  "staff",
+  "team",
+  "the",
+  "them",
+  "there",
+  "uncle",
+  "us",
+  "you",
+]);
+
+/**
+ * A salutation line naming one person, e.g. `To Florence,` or `Dear alex,`.
+ *
+ * Matched only when the salutation is the **whole line**, which is how a card is
+ * actually written and what keeps this precise: "Welcome to Kip" is not a
+ * salutation, and neither is a sentence that happens to contain "to". Merge
+ * tokens are stripped first, so `To {firstName}` — the correct way to write
+ * this — leaves nothing to match.
+ *
+ * Case is not required. The card that prompted this said "Dear alex,", in lower
+ * case, and a check that only noticed capitalised names would have missed it.
+ */
+const SALUTATION_LINE = /^\s*(?:to|dear|hi|hello|hey)\s+([\p{L}][\p{L}'\u2019-]*)\s*[,.!]?\s*$/iu;
+
+/**
+ * Every person a document addresses by hand.
+ *
+ * The precise half of "does this card name somebody?": a salutation is
+ * unambiguously written to one person, so on a send going to anyone else it is
+ * wrong for all of them. It needs no list of names to compare against, which is
+ * what lets it catch a name belonging to nobody in the send at all — the card
+ * for Cole Fortes that opened "Dear alex,".
+ */
+export function salutationNames(document: DesignDocument): LiteralName[] {
+  const pages = document?.pages;
+  if (!Array.isArray(pages)) return [];
+
+  const found: LiteralName[] = [];
+  for (const page of pages) {
+    if (!page || !Array.isArray(page.elements)) continue;
+    for (const element of page.elements) {
+      if (element.kind !== "text") continue;
+      for (const line of element.text.replace(MERGE_TOKEN, " ").split("\n")) {
+        const match = SALUTATION_LINE.exec(line);
+        const name = match?.[1];
+        if (!name || NOT_A_NAME.has(name.toLowerCase())) continue;
+        found.push({ face: page.name, name, text: element.text });
       }
     }
   }

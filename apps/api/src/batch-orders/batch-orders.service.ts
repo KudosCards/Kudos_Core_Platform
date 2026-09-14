@@ -37,6 +37,10 @@ import {
   unresolvedMergeTokens,
   type BatchOrderListRow,
   type BatchOrderPreflight,
+  type DesignPage,
+  literalNamesIn,
+  salutationNames,
+  stackedTextInDocument,
   type DesignDocument,
   type MergeContext,
   type OccasionRedateCard,
@@ -756,7 +760,56 @@ export class BatchOrdersService {
       // Design-level, so the composer can say "your back artwork is being cut"
       // before payment rather than leaving it to be noticed on the printed card.
       backArtworkClipped: backArtworkInReservedFooter(document),
+      ...this.contentWarnings(document, recipients),
     };
+  }
+
+  /**
+   * What this design says, checked against who it is going to.
+   *
+   * Both findings are design-level rather than per-recipient buckets, for the
+   * reason `backArtworkClipped` already gives: a bucket would list every
+   * recipient in the run for one problem that is identical on all of them.
+   *
+   * Warnings, never blockers. `reservedFooterViolation` earns the right to
+   * refuse a send by being free of false positives; these estimate text boxes
+   * from the document and read names out of prose, so they cannot make the same
+   * claim. A check that sometimes stops a perfectly good send is worse than one
+   * that sometimes stays quiet. See docs/card-content-preflight-plan.md.
+   */
+  private contentWarnings(
+    document: DesignDocument,
+    recipients: { firstName: string }[],
+  ): Pick<BatchOrderPreflight, "stackedText" | "namedByHand"> {
+    const stackedText = stackedTextInDocument(document).map((face) => ({
+      face: face.face,
+      pairs: face.stacked.length,
+    }));
+
+    // Two ways of finding a name, because they catch different mistakes. A
+    // salutation names one person outright and needs nothing to compare against,
+    // so it finds "Dear alex," on a send that contains no Alex at all. A
+    // recipient's own first name appearing literally is wrong for every *other*
+    // card in the same send, which only a comparison can see.
+    const firstNames = recipients.map((recipient) => recipient.firstName);
+    const named = [...salutationNames(document), ...literalNamesIn(document, firstNames)];
+
+    // One row per person per face, however many ways we found them.
+    const byKey = new Map<string, { name: string; face: DesignPage["name"]; wrongFor: number }>();
+    for (const finding of named) {
+      const key = `${finding.face}:${finding.name.toLowerCase()}`;
+      if (byKey.has(key)) continue;
+      byKey.set(key, {
+        name: finding.name,
+        face: finding.face,
+        // The cards that are *not* for this person — the number that makes the
+        // warning worth reading. A send of one to the wrong name reads "1 of 1".
+        wrongFor: firstNames.filter(
+          (firstName) => firstName.toLowerCase() !== finding.name.toLowerCase(),
+        ).length,
+      });
+    }
+    return { stackedText, namedByHand: [...byKey.values()] };
   }
 
   /**
