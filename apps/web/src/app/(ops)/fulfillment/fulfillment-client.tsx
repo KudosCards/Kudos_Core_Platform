@@ -3,7 +3,6 @@
 import { Calendar, Plug, Truck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
 import type {
   CardSize,
   ClickAndDropImportStatus,
@@ -21,13 +20,9 @@ import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { Modal } from "@/components/modal";
 import { PrintRunOverlay, type PrintRunCard } from "./print-run-overlay";
+import { WholeCardPreview } from "./whole-card-preview";
 import { OCCASION_TYPE_LABELS } from "@/lib/occasions";
 import { promptTrackingReference } from "@/lib/tracking-prompt";
-
-const CardFacePreview = dynamic(
-  () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
-  { ssr: false },
-);
 
 /** Single-card detail (GET /fulfillment/jobs/:id) — carries the design document
  * and recipient needed to render the personalised card the operator prints. */
@@ -1155,11 +1150,17 @@ export function FulfillmentClient({
           title={`${preview.orderRecipient.recipient.firstName} ${preview.orderRecipient.recipient.lastName}`}
         >
           <div className="flex flex-col items-center gap-3">
+            {/* It used to say "printed exactly as shown" while showing the
+                front alone. On the card that prompted this the front was
+                perfect and the damage was on the inside right, so the promise
+                was one the preview could not keep — and an operator could look
+                straight at a broken card and pass it. See
+                docs/card-message-guardrails-plan.md. */}
             <p className="text-sm text-foreground/60">
-              {preview.orderRecipient.savedDesign.name} — printed exactly as shown, with this
-              recipient’s name merged in.
+              {preview.orderRecipient.savedDesign.name} — every face, with this recipient’s details
+              merged in, as it will be printed.
             </p>
-            <CardFacePreview
+            <WholeCardPreview
               document={applyMergeTokens(preview.orderRecipient.documentSnapshot, {
                 firstName: preview.orderRecipient.recipient.firstName,
                 lastName: preview.orderRecipient.recipient.lastName,
@@ -1167,7 +1168,6 @@ export function FulfillmentClient({
                 occasionDate: preview.orderRecipient.occasion?.occasionDate ?? null,
                 customFields: preview.orderRecipient.recipient.customFields,
               })}
-              width={300}
             />
           </div>
         </Modal>

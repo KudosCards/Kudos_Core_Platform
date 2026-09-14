@@ -86,8 +86,8 @@ here rather than built.
 
 ## Phases
 
-Each phase is its own PR, merged when green before the next starts. Phases 1–3
-have landed; Phase 4 is outstanding.
+Each phase is its own PR, merged when green before the next starts. All four
+have landed.
 
 ### Phase 1 — The editor says it when it is typed
 
@@ -141,9 +141,12 @@ server-side, so the UI cannot drift from the rule it is describing.
 
 - **Preview card** in the fulfilment queue shows every face with the text
   readout, instead of the front alone.
-- It currently says "printed exactly as shown" while showing one of four faces —
-  a promise it cannot keep, and the reason an operator can look straight at this
-  bug and see a perfect card.
+- It said "printed exactly as shown" while showing one of four faces — a promise
+  it could not keep, and the reason an operator can look straight at this bug and
+  see a perfect card. Elise Bisby's front was perfect.
+
+Stacked rather than a flip viewer: an operator opens this to find something
+wrong, and a face behind a click is a face nobody checks.
 
 ## What this does not fix
 
