@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
+  PRINT_RUN_BLEED_MM,
   applyMergeTokens,
   DEFAULT_CARD_SIZE,
   designDocumentSchema,
@@ -78,7 +79,11 @@ export class PrintRunPdfService {
       // print and fold. (The engine keeps bleed + crop marks available for a
       // future print house that trims.) See docs/adr/0162.
       cropMarks: false,
-      bleedMm: 0,
+      // Shared with the crop measurement, which has to describe the geometry
+      // this renderer actually uses: at 3mm the background is scaled to fill a
+      // larger page and cut back, and a 2:3 source loses 11.1% of its height
+      // rather than 6%. See docs/card-artwork-shape-plan.md, D5.
+      bleedMm: PRINT_RUN_BLEED_MM,
     });
 
     return {
