@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import type { DesignDocument } from "@kudos/shared-types";
+import userEvent from "@testing-library/user-event";
+import { fittedCardInsetMm, type DesignDocument } from "@kudos/shared-types";
 import { PrintRunOverlay, type PrintRunCard } from "./print-run-overlay";
 
 jest.mock("@/lib/api.client", () => ({ clientApiDownload: jest.fn() }));
@@ -151,5 +152,67 @@ describe("PrintRunOverlay — artwork being cropped", () => {
 
     const buttons = await screen.findAllByRole("button", { name: /Download original artwork/ });
     expect(buttons.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The second finding in docs/card-artwork-crop-plan.md: this preview is not the
+ * geometry that prints.
+ *
+ * The card is drawn 5mm in from the side trim edges so a *browser* print stays
+ * clear of an office printer's unprintable margin. The print-ready PDF has no
+ * such inset — `faceGeometry` spans the full trim width, full bleed. So an
+ * operator asking "is the artwork being cut at the edge?" is looking at a white
+ * border the real output does not have, which hides the answer.
+ *
+ * We do not move the inset (D5 — it is load-bearing for Browser print). We make
+ * it legible and say what it is.
+ */
+describe("PrintRunOverlay — the preview's border is not the printed card", () => {
+  it("says the print-ready PDF runs to the trim edge, and how far in this view sits", async () => {
+    stubImageLoader({ width: 900, height: 1268 });
+    renderOverlay();
+
+    // Both axes, because they differ: the fit clamps on width, so the sides land
+    // on the 5mm margin and the vertical gap absorbs the aspect remainder. A
+    // notice that said "5mm" flat would be wrong by 2mm top and bottom.
+    expect(await screen.findByText(/5mm in from the side trim edges/)).toBeInTheDocument();
+    expect(screen.getByText(/7\.1mm from the top and bottom/)).toBeInTheDocument();
+    expect(screen.getByText(/runs to the trim edge at 105 × 148 mm/)).toBeInTheDocument();
+  });
+
+  it("restates the geometry when the operator switches to A5", async () => {
+    // The discriminator against hardcoded copy. A5 is a different page with a
+    // different vertical remainder, and the notice has to follow the run.
+    stubImageLoader({ width: 900, height: 1268 });
+    renderOverlay();
+
+    await userEvent.click(await screen.findByRole("button", { name: "A5" }));
+
+    expect(screen.getByText(/7\.8mm from the top and bottom/)).toBeInTheDocument();
+    expect(screen.getByText(/runs to the trim edge at 148 × 210 mm/)).toBeInTheDocument();
+  });
+
+  it("shades the band that the PDF prints into and this view does not", async () => {
+    stubImageLoader({ width: 900, height: 1268 });
+    renderOverlay();
+
+    await screen.findByText(/runs to the trim edge/);
+    // The overlay is a portal onto document.body, so the render result's own
+    // container holds none of it.
+    const bands = document.body.querySelectorAll<HTMLElement>("[data-trim-band]");
+    // One per printed face — the gap is on every page, not just the front.
+    expect(bands).toHaveLength(4);
+
+    const inset = fittedCardInsetMm("A6");
+    for (const band of bands) {
+      // The band is drawn *from* the same measurement the notice quotes and the
+      // card is fitted by, so the shading cannot drift from the card inside it.
+      expect(band.style.borderTopWidth).toBe(`${inset.topMm}mm`);
+      expect(band.style.borderLeftWidth).toBe(`${inset.sideMm}mm`);
+      // And it must never reach paper. Browser print rasterises what is on
+      // screen; a band that printed would put a grey frame on a real card.
+      expect(band.className).toContain("print:hidden");
+    }
   });
 });

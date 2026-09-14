@@ -8,6 +8,7 @@ import {
   backReservedFooterTop,
   backReservedFooterUnits,
   fittedCardMm,
+  fittedCardInsetMm,
   isInBackReservedFooter,
 } from "@kudos/shared-types";
 
@@ -46,6 +47,53 @@ describe("fittedCardMm", () => {
     // Regression guard: the old 3:4 canvas left ~10mm of top slack on A6.
     const topSlackMm = (fit.pageHeightMm - fit.cardHeightMm) / 2 - PRINT_SAFE_MARGIN_MM;
     expect(topSlackMm).toBeLessThan(3);
+  });
+});
+
+/**
+ * How far the previewed card sits in from the trim edge.
+ *
+ * The ops print overlay draws the card inset inside its page, because a browser
+ * print has to stay clear of an office printer's unprintable margin. The
+ * print-ready PDF has no such inset — the design fills the trim width. An
+ * operator looking at the preview is therefore looking at a card with a white
+ * border the real output does not have, and the question they open this screen
+ * to ask ("is the artwork being cut at the edge?") is exactly the one that
+ * border hides. These numbers are what the preview has to say out loud.
+ */
+describe("fittedCardInsetMm", () => {
+  it("is the gap between the fitted card and the page it is centred on", () => {
+    for (const size of CARD_SIZES) {
+      const fit = fittedCardMm(size);
+      const inset = fittedCardInsetMm(size);
+      expect(inset.sideMm).toBeCloseTo((fit.pageWidthMm - fit.cardWidthMm) / 2, 6);
+      expect(inset.topMm).toBeCloseTo((fit.pageHeightMm - fit.cardHeightMm) / 2, 6);
+    }
+  });
+
+  it("is the safe margin on the sides, and more than that top and bottom", () => {
+    // The fit clamps on width, so the sides land exactly on the margin and the
+    // vertical gap absorbs whatever the aspect ratio leaves over. Saying "5mm"
+    // for both would be wrong by 2mm on A6 and nearly 3mm on A5.
+    for (const size of CARD_SIZES) {
+      const inset = fittedCardInsetMm(size);
+      expect(inset.sideMm).toBeCloseTo(PRINT_SAFE_MARGIN_MM, 6);
+      expect(inset.topMm).toBeGreaterThan(PRINT_SAFE_MARGIN_MM);
+    }
+  });
+
+  it("reports the A6 and A5 gaps a person would read off a ruler", () => {
+    expect(fittedCardInsetMm("A6").topMm).toBeCloseTo(7.08, 2);
+    expect(fittedCardInsetMm("A5").topMm).toBeCloseTo(7.79, 2);
+  });
+
+  it("is nothing at all when the card is fitted with no margin", () => {
+    const inset = fittedCardInsetMm("A6", 0);
+    expect(inset.sideMm).toBe(0);
+    // Even edge to edge the A6 page is a hair taller than the authored canvas:
+    // 450 x 148/105 is 634.29 and the canvas is 634. Four hundredths of a
+    // millimetre, split between top and bottom.
+    expect(inset.topMm).toBeLessThan(0.05);
   });
 });
 
