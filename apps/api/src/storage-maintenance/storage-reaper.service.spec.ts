@@ -75,11 +75,14 @@ function buildPrisma(seed: {
   assets?: { url: string }[];
   cardDesigns?: { thumbnailUrl: string; document: unknown }[];
   savedDesigns?: { document: unknown }[];
+  /** Cards carry their own artwork, which a design need no longer mention. */
+  cards?: { documentSnapshot: unknown }[];
 }): PrismaService {
   return {
     designAsset: { findMany: () => Promise.resolve(seed.assets ?? []) },
     cardDesign: { findMany: () => Promise.resolve(seed.cardDesigns ?? []) },
     savedDesign: { findMany: () => Promise.resolve(seed.savedDesigns ?? []) },
+    orderRecipient: { findMany: () => Promise.resolve(seed.cards ?? []) },
   } as unknown as PrismaService;
 }
 
@@ -136,6 +139,31 @@ describe("StorageReaperService", () => {
     const summary = await service.reap();
 
     expect(summary.orphaned).toBe(0);
+    expect(storage.removed).toEqual([]);
+  });
+
+  it("keeps an object embedded only inside a bought card's own artwork", async () => {
+    // The design need not mention it any more: a card keeps the artwork it was
+    // bought with, so the two diverge the moment somebody edits a design. This
+    // walk is what stands between that and deleting the artwork of a card
+    // waiting to print. See docs/order-artwork-plan.md.
+    const path = `${ACCOUNT}/on-a-bought-card.png`;
+    const documentSnapshot = {
+      version: 1,
+      pages: [
+        { name: "front", elements: [], background: { type: "image", assetUrl: publicUrl(path) } },
+      ],
+    };
+    const storage = buildStorage([{ path, createdAt: OLD }]);
+    const service = new StorageReaperService(
+      buildPrisma({ cards: [{ documentSnapshot }] }),
+      buildConfig({ enabled: true, graceDays: 7 }),
+      storage.client,
+    );
+
+    const summary = await service.reap();
+
+    expect(summary.deleted).toBe(0);
     expect(storage.removed).toEqual([]);
   });
 

@@ -190,6 +190,81 @@ describe("Storage reaper (e2e)", () => {
     expect(removedPaths).toEqual([]);
   });
 
+  it("keeps an object that only a bought card still references", async () => {
+    // The gap this closes. A card carries its own artwork now
+    // (docs/order-artwork-plan.md), so the design it was made from can stop
+    // mentioning an image the card still prints: remove it from the library,
+    // edit it out of the design, and the url survives in one place only — the
+    // snapshot of a card already paid for and not yet printed.
+    //
+    // Before the snapshot existed this could not happen, which is why the
+    // reaper's referenced-set was complete without it and quietly stopped being
+    // so. Deleting here is not a stale thumbnail: it is the artwork of a card
+    // about to go to a printer.
+    const account = await prisma.account.create({
+      data: { origin: "signup", type: "organisation", name: `Centre ${randomUUID()}` },
+    });
+    const stillPrinted = `${account.id}/on-a-bought-card.png`;
+
+    const recipient = await prisma.recipient.create({
+      data: {
+        accountId: account.id,
+        firstName: "Elise",
+        lastName: "Bisby",
+        addressLine1: "1 Test Street",
+        addressCity: "Hull",
+        addressPostcode: "HU1 1AA",
+      },
+    });
+    // A design that no longer mentions the image, and no DesignAsset row for it
+    // either — the two places the reaper used to look.
+    const design = await prisma.savedDesign.create({
+      data: {
+        accountId: account.id,
+        name: "Happy Tulips copy",
+        document: { version: 1, pages: [{ name: "front", elements: [] }] },
+      },
+    });
+    const order = await prisma.batchOrder.create({
+      data: { accountId: account.id, status: "paid", totalMinor: 316 },
+    });
+    await prisma.orderRecipient.create({
+      data: {
+        batchOrderId: order.id,
+        recipientId: recipient.id,
+        savedDesignId: design.id,
+        // The card kept the artwork it was bought with.
+        documentSnapshot: {
+          version: 1,
+          pages: [
+            {
+              name: "front",
+              elements: [],
+              background: { type: "image", assetUrl: publicUrl(stillPrinted) },
+            },
+          ],
+        },
+        shippingAddressLine1: "1 Test Street",
+        shippingAddressCity: "Hull",
+        shippingAddressPostcode: "HU1 1AA",
+        dispatchOption: "asap",
+        postageClass: "second_class",
+        priceMinor: 316,
+      },
+    });
+
+    storageObjects = [{ path: stillPrinted, createdAt: OLD }];
+
+    const token = await opsToken();
+    const res = await request(app.getHttpServer())
+      .post("/storage-maintenance/reap?dryRun=false")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect((res.body as ReapSummary).deleted).toBe(0);
+    expect(removedPaths).toEqual([]);
+  });
+
   it("defaults to a dry run that deletes nothing", async () => {
     const account = await prisma.account.create({
       data: { origin: "signup", type: "organisation", name: `Centre ${randomUUID()}` },
