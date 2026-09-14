@@ -12,6 +12,8 @@ import {
   cropLossPercent,
   cropVerdict,
   DEFAULT_CARD_SIZE,
+  cardSizeDimensions,
+  fittedCardInsetMm,
   fittedCardMm,
   imagePrintDpi,
   isLowPrintDpi,
@@ -39,6 +41,12 @@ const CardFacePreview = dynamic(
  * arrives with the server-side PDF renderer; this is the drop-in raster win.)
  */
 const PRINT_PIXEL_RATIO = 300 / 96;
+
+/** A millimetre figure a person reads off the screen: one decimal at most, and
+ *  no trailing ".0" (so the 5mm side margin says "5mm", not "5.0mm"). */
+function mmLabel(value: number): string {
+  return `${Math.round(value * 10) / 10}mm`;
+}
 
 /** Human label per face, for the (screen-only) collation caption. */
 const FACE_LABEL: Record<DesignPage["name"], string> = {
@@ -276,6 +284,11 @@ export function PrintRunOverlay({
   }, [onClose]);
 
   const { pageWidthMm, pageHeightMm, cardWidthMm } = fittedCardMm(size);
+  // The gap between the card as previewed and the trim edge. The print-ready PDF
+  // has no such gap, so this is the difference between what an operator is
+  // looking at and what comes off the press — drawn below, and stated in the
+  // toolbar. See docs/card-artwork-crop-plan.md.
+  const insetMm = fittedCardInsetMm(size);
   // Render the Konva face at the CSS-pixel width that prints at the fitted
   // millimetre width (96dpi paged-media reference), so the canvas is physically
   // the right size on paper — not a fixed on-screen pixel size floated on A4.
@@ -345,6 +358,17 @@ export function PrintRunOverlay({
             may look soft — consider a higher-resolution source.
           </p>
         )}
+        {/* What this view is, and what it is not. The card is drawn inset so a
+            Browser print stays clear of an office printer's unprintable margin;
+            the print-ready PDF has no inset at all. Without this line the white
+            border reads as part of the card, which is the one thing an operator
+            opening this screen must not believe. */}
+        <p className="order-last basis-full text-sm text-black/70" role="status">
+          This view sits each card {mmLabel(insetMm.sideMm)} in from the side trim edges and{" "}
+          {mmLabel(insetMm.topMm)} from the top and bottom (shaded), so Browser print is not clipped
+          by an office printer’s unprintable margin. The print-ready PDF has no such border — the
+          artwork runs to the trim edge at {cardSizeDimensions(size)}.
+        </p>
         {cropped !== null && cropped.count > 0 && (
           <p className="order-last basis-full text-sm text-amber-700" role="status">
             ⚠ {cropped.count} background image{cropped.count === 1 ? "" : "s"} in this run{" "}
@@ -491,10 +515,21 @@ export function PrintRunOverlay({
                 inside with the fitted safe margin. */}
             <div
               style={{ width: `${pageWidthMm}mm`, height: `${pageHeightMm}mm` }}
-              className={`flex items-center justify-center bg-white ${
+              className={`relative flex items-center justify-center bg-white ${
                 index < faces.length - 1 ? "break-after-page" : ""
               } border border-black/10 shadow-sm print:border-0 print:shadow-none`}
             >
+              {/* The band the PDF prints into and this preview does not: drawn
+                  as a border whose widths *are* the inset, so the shading cannot
+                  drift from the card fitted inside it. Screen only — Browser
+                  print rasterises what is on screen, and a printed band would
+                  put a grey frame on a real card. */}
+              <div
+                data-trim-band
+                aria-hidden
+                style={{ borderWidth: `${insetMm.topMm}mm ${insetMm.sideMm}mm` }}
+                className="pointer-events-none absolute inset-0 border-black/[0.07] print:hidden"
+              />
               <CardFacePreview
                 document={entry.document}
                 width={cardWidthPx}

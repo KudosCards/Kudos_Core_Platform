@@ -93,6 +93,40 @@ export function fittedCardMm(
   };
 }
 
+/** The gap between the previewed card and the trim edge, in millimetres. The
+ *  two axes differ: the fit clamps on width, so the sides land on the margin and
+ *  the vertical gap absorbs whatever the aspect ratio leaves over. */
+export interface FittedCardInsetMm {
+  sideMm: number;
+  topMm: number;
+}
+
+/**
+ * How far in from the trimmed edge a fitted card sits, per axis. Pure.
+ *
+ * The ops print overlay draws the card inset inside its page so that a *browser*
+ * print stays clear of an office printer's unprintable margin. The print-ready
+ * PDF has no such inset — `faceGeometry` spans the full trim width, full bleed.
+ * So the preview shows every card inside a white border the real output does not
+ * have, which is precisely the thing that hides the question an operator opens
+ * that screen to ask: is the artwork being cut at the edge?
+ *
+ * We do not move the inset — it is load-bearing for the Browser print path (see
+ * docs/card-artwork-crop-plan.md, D5). We say what it is instead, and this is
+ * the number to say. Derived from `fittedCardMm` rather than restated, so the
+ * band drawn on screen cannot drift from the card drawn inside it.
+ */
+export function fittedCardInsetMm(
+  size: CardSize,
+  marginMm: number = PRINT_SAFE_MARGIN_MM,
+): FittedCardInsetMm {
+  const { pageWidthMm, pageHeightMm, cardWidthMm, cardHeightMm } = fittedCardMm(size, marginMm);
+  return {
+    sideMm: (pageWidthMm - cardWidthMm) / 2,
+    topMm: (pageHeightMm - cardHeightMm) / 2,
+  };
+}
+
 /**
  * How much of the back of a card is ours, in millimetres, measured up from the
  * bottom trim edge.
