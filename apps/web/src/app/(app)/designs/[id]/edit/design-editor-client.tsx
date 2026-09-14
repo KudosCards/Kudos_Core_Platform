@@ -34,6 +34,7 @@ import {
   imagePrintDpi,
   printDpiVerdict,
   reorderElement,
+  salutationNames,
 } from "@kudos/shared-types";
 import { FontPreloader } from "@/lib/editor-fonts";
 import { clearDraft, readDraft, writeDraft, type DesignDraft } from "@/lib/design-draft";
@@ -621,6 +622,33 @@ export function DesignEditorClient({
       : backgroundCrop?.url === backgroundUrl
         ? backgroundCrop.result
         : { state: "measuring" };
+
+  /**
+   * People this face addresses by hand — "To Florence," rather than
+   * "To {firstName},".
+   *
+   * The same `salutationNames` the pre-send check uses, so the editor and the
+   * checkout cannot form two opinions about what counts as naming somebody. Up
+   * to now it ran in exactly one place, at checkout, which is after an entire
+   * send has been built: Kip McGrath typed a name here, reused the design for
+   * somebody else, and nothing said a word until the card was printed with both
+   * names on it. This is the moment the fix costs one click.
+   *
+   * No recipient list exists at this point, so it cannot say how many cards
+   * would be wrong — only that a name is written where a merge field belongs.
+   * See docs/card-message-guardrails-plan.md.
+   */
+  const namedByHandHere = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          salutationNames(document_)
+            .filter((found) => found.face === activePage)
+            .map((found) => found.name),
+        ),
+      ),
+    [document_, activePage],
+  );
 
   /** Set (or clear) the active page's background fill. */
   function setPageBackground(background: PageBackground | undefined) {
@@ -1500,6 +1528,19 @@ export function DesignEditorClient({
               written beside the old one rather than over it, and nothing said so
               until it had been printed and posted. Here is the one place where
               it costs nothing to fix. See docs/card-content-preflight-plan.md. */}
+          {/* A name typed where a merge field belongs. Amber rather than a
+              refusal: a nickname is a perfectly good reason to write one, and
+              the editor has no recipient list to judge against. It is the
+              checkout that knows how many cards would be wrong. */}
+          {namedByHandHere.length > 0 && (
+            <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              This face says {namedByHandHere.map((name) => `“${name}”`).join(" and ")} by hand.
+              Select that text and use{" "}
+              <span className="font-semibold">Insert merge field → First name</span> instead, so
+              every card is addressed to its own recipient. Left as it is, every card sent from this
+              design will say the same name.
+            </p>
+          )}
           {stackedTextPairs > 0 && (
             <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               Two pieces of text on this face are written on top of each other and will print that
