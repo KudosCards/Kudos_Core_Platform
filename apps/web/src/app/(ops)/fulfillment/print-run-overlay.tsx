@@ -350,7 +350,7 @@ export function PrintRunOverlay({
             ⚠ {cropped.count} background image{cropped.count === 1 ? "" : "s"} in this run{" "}
             {cropped.count === 1 ? "is" : "are"} being cropped to fit the card — up to{" "}
             {cropped.worstPercent}% of the artwork is not printed. Artwork fits with nothing lost at
-            the card&rsquo;s own proportion, 1:1.409.
+            the card’s own proportion, 1:1.409.
           </p>
         )}
         <div className="flex items-center gap-3">
