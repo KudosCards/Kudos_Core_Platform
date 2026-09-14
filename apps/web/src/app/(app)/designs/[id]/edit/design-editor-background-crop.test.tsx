@@ -72,6 +72,9 @@ const SQUARE = "https://cdn.test/square.png";
 const FITS = "https://cdn.test/fits.png";
 const NEARLY = "https://cdn.test/nearly.png";
 const A6 = "https://cdn.test/a6.png";
+/** Shaped like what the catalog sync stores: the design-assets bucket, under
+ *  `catalog/`. */
+const OURS = "https://x.supabase.co/storage/v1/object/public/design-assets/catalog/recABC.png";
 
 /** Wait until the panel says it has finished measuring this face, and report
  *  what it found. Asserting an absence before this is asserting nothing: the
@@ -123,7 +126,12 @@ describe("DesignEditorClient — a background that will be cropped", () => {
     const note = await screen.findByText(/29% of the width of this image will not be printed/);
     expect(note).toBeInTheDocument();
     // And what would fit, so the note is actionable rather than just bad news.
-    expect(note).toHaveTextContent(/1050 × 1480/);
+    // 1240 × 1748 is A6 at 300dpi — the one export that clears this check and
+    // the resolution check together.
+    expect(note).toHaveTextContent(/1240 × 1748/);
+    // In millimetres too: 29% of a 105mm-wide card is 15.2mm off each side, and
+    // nobody briefs a designer in percentages of an axis.
+    expect(note).toHaveTextContent(/15\.2mm off each side/);
     // Heavy enough to be worth flagging loudly.
     expect(note.className).toContain("amber");
   });
@@ -287,5 +295,60 @@ describe("DesignEditorClient — a background that will be cropped", () => {
 
     expect(backgroundPanel()).toHaveAttribute("data-background-crop", "none");
     expect(screen.queryByText(/will not be printed/)).not.toBeInTheDocument();
+  });
+
+  it("does not ask the member to re-export artwork that is ours", async () => {
+    // 207 of 217 catalog designs are cropped. Telling the member to re-export
+    // one is advice about a file they have never seen and cannot replace — on
+    // almost every design on the platform.
+    stubImageLoader({ [OURS]: { width: 1000, height: 1500 } });
+    render(
+      <DesignEditorClient
+        savedDesign={designWith({ front: OURS })}
+        messagePages={[]}
+        canAuthorMessagePages={false}
+      />,
+    );
+
+    const note = await screen.findByText(/trimmed from each of the top and bottom/);
+    // Stated as a fact about the card, with the reassurance that matters to
+    // somebody who did not choose the artwork.
+    expect(note).toHaveTextContent(/Nothing for you to fix/);
+    expect(note).not.toHaveTextContent(/Re-export/);
+    // And not dressed as a problem they have caused.
+    expect(note.className).not.toContain("amber");
+  });
+
+  it("still asks for a re-export when the member uploaded it", async () => {
+    // The discriminator. The advice is exactly right for their own file, and
+    // dropping it everywhere would be the opposite mistake.
+    stubImageLoader({ [SQUARE]: { width: 1000, height: 1000 } });
+    render(
+      <DesignEditorClient
+        savedDesign={designWith({ front: SQUARE })}
+        messagePages={[]}
+        canAuthorMessagePages={false}
+      />,
+    );
+
+    const note = await screen.findByText(/29% of the width of this image/);
+    expect(note).toHaveTextContent(/Re-export at 1240 × 1748/);
+    expect(note.className).toContain("amber");
+  });
+
+  it("measures our own heavy crop without shouting about it", async () => {
+    // A heavy loss on catalog artwork is still not the member's to act on, so
+    // the amber treatment would be alarming them about our job.
+    stubImageLoader({ [OURS]: { width: 1500, height: 1000 } });
+    render(
+      <DesignEditorClient
+        savedDesign={designWith({ front: OURS })}
+        messagePages={[]}
+        canAuthorMessagePages={false}
+      />,
+    );
+
+    const note = await screen.findByText(/trimmed from each side/);
+    expect(note.className).not.toContain("amber");
   });
 });

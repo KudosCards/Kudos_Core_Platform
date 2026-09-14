@@ -22,9 +22,12 @@ import {
   MERGE_FIELDS,
   PRINT_DPI_TARGET,
   backgroundCropLoss,
+  cropLossPerEdgeMm,
   cropLossPercent,
   cropVerdict,
   croppedAxis,
+  idealArtworkPixels,
+  isCatalogArtwork,
   elementPrintedSizeMm,
   findDesignBracketTokenMistakes,
   fixDesignBracketTokens,
@@ -53,7 +56,16 @@ import { loadNaturalSize } from "@/lib/image-natural-size";
 type BackgroundCropResult =
   | { state: "measuring" }
   | { state: "unreadable" }
-  | { state: "measured"; percent: number; axis: "width" | "height" | null; verdict: CropVerdict };
+  | {
+      state: "measured";
+      percent: number;
+      perEdgeMm: number;
+      axis: "width" | "height" | null;
+      verdict: CropVerdict;
+      /** Ours, from the catalog — so the advice can be about what we will do
+       *  rather than what they should. */
+      ours: boolean;
+    };
 
 const DesignCanvas = dynamic(() => import("./design-canvas").then((mod) => mod.DesignCanvas), {
   ssr: false,
@@ -591,8 +603,10 @@ export function DesignEditorClient({
         result: {
           state: "measured",
           percent: cropLossPercent(loss),
+          perEdgeMm: cropLossPerEdgeMm(loss, DEFAULT_CARD_SIZE),
           axis: croppedAxis(loss),
           verdict: cropVerdict(loss),
+          ours: isCatalogArtwork(backgroundUrl),
         },
       });
     })();
@@ -1564,20 +1578,41 @@ export function DesignEditorClient({
                 here, not at checkout, not in the print run. Loud only when the
                 composition is really being cut; a few per cent is a trim, worth
                 stating but not worth alarming anyone over. */}
+            {/* Whose artwork it is decides what there is to say. On a file the
+                member uploaded, "re-export at this size" is exactly the right
+                advice. On a catalog design it is advice about a file they have
+                never seen and cannot replace — and 207 of our 217 designs are
+                cropped, so getting this wrong means showing almost everybody on
+                the platform a remedy they cannot perform. Ours is stated as a
+                fact about the card, not as a job for them.
+                See docs/card-artwork-shape-plan.md, Phase 3. */}
             {faceBackgroundCrop?.state === "measured" &&
               faceBackgroundCrop.verdict !== "ok" &&
               faceBackgroundCrop.axis !== null && (
                 <p
                   className={`rounded-md px-2 py-1.5 text-xs ${
-                    faceBackgroundCrop.verdict === "heavy"
+                    faceBackgroundCrop.verdict === "heavy" && !faceBackgroundCrop.ours
                       ? "border border-amber-300 bg-amber-50 text-amber-900"
                       : "text-foreground/60"
                   }`}
                 >
-                  {faceBackgroundCrop.percent}% of the {faceBackgroundCrop.axis} of this image will
-                  not be printed. A background fills the card and is centred and cropped to its
-                  shape — artwork proportioned 1:1.409, for example 1050 × 1480, fits with nothing
-                  lost.
+                  {faceBackgroundCrop.ours ? (
+                    <>
+                      This card’s artwork is a little taller than the card, so about{" "}
+                      {faceBackgroundCrop.perEdgeMm.toFixed(1)}mm is trimmed from each{" "}
+                      {faceBackgroundCrop.axis === "width" ? "side" : "of the top and bottom"} when
+                      it prints. Nothing for you to fix — your own text and images are unaffected.
+                    </>
+                  ) : (
+                    <>
+                      {faceBackgroundCrop.percent}% of the {faceBackgroundCrop.axis} of this image
+                      will not be printed — about {faceBackgroundCrop.perEdgeMm.toFixed(1)}mm off
+                      each {faceBackgroundCrop.axis === "width" ? "side" : "of the top and bottom"}.
+                      A background fills the card and is centred and cropped to its shape. Re-export
+                      at {idealArtworkPixels(DEFAULT_CARD_SIZE).width} ×{" "}
+                      {idealArtworkPixels(DEFAULT_CARD_SIZE).height} to keep all of it.
+                    </>
+                  )}
                 </p>
               )}
             <input

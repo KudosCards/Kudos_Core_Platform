@@ -10,6 +10,7 @@ import { httpRequest } from "../common/http-request";
 import type { Prisma } from "@prisma/client";
 import sharp from "sharp";
 import {
+  CATALOG_ASSET_PREFIX,
   backgroundCropLoss,
   cropLossPercent,
   cropVerdict,
@@ -475,7 +476,10 @@ export class CatalogSyncService {
     const buffer = Buffer.from(await response.arrayBuffer());
     const contentType = image.contentType ?? response.headers.get("content-type") ?? "image/png";
     const ext = extensionFor(image.filename, contentType);
-    const path = `catalog/${externalId}.${ext}`;
+    // The prefix is shared, not a local literal: `isCatalogArtwork` reads it
+    // back to decide whose problem a crop is, and a drift between the two would
+    // silently start telling members to re-export our artwork.
+    const path = `${CATALOG_ASSET_PREFIX}${externalId}.${ext}`;
 
     const { error } = await this.storage.storage
       .from(DESIGN_ASSETS_BUCKET)

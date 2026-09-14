@@ -240,6 +240,45 @@ export const createDesignAssetSchema = z.object({
 export type CreateDesignAssetInput = z.infer<typeof createDesignAssetSchema>;
 
 /**
+ * The object-path prefix the catalog sync stores card artwork under, inside the
+ * design-assets bucket.
+ *
+ * Exported so the sync that writes it and the checks that read it cannot drift:
+ * a member's upload is scoped to their account id (`<accountId>/<uuid>-<name>`),
+ * so the two are structurally distinguishable, but only while both sides agree
+ * on this string.
+ */
+export const CATALOG_ASSET_PREFIX = "catalog/";
+
+/**
+ * Whether an asset URL points at artwork *we* supplied rather than artwork the
+ * member uploaded.
+ *
+ * It decides whose problem a crop is. The editor tells whoever is looking to
+ * re-export a cropped background at the card's proportion — right for their own
+ * file, and useless for a catalog design they have never seen and cannot
+ * replace. With 207 of 217 catalog designs cropped, getting this wrong means
+ * showing almost every member on the platform a remedy they cannot perform.
+ *
+ * Matched on the path segment, not on the URL containing the word: a member can
+ * call a file "catalog.png", and a looser check would hand them our excuse for
+ * not helping. Anything unparseable is treated as not ours — the safe direction,
+ * since it errs towards offering help rather than withholding it.
+ */
+export function isCatalogArtwork(assetUrl: string): boolean {
+  let pathname: string;
+  try {
+    pathname = new URL(assetUrl).pathname;
+  } catch {
+    return false;
+  }
+  return pathname.includes(`/${DESIGN_ASSETS_PUBLIC_SEGMENT}/${CATALOG_ASSET_PREFIX}`);
+}
+
+/** The bucket segment a public design-asset URL carries. */
+const DESIGN_ASSETS_PUBLIC_SEGMENT = "design-assets";
+
+/**
  * Every image asset one face references, background first then elements, in
  * document order and deduplicated.
  *
