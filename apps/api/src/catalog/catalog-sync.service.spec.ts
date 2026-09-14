@@ -3,7 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { CatalogPublisherService } from "./catalog-publisher.service";
 import type { CatalogCardRecord, CatalogSource } from "./catalog-source";
-import { isCatalogArtwork } from "@kudos/shared-types";
+import {
+  DEFAULT_CARD_SIZE,
+  PRINT_RUN_BLEED_MM,
+  cropLossPercent,
+  isCatalogArtwork,
+  printedCropLoss,
+} from "@kudos/shared-types";
 import { CatalogSyncService } from "./catalog-sync.service";
 
 /**
@@ -231,5 +237,26 @@ describe("CatalogSyncService — measuring artwork at the door", () => {
     expect(summary.artworkFailed).toHaveLength(1);
     expect(upserts[0]?.update).not.toHaveProperty("artworkWidth");
     expect(upserts[0]?.update).not.toHaveProperty("artworkHeight");
+  });
+
+  it("reports the loss the press will produce, at the bleed the press is given", async () => {
+    // The trap this closes: the measurement used to assume the authored canvas
+    // while the renderer crops against the *page*. Those agree only because the
+    // shipping path passes no bleed. `renderPdf` still defaults to 3mm for a
+    // future print house, and on such a page a 2:3 source loses 11.1% of its
+    // height rather than 6% — so the sync would have gone on reporting half of
+    // what was actually being thrown away.
+    const twoThree = await png(1000, 1500);
+    const { service } = makeService([record("rec1", "Happy Tulips")], () => twoThree);
+
+    const summary = await service.sync();
+
+    const expected = printedCropLoss(
+      { width: 1000, height: 1500 },
+      { size: DEFAULT_CARD_SIZE, bleedMm: PRINT_RUN_BLEED_MM },
+    );
+    expect(summary.cropped[0]?.percent).toBe(cropLossPercent(expected));
+    // And that is the 6% the catalog actually shows, on 207 of 217 designs.
+    expect(summary.cropped[0]?.percent).toBe(6);
   });
 });

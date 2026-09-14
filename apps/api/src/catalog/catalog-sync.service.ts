@@ -11,7 +11,9 @@ import type { Prisma } from "@prisma/client";
 import sharp from "sharp";
 import {
   CATALOG_ASSET_PREFIX,
-  backgroundCropLoss,
+  DEFAULT_CARD_SIZE,
+  PRINT_RUN_BLEED_MM,
+  printedCropLoss,
   cropLossPercent,
   cropVerdict,
   croppedAxis,
@@ -310,7 +312,14 @@ export class CatalogSyncService {
         await this.upsertWithSlug(record, data, takenSlugs);
 
         if (copied?.natural) {
-          const loss = backgroundCropLoss(copied.natural);
+          // Measured against what the press produces, not what a browser draws:
+          // the sync's report is about printed cards. Identical today, because
+          // the shipping path has no bleed — and automatically right on the day
+          // it does. See docs/card-artwork-shape-plan.md, D5.
+          const loss = printedCropLoss(copied.natural, {
+            size: DEFAULT_CARD_SIZE,
+            bleedMm: PRINT_RUN_BLEED_MM,
+          });
           const verdict = cropVerdict(loss);
           const axis = croppedAxis(loss);
           if (verdict !== "ok" && axis !== null) {

@@ -214,3 +214,58 @@ export function idealArtworkPixels(size: CardSize): PixelSize {
   // its height, which the floor forgives (see the true-A6 case above).
   return { width: px(widthMm), height: px(heightMm) };
 }
+
+/**
+ * Bleed on the PDF the ops print run produces, in millimetres.
+ *
+ * Zero: Kudos prints and folds these cards rather than trimming them, so the
+ * page is the exact trim size (see ADR 0162 and print-run-pdf.service.ts).
+ *
+ * Shared rather than a literal at the call site because the measurement below
+ * has to describe the geometry the renderer actually uses. `renderPdf` still
+ * defaults to 3mm for a future print house that trims, and the day one is
+ * wired up this constant is what keeps every reported number honest.
+ */
+export const PRINT_RUN_BLEED_MM = 0;
+
+/** Which output a crop is being measured for. Required, not defaulted: the
+ *  answer differs by a factor of two between bleed and no bleed, so a caller
+ *  has to say which one it means. */
+export interface PrintedGeometry {
+  size: CardSize;
+  bleedMm: number;
+}
+
+/**
+ * What a background loses on a **finished, trimmed** card. Pure.
+ *
+ * Two things take from it, and only the first exists at `bleedMm: 0`:
+ *
+ * 1. the cover-crop, which fits the artwork over the whole page; and
+ * 2. the trim, which cuts the page back to the card.
+ *
+ * `backgroundCropLoss` models neither — it fits to the authored 450x634 canvas,
+ * which coincides with the trim to within 0.06mm and is the right answer for
+ * what is drawn on screen. It is the wrong answer for a page with bleed: there
+ * the background is scaled to fill 111x154 and then cut back to 105x148, so a
+ * 2:3 source loses 11.1% of its height and 5.4% of its width rather than 6% and
+ * nothing. Reporting the canvas figure for that page would understate the loss
+ * by half. See docs/card-artwork-shape-plan.md, D5.
+ */
+export function printedCropLoss(natural: PixelSize, geometry: PrintedGeometry): CropLoss {
+  const { widthMm, heightMm } = CARD_SIZE_DIMENSIONS_MM[geometry.size];
+  const bleedMm = Math.max(0, geometry.bleedMm);
+  const page = { width: widthMm + 2 * bleedMm, height: heightMm + 2 * bleedMm };
+
+  const onPage = coverCropLoss(natural, page);
+  // With no bleed the page *is* the trim: there is no second cut, and applying
+  // one anyway would multiply by an exact 1 and cost precision for nothing.
+  if (bleedMm === 0) return onPage;
+
+  // Whatever survived the crop, minus what the guillotine then takes.
+  const kept = (lost: number, trimMm: number, pageMm: number) => (1 - lost) * (trimMm / pageMm);
+  return {
+    widthLost: 1 - kept(onPage.widthLost, widthMm, page.width),
+    heightLost: 1 - kept(onPage.heightLost, heightMm, page.height),
+  };
+}

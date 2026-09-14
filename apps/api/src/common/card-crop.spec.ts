@@ -8,6 +8,8 @@ import {
   revealedCrop,
   cropLossPerEdgeMm,
   idealArtworkPixels,
+  printedCropLoss,
+  PRINT_RUN_BLEED_MM,
   CARD_HEIGHT,
   CARD_WIDTH,
 } from "@kudos/shared-types";
@@ -306,5 +308,79 @@ describe("idealArtworkPixels", () => {
     for (const size of ["A6", "A5"] as const) {
       expect(cropVerdict(backgroundCropLoss(idealArtworkPixels(size)))).toBe("ok");
     }
+  });
+});
+
+/**
+ * Measuring the geometry we actually print, rather than the one we draw on
+ * screen.
+ *
+ * `backgroundCropLoss` fits artwork to the authored 450x634 canvas. The renderer
+ * does not: it cover-crops the background over the whole **page**, which equals
+ * the trim only because the one shipping path passes `bleedMm: 0`. `renderPdf`
+ * still defaults to 3mm, and the geometry module exists precisely so a print
+ * house that trims can be added later.
+ *
+ * On such a path the background is scaled to fill a page 6mm larger each way and
+ * then cut back to the card, so a 2:3 source loses 11.1% of its height and 5.4%
+ * of its width — `heavy` — while every surface would go on saying 6%.
+ * See docs/card-artwork-shape-plan.md, D5.
+ */
+describe("printedCropLoss", () => {
+  const TWO_THREE = { width: 1000, height: 1500 };
+
+  it("is the plain cover-crop into the trim when nothing bleeds", () => {
+    // What we ship today. The page is the card, so there is no second cut.
+    const loss = printedCropLoss(TWO_THREE, { size: "A6", bleedMm: 0 });
+    expect(loss).toEqual(coverCropLoss(TWO_THREE, { width: 105, height: 148 }));
+    expect(cropLossPercent(loss)).toBe(6);
+  });
+
+  it("agrees with the on-screen measurement to within a rounding hair", () => {
+    // The preview crops into the canvas and the press crops into the paper, and
+    // those are a third of a design unit apart. Tied together here so the gap
+    // stays the 0.06mm it is rather than quietly becoming something else.
+    const onScreen = backgroundCropLoss(TWO_THREE);
+    const printed = printedCropLoss(TWO_THREE, { size: "A6", bleedMm: PRINT_RUN_BLEED_MM });
+    expect(Math.abs(onScreen.heightLost - printed.heightLost) * 148).toBeLessThan(0.07);
+  });
+
+  it("counts the trim as well as the crop once a page bleeds", () => {
+    // The numbers in the plan. Both axes lose: the height to the cover-crop and
+    // then the cut, the width to the cut alone.
+    const loss = printedCropLoss(TWO_THREE, { size: "A6", bleedMm: 3 });
+    expect(loss.heightLost).toBeCloseTo(0.1111, 3);
+    expect(loss.widthLost).toBeCloseTo(0.0541, 3);
+    expect(cropVerdict(loss)).toBe("heavy");
+  });
+
+  it("would have been reported as half of what it is", () => {
+    // The falsifying comparison, stated as a test so the trap cannot reopen
+    // quietly: measured against the canvas, a bleed path reads 6%.
+    const bleeding = printedCropLoss(TWO_THREE, { size: "A6", bleedMm: 3 });
+    expect(cropLossPercent(backgroundCropLoss(TWO_THREE))).toBe(6);
+    expect(cropLossPercent(bleeding)).toBe(11);
+  });
+
+  it("takes something even from artwork at the ideal size, once there is bleed", () => {
+    // Worth knowing before anyone turns bleed on: the background is scaled to
+    // fill a larger page and then cut back, so "correctly sized" artwork is not
+    // immune. Artwork for a trimming print house has to be supplied oversized.
+    const ideal = idealArtworkPixels("A6");
+    expect(cropVerdict(printedCropLoss(ideal, { size: "A6", bleedMm: 0 }))).toBe("ok");
+    expect(cropLossPercent(printedCropLoss(ideal, { size: "A6", bleedMm: 3 }))).toBeGreaterThan(4);
+  });
+
+  it("is what the print run actually asks for", () => {
+    // The shipping bleed is shared, not a literal in the PDF service, so the
+    // measurement and the renderer cannot drift apart.
+    expect(PRINT_RUN_BLEED_MM).toBe(0);
+  });
+
+  it("treats a degenerate size as losing nothing rather than dividing by zero", () => {
+    expect(printedCropLoss({ width: 0, height: 100 }, { size: "A6", bleedMm: 0 })).toEqual({
+      widthLost: 0,
+      heightLost: 0,
+    });
   });
 });
