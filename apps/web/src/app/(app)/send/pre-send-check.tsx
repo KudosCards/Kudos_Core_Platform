@@ -4,6 +4,7 @@ import type { BatchOrderPreflight, PreflightBucket, PreflightIssue } from "@kudo
 import { BACK_RESERVED_FOOTER_MM } from "@kudos/shared-types";
 import Link from "next/link";
 import { NamedByHandNotice } from "@/components/named-by-hand-notice";
+import { faceLabel } from "@/lib/card-faces";
 import { useState } from "react";
 import { MailX, MapPin, PenLine, Repeat, type LucideIcon } from "lucide-react";
 
@@ -11,14 +12,6 @@ import { MailX, MapPin, PenLine, Repeat, type LucideIcon } from "lucide-react";
 const PREVIEW_ROWS = 4;
 
 type BucketKey = "missingAddress" | "invalidPostcode" | "unresolvedTokens" | "duplicate";
-
-/** Face names as a sender reads them — the same words the print overlay uses. */
-const FACE_LABEL: Record<string, string> = {
-  front: "front",
-  "inside-left": "inside left",
-  "inside-right": "inside right",
-  back: "back",
-};
 
 /** Per-bucket presentation. `fixable` buckets (address problems) get an inline
  * "Fix" button; the rest are advisory warnings the sender resolves elsewhere. */
@@ -289,7 +282,7 @@ export function PreSendCheck({
           className="flex flex-col gap-1 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-foreground"
         >
           <span className="font-medium">
-            Two pieces of text overlap on the {FACE_LABEL[face.face] ?? face.face}
+            Two pieces of text overlap on the {faceLabel(face.face, { lower: true })}
           </span>
           <span className="text-xs">
             They will print on top of each other. This usually means an old message was left behind

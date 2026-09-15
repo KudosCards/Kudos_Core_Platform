@@ -149,6 +149,37 @@ export const designDocumentSchema = z.object({
 export type DesignDocument = z.infer<typeof designDocumentSchema>;
 
 /**
+ * The faces of a card, in the order they are read and printed: cover, the inside
+ * spread, then the back.
+ *
+ * One list, because two of them is how a preview starts disagreeing with a
+ * press. The browser preview, the ops print sheet and the server's PDF all
+ * expand a design into faces, and the PDF is the one that reaches a customer —
+ * so a face the screen shows and the PDF omits (or orders differently) is a
+ * fault nobody can see until the post arrives.
+ */
+export const CARD_FACE_ORDER: DesignPage["name"][] = [
+  "front",
+  "inside-left",
+  "inside-right",
+  "back",
+];
+
+/**
+ * The faces a design actually has, in reading order.
+ *
+ * A design may carry only a front, or a front and an inside, so this returns
+ * what exists rather than assuming four. Defensive against loosely-typed
+ * documents read from storage, for the same reason `hasQrElement` is.
+ */
+export function facesOf(document: DesignDocument | null | undefined): DesignPage["name"][] {
+  const pages = document?.pages;
+  if (!Array.isArray(pages)) return [];
+  const present = new Set(pages.map((page) => page?.name));
+  return CARD_FACE_ORDER.filter((name) => present.has(name));
+}
+
+/**
  * The Message Page a design's QR is linked to, or null. A thin accessor so web
  * (pre-selecting the send-flow default) and any other reader share one notion
  * of "what page did the designer choose" (ADR 0137).

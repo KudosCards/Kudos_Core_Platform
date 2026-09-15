@@ -13,6 +13,7 @@ import type {
 import {
   applyMergeTokens,
   FULFILLMENT_STATUSES,
+  printedCardMergeContext,
   OPEN_FULFILLMENT_STATUSES,
   royalMailTrackingUrl,
 } from "@kudos/shared-types";
@@ -40,14 +41,6 @@ interface FulfillmentJobDetail {
     documentSnapshot: DesignDocument;
     savedDesign: { name: string };
   };
-}
-
-/** Human occasion label for {occasion}: custom title wins, else the type
- * title-cased (e.g. "birthday" → "Birthday"). */
-function occasionLabelFor(occasion: { type: string; title: string | null } | null): string | null {
-  if (!occasion) return null;
-  if (occasion.title) return occasion.title;
-  return occasion.type.charAt(0).toUpperCase() + occasion.type.slice(1);
 }
 
 export type FulfillmentStatus =
@@ -1161,13 +1154,17 @@ export function FulfillmentClient({
               merged in, as it will be printed.
             </p>
             <WholeCardPreview
-              document={applyMergeTokens(preview.orderRecipient.documentSnapshot, {
-                firstName: preview.orderRecipient.recipient.firstName,
-                lastName: preview.orderRecipient.recipient.lastName,
-                occasion: occasionLabelFor(preview.orderRecipient.occasion),
-                occasionDate: preview.orderRecipient.occasion?.occasionDate ?? null,
-                customFields: preview.orderRecipient.recipient.customFields,
-              })}
+              document={applyMergeTokens(
+                preview.orderRecipient.documentSnapshot,
+                printedCardMergeContext({
+                  recipientFirstName: preview.orderRecipient.recipient.firstName,
+                  recipientLastName: preview.orderRecipient.recipient.lastName,
+                  occasionTitle: preview.orderRecipient.occasion?.title ?? null,
+                  occasionType: preview.orderRecipient.occasion?.type ?? null,
+                  occasionDate: preview.orderRecipient.occasion?.occasionDate ?? null,
+                  recipientCustomFields: preview.orderRecipient.recipient.customFields,
+                }),
+              )}
             />
           </div>
         </Modal>

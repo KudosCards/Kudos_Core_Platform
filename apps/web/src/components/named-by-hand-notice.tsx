@@ -2,14 +2,7 @@
 
 import type { NamedByHand } from "@kudos/shared-types";
 import Link from "next/link";
-
-/** Face names as a sender reads them — the same words the print overlay uses. */
-const FACE_LABEL: Record<string, string> = {
-  front: "front",
-  "inside-left": "inside left",
-  "inside-right": "inside right",
-  back: "back",
-};
+import { faceLabel } from "@/lib/card-faces";
 
 /** Whether this name is among the ones already confirmed, matched as the server
  * matches them: ignoring case and surrounding space. */
@@ -55,7 +48,7 @@ export function NamedByHandNotice({
       }`}
     >
       <span className="font-medium">
-        This design says “{finding.name}” on the {FACE_LABEL[finding.face] ?? finding.face}
+        This design says “{finding.name}” on the {faceLabel(finding.face, { lower: true })}
       </span>
       <span className="text-xs">
         {finding.wrongFor === 0

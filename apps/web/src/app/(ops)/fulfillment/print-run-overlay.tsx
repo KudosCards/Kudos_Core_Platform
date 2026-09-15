@@ -4,6 +4,8 @@ import type { CardSize, DesignDocument, DesignPage } from "@kudos/shared-types";
 import {
   applyMergeTokens,
   BACK_RESERVED_FOOTER_MM,
+  facesOf,
+  printedCardMergeContext,
   CARD_SIZES,
   faceAssetUrls,
   cardSizeLabel,
@@ -26,7 +28,7 @@ import {
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { facesOf } from "@/components/card-preview-lightbox";
+import { faceLabel } from "@/lib/card-faces";
 import { CardTextReadout } from "./card-text-readout";
 import { clientApiDownload } from "@/lib/api.client";
 import { loadNaturalSize } from "@/lib/image-natural-size";
@@ -53,13 +55,6 @@ function mmLabel(value: number): string {
 }
 
 /** Human label per face, for the (screen-only) collation caption. */
-const FACE_LABEL: Record<DesignPage["name"], string> = {
-  front: "Front",
-  "inside-left": "Inside left",
-  "inside-right": "Inside right",
-  back: "Back",
-};
-
 export interface PrintRunCard {
   jobId: string;
   recipientFirstName: string;
@@ -73,14 +68,6 @@ export interface PrintRunCard {
   /** This card's QR slug (minted at settlement), or null. Used to render the
    * real /r/<slug> QR onto the print. */
   messagePageSlug: string | null;
-}
-
-/** Human occasion label for {occasion}: a custom title wins, else the type
- * (e.g. "birthday") title-cased. */
-function occasionLabel(card: PrintRunCard): string | null {
-  if (card.occasionTitle) return card.occasionTitle;
-  if (!card.occasionType) return null;
-  return card.occasionType.charAt(0).toUpperCase() + card.occasionType.slice(1);
 }
 
 /** One face of one card, ready to lay out on its own physical page. */
@@ -317,13 +304,7 @@ export function PrintRunOverlay({
   // last one (a trailing break can emit a blank final page in some browsers).
   const faces: PrintFace[] = cards.flatMap((card) => {
     // Merge once per card, then print every face the design has.
-    const merged = applyMergeTokens(card.document, {
-      firstName: card.recipientFirstName,
-      lastName: card.recipientLastName,
-      occasion: occasionLabel(card),
-      occasionDate: card.occasionDate,
-      customFields: card.recipientCustomFields,
-    });
+    const merged = applyMergeTokens(card.document, printedCardMergeContext(card));
     // The absolute link this card's QR encodes — built from its own slug the
     // same way the Messages page does, so a scanned printed card lands on /r/<slug>.
     const qrUrl =
@@ -512,7 +493,7 @@ export function PrintRunOverlay({
         {faces.map((entry, index) => (
           <div key={entry.key} className="flex flex-col items-center gap-2">
             <span className="text-xs text-black/60 print:hidden">
-              {entry.recipientName} · {entry.savedDesignName} · {FACE_LABEL[entry.face]}
+              {entry.recipientName} · {entry.savedDesignName} · {faceLabel(entry.face)}
             </span>
             {/* What the card says, in words. The render is the thing under
                 suspicion whenever an operator opens this, so reading it back is
