@@ -33,6 +33,7 @@ describe("FulfillmentClient — the tracking prompt before posting", () => {
     workingDaysUntilDue: null,
     clickAndDropOrderId: null,
     clickAndDropError: null,
+    heldByReturnedAddress: false,
     orderRecipient: {
       shippingAddressCity: "London",
       shippingAddressPostcode: "SW1A 1AA",
@@ -48,6 +49,7 @@ describe("FulfillmentClient — the tracking prompt before posting", () => {
     status: { pending: 0, in_progress: 0, printed: 1, posted: 0, delivered: 0 },
     due: { overdue: 0, today: 0, dueSoon: 0, upcoming: 0, noDate: 1 },
     clickAndDropErrors: 0,
+    held: 0,
   } as never;
 
   function setup() {
@@ -56,6 +58,7 @@ describe("FulfillmentClient — the tracking prompt before posting", () => {
         initialJobs={[job]}
         status="printed"
         due={null}
+        held={null}
         counts={COUNTS}
         dueOn={null}
         defaultPrintSize={"a5" as never}
@@ -153,6 +156,7 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
     workingDaysUntilDue: 0,
     clickAndDropOrderId: null,
     clickAndDropError: null,
+    heldByReturnedAddress: false,
     orderRecipient: {
       shippingAddressCity: "London",
       shippingAddressPostcode: "SW1A 1AA",
@@ -168,6 +172,7 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
     status: { pending: 1, in_progress: 0, printed: 0, posted: 0, delivered: 0 },
     due: { overdue: 0, today: 1, dueSoon: 0, upcoming: 0, noDate: 0 },
     clickAndDropErrors: 0,
+    held: 0,
   } as never;
 
   beforeEach(() => {
@@ -202,6 +207,7 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
         initialJobs={[pendingJob]}
         status={null}
         due={null}
+        held={null}
         counts={COUNTS}
         dueOn="2026-09-04"
         defaultPrintSize={"a5" as never}
@@ -226,6 +232,7 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
         initialJobs={[pendingJob]}
         status="pending"
         due={null}
+        held={null}
         counts={COUNTS}
         dueOn={null}
         defaultPrintSize={"a5" as never}
@@ -264,6 +271,7 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
         initialJobs={[{ ...pendingJob, status: "printed", printedAt: new Date().toISOString() }]}
         status={null}
         due={null}
+        held={null}
         counts={COUNTS}
         dueOn="2026-09-04"
         defaultPrintSize={"a5" as never}
@@ -274,5 +282,91 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
 
     // Posted is not an open status: the card has left this view for real.
     await waitFor(() => expect(screen.getByText("Nothing in this queue.")).toBeInTheDocument());
+  });
+});
+
+/**
+ * Phase 1 made a card addressed to a returned address impossible to export,
+ * print or post — and left it looking exactly like ordinary work. An operator
+ * found out by selecting it and reading a refusal.
+ *
+ * See docs/returned-address-hold-plan.md, phase 2.
+ */
+describe("FulfillmentClient — a card held because its address came back", () => {
+  const baseJob: FulfillmentJob = {
+    id: "job-9",
+    status: "pending",
+    trackingReference: null,
+    labelUrl: null,
+    printedAt: null,
+    postedAt: null,
+    deliveredAt: null,
+    dueDate: new Date().toISOString(),
+    workingDaysUntilDue: 60,
+    clickAndDropOrderId: null,
+    clickAndDropError: null,
+    heldByReturnedAddress: false,
+    orderRecipient: {
+      shippingAddressCity: "Kingston upon Hull",
+      shippingAddressPostcode: "HU8 9DJ",
+      dispatchOption: "asap",
+      postageClass: "second_class",
+      recipient: { firstName: "Freddie", lastName: "Farrow" },
+      savedDesign: { id: "d1", name: "Happy Birthday" },
+      occasion: { type: "birthday", occasionDate: new Date().toISOString() },
+    },
+  };
+
+  const counts = (held: number) =>
+    ({
+      status: { pending: 1, in_progress: 0, printed: 0, posted: 0, delivered: 0 },
+      due: { overdue: 0, today: 0, dueSoon: 0, upcoming: 1, noDate: 0 },
+      clickAndDropErrors: 0,
+      held,
+    }) as never;
+
+  function setup(job: FulfillmentJob, held: number) {
+    render(
+      <FulfillmentClient
+        initialJobs={[job]}
+        status="pending"
+        due={null}
+        held={null}
+        counts={counts(held)}
+        dueOn={null}
+        defaultPrintSize={"a5" as never}
+      />,
+    );
+  }
+
+  it("says on the row that the card is held", async () => {
+    setup({ ...baseJob, heldByReturnedAddress: true }, 1);
+
+    expect(await screen.findByText(/Held · address returned/)).toBeInTheDocument();
+  });
+
+  it("says nothing on an ordinary card", async () => {
+    setup(baseJob, 0);
+
+    // The discriminator. A badge on every row is one nobody reads, and this one
+    // has to mean "you cannot do this work".
+    await screen.findByText("Freddie Farrow");
+    expect(screen.queryByText(/Held · address returned/)).not.toBeInTheDocument();
+  });
+
+  it("offers the held cards as their own view, with the count", async () => {
+    setup({ ...baseJob, heldByReturnedAddress: true }, 3);
+
+    const chip = await screen.findByRole("button", { name: /Address returned/ });
+    expect(chip).toHaveTextContent("3");
+  });
+
+  it("does not put an empty chip on a queue with nothing held", async () => {
+    // "Held 0" as permanent furniture is exactly the sort of line an operator
+    // stops seeing.
+    setup(baseJob, 0);
+
+    await screen.findByText("Freddie Farrow");
+    expect(screen.queryByRole("button", { name: /Address returned/ })).not.toBeInTheDocument();
   });
 });

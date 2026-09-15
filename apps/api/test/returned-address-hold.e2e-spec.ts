@@ -232,6 +232,97 @@ describe("Returned-address hold (e2e)", () => {
       .expect(201);
   });
 
+  it("says on the queue row that the card is held", async () => {
+    // Phase 1 made these impossible to produce and left them looking completely
+    // ordinary — an operator found out by selecting one and reading a refusal.
+    const ops = await opsToken();
+    const accountId = await account();
+    const sent = await card(accountId, { status: "posted" });
+    await markReturned(ops, sent.jobId);
+    const queued = await card(accountId, { recipientId: sent.recipientId, status: "pending" });
+    const ordinary = await card(accountId, { status: "pending" });
+
+    const res = await request(app.getHttpServer())
+      .get("/fulfillment/jobs?status=pending&perPage=100")
+      .set("Authorization", `Bearer ${ops}`)
+      .expect(200);
+    const rows = (res.body as { items: { id: string; heldByReturnedAddress: boolean }[] }).items;
+    const held = rows.find((row) => row.id === queued.jobId);
+    const fine = rows.find((row) => row.id === ordinary.jobId);
+
+    expect(held?.heldByReturnedAddress).toBe(true);
+    expect(fine?.heldByReturnedAddress).toBe(false);
+  });
+
+  it("narrows the queue to the held cards, across every open status", async () => {
+    // A held card can sit at any open status, and an operator asking "what is
+    // stuck?" does not know which — so the filter releases the status pin, the
+    // way the deadline chips already do.
+    const ops = await opsToken();
+    const accountId = await account();
+    const sent = await card(accountId, { status: "posted" });
+    await markReturned(ops, sent.jobId);
+    const pendingHeld = await card(accountId, {
+      recipientId: sent.recipientId,
+      status: "pending",
+    });
+    const printedHeld = await card(accountId, {
+      recipientId: sent.recipientId,
+      status: "printed",
+    });
+    const ordinary = await card(accountId, { status: "pending" });
+
+    const res = await request(app.getHttpServer())
+      .get("/fulfillment/jobs?held=only&perPage=100")
+      .set("Authorization", `Bearer ${ops}`)
+      .expect(200);
+    const ids = (res.body as { items: { id: string }[] }).items.map((row) => row.id);
+
+    expect(ids).toEqual(expect.arrayContaining([pendingHeld.jobId, printedHeld.jobId]));
+    expect(ids).not.toContain(ordinary.jobId);
+    // The card that actually came back is closed, not held — it has been dealt
+    // with, and listing it as stuck work would be wrong.
+    expect(ids).not.toContain(sent.jobId);
+  });
+
+  it("takes held cards out of the ordinary working queue when asked", async () => {
+    const ops = await opsToken();
+    const accountId = await account();
+    const sent = await card(accountId, { status: "posted" });
+    await markReturned(ops, sent.jobId);
+    const heldCard = await card(accountId, { recipientId: sent.recipientId, status: "pending" });
+    const ordinary = await card(accountId, { status: "pending" });
+
+    const res = await request(app.getHttpServer())
+      .get("/fulfillment/jobs?held=hide&perPage=100")
+      .set("Authorization", `Bearer ${ops}`)
+      .expect(200);
+    const ids = (res.body as { items: { id: string }[] }).items.map((row) => row.id);
+
+    expect(ids).toContain(ordinary.jobId);
+    expect(ids).not.toContain(heldCard.jobId);
+  });
+
+  it("counts the held cards so the chip can carry the number", async () => {
+    const ops = await opsToken();
+    const accountId = await account();
+    const before = await request(app.getHttpServer())
+      .get("/fulfillment/counts")
+      .set("Authorization", `Bearer ${ops}`)
+      .expect(200);
+    const start = (before.body as { held: number }).held;
+
+    const sent = await card(accountId, { status: "posted" });
+    await markReturned(ops, sent.jobId);
+    await card(accountId, { recipientId: sent.recipientId, status: "pending" });
+
+    const after = await request(app.getHttpServer())
+      .get("/fulfillment/counts")
+      .set("Authorization", `Bearer ${ops}`)
+      .expect(200);
+    expect((after.body as { held: number }).held).toBe(start + 1);
+  });
+
   it("stops chasing an operator to post a card it will not let them post", async () => {
     // Left in, the must-ship band would carry a permanent overdue nobody could
     // ever clear — the surest way to teach a team to ignore the banner.

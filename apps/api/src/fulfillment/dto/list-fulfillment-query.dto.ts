@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { FulfillmentJobStatus } from "@prisma/client";
 import { IsEnum, IsIn, IsOptional, IsString, Matches } from "class-validator";
+import { HELD_FILTERS, type HeldFilter } from "@kudos/shared-types";
 
 /** Urgency filter over a job's dispatch deadline (due_date). See ADR 0108. */
 export const DUE_FILTERS = ["overdue", "today", "due_soon", "upcoming", "no_date", "all"] as const;
@@ -27,6 +28,15 @@ export class ListFulfillmentQueryDto {
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "dueOn must be an ISO date (YYYY-MM-DD)" })
   dueOn?: string;
+
+  @ApiPropertyOptional({
+    enum: HELD_FILTERS,
+    description:
+      "Narrow to the cards refused because they are addressed to somewhere a card already came back from (`only`), or take them out of the working queue (`hide`). Spans every open status, like the deadline filters.",
+  })
+  @IsOptional()
+  @IsIn(HELD_FILTERS)
+  held?: HeldFilter;
 
   @ApiPropertyOptional({ enum: QUEUE_SORTS, default: "due_date" })
   @IsOptional()

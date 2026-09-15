@@ -8,6 +8,7 @@ import type {
   ClickAndDropImportStatus,
   DesignDocument,
   DueFilter,
+  HeldFilter,
   FulfillmentCounts,
 } from "@kudos/shared-types";
 import {
@@ -73,6 +74,15 @@ export interface FulfillmentJob {
   clickAndDropOrderId: string | null;
   /** The last Click & Drop import error, shown with a retry action. */
   clickAndDropError: string | null;
+  /**
+   * This card is addressed to somewhere a card for the same contact already came
+   * back from, so the server refuses to export, print or post it.
+   *
+   * On the row because otherwise a held card looks like ordinary work and an
+   * operator finds out by selecting it and reading a refusal. See
+   * docs/returned-address-hold-plan.md.
+   */
+  heldByReturnedAddress: boolean;
   orderRecipient: {
     shippingAddressCity: string;
     shippingAddressPostcode: string;
@@ -280,6 +290,7 @@ export function FulfillmentClient({
   initialJobs,
   status,
   due,
+  held,
   counts,
   dueOn,
   defaultPrintSize,
@@ -290,6 +301,8 @@ export function FulfillmentClient({
   status: FulfillmentStatus | null;
   /** The active deadline filter, or null on the landing view. */
   due: DueFilter | null;
+  /** Which held-card view the queue is showing, or null for the ordinary one. */
+  held: HeldFilter | null;
   counts: FulfillmentCounts;
   /** The dispatch-calendar drill-in day (YYYY-MM-DD), or null. See ADR 0110. */
   dueOn: string | null;
@@ -865,6 +878,49 @@ export function FulfillmentClient({
         ))}
       </div>
 
+      {/* The cards the platform refuses to print or post, because they are
+          addressed to somewhere a card for that contact already came back from.
+          Its own row rather than a seventh deadline chip: it is not a question
+          about time, and it is the only one of these where the answer is "this
+          work cannot be done". Shown only when there are any — a permanent
+          "Held 0" is furniture. */}
+      {counts.held > 0 && !dueOn && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-xs uppercase tracking-wide text-foreground/40">Blocked</span>
+          <button
+            type="button"
+            onClick={() => router.push(held === "only" ? "/fulfillment" : "/fulfillment?held=only")}
+            className={`flex items-center gap-2 rounded-full px-3 py-1 ${
+              held === "only"
+                ? "bg-foreground text-background"
+                : "border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+            }`}
+          >
+            <span>Address returned</span>
+            <span
+              className={`tabular-nums ${held === "only" ? "text-background/70" : "text-amber-900/60"}`}
+            >
+              {counts.held}
+            </span>
+          </button>
+          {held !== "only" && (
+            <button
+              type="button"
+              onClick={() =>
+                router.push(held === "hide" ? "/fulfillment" : "/fulfillment?held=hide")
+              }
+              className={`rounded-full px-3 py-1 ${
+                held === "hide"
+                  ? "bg-foreground text-background"
+                  : "border border-black/15 hover:bg-black/5"
+              }`}
+            >
+              Hide from the queue
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Dispatch-urgency filter. A deadline is a question about work still to
           go out, so the chips count every open card and choosing one releases
           the status pin — matching the dispatch calendar and the send-by-5
@@ -961,6 +1017,13 @@ export function FulfillmentClient({
                     onChange={() => toggle(job.id)}
                   />
                   <div>
+                    {/* Said before the deadline, because it outranks it: a card
+                        that cannot be posted has no meaningful "due in 5wd". */}
+                    {job.heldByReturnedAddress && (
+                      <span className="mr-1 mb-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+                        Held · address returned
+                      </span>
+                    )}
                     {OPEN_STATUS_TABS.includes(job.status) &&
                       (() => {
                         const badge = dueBadge(job.workingDaysUntilDue);
