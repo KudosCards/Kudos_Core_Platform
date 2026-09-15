@@ -1,7 +1,8 @@
 "use client";
 
-import type { DesignDocument, DesignPage } from "@kudos/shared-types";
-import { BACK_RESERVED_FOOTER_MM } from "@kudos/shared-types";
+import type { DesignDocument } from "@kudos/shared-types";
+import { BACK_RESERVED_FOOTER_MM, facesOf } from "@kudos/shared-types";
+import { faceLabel } from "@/lib/card-faces";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
@@ -11,22 +12,6 @@ const CardFacePreview = dynamic(
   () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
   { ssr: false },
 );
-
-/** Reading order of a card's faces: cover, then the inside spread, then back. */
-const FACE_ORDER: DesignPage["name"][] = ["front", "inside-left", "inside-right", "back"];
-const FACE_LABEL: Record<DesignPage["name"], string> = {
-  front: "Front",
-  "inside-left": "Inside left",
-  "inside-right": "Inside right",
-  back: "Back",
-};
-
-/** The faces a design actually has, in reading order (front → inside → back).
- * A design may have only a front, or a front + inside, so we render what exists. */
-export function facesOf(document: DesignDocument): DesignPage["name"][] {
-  const present = new Set(document.pages.map((page) => page.name));
-  return FACE_ORDER.filter((name) => present.has(name));
-}
 
 /** A short human hint for how many faces beyond the front a design has, e.g.
  * "+2 inside" — shown on a preview tile so a sender knows there's more to see. */
@@ -87,7 +72,7 @@ export function CardFlip({ document, width = 300 }: { document: DesignDocument; 
           </button>
         )}
         <span className="min-w-24 text-center text-sm text-muted">
-          {FACE_LABEL[face]}
+          {faceLabel(face)}
           {many ? ` · ${safeIndex + 1}/${faces.length}` : ""}
         </span>
         {many && (

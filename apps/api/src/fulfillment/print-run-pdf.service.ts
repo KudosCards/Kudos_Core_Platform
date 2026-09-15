@@ -5,17 +5,14 @@ import {
   applyMergeTokens,
   DEFAULT_CARD_SIZE,
   designDocumentSchema,
+  facesOf,
+  printedCardMergeContext,
   type CardSize,
-  type DesignDocument,
-  type DesignPage,
 } from "@kudos/shared-types";
 import { createImageResolver, hostOf, renderRunPdf, type PrintFaceInput } from "../print-pdf";
 import type { EnvConfig } from "../config/env.schema";
 import { FulfillmentService, type PrintRunCard } from "./fulfillment.service";
 import type { ExportAddressesDto } from "./dto/export-addresses.dto";
-
-/** The faces a card design has, in print order — mirrors the web's `facesOf`. */
-const FACE_ORDER: DesignPage["name"][] = ["front", "inside-left", "inside-right", "back"];
 
 export interface RenderedPrintRun {
   pdf: Buffer;
@@ -103,45 +100,10 @@ export class PrintRunPdfService {
       return [];
     }
 
-    const merged = applyMergeTokens(parsed.data, {
-      firstName: card.recipientFirstName,
-      lastName: card.recipientLastName,
-      occasion: occasionLabel(card),
-      occasionDate: card.occasionDate,
-      customFields: coerceCustomFields(card.recipientCustomFields),
-    });
+    const merged = applyMergeTokens(parsed.data, printedCardMergeContext(card));
 
     const qrUrl = card.messagePageSlug ? `${webAppUrl}/r/${card.messagePageSlug}` : undefined;
 
     return facesOf(merged).map((face) => ({ document: merged, face, qrUrl }));
   }
-}
-
-/** The faces present on a design, in canonical print order. */
-function facesOf(document: DesignDocument): DesignPage["name"][] {
-  const present = new Set(document.pages.map((page) => page.name));
-  return FACE_ORDER.filter((name) => present.has(name));
-}
-
-/** Human occasion label for the `{occasion}` token: a custom title wins, else the
- * type title-cased — matches the web overlay's `occasionLabel`. */
-function occasionLabel(card: PrintRunCard): string | null {
-  if (card.occasionTitle) return card.occasionTitle;
-  if (!card.occasionType) return null;
-  return card.occasionType.charAt(0).toUpperCase() + card.occasionType.slice(1);
-}
-
-/** Coerce a recipient's stored custom fields (loose JSON) to the string map the
- * merge engine expects; anything not an object of scalars becomes null. */
-function coerceCustomFields(value: unknown): Record<string, string> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const out: Record<string, string> = {};
-  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof raw === "string") out[key] = raw;
-    else if (typeof raw === "number" || typeof raw === "boolean" || typeof raw === "bigint") {
-      out[key] = String(raw);
-    }
-    // Objects, arrays, null/undefined, functions and symbols are dropped.
-  }
-  return out;
 }

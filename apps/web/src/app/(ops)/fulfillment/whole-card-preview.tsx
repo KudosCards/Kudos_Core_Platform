@@ -3,7 +3,8 @@
 import type { DesignDocument } from "@kudos/shared-types";
 import { BACK_RESERVED_FOOTER_MM } from "@kudos/shared-types";
 import dynamic from "next/dynamic";
-import { facesOf } from "@/components/card-preview-lightbox";
+import { facesOf } from "@kudos/shared-types";
+import { faceLabel } from "@/lib/card-faces";
 import { CardTextReadout } from "./card-text-readout";
 
 // Client-only: Konva touches canvas APIs.
@@ -11,13 +12,6 @@ const CardFacePreview = dynamic(
   () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
   { ssr: false },
 );
-
-const FACE_LABEL: Record<string, string> = {
-  front: "Front",
-  "inside-left": "Inside left",
-  "inside-right": "Inside right",
-  back: "Back",
-};
 
 /**
  * Every face of one card, each with what it says in words.
@@ -50,7 +44,7 @@ export function WholeCardPreview({
     <div className="flex flex-col items-center gap-6">
       {faces.map((face) => (
         <div key={face} className="flex w-full flex-col items-center gap-2">
-          <span className="text-xs font-medium text-foreground/60">{FACE_LABEL[face] ?? face}</span>
+          <span className="text-xs font-medium text-foreground/60">{faceLabel(face)}</span>
           <CardFacePreview document={document} width={width} face={face} />
           {/* The back previews with its bottom strip blank because that is what
               prints — the stock already carries the Kudos logo and QR there.
