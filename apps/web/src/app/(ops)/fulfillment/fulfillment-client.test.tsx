@@ -407,22 +407,31 @@ describe("FulfillmentClient — the work the front door does not list", () => {
   };
 
   /** The queue exactly as it was reported: one to print, 26 printed and waiting,
-   *  21 of them due inside the send-by-5 window. */
+   *  21 of them due inside the send-by-5 window. Kept as a real object rather
+   *  than `as never` so a case can vary one bucket without losing its type. */
   const reported = {
-    status: { pending: 1, in_progress: 0, printed: 26, posted: 28, delivered: 52 },
+    status: {
+      pending: 1,
+      in_progress: 0,
+      printed: 26,
+      posted: 28,
+      delivered: 52,
+      returned_to_sender: 0,
+      failed: 0,
+    },
     due: { overdue: 0, today: 0, dueSoon: 21, upcoming: 6, noDate: 0 },
     clickAndDropErrors: 0,
     held: 0,
-  } as never;
+  };
 
-  function setup(counts: never, status: "pending" | null = "pending", due: null = null) {
+  function setup(counts: typeof reported, status: "pending" | null = "pending", due: null = null) {
     render(
       <FulfillmentClient
         initialJobs={[job]}
         status={status}
         due={due}
         held={null}
-        counts={counts}
+        counts={counts as never}
         dueOn={null}
         defaultPrintSize={"a5" as never}
       />,
@@ -439,13 +448,13 @@ describe("FulfillmentClient — the work the front door does not list", () => {
   it("leads with overdue when there is any", async () => {
     // Urgency order: overdue outranks today outranks the window. An operator
     // reading one line should read the worst true thing.
-    setup({ ...reported, due: { ...reported.due, overdue: 3, today: 2 } } as never);
+    setup({ ...reported, due: { ...reported.due, overdue: 3, today: 2 } });
 
     expect(await screen.findByText(/3 cards overdue to post/)).toBeInTheDocument();
   });
 
   it("leads with today when nothing is overdue", async () => {
-    setup({ ...reported, due: { ...reported.due, today: 2 } } as never);
+    setup({ ...reported, due: { ...reported.due, today: 2 } });
 
     expect(await screen.findByText(/2 cards must post today/)).toBeInTheDocument();
   });
@@ -462,11 +471,10 @@ describe("FulfillmentClient — the work the front door does not list", () => {
     // The discriminator. With nothing printed and nothing due, this line would
     // be furniture — and a line that is always there is one nobody reads.
     setup({
-      status: { pending: 1, in_progress: 0, printed: 0, posted: 0, delivered: 0 },
+      ...reported,
+      status: { ...reported.status, printed: 0, posted: 0, delivered: 0 },
       due: { overdue: 0, today: 0, dueSoon: 0, upcoming: 1, noDate: 0 },
-      clickAndDropErrors: 0,
-      held: 0,
-    } as never);
+    });
 
     await screen.findByText("Freddie Farrow");
     expect(screen.queryByText(/to post within 5 working days/)).not.toBeInTheDocument();
