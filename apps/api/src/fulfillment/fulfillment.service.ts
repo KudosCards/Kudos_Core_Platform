@@ -32,7 +32,11 @@ import type {
 } from "@kudos/shared-types";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { dueCutoffs, isoDayToUtc, workingDaysUntilDue } from "./fulfillment-due.util";
-import { isReturnedAddress, type AddressParts } from "./returned-address.util";
+import {
+  isHeldCard,
+  returnedAddressesByRecipient,
+  type AddressParts,
+} from "./returned-address.util";
 import type {
   TransitionFulfillmentDto,
   TransitionableStatus,
@@ -799,7 +803,7 @@ export class FulfillmentService {
       ...rows,
     ]);
     const sendable = <T extends HeldRow>(list: T[]): T[] =>
-      list.filter((job) => !this.isHeld(job, returned));
+      list.filter((job) => !isHeldCard(job, returned));
 
     return {
       overdue: sendable(overdueRows).length,
@@ -976,7 +980,7 @@ export class FulfillmentService {
       select: { id: true, ...HELD_SELECT },
     });
     const returned = await this.returnedAddressesFor(jobs);
-    return new Set(jobs.filter((job) => this.isHeld(job, returned)).map((job) => job.id));
+    return new Set(jobs.filter((job) => isHeldCard(job, returned)).map((job) => job.id));
   }
 
   /**
@@ -1015,7 +1019,7 @@ export class FulfillmentService {
     const returned = await this.returnedAddressesFor(jobs, tx);
     const held = new Map<string, string>();
     for (const job of jobs) {
-      if (!this.isHeld(job, returned)) continue;
+      if (!isHeldCard(job, returned)) continue;
       const { firstName, lastName } = job.orderRecipient.recipient;
       held.set(job.id, `${firstName} ${lastName}`.trim());
     }
@@ -1035,9 +1039,8 @@ export class FulfillmentService {
     rows: readonly HeldRow[],
     client: Prisma.TransactionClient = this.prisma,
   ): Promise<Map<string, AddressParts[]>> {
-    const byRecipient = new Map<string, AddressParts[]>();
     const recipientIds = [...new Set(rows.map((row) => row.orderRecipient.recipientId))];
-    if (recipientIds.length === 0) return byRecipient;
+    if (recipientIds.length === 0) return new Map();
 
     const cases = await client.returnCase.findMany({
       where: { recipientId: { in: recipientIds } },
@@ -1048,21 +1051,7 @@ export class FulfillmentService {
         },
       },
     });
-    for (const returned of cases) {
-      const list = byRecipient.get(returned.recipientId) ?? [];
-      list.push(returned.orderRecipient);
-      byRecipient.set(returned.recipientId, list);
-    }
-    return byRecipient;
-  }
-
-  /** Whether this card is addressed to somewhere its own contact's card came
-   * back from. */
-  private isHeld(row: HeldRow, returned: Map<string, AddressParts[]>): boolean {
-    return isReturnedAddress(
-      row.orderRecipient,
-      returned.get(row.orderRecipient.recipientId) ?? [],
-    );
+    return returnedAddressesByRecipient(cases);
   }
 
   /**

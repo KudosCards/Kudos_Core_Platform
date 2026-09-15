@@ -103,6 +103,10 @@ describe("Return recovery — the other cards waiting on this address", () => {
     // panel that always claims some is one nobody reads.
     setup(openCase({ waiting: { count: 0, canRepoint: false } } as Partial<ReturnCase>));
 
+    // Gated on the panel actually being on screen: an absence asserted against a
+    // component that rendered nothing at all passes for the wrong reason, and
+    // would keep passing with the feature deleted.
+    expect(screen.getByText(/choose how to recover this card/)).toBeInTheDocument();
     expect(screen.queryByText(/waiting on this address/)).not.toBeInTheDocument();
   });
 });
