@@ -1,15 +1,18 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { FulfillmentJobStatus } from "@prisma/client";
 import { IsEnum, IsIn, IsOptional, IsString, Matches } from "class-validator";
-import { HELD_FILTERS, type HeldFilter } from "@kudos/shared-types";
+import {
+  DUE_FILTERS,
+  HELD_FILTERS,
+  QUEUE_SORTS,
+  type DueFilter,
+  type HeldFilter,
+  type QueueSort,
+} from "@kudos/shared-types";
 
-/** Urgency filter over a job's dispatch deadline (due_date). See ADR 0108. */
-export const DUE_FILTERS = ["overdue", "today", "due_soon", "upcoming", "no_date", "all"] as const;
-export type DueFilter = (typeof DUE_FILTERS)[number];
-
-/** How the queue is ordered: by dispatch deadline (default) or arrival order. */
-export const QUEUE_SORTS = ["due_date", "created_at"] as const;
-export type QueueSort = (typeof QUEUE_SORTS)[number];
+// The filter lists live in shared-types, where the web reads them too. They used
+// to be declared here as well, so the validator that accepts a value and the UI
+// that offers it were two lists that happened to agree.
 
 export class ListFulfillmentQueryDto {
   @ApiPropertyOptional({ enum: FulfillmentJobStatus, default: FulfillmentJobStatus.pending })
