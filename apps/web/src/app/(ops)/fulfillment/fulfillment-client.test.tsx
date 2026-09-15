@@ -370,3 +370,105 @@ describe("FulfillmentClient — a card held because its address came back", () =
     expect(screen.queryByRole("button", { name: /Address returned/ })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * "Pending 1 · Due in 60wd", on a morning when 21 cards were due to post within
+ * five working days.
+ *
+ * Every number on that screen was correct. The queue's front door lists the
+ * cards still to *print* — deliberately, per ADR 0108 §5 — and the 26 printed
+ * cards waiting to post sit under another tab. The must-ship band that would
+ * have said so lives on the dashboard and only fires once something is due today
+ * or overdue. So the screen read as "nothing to do for three months".
+ */
+describe("FulfillmentClient — the work the front door does not list", () => {
+  const job: FulfillmentJob = {
+    id: "job-60",
+    status: "pending",
+    trackingReference: null,
+    labelUrl: null,
+    printedAt: null,
+    postedAt: null,
+    deliveredAt: null,
+    dueDate: new Date().toISOString(),
+    workingDaysUntilDue: 60,
+    clickAndDropOrderId: null,
+    clickAndDropError: null,
+    heldByReturnedAddress: false,
+    orderRecipient: {
+      shippingAddressCity: "Kingston upon Hull",
+      shippingAddressPostcode: "HU8 9DJ",
+      dispatchOption: "asap",
+      postageClass: "second_class",
+      recipient: { firstName: "Freddie", lastName: "Farrow" },
+      savedDesign: { id: "d1", name: "Happy Birthday" },
+      occasion: { type: "birthday", occasionDate: new Date().toISOString() },
+    },
+  };
+
+  /** The queue exactly as it was reported: one to print, 26 printed and waiting,
+   *  21 of them due inside the send-by-5 window. */
+  const reported = {
+    status: { pending: 1, in_progress: 0, printed: 26, posted: 28, delivered: 52 },
+    due: { overdue: 0, today: 0, dueSoon: 21, upcoming: 6, noDate: 0 },
+    clickAndDropErrors: 0,
+    held: 0,
+  } as never;
+
+  function setup(counts: never, status: "pending" | null = "pending", due: null = null) {
+    render(
+      <FulfillmentClient
+        initialJobs={[job]}
+        status={status}
+        due={due}
+        held={null}
+        counts={counts}
+        dueOn={null}
+        defaultPrintSize={"a5" as never}
+      />,
+    );
+  }
+
+  it("says how many cards need posting, even though none of them are listed", async () => {
+    setup(reported);
+
+    expect(await screen.findByText(/21 cards to post within 5 working days/)).toBeInTheDocument();
+    expect(screen.getByText(/26 already printed and waiting to post/)).toBeInTheDocument();
+  });
+
+  it("leads with overdue when there is any", async () => {
+    // Urgency order: overdue outranks today outranks the window. An operator
+    // reading one line should read the worst true thing.
+    setup({ ...reported, due: { ...reported.due, overdue: 3, today: 2 } } as never);
+
+    expect(await screen.findByText(/3 cards overdue to post/)).toBeInTheDocument();
+  });
+
+  it("leads with today when nothing is overdue", async () => {
+    setup({ ...reported, due: { ...reported.due, today: 2 } } as never);
+
+    expect(await screen.findByText(/2 cards must post today/)).toBeInTheDocument();
+  });
+
+  it("offers the whole open workload in one click", async () => {
+    setup(reported);
+
+    expect(
+      await screen.findByRole("button", { name: /Show everything still to go out/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing when the front door is the whole of the work", async () => {
+    // The discriminator. With nothing printed and nothing due, this line would
+    // be furniture — and a line that is always there is one nobody reads.
+    setup({
+      status: { pending: 1, in_progress: 0, printed: 0, posted: 0, delivered: 0 },
+      due: { overdue: 0, today: 0, dueSoon: 0, upcoming: 1, noDate: 0 },
+      clickAndDropErrors: 0,
+      held: 0,
+    } as never);
+
+    await screen.findByText("Freddie Farrow");
+    expect(screen.queryByText(/to post within 5 working days/)).not.toBeInTheDocument();
+  });
+});

@@ -684,6 +684,18 @@ export function FulfillmentClient({
     }
   }
 
+  // The work this view leaves out: cards already printed, and how urgently they
+  // have to be posted. Counted from the same open-status buckets the chips use,
+  // so the line and the chips can never tell different stories.
+  const waitingToPost = (counts.status.printed ?? 0) + (counts.status.in_progress ?? 0);
+  const toPost = counts.due.overdue + counts.due.today + counts.due.dueSoon;
+  const postingHeadline =
+    counts.due.overdue > 0
+      ? `${counts.due.overdue} card${counts.due.overdue === 1 ? "" : "s"} overdue to post`
+      : counts.due.today > 0
+        ? `${counts.due.today} card${counts.due.today === 1 ? "" : "s"} must post today`
+        : `${toPost} card${toPost === 1 ? "" : "s"} to post within 5 working days`;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -877,6 +889,49 @@ export function FulfillmentClient({
           </button>
         ))}
       </div>
+
+      {/* What this view is NOT showing.
+
+          The Pending tab is the queue's front door and it lists the cards still
+          to print — deliberately, per ADR 0108 §5, which widened the deadline
+          buckets to every open status and left the front door alone on purpose.
+          That decision is fine; the silence around it was not.
+
+          Reported from the queue: "Pending 1 · Due in 60wd" on a morning when 21
+          cards were due to post within five working days. Every number on the
+          screen was correct and the screen still read as "nothing to do for
+          three months" — the printed-and-waiting cards are counted by the chips
+          below but listed under a different tab, and the must-ship band that
+          would have said so lives on the dashboard and only fires once a card is
+          due today or overdue. */}
+      {status === "pending" && !due && !dueOn && toPost > 0 && (
+        <div
+          className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-lg border px-3 py-2.5 text-sm ${
+            counts.due.overdue > 0
+              ? "border-red-300 bg-red-50 text-red-900"
+              : counts.due.today > 0
+                ? "border-amber-300 bg-amber-50 text-amber-900"
+                : "border-black/15 bg-black/[0.02]"
+          }`}
+        >
+          <span>
+            <strong>{postingHeadline}</strong>
+            {waitingToPost > 0 && (
+              <span className="opacity-80">
+                {" "}
+                — {waitingToPost} already printed and waiting to post.
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={() => router.push("/fulfillment?due=all")}
+            className="font-medium underline underline-offset-2"
+          >
+            Show everything still to go out
+          </button>
+        </div>
+      )}
 
       {/* The cards the platform refuses to print or post, because they are
           addressed to somewhere a card for that contact already came back from.
