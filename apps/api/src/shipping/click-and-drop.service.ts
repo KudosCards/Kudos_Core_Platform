@@ -3,6 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CLICK_AND_DROP_CLIENT } from "./click-and-drop-client.provider";
+import { isReturnedAddress, type AddressParts } from "../fulfillment/returned-address.util";
 import type {
   ClickAndDropCancelResult,
   ClickAndDropClient,
@@ -15,6 +16,7 @@ const IMPORT_SELECT = {
   clickAndDropOrderId: true,
   orderRecipient: {
     select: {
+      recipientId: true,
       shippingAddressLine1: true,
       shippingAddressLine2: true,
       shippingAddressCity: true,
@@ -221,9 +223,16 @@ export class ClickAndDropService {
       orderBy: { createdAt: "asc" },
       take: SWEEP_BATCH,
     });
+    // A card addressed to somewhere Royal Mail already sent back is one we are
+    // not going to post, so it does not belong in their queue. Skipped rather
+    // than errored: nothing is wrong with the card, and it imports itself on a
+    // later sweep once the address is put right. See
+    // docs/returned-address-hold-plan.md.
+    const sendable = await this.withoutReturnedAddresses(jobs);
+
     let imported = 0;
     let failed = 0;
-    for (const job of jobs) {
+    for (const job of sendable) {
       const error = await this.pushOne(job);
       if (error === null) imported += 1;
       else failed += 1;
@@ -321,6 +330,44 @@ export class ClickAndDropService {
 
   /** Push one card. Returns null on success, or the error message on failure
    * (also persisted). Never throws. */
+  /**
+   * Drop the cards whose own address is one a card has already come back from,
+   * for that same contact.
+   *
+   * The same rule the fulfilment service refuses the print run and the post with
+   * — read straight from the return cases rather than the contact's
+   * `addressVerificationRequired` flag, which archiving a case clears without the
+   * address ever being corrected.
+   */
+  private async withoutReturnedAddresses(jobs: ImportJob[]): Promise<ImportJob[]> {
+    const recipientIds = [...new Set(jobs.map((job) => job.orderRecipient.recipientId))];
+    if (recipientIds.length === 0) return jobs;
+    const cases = await this.prisma.returnCase.findMany({
+      where: { recipientId: { in: recipientIds } },
+      select: {
+        recipientId: true,
+        orderRecipient: {
+          select: { shippingAddressLine1: true, shippingAddressPostcode: true },
+        },
+      },
+    });
+    if (cases.length === 0) return jobs;
+
+    const returnedByRecipient = new Map<string, AddressParts[]>();
+    for (const returned of cases) {
+      const list = returnedByRecipient.get(returned.recipientId) ?? [];
+      list.push(returned.orderRecipient);
+      returnedByRecipient.set(returned.recipientId, list);
+    }
+    return jobs.filter(
+      (job) =>
+        !isReturnedAddress(
+          job.orderRecipient,
+          returnedByRecipient.get(job.orderRecipient.recipientId) ?? [],
+        ),
+    );
+  }
+
   private async pushOne(job: ImportJob): Promise<string | null> {
     const r = job.orderRecipient;
     try {
