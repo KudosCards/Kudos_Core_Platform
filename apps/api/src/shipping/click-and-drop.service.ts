@@ -3,7 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CLICK_AND_DROP_CLIENT } from "./click-and-drop-client.provider";
-import { isReturnedAddress, type AddressParts } from "../fulfillment/returned-address.util";
+import { isHeldCard, returnedAddressesByRecipient } from "../fulfillment/returned-address.util";
 import type {
   ClickAndDropCancelResult,
   ClickAndDropClient,
@@ -353,19 +353,8 @@ export class ClickAndDropService {
     });
     if (cases.length === 0) return jobs;
 
-    const returnedByRecipient = new Map<string, AddressParts[]>();
-    for (const returned of cases) {
-      const list = returnedByRecipient.get(returned.recipientId) ?? [];
-      list.push(returned.orderRecipient);
-      returnedByRecipient.set(returned.recipientId, list);
-    }
-    return jobs.filter(
-      (job) =>
-        !isReturnedAddress(
-          job.orderRecipient,
-          returnedByRecipient.get(job.orderRecipient.recipientId) ?? [],
-        ),
-    );
+    const returnedByRecipient = returnedAddressesByRecipient(cases);
+    return jobs.filter((job) => !isHeldCard(job, returnedByRecipient));
   }
 
   private async pushOne(job: ImportJob): Promise<string | null> {

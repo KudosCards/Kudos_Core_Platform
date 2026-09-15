@@ -478,6 +478,48 @@ describe("Returned-address hold (e2e)", () => {
     expect(job.clickAndDropImportedAt).toBeNull();
   });
 
+  it("frees the waiting cards from the emailed link, with no login", async () => {
+    // The route a customer actually uses. The RTS email lands them on /rts/:token
+    // and they never sign in — so the account-scoped test passing proves nothing
+    // about the path that carries the traffic.
+    const ops = await opsToken();
+    const { accountId } = await owner();
+    const sent = await card(accountId, { status: "posted" });
+    const caseId = await markReturned(ops, sent.jobId);
+    const waitingCard = await card(accountId, {
+      recipientId: sent.recipientId,
+      status: "pending",
+    });
+
+    const { publicToken } = await prisma.returnCase.findUniqueOrThrow({
+      where: { id: caseId },
+      select: { publicToken: true },
+    });
+
+    await request(app.getHttpServer())
+      .post(`/rts/${publicToken}/address`)
+      .send({
+        addressLine1: "4 Mill Lane",
+        addressCity: "Kingston upon Hull",
+        addressPostcode: "HU5 2QR",
+      })
+      .expect(201);
+
+    const after = await request(app.getHttpServer())
+      .post(`/rts/${publicToken}/repoint`)
+      .expect(201);
+    expect((after.body as { waiting: { count: number } }).waiting.count).toBe(0);
+
+    const line = await prisma.orderRecipient.findFirstOrThrow({
+      where: { fulfillmentJob: { id: waitingCard.jobId } },
+    });
+    expect(line.shippingAddressLine1).toBe("4 Mill Lane");
+  });
+
+  it("refuses an unknown token rather than saying what exists", async () => {
+    await request(app.getHttpServer()).post("/rts/not-a-real-token/repoint").expect(404);
+  });
+
   it("leaves another contact's cards where they are", async () => {
     const ops = await opsToken();
     const { token, accountId } = await owner();

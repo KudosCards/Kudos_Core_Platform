@@ -46,3 +46,47 @@ export function isReturnedAddress(
   const key = addressKey(card);
   return returnedAddresses.some((returned) => addressKey(returned) === key);
 }
+
+/** A return case, reduced to what the hold needs: whose it was, and where it
+ * came back from. */
+export interface ReturnedCard {
+  recipientId: string;
+  orderRecipient: AddressParts;
+}
+
+/** A card the hold can be asked about: whose it is, and where it is going. */
+export interface CardForContact {
+  orderRecipient: AddressParts & { recipientId: string };
+}
+
+/**
+ * The addresses each contact has had a card returned from.
+ *
+ * Built once here rather than at each call site. It was written twice within a
+ * day of #455 removing exactly this shape of duplication from the print rules —
+ * the pure comparison was shared, and the lookup wrapped around it was copied.
+ */
+export function returnedAddressesByRecipient(
+  cases: readonly ReturnedCard[],
+): Map<string, AddressParts[]> {
+  const byRecipient = new Map<string, AddressParts[]>();
+  for (const returned of cases) {
+    const list = byRecipient.get(returned.recipientId) ?? [];
+    list.push(returned.orderRecipient);
+    byRecipient.set(returned.recipientId, list);
+  }
+  return byRecipient;
+}
+
+/** Whether this card is going to somewhere its own contact's card came back
+ * from. Scoped to the contact (D6): a different contact at that address is
+ * usually a household one person has moved out of. */
+export function isHeldCard(
+  card: CardForContact,
+  returnedByRecipient: Map<string, AddressParts[]>,
+): boolean {
+  return isReturnedAddress(
+    card.orderRecipient,
+    returnedByRecipient.get(card.orderRecipient.recipientId) ?? [],
+  );
+}
