@@ -16,12 +16,11 @@ import { PlatformAdminGuard } from "../auth/platform-admin.guard";
 import { CurrentPlatformAdmin } from "../auth/current-platform-admin.decorator";
 import type { PlatformAdminContext } from "../auth/types";
 import type { Paginated } from "../common/paginated";
-import type { FulfillmentCalendar } from "@kudos/shared-types";
+import type { FulfillmentCalendar, FulfillmentCounts } from "@kudos/shared-types";
 import {
   FulfillmentService,
   type FulfillmentJob,
   type FulfillmentQueueRow,
-  type FulfillmentCounts,
   type MustShipSummary,
   type BulkTransitionSummary,
   type ExportedAddress,

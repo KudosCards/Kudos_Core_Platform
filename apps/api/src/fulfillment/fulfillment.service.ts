@@ -25,7 +25,11 @@ import {
   OPEN_FULFILLMENT_STATUSES,
   startOfUtcDay,
 } from "@kudos/shared-types";
-import type { FulfillmentCalendar, FulfillmentCalendarDay } from "@kudos/shared-types";
+import type {
+  FulfillmentCalendar,
+  FulfillmentCalendarDay,
+  FulfillmentCounts,
+} from "@kudos/shared-types";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { dueCutoffs, isoDayToUtc, workingDaysUntilDue } from "./fulfillment-due.util";
 import { isReturnedAddress, type AddressParts } from "./returned-address.util";
@@ -121,17 +125,6 @@ export type FulfillmentQueueRow = FulfillmentQueueJob & {
    */
   heldByReturnedAddress: boolean;
 };
-
-/** Queue counts for the ops filters: per-status (all statuses) plus the due-date
- * urgency buckets within the actionable `pending` queue. See ADR 0108. */
-export interface FulfillmentCounts {
-  status: Record<FulfillmentJobStatus, number>;
-  due: { overdue: number; today: number; dueSoon: number; upcoming: number; noDate: number };
-  clickAndDropErrors: number;
-  /** Open cards the platform refuses to print or post because they are
-   * addressed to somewhere a card for that contact already came back from. */
-  held: number;
-}
 
 /** One personalised card in a print run — the design + who it's for. The
  * `document` is a design JSON (Prisma.JsonValue); the web types it as a
@@ -751,8 +744,10 @@ export class FulfillmentService {
    * (not-yet-posted) card whose dispatch deadline is overdue, today, or within
    * the send-by-5 working-day window, split into those three bands, plus the
    * most urgent cards (soonest deadline first). Spans all open statuses — a
-   * `printed`-but-not-posted card past its deadline is still must-ship, unlike
-   * the pending-only `counts.due` buckets. Powers the dashboard band, the shell
+   * `printed`-but-not-posted card past its deadline is still must-ship, which is
+   * the same population `counts.due` buckets (both changed together in ADR 0108
+   * §5; this line claimed those were pending-only for a while after they stopped
+   * being). Powers the dashboard band, the shell
    * banner, the daily reminder email and the notification centre.
    */
   async mustShip(now: Date = new Date()): Promise<MustShipSummary> {

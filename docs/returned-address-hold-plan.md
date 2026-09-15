@@ -71,8 +71,8 @@ for anyone to understand it.
 
 ## Phases
 
-Each phase is its own PR, merged when green before the next starts. Phases 1–3
-have landed; phase 4 is outstanding.
+Each phase is its own PR, merged when green before the next starts. All four
+have landed.
 
 ### Phase 1 — Stop the card
 
@@ -121,13 +121,19 @@ they just clicked.
 
 ### Phase 4 — Correct the record
 
-- `mustShip` and the `FulfillmentCounts` doc both still describe the due buckets
-  as pending-only. `counts()` contradicts them in its own comment and spans every
-  open status.
-- `DUE_FILTERS`, `QUEUE_SORTS` and `FulfillmentCounts` each exist twice — once in
-  `shared-types` and once in the API (the query DTO and the service). Noticed
-  while adding the held filter to all three, and left alone rather than widening
-  phase 2; it is the same duplication #455 removed from the print rules.
+- `mustShip` and the `FulfillmentCounts` doc both described the due buckets as
+  pending-only. They have spanned every open status since ADR 0108 §5, which
+  `counts()` explains in its own comment — so two comments asserted the opposite
+  of the code beside them.
+- `DUE_FILTERS`, `QUEUE_SORTS` and `FulfillmentCounts` each existed twice — once
+  in `shared-types`, where the ops UI reads them to draw the chips, and once in
+  the API, where the validator decides what it accepts. Two lists that happened
+  to agree. They are one list now.
+
+**Falsifying check**: every value the chips can offer must be a value the
+endpoint accepts, asserted over the lists themselves rather than a copy of them.
+A chip that 400s is a chip nobody can use, and that is precisely what drift
+produces.
 
 ## What this does not fix
 
