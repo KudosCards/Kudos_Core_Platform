@@ -28,6 +28,7 @@ import {
 import type { FulfillmentCalendar, FulfillmentCalendarDay } from "@kudos/shared-types";
 import type { ListFulfillmentQueryDto } from "./dto/list-fulfillment-query.dto";
 import { dueCutoffs, isoDayToUtc, workingDaysUntilDue } from "./fulfillment-due.util";
+import { isReturnedAddress, type AddressParts } from "./returned-address.util";
 import type {
   TransitionFulfillmentDto,
   TransitionableStatus,
@@ -164,6 +165,30 @@ const FROM_STATUSES: Record<TransitionableStatus, FulfillmentJobStatus[]> = {
  * once in shared-types so the API, the ops cockpit and the queue's filter chips
  * cannot drift apart on it — which they had. */
 const OPEN_STATUSES: FulfillmentJobStatus[] = [...OPEN_FULFILLMENT_STATUSES];
+
+/** How many held recipients to name in a refusal before summarising the rest. */
+const HELD_NAMES_IN_MESSAGE = 5;
+
+/** The least a row needs to carry for the returned-address question to be asked
+ * of it. Spread into the fuller selects rather than replacing them. */
+const HELD_SELECT = {
+  orderRecipient: {
+    select: { recipientId: true, shippingAddressLine1: true, shippingAddressPostcode: true },
+  },
+} satisfies Prisma.FulfillmentJobSelect;
+
+type HeldRow = { orderRecipient: AddressParts & { recipientId: string } };
+
+/**
+ * The moves a returned-address hold stands in the way of: producing the card and
+ * putting it in the post. Everything else stays open — an operator has to be
+ * able to move a held card to `failed` or `returned_to_sender` to resolve it,
+ * and a hold that blocked the exits would trap the card instead of the mistake.
+ */
+const HELD_BLOCKS: FulfillmentJobStatus[] = [
+  FulfillmentJobStatus.printed,
+  FulfillmentJobStatus.posted,
+];
 
 /** How many of the most-urgent must-ship cards to return with the summary —
  * enough for the reminder digest + dashboard preview without unbounding it. */
@@ -353,6 +378,9 @@ export class FulfillmentService {
     if (!FROM_STATUSES.posted.includes(job.status)) {
       throw new ConflictException(`Job is "${job.status}" — print it before dispatching`);
     }
+    // Before the Shipping API call, because that call buys a label: a held card
+    // refused after it would leave real postage spent on a card we will not send.
+    await this.assertNotHeld(this.prisma, [id]);
 
     const r = job.orderRecipient;
     const shipment = await this.royalMail.createShipment({
@@ -680,26 +708,54 @@ export class FulfillmentService {
       dueDate,
     });
 
-    const [overdue, todayCount, dueSoonCount, rows] = await Promise.all([
-      this.prisma.fulfillmentJob.count({ where: openAnd({ lt: today }) }),
-      this.prisma.fulfillmentJob.count({ where: openAnd({ equals: today }) }),
-      this.prisma.fulfillmentJob.count({ where: openAnd({ gt: today, lte: dueSoon }) }),
+    const [overdueRows, todayRows, dueSoonRows, rows] = await Promise.all([
+      this.prisma.fulfillmentJob.findMany({ where: openAnd({ lt: today }), select: HELD_SELECT }),
+      this.prisma.fulfillmentJob.findMany({
+        where: openAnd({ equals: today }),
+        select: HELD_SELECT,
+      }),
+      this.prisma.fulfillmentJob.findMany({
+        where: openAnd({ gt: today, lte: dueSoon }),
+        select: HELD_SELECT,
+      }),
       this.prisma.fulfillmentJob.findMany({
         // Everything due on or before the send-by-5 cutoff (overdue + today +
         // due-soon), soonest-first, bounded.
         where: openAnd({ lte: dueSoon }),
         orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }],
         take: MUST_SHIP_LIMIT,
-        select: MUST_SHIP_SELECT,
+        select: {
+          ...MUST_SHIP_SELECT,
+          orderRecipient: {
+            select: {
+              ...MUST_SHIP_SELECT.orderRecipient.select,
+              ...HELD_SELECT.orderRecipient.select,
+            },
+          },
+        },
       }),
     ]);
 
+    // A card we refuse to post is not a card anybody should be chased about.
+    // Leaving it in would put a permanent "1 overdue" on the ops banner that no
+    // amount of work could clear — the surest way to teach a team to ignore it.
+    // It is still visible on the queue, where it can be acted on (phase 2).
+    const returned = await this.returnedAddressesFor([
+      ...overdueRows,
+      ...todayRows,
+      ...dueSoonRows,
+      ...rows,
+    ]);
+    const sendable = <T extends HeldRow>(list: T[]): T[] =>
+      list.filter((job) => !this.isHeld(job, returned));
+
     return {
-      overdue,
-      today: todayCount,
-      dueSoon: dueSoonCount,
-      total: overdue + todayCount + dueSoonCount,
-      cards: rows.map((row) => this.toMustShipCard(row, now)),
+      overdue: sendable(overdueRows).length,
+      today: sendable(todayRows).length,
+      dueSoon: sendable(dueSoonRows).length,
+      total:
+        sendable(overdueRows).length + sendable(todayRows).length + sendable(dueSoonRows).length,
+      cards: sendable(rows).map((row) => this.toMustShipCard(row, now)),
     };
   }
 
@@ -818,6 +874,7 @@ export class FulfillmentService {
     dto: TransitionFulfillmentDto,
   ): Promise<FulfillmentQueueRow> {
     await this.prisma.$transaction(async (tx) => {
+      if (HELD_BLOCKS.includes(dto.toStatus)) await this.assertNotHeld(tx, [id]);
       const applied = await this.applyTransition(tx, actorUserId, id, dto.toStatus, {
         trackingReference: dto.trackingReference,
         failureReason: dto.failureReason,
@@ -845,6 +902,112 @@ export class FulfillmentService {
   }
 
   /**
+   * The cards among these that are addressed to somewhere Royal Mail already
+   * sent back, keyed by job id with the name to say it about.
+   *
+   * Scoped to the *same contact* (D6): a different contact at that address is
+   * usually a household one person has moved out of, and holding their card
+   * would be a false positive nobody could interpret.
+   *
+   * Reads the returned addresses off the return cases rather than the contact's
+   * `addressVerificationRequired` flag, because archiving a case clears that flag
+   * without the address ever being corrected. See docs/returned-address-hold-plan.md.
+   */
+  async heldByReturnedAddress(
+    tx: Prisma.TransactionClient,
+    jobIds: string[],
+  ): Promise<Map<string, string>> {
+    if (jobIds.length === 0) return new Map();
+    const jobs = await tx.fulfillmentJob.findMany({
+      where: { id: { in: jobIds } },
+      select: {
+        id: true,
+        orderRecipient: {
+          select: {
+            recipientId: true,
+            shippingAddressLine1: true,
+            shippingAddressPostcode: true,
+            recipient: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+    if (jobs.length === 0) return new Map();
+
+    const returned = await this.returnedAddressesFor(jobs, tx);
+    const held = new Map<string, string>();
+    for (const job of jobs) {
+      if (!this.isHeld(job, returned)) continue;
+      const { firstName, lastName } = job.orderRecipient.recipient;
+      held.set(job.id, `${firstName} ${lastName}`.trim());
+    }
+    return held;
+  }
+
+  /**
+   * The addresses a card has already come back from, per contact, for the
+   * contacts these rows are for.
+   *
+   * Read from the return cases rather than the contact's
+   * `addressVerificationRequired` flag: archiving a case clears that flag without
+   * the address ever having been corrected, and "I don't want this card back" is
+   * not "this address is fine". See docs/returned-address-hold-plan.md (D1).
+   */
+  private async returnedAddressesFor(
+    rows: readonly HeldRow[],
+    client: Prisma.TransactionClient = this.prisma,
+  ): Promise<Map<string, AddressParts[]>> {
+    const byRecipient = new Map<string, AddressParts[]>();
+    const recipientIds = [...new Set(rows.map((row) => row.orderRecipient.recipientId))];
+    if (recipientIds.length === 0) return byRecipient;
+
+    const cases = await client.returnCase.findMany({
+      where: { recipientId: { in: recipientIds } },
+      select: {
+        recipientId: true,
+        orderRecipient: {
+          select: { shippingAddressLine1: true, shippingAddressPostcode: true },
+        },
+      },
+    });
+    for (const returned of cases) {
+      const list = byRecipient.get(returned.recipientId) ?? [];
+      list.push(returned.orderRecipient);
+      byRecipient.set(returned.recipientId, list);
+    }
+    return byRecipient;
+  }
+
+  /** Whether this card is addressed to somewhere its own contact's card came
+   * back from. */
+  private isHeld(row: HeldRow, returned: Map<string, AddressParts[]>): boolean {
+    return isReturnedAddress(
+      row.orderRecipient,
+      returned.get(row.orderRecipient.recipientId) ?? [],
+    );
+  }
+
+  /**
+   * Refuse to produce or post a card addressed to somewhere that came back.
+   *
+   * Named rather than silently dropped (D3): an operator who selected forty cards
+   * for a run needs to know which ones to deselect, not a sheet that quietly
+   * prints thirty-nine.
+   */
+  private async assertNotHeld(tx: Prisma.TransactionClient, jobIds: string[]): Promise<void> {
+    const held = await this.heldByReturnedAddress(tx, jobIds);
+    if (held.size === 0) return;
+    const names = [...held.values()];
+    const listed = names.slice(0, HELD_NAMES_IN_MESSAGE).join(", ");
+    const rest = names.length - Math.min(names.length, HELD_NAMES_IN_MESSAGE);
+    throw new ConflictException(
+      `${names.length} card${names.length === 1 ? " is" : "s are"} addressed to somewhere a card has already been returned from (${listed}${
+        rest > 0 ? `, and ${rest} more` : ""
+      }). Resolve the return and update the address before printing or posting.`,
+    );
+  }
+
+  /**
    * Returns full dispatch addresses for a set of jobs — the print-run export.
    * This is the deliberate, audited moment full home addresses are revealed:
    * one audit row per card, committed in the same transaction as the read, so
@@ -853,6 +1016,9 @@ export class FulfillmentService {
    */
   async exportAddresses(actorUserId: string, dto: ExportAddressesDto): Promise<ExportedAddress[]> {
     return this.prisma.$transaction(async (tx) => {
+      // Before the addresses are revealed, not after: this export is what an
+      // operator labels envelopes from.
+      await this.assertNotHeld(tx, dto.jobIds);
       const jobs = await tx.fulfillmentJob.findMany({
         where: { id: { in: dto.jobIds } },
         select: DETAIL_SELECT,
@@ -897,6 +1063,9 @@ export class FulfillmentService {
    */
   async printRun(actorUserId: string, dto: ExportAddressesDto): Promise<PrintRunCard[]> {
     return this.prisma.$transaction(async (tx) => {
+      // A card held here is one we are not going to post, so printing it spends
+      // card stock and ink on something destined for the bin.
+      await this.assertNotHeld(tx, dto.jobIds);
       const jobs = await tx.fulfillmentJob.findMany({
         where: { id: { in: dto.jobIds } },
         select: DETAIL_SELECT,
@@ -939,6 +1108,10 @@ export class FulfillmentService {
   ): Promise<BulkTransitionSummary> {
     const postedIds: string[] = [];
     const summary = await this.prisma.$transaction(async (tx) => {
+      // The whole run is refused rather than quietly doing 38 of 40, so the
+      // operator knows which two to deal with (D3). Skipping is reserved for a
+      // job in the wrong *status*, which is an ordinary mixed selection.
+      if (HELD_BLOCKS.includes(dto.toStatus)) await this.assertNotHeld(tx, dto.jobIds);
       let transitioned = 0;
       for (const id of dto.jobIds) {
         const applied = await this.applyTransition(tx, actorUserId, id, dto.toStatus, {
