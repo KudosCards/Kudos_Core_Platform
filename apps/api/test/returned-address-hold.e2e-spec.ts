@@ -35,13 +35,18 @@ describe("Returned-address hold (e2e)", () => {
   }
 
   async function account(): Promise<string> {
+    return (await owner()).accountId;
+  }
+
+  /** The customer who owns the cards — the one who fixes the address. */
+  async function owner(): Promise<{ token: string; accountId: string }> {
     const token = await mintToken(randomUUID());
     const res = await request(app.getHttpServer())
       .post("/accounts")
       .set("Authorization", `Bearer ${token}`)
       .send({ type: "organisation", name: `Kip ${randomUUID().slice(0, 6)}` })
       .expect(201);
-    return (res.body as { id: string }).id;
+    return { token, accountId: (res.body as { id: string }).id };
   }
 
   /** One card for one contact at one address, at whatever status the test needs. */
@@ -342,5 +347,161 @@ describe("Returned-address hold (e2e)", () => {
       .expect(200);
     const body = summary.body as { cards: { jobId: string }[]; overdue: number };
     expect(body.cards.map((c) => c.jobId)).not.toContain(queued.jobId);
+  });
+
+  it("tells the customer how many other cards are waiting on that address", async () => {
+    // The moment worth catching: they are already fixing this address, and the
+    // platform knows exactly which other cards are stuck behind it.
+    const ops = await opsToken();
+    const { token, accountId } = await owner();
+    const sent = await card(accountId, { status: "posted" });
+    const caseId = await markReturned(ops, sent.jobId);
+    await card(accountId, { recipientId: sent.recipientId, status: "pending" });
+    await card(accountId, { recipientId: sent.recipientId, status: "printed" });
+    // A card of theirs already going somewhere else is not waiting on anything.
+    await card(accountId, {
+      recipientId: sent.recipientId,
+      line1: "4 Mill Lane",
+      postcode: "HU5 2QR",
+      status: "pending",
+    });
+
+    const view = await request(app.getHttpServer())
+      .get(`/returns/${caseId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const waiting = (view.body as { waiting: { count: number; canRepoint: boolean } }).waiting;
+
+    expect(waiting.count).toBe(2);
+    // Nothing can be re-pointed until the corrected address is actually known.
+    expect(waiting.canRepoint).toBe(false);
+  });
+
+  it("points the waiting cards at the corrected address, and they go free", async () => {
+    const ops = await opsToken();
+    const { token, accountId } = await owner();
+    const sent = await card(accountId, { status: "posted" });
+    const caseId = await markReturned(ops, sent.jobId);
+    const waitingCard = await card(accountId, {
+      recipientId: sent.recipientId,
+      status: "pending",
+    });
+
+    // The customer supplies the new address — this is what unlocks it.
+    await request(app.getHttpServer())
+      .post(`/returns/${caseId}/address`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        addressLine1: "4 Mill Lane",
+        addressCity: "Kingston upon Hull",
+        addressPostcode: "HU5 2QR",
+      })
+      .expect(201);
+
+    const offered = await request(app.getHttpServer())
+      .get(`/returns/${caseId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect((offered.body as { waiting: { canRepoint: boolean } }).waiting.canRepoint).toBe(true);
+
+    const after = await request(app.getHttpServer())
+      .post(`/returns/${caseId}/repoint`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    expect((after.body as { waiting: { count: number } }).waiting.count).toBe(0);
+
+    // The card now carries the corrected address…
+    const line = await prisma.orderRecipient.findFirstOrThrow({
+      where: { fulfillmentJob: { id: waitingCard.jobId } },
+    });
+    expect(line.shippingAddressLine1).toBe("4 Mill Lane");
+    expect(line.shippingAddressPostcode).toBe("HU5 2QR");
+
+    // …and the hold is gone, because the hold was only ever about the address.
+    await request(app.getHttpServer())
+      .post("/fulfillment/print-run")
+      .set("Authorization", `Bearer ${ops}`)
+      .send({ jobIds: [waitingCard.jobId] })
+      .expect(201);
+  });
+
+  it("refuses to re-point before the address has been corrected", async () => {
+    // Otherwise it would write the returned address back over itself and call
+    // the card fixed.
+    const ops = await opsToken();
+    const { token, accountId } = await owner();
+    const sent = await card(accountId, { status: "posted" });
+    const caseId = await markReturned(ops, sent.jobId);
+    await card(accountId, { recipientId: sent.recipientId, status: "pending" });
+
+    const refused = await request(app.getHttpServer())
+      .post(`/returns/${caseId}/repoint`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+    expect((refused.body as { message: string }).message).toContain("Update the address first");
+  });
+
+  it("puts a re-pointed card back in front of the Click & Drop sweep", async () => {
+    // Royal Mail is holding it at the old address and a Click & Drop order
+    // cannot be edited, so the import has to be redone from scratch.
+    const ops = await opsToken();
+    const { token, accountId } = await owner();
+    const sent = await card(accountId, { status: "posted" });
+    const caseId = await markReturned(ops, sent.jobId);
+    const waitingCard = await card(accountId, {
+      recipientId: sent.recipientId,
+      status: "pending",
+    });
+    await prisma.fulfillmentJob.update({
+      where: { id: waitingCard.jobId },
+      data: { clickAndDropOrderId: "RM-OLD-1", clickAndDropImportedAt: new Date() },
+    });
+
+    await request(app.getHttpServer())
+      .post(`/returns/${caseId}/address`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        addressLine1: "4 Mill Lane",
+        addressCity: "Kingston upon Hull",
+        addressPostcode: "HU5 2QR",
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/returns/${caseId}/repoint`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const job = await prisma.fulfillmentJob.findUniqueOrThrow({
+      where: { id: waitingCard.jobId },
+    });
+    expect(job.clickAndDropOrderId).toBeNull();
+    expect(job.clickAndDropImportedAt).toBeNull();
+  });
+
+  it("leaves another contact's cards where they are", async () => {
+    const ops = await opsToken();
+    const { token, accountId } = await owner();
+    const sent = await card(accountId, { status: "posted" });
+    const caseId = await markReturned(ops, sent.jobId);
+    const sibling = await card(accountId, { status: "pending" });
+
+    await request(app.getHttpServer())
+      .post(`/returns/${caseId}/address`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        addressLine1: "4 Mill Lane",
+        addressCity: "Kingston upon Hull",
+        addressPostcode: "HU5 2QR",
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/returns/${caseId}/repoint`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(409);
+
+    const line = await prisma.orderRecipient.findFirstOrThrow({
+      where: { fulfillmentJob: { id: sibling.jobId } },
+    });
+    expect(line.shippingAddressLine1).toBe("12 High Street");
   });
 });

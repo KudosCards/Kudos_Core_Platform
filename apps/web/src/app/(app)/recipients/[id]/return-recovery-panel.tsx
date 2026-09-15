@@ -177,6 +177,38 @@ export function ReturnRecoveryPanel({
                 <p className="text-sm font-medium">
                   Address updated — choose how to recover this card
                 </p>
+
+                {/* The other cards stuck behind this address. Said here because
+                    this is the one moment the customer is already thinking about
+                    it, and because until somebody points them at the corrected
+                    address they will not go out at all. See
+                    docs/returned-address-hold-plan.md. */}
+                {c.waiting.count > 0 && (
+                  <div className="flex flex-col gap-2 rounded-md border border-warning/30 bg-warning-soft px-3 py-2.5">
+                    <p className="text-sm font-medium">
+                      {c.waiting.count} more card{c.waiting.count === 1 ? "" : "s"} for{" "}
+                      {c.recipientName} {c.waiting.count === 1 ? "is" : "are"} waiting on this
+                      address
+                    </p>
+                    <p className="text-xs text-muted">
+                      {c.waiting.count === 1 ? "It was" : "They were"} paid for with the old address
+                      and {c.waiting.count === 1 ? "is" : "are"} being held, so{" "}
+                      {c.waiting.count === 1 ? "it does not" : "they do not"} go the same way.
+                    </p>
+                    <div>
+                      <button
+                        type="button"
+                        disabled={busy || !c.waiting.canRepoint}
+                        onClick={() => void act(c.id, "repoint")}
+                        className="btn-accent text-sm disabled:opacity-40"
+                      >
+                        {busy
+                          ? "Working…"
+                          : `Send ${c.waiting.count === 1 ? "it" : "them"} to the new address`}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {c.resend.birthdayPassed && (
                   <p className="rounded-md bg-warning-soft px-3 py-2 text-xs text-foreground">
                     This birthday has already passed, so it can’t be resent in time — you can still

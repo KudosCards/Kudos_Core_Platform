@@ -47,6 +47,11 @@ export class ReturnsPublicController {
     return this.returns.sendToBusinessByToken(token, dto);
   }
 
+  @Post(":token/repoint")
+  repoint(@Param("token") token: string): Promise<ReturnCaseView> {
+    return this.returns.repointWaitingCardsByToken(token);
+  }
+
   @Post(":token/archive")
   archive(@Param("token") token: string): Promise<ReturnCaseView> {
     return this.returns.archiveByToken(token);

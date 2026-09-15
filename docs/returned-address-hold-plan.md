@@ -71,7 +71,8 @@ for anyone to understand it.
 
 ## Phases
 
-Each phase is its own PR, merged when green before the next starts.
+Each phase is its own PR, merged when green before the next starts. Phases 1–3
+have landed; phase 4 is outstanding.
 
 ### Phase 1 — Stop the card
 
@@ -96,8 +97,27 @@ around.
 
 - When the customer updates the address on the RTS link, tell them how many other
   cards are waiting for that contact and offer to apply the corrected address to
-  them — audited, showing both addresses, never silent.
-- The same action for ops, for the cases a customer never returns to.
+  them — audited, never silent.
+- Available on both recovery surfaces: the in-app contact panel and the
+  no-login email link, which share the service method rather than duplicating
+  the rule.
+
+**Re-pointing releases the hold by itself.** The line no longer matches an address
+anything came back from, so the print run simply stops refusing it. Nothing has
+to remember to unlock anything, which is the payoff for keying the hold on the
+address in D1.
+
+**Royal Mail has to be told again.** A Click & Drop order cannot be edited, so a
+re-pointed card has its import id cleared and is picked up by the next sweep —
+with the new address — and the stale order is cancelled. Anything that will not
+cancel is recorded rather than assumed gone, the same rule `cancelImported`
+already applies to refunds: an uncancelled order is a duplicate card somebody has
+to pull by hand.
+
+**Refused until the address is actually corrected**, and with the specific
+sentence rather than the generic status one: "update the address first" tells the
+customer what to do, where "this return is awaiting_address" only tells them what
+they just clicked.
 
 ### Phase 4 — Correct the record
 
