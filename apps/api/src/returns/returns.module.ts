@@ -7,9 +7,10 @@ import { AuditModule } from "../audit/audit.module";
 import { BatchOrdersModule } from "../batch-orders/batch-orders.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { EmailModule } from "../email/email.module";
+import { ShippingModule } from "../shipping/shipping.module";
 
 @Module({
-  imports: [AuditModule, BatchOrdersModule, NotificationsModule, EmailModule],
+  imports: [AuditModule, BatchOrdersModule, NotificationsModule, EmailModule, ShippingModule],
   controllers: [ReturnsController, ReturnsOpsController, ReturnsPublicController],
   providers: [ReturnsService],
 })

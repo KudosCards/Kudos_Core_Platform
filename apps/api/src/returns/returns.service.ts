@@ -1,7 +1,10 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma, type ReturnCaseStatus } from "@prisma/client";
+import { OPEN_FULFILLMENT_STATUSES } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
+import { isReturnedAddress } from "../fulfillment/returned-address.util";
+import { ClickAndDropService } from "../shipping/click-and-drop.service";
 import { AuditService } from "../audit/audit.service";
 import { BatchOrdersService } from "../batch-orders/batch-orders.service";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
@@ -55,6 +58,10 @@ const CASE_INCLUDE = {
       postageClass: true,
       batchOrder: { select: { orderNumber: true, accountId: true } },
       occasion: { select: { type: true, title: true, occasionDate: true } },
+      // The address this card came back from — what the contact's other queued
+      // cards are compared against to find the ones held behind it.
+      shippingAddressLine1: true,
+      shippingAddressPostcode: true,
     },
   },
 } satisfies Prisma.ReturnCaseInclude;
@@ -78,6 +85,21 @@ export interface ReturnCaseView {
   resolvedAt: Date | null;
   resolution: string | null;
   returnedAt: Date;
+  /**
+   * The contact's *other* cards, already paid for and still to go out, that are
+   * addressed to the place this card came back from.
+   *
+   * They are held — the platform refuses to print or post them — and they stay
+   * held until somebody points them at the corrected address. Counted here so
+   * the recovery page can say so at the one moment the customer is already
+   * fixing that address. See docs/returned-address-hold-plan.md.
+   */
+  waiting: {
+    /** How many cards are held at the returned address. */
+    count: number;
+    /** Whether the corrected address is known yet, so they can be re-pointed. */
+    canRepoint: boolean;
+  };
   /** Resend eligibility, so the UI can offer the right options. */
   resend: {
     /** Address on file is complete enough to resend to the recipient. */
@@ -127,6 +149,7 @@ export class ReturnsService {
     private readonly batchOrders: BatchOrdersService,
     private readonly inbox: NotificationInboxService,
     private readonly config: ConfigService<EnvConfig, true>,
+    private readonly clickAndDrop: ClickAndDropService,
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
   ) {}
 
@@ -301,7 +324,11 @@ export class ReturnsService {
     if (!found) {
       throw new NotFoundException("Return case not found");
     }
-    return this.toView(found, await this.resolveBirthdayPassedDays());
+    return this.toView(
+      found,
+      await this.resolveBirthdayPassedDays(),
+      await this.waitingCards(found),
+    );
   }
 
   /**
@@ -455,6 +482,11 @@ export class ReturnsService {
   async resendByToken(token: string): Promise<ReturnCaseView> {
     const { accountId, id } = await this.resolveToken(token);
     return this.resendToRecipient(accountId, PUBLIC_RTS_ACTOR, id);
+  }
+
+  async repointWaitingCardsByToken(token: string): Promise<ReturnCaseView> {
+    const { accountId, id } = await this.resolveToken(token);
+    return this.repointWaitingCards(accountId, PUBLIC_RTS_ACTOR, id);
   }
 
   async sendToBusinessByToken(token: string, dto: RecoveryAddressDto): Promise<ReturnCaseView> {
@@ -651,15 +683,165 @@ export class ReturnsService {
     return found;
   }
 
+  /**
+   * The contact's other cards held behind this returned address.
+   *
+   * Open jobs only — a posted card is gone — and matched on the address rather
+   * than merely on the contact, because a card already going somewhere else is
+   * not waiting on anything. The same rule the fulfilment service refuses the
+   * print run with, so the number said here is the number actually stuck.
+   */
+  private async waitingCardIds(c: CaseWithGraph): Promise<string[]> {
+    const jobs = await this.prisma.fulfillmentJob.findMany({
+      where: {
+        status: { in: [...OPEN_FULFILLMENT_STATUSES] },
+        orderRecipient: { recipientId: c.recipientId },
+      },
+      select: {
+        id: true,
+        orderRecipient: {
+          select: { shippingAddressLine1: true, shippingAddressPostcode: true },
+        },
+      },
+    });
+    return jobs
+      .filter((job) => isReturnedAddress(job.orderRecipient, [c.orderRecipient]))
+      .map((job) => job.id);
+  }
+
+  /** The waiting figures for the view: how many, and whether the corrected
+   * address is known yet. Nothing can be re-pointed before it is. */
+  private async waitingCards(c: CaseWithGraph): Promise<ReturnCaseView["waiting"]> {
+    const ids = await this.waitingCardIds(c);
+    const hasCorrectedAddress =
+      c.addressUpdatedAt !== null &&
+      Boolean(c.recipient.addressLine1 && c.recipient.addressCity && c.recipient.addressPostcode) &&
+      !isReturnedAddress(
+        {
+          shippingAddressLine1: c.recipient.addressLine1 ?? "",
+          shippingAddressPostcode: c.recipient.addressPostcode ?? "",
+        },
+        [c.orderRecipient],
+      );
+    return { count: ids.length, canRepoint: ids.length > 0 && hasCorrectedAddress };
+  }
+
+  /**
+   * Point the contact's other waiting cards at the corrected address.
+   *
+   * The one place in the platform that rewrites a paid order line's address, and
+   * it is deliberately explicit: quick send lets a sender edit an address for one
+   * order without touching the stored contact, so an order line's address is not
+   * always "the contact's address" and copying one over silently would be wrong
+   * in exactly that case. The customer asks for this, having just supplied the
+   * new address themselves. See docs/returned-address-hold-plan.md (D5).
+   *
+   * Re-pointing releases the hold by itself: the line no longer matches an
+   * address anything came back from, so the print run stops refusing it.
+   */
+  async repointWaitingCards(
+    accountId: string,
+    actorUserId: string,
+    id: string,
+  ): Promise<ReturnCaseView> {
+    // Every status is allowed through the gate so the refusal below can be the
+    // specific one — "update the address first" tells the customer what to do,
+    // where the generic status message ("this return is awaiting_address") only
+    // tells them what they already clicked.
+    const found = await this.requireCase(accountId, id, [
+      "awaiting_address",
+      "awaiting_resend",
+      "resolved",
+      "archived",
+    ]);
+    const waiting = await this.waitingCards(found);
+    if (!waiting.canRepoint) {
+      throw new ConflictException(
+        waiting.count === 0
+          ? "No other cards are waiting on this address"
+          : "Update the address first, then these cards can be pointed at it",
+      );
+    }
+
+    const jobIds = await this.waitingCardIds(found);
+    const r = found.recipient;
+    const imported = await this.prisma.fulfillmentJob.findMany({
+      where: { id: { in: jobIds }, clickAndDropOrderId: { not: null } },
+      select: { id: true, clickAndDropOrderId: true },
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.orderRecipient.updateMany({
+        where: { fulfillmentJob: { id: { in: jobIds } } },
+        data: {
+          shippingAddressLine1: r.addressLine1!,
+          shippingAddressLine2: r.addressLine2,
+          shippingAddressCity: r.addressCity!,
+          shippingAddressPostcode: r.addressPostcode!,
+          shippingAddressCountry: r.addressCountry ?? "GB",
+        },
+      });
+      // Royal Mail is holding these at the old address and a Click & Drop order
+      // cannot be edited. Clearing the id puts them back in front of the sweep,
+      // which re-imports them — with the new address — within five minutes.
+      await tx.fulfillmentJob.updateMany({
+        where: { id: { in: jobIds } },
+        data: { clickAndDropOrderId: null, clickAndDropImportedAt: null },
+      });
+      await this.audit.record(
+        {
+          accountId,
+          actorUserId,
+          action: "return_cards_repointed",
+          targetType: "ReturnCase",
+          targetId: id,
+          metadata: { fulfillmentJobIds: jobIds, recipientId: found.recipientId },
+        },
+        tx,
+      );
+    });
+
+    // After commit, best-effort: pull the stale orders out of Royal Mail's queue.
+    // Anything that will not cancel is recorded rather than assumed gone — the
+    // card is already re-pointed and will import again, so an uncancelled order
+    // is a duplicate somebody has to pull by hand.
+    const stale = imported
+      .map((job) => job.clickAndDropOrderId)
+      .filter((identifier): identifier is string => identifier !== null);
+    if (stale.length > 0) {
+      const result = await this.clickAndDrop.cancelImported(stale);
+      if (result.failed.length > 0) {
+        await this.audit.record({
+          accountId,
+          actorUserId,
+          action: "return_repoint_click_and_drop_stale",
+          targetType: "ReturnCase",
+          targetId: id,
+          metadata: { stillLive: result.failed },
+        });
+      }
+    }
+
+    return this.loadView(id);
+  }
+
   private async loadView(id: string): Promise<ReturnCaseView> {
     const found = await this.prisma.returnCase.findUniqueOrThrow({
       where: { id },
       include: CASE_INCLUDE,
     });
-    return this.toView(found, await this.resolveBirthdayPassedDays());
+    return this.toView(
+      found,
+      await this.resolveBirthdayPassedDays(),
+      await this.waitingCards(found),
+    );
   }
 
-  private toView(c: CaseWithGraph, thresholdDays: number): ReturnCaseView {
+  private toView(
+    c: CaseWithGraph,
+    thresholdDays: number,
+    waiting: ReturnCaseView["waiting"] = { count: 0, canRepoint: false },
+  ): ReturnCaseView {
     const occasionDate = c.orderRecipient.occasion?.occasionDate ?? null;
     const r = c.recipient;
     return {
@@ -677,6 +859,7 @@ export class ReturnsService {
       resolvedAt: c.resolvedAt,
       resolution: c.resolution,
       returnedAt: c.returnedAt,
+      waiting,
       resend: {
         hasRecipientAddress: Boolean(r.addressLine1 && r.addressCity && r.addressPostcode),
         birthdayPassed: this.birthdayPassed(occasionDate, thresholdDays),

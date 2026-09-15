@@ -131,6 +131,36 @@ export function RtsRecoveryClient({
       ) : (
         <div className="flex flex-col gap-3">
           <p className="text-sm font-medium">Address updated — how should we recover this card?</p>
+
+          {/* The contact's other cards, already paid for and held because they
+              carry the address that just failed. This page is where the
+              corrected address arrives, so it is where they can be freed. */}
+          {rtsCase.waiting.count > 0 && (
+            <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5">
+              <p className="text-sm font-medium text-amber-900">
+                {rtsCase.waiting.count} more card{rtsCase.waiting.count === 1 ? "" : "s"} for{" "}
+                {rtsCase.recipientName} {rtsCase.waiting.count === 1 ? "is" : "are"} waiting on this
+                address
+              </p>
+              <p className="text-xs text-amber-900/80">
+                {rtsCase.waiting.count === 1 ? "It was" : "They were"} paid for with the old
+                address, so {rtsCase.waiting.count === 1 ? "it is" : "they are"} being held rather
+                than sent the same way.
+              </p>
+              <div>
+                <button
+                  type="button"
+                  disabled={pending || !rtsCase.waiting.canRepoint}
+                  onClick={() => void act("repoint")}
+                  className="rounded-md bg-amber-900 px-3 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-40"
+                >
+                  {pending
+                    ? "Working…"
+                    : `Send ${rtsCase.waiting.count === 1 ? "it" : "them"} to the new address`}
+                </button>
+              </div>
+            </div>
+          )}
           {rtsCase.resend.birthdayPassed && (
             <p className="rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900">
               This birthday has already passed, so it can’t arrive in time — but we can still

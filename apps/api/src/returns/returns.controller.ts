@@ -65,6 +65,17 @@ export class ReturnsController {
     return this.returns.sendToBusiness(membership.accountId, user.id, id, dto);
   }
 
+  /** Point this contact's other waiting cards at the corrected address, so the
+   * ones held behind the returned one can go out. */
+  @Post(":id/repoint")
+  repoint(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ): Promise<ReturnCaseView> {
+    return this.returns.repointWaitingCards(membership.accountId, user.id, id);
+  }
+
   @Post(":id/archive")
   archive(
     @CurrentMembership() membership: CurrentMembershipContext,

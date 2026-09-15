@@ -38,6 +38,13 @@ export const returnCaseSchema = z.object({
   /** "resend_recipient" | "send_business" | "archived" | null (still open). */
   resolution: z.string().nullable(),
   returnedAt: z.coerce.date(),
+  /**
+   * The contact's other cards, already paid for and still to go out, that are
+   * addressed to the place this one came back from. They are held until somebody
+   * points them at the corrected address — which is what `canRepoint` offers,
+   * once that address is actually known. See docs/returned-address-hold-plan.md.
+   */
+  waiting: z.object({ count: z.number(), canRepoint: z.boolean() }),
   resend: resendEligibilitySchema,
 });
 export type ReturnCase = z.infer<typeof returnCaseSchema>;
