@@ -109,7 +109,18 @@ export type FulfillmentJob = Prisma.FulfillmentJobGetPayload<{ select: typeof DE
 /** A queue row plus its server-computed urgency: working days until the card
  * must post (negative = overdue, 0 = today, null = no dated deadline). The web
  * renders the badge from this rather than recomputing the UK holiday calendar. */
-export type FulfillmentQueueRow = FulfillmentQueueJob & { workingDaysUntilDue: number | null };
+export type FulfillmentQueueRow = FulfillmentQueueJob & {
+  workingDaysUntilDue: number | null;
+  /**
+   * Whether this card is addressed to somewhere a card for the same contact has
+   * already come back from, so the platform will refuse to print or post it.
+   *
+   * Carried on the row because phase 1 made these cards impossible to produce
+   * and left them looking completely ordinary: an operator found out by
+   * selecting one and reading a refusal. See docs/returned-address-hold-plan.md.
+   */
+  heldByReturnedAddress: boolean;
+};
 
 /** Queue counts for the ops filters: per-status (all statuses) plus the due-date
  * urgency buckets within the actionable `pending` queue. See ADR 0108. */
@@ -117,6 +128,9 @@ export interface FulfillmentCounts {
   status: Record<FulfillmentJobStatus, number>;
   due: { overdue: number; today: number; dueSoon: number; upcoming: number; noDate: number };
   clickAndDropErrors: number;
+  /** Open cards the platform refuses to print or post because they are
+   * addressed to somewhere a card for that contact already came back from. */
+  held: number;
 }
 
 /** One personalised card in a print run — the design + who it's for. The
@@ -329,8 +343,23 @@ export class FulfillmentService {
   /** Attach the server-computed urgency (working days until due) to a queue row,
    * so every path that returns a row — the list and each single-row action the
    * web patches in place — carries the same shape. */
-  private enrichRow(job: FulfillmentQueueJob, now: Date = new Date()): FulfillmentQueueRow {
-    return { ...job, workingDaysUntilDue: workingDaysUntilDue(job.dueDate, now) };
+  private enrichRow(
+    job: FulfillmentQueueJob,
+    now: Date = new Date(),
+    held = false,
+  ): FulfillmentQueueRow {
+    return {
+      ...job,
+      workingDaysUntilDue: workingDaysUntilDue(job.dueDate, now),
+      heldByReturnedAddress: held,
+    };
+  }
+
+  /** One row, with the returned-address question asked of it. Used by the
+   * single-job paths, where one extra lookup is cheaper than threading a set. */
+  private async enrichOne(job: FulfillmentQueueJob): Promise<FulfillmentQueueRow> {
+    const held = await this.heldByReturnedAddress(this.prisma, [job.id]);
+    return this.enrichRow(job, new Date(), held.has(job.id));
   }
 
   /** Retry importing a single card into Click & Drop (an ops action), returning
@@ -341,7 +370,7 @@ export class FulfillmentService {
       where: { id },
       select: QUEUE_SELECT,
     });
-    return this.enrichRow(job);
+    return this.enrichOne(job);
   }
 
   /** Whether Royal Mail shipping automation is wired (drives the ops UI). */
@@ -410,7 +439,7 @@ export class FulfillmentService {
       where: { id },
       select: QUEUE_SELECT,
     });
-    return this.enrichRow(refreshed);
+    return this.enrichOne(refreshed);
   }
 
   /** Bulk auto-dispatch: dispatch each printed job in turn. A per-job failure
@@ -586,6 +615,17 @@ export class FulfillmentService {
         ? [{ createdAt: "asc" }]
         : [{ dueDate: "asc" }, { createdAt: "asc" }];
 
+    // Held cards are the ones the platform refuses to print or post. Asking for
+    // them narrows to exactly those and releases the status pin, the way the
+    // deadline chips do: a held card can sit at any open status, and an operator
+    // looking for "what is stuck" does not know which.
+    const held =
+      query.held === "only" || query.held === "hide" ? await this.heldOpenJobIds() : null;
+    if (held) {
+      where.status = query.status ? where.status : { in: OPEN_STATUSES };
+      where.id = query.held === "only" ? { in: [...held] } : { notIn: [...held] };
+    }
+
     // Two plain queries, not a $transaction — a paginated total needn't be a
     // consistent snapshot with the page, and an explicit read transaction is
     // what misbehaves on a pgBouncer pool (see docs/go-live-runbook.md §1c).
@@ -598,7 +638,18 @@ export class FulfillmentService {
     });
     const total = await this.prisma.fulfillmentJob.count({ where });
 
-    return { items: items.map((job) => this.enrichRow(job, now)), total, page, perPage };
+    // One lookup for the page, not one per row: the rows on screen are the only
+    // ones that need the answer.
+    const heldOnPage = await this.heldByReturnedAddress(
+      this.prisma,
+      items.map((job) => job.id),
+    );
+    return {
+      items: items.map((job) => this.enrichRow(job, now, heldOnPage.has(job.id))),
+      total,
+      page,
+      perPage,
+    };
   }
 
   /** Translate a due-date urgency filter into a `dueDate` where-clause against
@@ -676,6 +727,11 @@ export class FulfillmentService {
       where: { status: { in: OPEN_STATUSES }, clickAndDropError: { not: null } },
     });
 
+    // Cards the platform will not let anybody print or post. Counted here so the
+    // chip can carry the number rather than an operator discovering them one
+    // refusal at a time.
+    const held = (await this.heldOpenJobIds()).size;
+
     return {
       status,
       due: {
@@ -686,6 +742,7 @@ export class FulfillmentService {
         noDate: due?.no_date ?? 0,
       },
       clickAndDropErrors,
+      held,
     };
   }
 
@@ -865,7 +922,7 @@ export class FulfillmentService {
       where: { id },
       select: QUEUE_SELECT,
     });
-    return this.enrichRow(job);
+    return this.enrichOne(job);
   }
 
   async transition(
@@ -898,7 +955,33 @@ export class FulfillmentService {
       where: { id },
       select: QUEUE_SELECT,
     });
-    return this.enrichRow(job);
+    return this.enrichOne(job);
+  }
+
+  /**
+   * Every open card the platform is currently refusing to print or post.
+   *
+   * Narrow by construction: only contacts with a return case can have one, so
+   * this reads the cases first and looks at nothing else. Returned as a set of
+   * job ids so the queue can both flag rows and filter to them without asking
+   * the question row by row.
+   */
+  private async heldOpenJobIds(): Promise<Set<string>> {
+    const cases = await this.prisma.returnCase.findMany({
+      select: { recipientId: true },
+      distinct: ["recipientId"],
+    });
+    if (cases.length === 0) return new Set();
+
+    const jobs = await this.prisma.fulfillmentJob.findMany({
+      where: {
+        status: { in: OPEN_STATUSES },
+        orderRecipient: { recipientId: { in: cases.map((c) => c.recipientId) } },
+      },
+      select: { id: true, ...HELD_SELECT },
+    });
+    const returned = await this.returnedAddressesFor(jobs);
+    return new Set(jobs.filter((job) => this.isHeld(job, returned)).map((job) => job.id));
   }
 
   /**

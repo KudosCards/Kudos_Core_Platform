@@ -1,5 +1,10 @@
-import type { CardSize, DueFilter, FulfillmentCounts } from "@kudos/shared-types";
-import { DEFAULT_CARD_SIZE, DUE_FILTERS, FULFILLMENT_STATUSES } from "@kudos/shared-types";
+import type { CardSize, DueFilter, FulfillmentCounts, HeldFilter } from "@kudos/shared-types";
+import {
+  DEFAULT_CARD_SIZE,
+  DUE_FILTERS,
+  FULFILLMENT_STATUSES,
+  HELD_FILTERS,
+} from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import {
   FulfillmentClient,
@@ -23,9 +28,14 @@ const VALID_STATUSES: readonly FulfillmentStatus[] = FULFILLMENT_STATUSES;
 export default async function FulfillmentPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; due?: string; dueOn?: string }>;
+  searchParams: Promise<{ status?: string; due?: string; dueOn?: string; held?: string }>;
 }) {
-  const { status: statusParam, due: dueParam, dueOn: dueOnParam } = await searchParams;
+  const {
+    status: statusParam,
+    due: dueParam,
+    dueOn: dueOnParam,
+    held: heldParam,
+  } = await searchParams;
   // Whether a status tab was explicitly chosen (vs the page's own default). A
   // calendar drill-in (dueOn, no status) deliberately shows all open cards for
   // the day, so we only pin a status when the operator picked one.
@@ -42,12 +52,22 @@ export default async function FulfillmentPage({
     : null;
   const dueOn =
     typeof dueOnParam === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dueOnParam) ? dueOnParam : null;
+  // The cards the server refuses to print or post. Its own question, not a
+  // deadline one, so it stands apart from `due`.
+  const held: HeldFilter | null = HELD_FILTERS.includes(heldParam as HeldFilter)
+    ? (heldParam as HeldFilter)
+    : null;
 
   // The dispatch-calendar drill-in: one exact deadline day. When set, it takes
   // precedence over the `due` bucket and (unless a status tab is chosen) shows
   // every still-open card for that day. See ADR 0110.
   const jobsQuery = new URLSearchParams({ perPage: "100" });
-  if (dueOn) {
+  if (held) {
+    // A held card can sit at any open status, so asking for them releases the
+    // status pin exactly as a deadline question does.
+    jobsQuery.set("held", held);
+    if (explicitStatus) jobsQuery.set("status", explicitStatus);
+  } else if (dueOn) {
     jobsQuery.set("dueOn", dueOn);
     if (explicitStatus) jobsQuery.set("status", explicitStatus);
   } else if (due) {
@@ -83,6 +103,7 @@ export default async function FulfillmentPage({
     },
     due: { overdue: 0, today: 0, dueSoon: 0, upcoming: 0, noDate: 0 },
     clickAndDropErrors: 0,
+    held: 0,
   };
 
   // Under a deadline question with no chosen status, no tab is "active" — the
@@ -95,6 +116,7 @@ export default async function FulfillmentPage({
       initialJobs={result?.items ?? []}
       status={clientStatus}
       due={due}
+      held={held}
       counts={counts ?? emptyCounts}
       dueOn={dueOn}
       defaultPrintSize={printSize?.size ?? DEFAULT_CARD_SIZE}

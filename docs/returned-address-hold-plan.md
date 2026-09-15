@@ -104,6 +104,10 @@ around.
 - `mustShip` and the `FulfillmentCounts` doc both still describe the due buckets
   as pending-only. `counts()` contradicts them in its own comment and spans every
   open status.
+- `DUE_FILTERS`, `QUEUE_SORTS` and `FulfillmentCounts` each exist twice — once in
+  `shared-types` and once in the API (the query DTO and the service). Noticed
+  while adding the held filter to all three, and left alone rather than widening
+  phase 2; it is the same duplication #455 removed from the print rules.
 
 ## What this does not fix
 

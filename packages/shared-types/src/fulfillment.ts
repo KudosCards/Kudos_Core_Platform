@@ -57,6 +57,11 @@ export type FulfillmentJob = z.infer<typeof fulfillmentJobSchema>;
 export const DUE_FILTERS = ["overdue", "today", "due_soon", "upcoming", "no_date", "all"] as const;
 export type DueFilter = (typeof DUE_FILTERS)[number];
 
+/** The held-card view: `only` narrows to the cards the platform refuses to
+ * print or post, `hide` takes them out of the ordinary working queue. */
+export const HELD_FILTERS = ["only", "hide"] as const;
+export type HeldFilter = (typeof HELD_FILTERS)[number];
+
 export const QUEUE_SORTS = ["due_date", "created_at"] as const;
 export type QueueSort = (typeof QUEUE_SORTS)[number];
 
@@ -80,6 +85,13 @@ export const fulfillmentCountsSchema = z.object({
   /** Open cards (not yet posted) whose last Click & Drop import push failed — an
    * ops attention signal for the "must ship" band. See ADR 0111. */
   clickAndDropErrors: z.number(),
+  /**
+   * Open cards addressed to somewhere a card for the same contact already came
+   * back from. The platform refuses to print or post these, so the count exists
+   * to stop an operator discovering them one refusal at a time. See
+   * docs/returned-address-hold-plan.md.
+   */
+  held: z.number(),
 });
 export type FulfillmentCounts = z.infer<typeof fulfillmentCountsSchema>;
 
