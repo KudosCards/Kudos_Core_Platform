@@ -16,12 +16,14 @@ const TABS: { value: string; label: string }[] = [
   { value: "new", label: "New" },
   { value: "in_progress", label: "In progress" },
   { value: "closed", label: "Closed" },
+  { value: "spam", label: "Spam" },
 ];
 
 /**
  * The ops Enterprise-leads queue — enquiries from the public "Contact us" form.
- * Defaults to "open" (everything not yet closed), newest first. See
- * docs/adr/0101-enterprise-plan-enquiries.md.
+ * Defaults to "open" — newest first, and neither closed nor held by the spam
+ * gate, which is the whole point of the gate: the queue ops look at stays the
+ * queue of real leads. See ADR 0244 and docs/adr/0101-enterprise-plan-enquiries.md.
  */
 export default async function AdminEnterprisePage({
   searchParams,
@@ -47,7 +49,8 @@ export default async function AdminEnterprisePage({
         <h1 className="text-2xl font-bold tracking-tight">Enterprise leads</h1>
         <p className="text-sm text-foreground/60">
           Enquiries from the Enterprise “Contact us” form. Reply by email and move each one through
-          triage as you work it.
+          triage as you work it. Bot submissions are held under “Spam” rather than deleted — check
+          it now and then, and put anything real back.
         </p>
       </div>
 

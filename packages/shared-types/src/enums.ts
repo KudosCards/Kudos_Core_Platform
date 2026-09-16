@@ -196,8 +196,10 @@ export const supportTicketStatusSchema = z.enum([
 ]);
 export type SupportTicketStatus = z.infer<typeof supportTicketStatusSchema>;
 
-/** Triage state of an Enterprise "Contact us" lead. Mirrors EnterpriseEnquiryStatus. */
-export const enterpriseEnquiryStatusSchema = z.enum(["new", "in_progress", "closed"]);
+/** Triage state of an Enterprise "Contact us" lead. Mirrors EnterpriseEnquiryStatus.
+ * `spam` is a classification applied by the submit gate, not a refusal — the
+ * lead is still stored and ops can restore it. See ADR 0244. */
+export const enterpriseEnquiryStatusSchema = z.enum(["new", "in_progress", "closed", "spam"]);
 export type EnterpriseEnquiryStatus = z.infer<typeof enterpriseEnquiryStatusSchema>;
 
 /** The topic a subscriber picks when raising a ticket. Mirrors SupportTicketCategory. */
