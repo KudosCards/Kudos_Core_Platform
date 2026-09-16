@@ -143,3 +143,153 @@ recommendations, for what they are worth:
 4. **Master size: 1748 × 2480.** It is 300 dpi at either size; 1240 × 1748 is
    213 dpi on A5, and the whole point of re-exporting 217 files is not to do it
    twice.
+
+---
+
+# Addendum — ten-lens sweep
+
+The findings above came from reading the path end to end. This addendum comes from
+a second pass built to catch what a linear read misses: ten independent lenses over
+the same territory, each finding then refuted twice — once on "does the code
+actually say this", once on "does it actually matter" — and a completeness critic
+over the result. 39 candidates, **7 survived, 32 were killed.**
+
+The refuters earned their place. They killed candidates on documented-decision
+grounds (ADR 0162's QR quiet zone and its skip-don't-fail policy; the deliberate
+mixed-typeface fallback), on unreachability (several "a malformed snapshot drops a
+card" findings have no write path that can produce one), and on mis-framing. Two
+were _this repo's own recorded trade-offs being rediscovered as bugs_ — which is
+what a well-documented codebase is supposed to do to an auditor.
+
+I verified all seven survivors myself rather than taking them on trust. Every
+number below I reproduced.
+
+## A1 — A corrupt PNG kills the API process (high, S)
+
+`apps/api/src/print-pdf/image-loader.ts:205`. The PNG/JPEG fast path returns the
+customer's original bytes untouched after a header-only `sharp().metadata()`.
+pdfkit then runs its own JS PNG decoder, and png-js inflates the IDAT with
+`zlib.inflate(data, (err) => { if (err) throw err })` — **a throw inside an async
+callback**.
+
+Reproduced end to end: `sharp.metadata()` succeeds on a PNG with a valid IHDR and
+a corrupted IDAT; `doc.image()` **returns without throwing**; no `error` event
+fires on the document; the process then exits on an uncaught
+`Error: invalid bit length repeat`. `image-loader.ts`'s careful try/catch and the
+resolver's `.catch` are both outside that path and cannot see it. There is no
+`uncaughtException` handler anywhere in `apps/api/src` — grepped, zero hits.
+
+So one corrupt asset on one card takes down the whole API process mid-print-run,
+killing every other in-flight request. It needs no malice: a truncated upload does
+it. Plan step 7 (retiring Browser print) makes this engine the only way to print.
+
+## A2 — No pixel budget anywhere on the path (high, S)
+
+Every limit is a _byte_ limit — the bucket's 10 MB and the loader's
+`DEFAULT_MAX_BYTES = 25 MB`. Nothing bounds pixels, and no `limitInputPixels` is
+set on any `sharp()` call in the API. A 74-byte PNG declaring 16000×16000 RGBA
+passes both limits and drives pdfkit's synchronous PNG path into roughly 2 GiB of
+`Buffer.alloc` plus a `deflateSync` on 0.75 GiB, blocking the event loop.
+JPEG is unaffected — pdfkit embeds the stream without decoding. This is PNG-specific.
+
+Fixing A2 largely removes A1: nothing reaches pdfkit's decoder undecoded.
+
+## A3 — The run PDF re-embeds the artwork once per page (high, S)
+
+`render.ts:351` and `:366` pass a `Buffer` to `doc.image()`. pdfkit only
+de-duplicates when `src` is a **string** (`_imageRegistry`, `pdfkit.js:4045-4052`),
+so every page writes a fresh copy of the bytes. The resolver's cache hides it by
+de-duplicating the _fetch_, not the _embed_.
+
+Measured: 50 pages drawing one PNG → **1.75 MB naive vs 0.06 MB memoised, a 30.9×
+blow-up**, on a flat-colour image that compresses well; a photograph is far worse.
+The run ceiling is 500 recipients (`@ArrayMaxSize(500)`), and the whole PDF is held
+in memory twice (`chunks` + `Buffer.concat`).
+
+**This blocks plan step 5.** Re-exporting the catalog at 1748 × 2480 multiplies
+per-asset bytes, turning a slow run into an OOM. Step 4 compounds it — folded
+sheets draw the same background onto more surfaces per sheet. Fix is to memoise
+`doc.openImage()` per asset URL and pass the returned object.
+
+_Honest note:_ a weaker framing of this same defect ("40 recipients → 55 MB") was
+**refuted** on materiality — "every page carries a correct, full-resolution copy,
+so no customer sees anything wrong". That refutation is right about the printed
+card and wrong about the plan. The finding survived only because another lens
+framed it against step 5's re-export. Worth knowing that the panel's floor is
+"does a customer see it", which is not the same bar as "does this block us".
+
+## A4 — WebP uploads print rotated (high, S)
+
+`image-loader.ts:208`. The PNG/JPEG branch passes bytes through and pdfkit honours
+their EXIF — which is exactly why the main report concluded the print path was
+EXIF-safe. **That conclusion holds only for the passthrough branch.** Every other
+format goes through `sharp(buffer).png()`, which neither auto-rotates nor carries
+EXIF into the PNG it writes, and pdfkit reads orientation only from JPEG.
+
+Reproduced: the same picture (really 100×200 portrait) keeps `orientation 6` down
+the JPEG path and arrives at pdfkit with **no orientation at all** down the WebP
+path — drawn flat on its side, then cover-cropped on the wrong axis. WebP is
+accepted by both upload inputs in the editor. `sharp(buffer).rotate().png()` fixes
+it; verified to give 100×200.
+
+This refines N3/F3 rather than repeating them, and it is a **precondition for the
+gate in step 2** — which would otherwise measure an upright image and pass artwork
+that prints rotated.
+
+## A5 — The reserved-footer block is rotation-blind (high, S)
+
+`packages/shared-types/src/card-format.ts:255`. `backArtworkInReservedFooter` reads
+`y`, `height`, `size`, `fontSize` — and never `rotation`. `reservedFooterViolation`
+wraps it, and `assertPrintable` turns it into a hard **400 on every save**.
+
+The editor's own check is rotation-_aware_: `design-canvas.tsx:511` measures
+`node.getClientRect({ relativeTo: layer })`. And the sibling module gets it right
+deliberately — `card-content.ts:74` is `if (element.rotation) return null;`. So the
+advisory check is correct and the **blocking** one is not.
+
+It fails both ways: art rotated 270° paints _upward_ from `y` and is refused
+although it is visibly above the line (the design cannot be saved or sent at all),
+while text rotated 90° paints downward into the band and saves cleanly, to be
+silently clipped at print. This matters more after step 4, which turns that band
+from pre-printed stock into something we print.
+
+## A6 — A returned card's free reprint loses the sender's message page (high, S)
+
+`apps/api/src/returns/returns.service.ts:598`. The reprint's
+`tx.orderRecipient.create` deliberately copies `occasionId`, `savedDesignId`,
+`documentSnapshot` and `postageClass` — and omits `messagePageId`. It is not even
+in `CASE_INCLUDE.orderRecipient.select`, so the value is absent from the whole code
+path. Every other order-creation path sets it (checkout `:1214`, quickSend `:378`,
+bulkSend `:581`, auto-send `:198-227`).
+
+Settlement then reads `recipient.messagePageId ?? null`, falls into the auto-page
+branch, and mints a fresh page titled "Your message". The reprinted card prints a
+perfectly scannable QR onto a near-empty page — for the one recipient most likely
+to scan it, because this is the card that finally arrived.
+
+The code comment three lines above says "the card that comes back is the card that
+was sent". It is true of the artwork and not of the QR. Two lines to fix.
+
+## A7 — SVGs are flattened to 1024px, and the pre-flight exempts them for a reason that is no longer true (medium, M)
+
+`print-quality.ts:104` excludes SVG from every resolution pre-flight because "an
+asset that is vector has no fixed resolution". `image-loader.ts:194` then rasters
+every SVG to a fixed 1024px longest edge. A full-width SVG prints at **248 dpi on
+A6 and 176 dpi on A5** — the latter below the product's own `PRINT_DPI_WARN_BELOW`
+of 200. Three surfaces stay silent about it, all for the same reason: the asset was
+filtered out before measurement.
+
+## What this changes in the plan
+
+Three of the seven are cheap and belong _before_ the phase they threaten:
+
+- **A4 before step 2.** The gate must not bless artwork that prints rotated.
+- **A3 before step 5.** The re-export makes the blow-up an OOM rather than a
+  nuisance.
+- **A1 + A2 before step 7.** Retiring Browser print makes this engine the only
+  route to a printed card; it should not be killable by one bad file first.
+
+A5 and A6 are independent two-to-ten-line fixes that are easiest to land now and
+hardest to spot after step 4 rewrites the print path. A7 is a genuine question for
+step 2's pure definition — what does it say about vector art? — rather than a bug
+to fix in isolation.
