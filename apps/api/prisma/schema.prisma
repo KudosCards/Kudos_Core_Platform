@@ -1487,6 +1487,10 @@ enum EnterpriseEnquiryStatus {
   new
   in_progress
   closed
+  /// Caught by the spam gate on the public form. A classification, never a
+  /// refusal — the row is still written, and ops can restore it to `new`.
+  /// Deliberately excluded from the default "open" queue. See ADR 0244.
+  spam
 }
 
 /// A sales lead from the public Enterprise pricing option ("Contact us"). Kudos
@@ -1505,6 +1509,10 @@ model EnterpriseEnquiry {
   teamSize        String?                 @map("team_size")
   message         String
   status          EnterpriseEnquiryStatus @default(new)
+  /// Which spam rule caught this, e.g. "honeypot". Null for everything the gate
+  /// let through. Recorded so ops can see the filter's reasoning and challenge
+  /// it, rather than trusting a black box. See ADR 0244.
+  spamReason      String?                 @map("spam_reason")
   /// The ops user (PlatformAdmin.userId) who last changed the status — a light
   /// audit trail. Null until someone works it.
   handledByUserId String?                 @map("handled_by_user_id")

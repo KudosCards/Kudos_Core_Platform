@@ -19,6 +19,19 @@ export const createEnterpriseEnquirySchema = z.object({
   /** Optional rough size, e.g. "500 students" — free text, not a fixed bucket. */
   teamSize: z.string().trim().max(80).optional().or(z.literal("")),
   message: z.string().trim().min(1, "Tell us a little about what you need").max(4000),
+  /**
+   * Honeypot. Hidden from real visitors, and named so that no browser or
+   * password-manager autofill heuristic goes near it — a bot fills every input
+   * it finds. Anything in here means the submission was automated. Optional, so
+   * a genuine caller that never sends it is unaffected. See ADR 0244.
+   */
+  contactReference: z.string().max(200).optional(),
+  /**
+   * ISO timestamp of when the form was rendered, set client-side at mount.
+   * Its *absence* is neutral — anything that isn't our web form won't send it —
+   * so only a present, implausibly-recent value counts against a submission.
+   */
+  formOpenedAt: z.string().datetime().optional(),
 });
 export type CreateEnterpriseEnquiryInput = z.infer<typeof createEnterpriseEnquirySchema>;
 
@@ -32,6 +45,9 @@ export const enterpriseEnquirySchema = z.object({
   teamSize: z.string().nullable(),
   message: z.string(),
   status: enterpriseEnquiryStatusSchema,
+  /** Which rule caught this, when the status is `spam`; null otherwise. Shown
+   * to ops so the filter can be checked rather than trusted. */
+  spamReason: z.string().nullable(),
   createdAt: z.coerce.date(),
 });
 export type EnterpriseEnquiry = z.infer<typeof enterpriseEnquirySchema>;

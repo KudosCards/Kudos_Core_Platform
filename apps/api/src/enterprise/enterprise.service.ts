@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { EnterpriseEnquiry as EnterpriseEnquiryRow } from "@prisma/client";
+import type { Prisma, EnterpriseEnquiry as EnterpriseEnquiryRow } from "@prisma/client";
 import type { EnterpriseEnquiry } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import type { EnvConfig } from "../config/env.schema";
@@ -9,6 +9,7 @@ import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { renderBrandedEmail, escapeHtml } from "../email/email-layout";
 import { CreateEnterpriseEnquiryDto } from "./dto/create-enterprise-enquiry.dto";
 import { ListEnterpriseQueryDto } from "./dto/list-enterprise-query.dto";
+import { classifyEnquiry } from "./spam-signals";
 
 /** One row → the ops-facing view (drops the internal audit column). */
 function toView(row: EnterpriseEnquiryRow): EnterpriseEnquiry {
@@ -21,6 +22,7 @@ function toView(row: EnterpriseEnquiryRow): EnterpriseEnquiry {
     teamSize: row.teamSize,
     message: row.message,
     status: row.status,
+    spamReason: row.spamReason,
     createdAt: row.createdAt,
   };
 }
@@ -44,8 +46,16 @@ export class EnterpriseService {
     @Inject(EMAIL_CLIENT) private readonly email: EmailClient,
   ) {}
 
-  /** Capture a public enquiry, then nudge ops. Empty optional strings → null. */
+  /**
+   * Capture a public enquiry, then nudge ops. Empty optional strings → null.
+   *
+   * A submission the spam gate catches is still written — ADR 0101's promise is
+   * that a sales lead is never lost — but it lands as `spam` with the rule that
+   * caught it, and ops are not emailed. The caller cannot tell: same 201, same
+   * ack shape, so a crawler gets no signal to tune against. See ADR 0244.
+   */
   async create(dto: CreateEnterpriseEnquiryDto): Promise<EnterpriseEnquiry> {
+    const spamReason = classifyEnquiry(dto, new Date());
     const enquiry = await this.prisma.enterpriseEnquiry.create({
       data: {
         name: dto.name.trim(),
@@ -54,19 +64,30 @@ export class EnterpriseService {
         phone: dto.phone?.trim() || null,
         teamSize: dto.teamSize?.trim() || null,
         message: dto.message.trim(),
+        ...(spamReason && { status: "spam" as const, spamReason }),
       },
     });
+    if (spamReason) {
+      this.logger.log(`Enterprise enquiry ${enquiry.id} held as spam (${spamReason})`);
+      return toView(enquiry);
+    }
     await this.notifyOps(enquiry);
     return toView(enquiry);
   }
 
-  /** The ops queue. Defaults to open leads (not yet closed), newest first. */
+  /** The ops queue. Defaults to open leads, newest first.
+   *
+   * "Open" excludes `spam` as well as `closed`. Defining it as "not closed"
+   * would pipe every caught bot straight into the view ops actually look at,
+   * which is the exact outcome the gate exists to prevent. */
   async list(query: ListEnterpriseQueryDto): Promise<Paginated<EnterpriseEnquiry>> {
     const page = Math.max(1, Number(query.page) || 1);
     const perPage = Math.min(100, Math.max(1, Number(query.perPage) || DEFAULT_PER_PAGE));
-    const where =
+    // Annotated rather than inferred: without a contextual type the ternary
+    // widens the status list to string[], which Prisma's enum filter rejects.
+    const where: Prisma.EnterpriseEnquiryWhereInput =
       !query.status || query.status === "open"
-        ? { status: { not: "closed" as const } }
+        ? { status: { notIn: ["closed", "spam"] } }
         : { status: query.status };
 
     const [rows, total] = await this.prisma.$transaction([
@@ -81,11 +102,12 @@ export class EnterpriseService {
     return { items: rows.map(toView), total, page, perPage };
   }
 
-  /** Ops moves a lead through triage (new → in_progress → closed). */
+  /** Ops moves a lead through triage (new → in_progress → closed), bins one the
+   * spam gate missed, or restores one it shouldn't have caught (spam → new). */
   async updateStatus(
     adminUserId: string,
     id: string,
-    status: "new" | "in_progress" | "closed",
+    status: "new" | "in_progress" | "closed" | "spam",
   ): Promise<EnterpriseEnquiry> {
     const existing = await this.prisma.enterpriseEnquiry.findUnique({ where: { id } });
     if (!existing) {

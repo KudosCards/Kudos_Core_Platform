@@ -9,12 +9,23 @@ const STATUS_LABELS: Record<EnterpriseEnquiryStatus, string> = {
   new: "New",
   in_progress: "In progress",
   closed: "Closed",
+  spam: "Spam",
 };
 
 const STATUS_CLASSES: Record<EnterpriseEnquiryStatus, string> = {
   new: "bg-amber-100 text-amber-800",
   in_progress: "bg-sky-100 text-sky-800",
   closed: "bg-black/5 text-foreground/60",
+  spam: "bg-black/5 text-foreground/60",
+};
+
+/** Plain English for what the gate spotted. Ops see the reasoning, so they can
+ * disagree with it — a filter nobody can check is a filter nobody should trust.
+ * Mirrors SpamReason in the API's spam-signals.ts. See ADR 0244. */
+const SPAM_REASONS: Record<string, string> = {
+  honeypot: "filled in a field only a bot can see",
+  "submitted-too-fast": "submitted faster than a person could type it",
+  "message-has-no-words": "the message had no words in it",
 };
 
 /** The next status a lead can move to, with the button label. */
@@ -25,12 +36,16 @@ const NEXT_ACTIONS: Record<
   new: [
     { to: "in_progress", label: "Start" },
     { to: "closed", label: "Close" },
+    { to: "spam", label: "Spam" },
   ],
   in_progress: [
     { to: "closed", label: "Close" },
     { to: "new", label: "Reopen" },
   ],
   closed: [{ to: "in_progress", label: "Reopen" }],
+  // Restoring is the only move from here, and it is the important one: the gate
+  // is allowed to be wrong, so long as getting it back costs one click.
+  spam: [{ to: "new", label: "Not spam" }],
 };
 
 function formatDate(value: string | Date): string {
@@ -44,7 +59,12 @@ function formatDate(value: string | Date): string {
 /**
  * The ops Enterprise-leads queue. Lists enquiries from the public "Contact us"
  * form with the full detail inline (nothing to drill into) and status controls
- * to work each lead. See docs/adr/0101-enterprise-plan-enquiries.md.
+ * to work each lead.
+ *
+ * A lead the submit gate caught is stored, not discarded, and shows why it was
+ * caught — so the filter is something ops can audit and overrule rather than a
+ * black box that quietly eats prospects. See ADR 0244 and
+ * docs/adr/0101-enterprise-plan-enquiries.md.
  */
 export function EnterpriseLeadsClient({ initialItems }: { initialItems: EnterpriseEnquiry[] }) {
   const [items, setItems] = useState<EnterpriseEnquiry[]>(initialItems);
@@ -101,6 +121,13 @@ export function EnterpriseLeadsClient({ initialItems }: { initialItems: Enterpri
               <span className="text-xs text-foreground/50">{formatDate(lead.createdAt)}</span>
             </div>
           </div>
+
+          {lead.status === "spam" && lead.spamReason && (
+            <p className="text-xs text-foreground/60">
+              Held by the spam filter — {SPAM_REASONS[lead.spamReason] ?? lead.spamReason}. If
+              that’s wrong, “Not spam” puts it back in the queue.
+            </p>
+          )}
 
           <p className="whitespace-pre-wrap rounded-lg bg-black/[0.03] p-3 text-sm">
             {lead.message}

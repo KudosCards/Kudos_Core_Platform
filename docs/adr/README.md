@@ -251,5 +251,7 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0240 — Money given to a stranger, on a schedule](./0240-money-given-to-a-stranger-on-a-schedule.md)
 - [0241 — A button an operator cannot press](./0241-a-button-an-operator-cannot-press.md)
 - [0242 — A card must print what was bought](./0242-a-card-must-print-what-was-bought.md)
+- [0243 — The field every caller forgot to escape](./0243-the-field-every-caller-forgot-to-escape.md)
+- [0244 — Classifying a bot without telling it](./0244-classifying-a-bot-without-telling-it.md)
 
 <!-- adr-index:end -->

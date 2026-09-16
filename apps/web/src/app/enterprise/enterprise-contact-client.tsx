@@ -1,11 +1,20 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { createEnterpriseEnquirySchema, type EnterpriseEnquiryAck } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { publicApiPost } from "@/lib/api.public";
 
 const CORAL = "#ef5b52";
+
+/**
+ * The honeypot. Hidden from sighted visitors and from screen readers, skipped by
+ * the tab order, and named so that no browser or password-manager autofill
+ * heuristic goes near it — but a bot fills every input it finds. Anything in it
+ * means the submission was automated; the server classifies it and stays quiet.
+ * See docs/adr/0244-classifying-a-bot-without-telling-it.md.
+ */
+const HONEYPOT_NAME = "contactReference";
 
 const fieldClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-400";
@@ -20,6 +29,10 @@ export function EnterpriseContactForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Captured once, when the form first renders, so the server can tell a person
+  // filling this in from a script posting it. A ref, not state — it must not
+  // reset on re-render, and nothing should re-render when it is read.
+  const openedAt = useRef<string>(new Date().toISOString());
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,6 +45,8 @@ export function EnterpriseContactForm() {
       phone: String(data.get("phone") ?? ""),
       teamSize: String(data.get("teamSize") ?? ""),
       message: String(data.get("message") ?? ""),
+      contactReference: String(data.get(HONEYPOT_NAME) ?? ""),
+      formOpenedAt: openedAt.current,
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Please check the form and try again.");
@@ -114,6 +129,13 @@ export function EnterpriseContactForm() {
           className={`${fieldClass} resize-y`}
         />
       </label>
+
+      <div aria-hidden="true" className="hidden">
+        <label>
+          Leave this field empty
+          <input name={HONEYPOT_NAME} type="text" tabIndex={-1} autoComplete="off" />
+        </label>
+      </div>
 
       {error && (
         <p className="rounded-lg bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700">{error}</p>
