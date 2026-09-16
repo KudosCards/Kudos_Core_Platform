@@ -1,0 +1,3705 @@
+From 2eeadcf252d2ad8c0bf08f9d78236406d9c7578d Mon Sep 17 00:00:00 2001
+From: Kudos Cards <tech@kudoscards.co.uk>
+Date: Mon, 14 Sep 2026 21:00:49 +0000
+Subject: [PATCH 1/2] Refuse background artwork that cannot print, at upload
+ and at save
+
+- shared-types/card-artwork: backgroundArtworkVerdict (shape + pixels, one
+  rule for ours and the customer's), orientedPixelSize (EXIF), elementDistortion,
+  customArtworkDocument, newMemberBackgroundUrls
+- API: ArtworkGateService measures a member's new background at the save
+  (SavedDesignsService.parseDocument), allowlisted to our storage host,
+  fail-open on infrastructure, refused on artwork
+- Web: 'Upload your own artwork' builds a full-bleed background instead of a
+  450x600 element (which left an 8mm strip and stretched every upload to 3:4);
+  both background uploads are measured and refused before a byte is sent;
+  image elements warn when stretched out of shape, with a one-click fix
+- docs/card-artwork-print-integrity.md: findings, decisions, remaining phases
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01L2KsRmCAxgQP1g6MX31SDa
+---
+ apps/api/src/common/card-artwork.spec.ts      | 230 ++++++++++++++++++
+ .../artwork-gate.service.spec.ts              | 161 ++++++++++++
+ .../src/saved-designs/artwork-gate.service.ts | 129 ++++++++++
+ .../src/saved-designs/saved-designs.module.ts |   3 +-
+ .../saved-designs/saved-designs.service.ts    |  41 +++-
+ .../[id]/edit/design-editor-client.tsx        |  70 +++++-
+ .../src/app/(app)/designs/designs-client.tsx  |  56 ++---
+ apps/web/src/lib/image-natural-size.ts        |  30 +++
+ docs/card-artwork-print-integrity.md          | 164 +++++++++++++
+ packages/shared-types/src/card-artwork.ts     | 212 ++++++++++++++++
+ packages/shared-types/src/index.ts            |   1 +
+ 11 files changed, 1056 insertions(+), 41 deletions(-)
+ create mode 100644 apps/api/src/common/card-artwork.spec.ts
+ create mode 100644 apps/api/src/saved-designs/artwork-gate.service.spec.ts
+ create mode 100644 apps/api/src/saved-designs/artwork-gate.service.ts
+ create mode 100644 docs/card-artwork-print-integrity.md
+ create mode 100644 packages/shared-types/src/card-artwork.ts
+
+diff --git a/apps/api/src/common/card-artwork.spec.ts b/apps/api/src/common/card-artwork.spec.ts
+new file mode 100644
+index 0000000..0f0b444
+--- /dev/null
++++ b/apps/api/src/common/card-artwork.spec.ts
+@@ -0,0 +1,230 @@
++import {
++  CARD_HEIGHT,
++  CARD_WIDTH,
++  DISTORTION_OK_BELOW,
++  backgroundArtworkVerdict,
++  customArtworkDocument,
++  elementDistortion,
++  idealArtworkPixels,
++  newMemberBackgroundUrls,
++  orientedPixelSize,
++  type DesignDocument,
++} from "@kudos/shared-types";
++
++/**
++ * The rule a background has to pass before it becomes a card. Pinned against
++ * the real cases: the 2:3 catalog export that lost 6% of its height on 207
++ * designs, the A6 export that fixes it, and the phone photo whose header lies
++ * about which way up it is. See docs/card-artwork-print-integrity.md.
++ */
++describe("backgroundArtworkVerdict", () => {
++  it("accepts the artwork brief exactly — 1240 × 1748 clears shape and pixels at once", () => {
++    expect(backgroundArtworkVerdict(idealArtworkPixels("A6"))).toEqual({ ok: true });
++    expect(backgroundArtworkVerdict({ width: 1240, height: 1748 })).toEqual({ ok: true });
++  });
++
++  it("accepts an A5 master (1748 × 2480) for an A6 card — same shape, more pixels", () => {
++    expect(backgroundArtworkVerdict(idealArtworkPixels("A5"))).toEqual({ ok: true });
++  });
++
++  it("refuses the 2:3 export that cropped 207 catalog designs, naming the loss and the fix", () => {
++    const verdict = backgroundArtworkVerdict({ width: 1000, height: 1500 });
++    expect(verdict.ok).toBe(false);
++    if (verdict.ok) return;
++    expect(verdict.reason).toBe("shape");
++    expect(verdict.message).toContain("6% of its height");
++    expect(verdict.message).toContain("4.5mm off each of the top and bottom");
++    expect(verdict.message).toContain("1240 × 1748");
++  });
++
++  it("refuses a square source (29% of its width gone)", () => {
++    const verdict = backgroundArtworkVerdict({ width: 2000, height: 2000 });
++    expect(verdict).toMatchObject({ ok: false, reason: "shape" });
++  });
++
++  it("checks shape before pixels: a wrong-shaped file is re-exported, which fixes both", () => {
++    // Tiny *and* square: the message must send them to a re-export, not to a
++    // bigger square.
++    const verdict = backgroundArtworkVerdict({ width: 300, height: 300 });
++    expect(verdict).toMatchObject({ ok: false, reason: "shape" });
++  });
++
++  it("refuses the right shape with too few pixels (below 200 dpi on A6)", () => {
++    // A6-shaped, but 620 × 874 is 150 dpi.
++    const verdict = backgroundArtworkVerdict({ width: 620, height: 874 });
++    expect(verdict.ok).toBe(false);
++    if (verdict.ok) return;
++    expect(verdict.reason).toBe("resolution");
++    expect(verdict.message).toContain("150 dpi");
++    expect(verdict.message).toContain("1240 × 1748");
++  });
++
++  it("accepts the right shape in the 'acceptable' band (200–300 dpi) — advisory, not refused", () => {
++    // 900 × 1269 ≈ 218 dpi on A6. The editor still shows the amber note.
++    expect(backgroundArtworkVerdict({ width: 900, height: 1269 })).toEqual({ ok: true });
++  });
++
++  it("refuses at exactly the 200 dpi floor, as the resolution pre-flight does", () => {
++    // printDpiVerdict treats dpi === PRINT_DPI_WARN_BELOW as "low".
++    // 200 dpi across 105mm is 826.77px; 826 × 1165 rounds under it.
++    expect(backgroundArtworkVerdict({ width: 826, height: 1164 })).toMatchObject({
++      ok: false,
++      reason: "resolution",
++    });
++  });
++
++  it("judges A5 against A5 pixels when asked", () => {
++    // Fine for A6, soft (~213 dpi → acceptable) on A5; still passes the floor.
++    expect(backgroundArtworkVerdict({ width: 1240, height: 1748 }, "A5")).toEqual({ ok: true });
++    // 800 × 1131 is ~137 dpi on A5.
++    expect(backgroundArtworkVerdict({ width: 800, height: 1131 }, "A5")).toMatchObject({
++      ok: false,
++      reason: "resolution",
++    });
++  });
++});
++
++describe("orientedPixelSize", () => {
++  it("swaps the axes for a rotated EXIF orientation (5–8)", () => {
++    // A phone stores this portrait photo as 1748 × 1240 with "rotate 90°".
++    expect(orientedPixelSize({ width: 1748, height: 1240, orientation: 6 })).toEqual({
++      width: 1240,
++      height: 1748,
++    });
++    expect(orientedPixelSize({ width: 1748, height: 1240, orientation: 8 })).toEqual({
++      width: 1240,
++      height: 1748,
++    });
++  });
++
++  it("leaves an unrotated or untagged image alone", () => {
++    expect(orientedPixelSize({ width: 1240, height: 1748 })).toEqual({ width: 1240, height: 1748 });
++    expect(orientedPixelSize({ width: 1240, height: 1748, orientation: 1 })).toEqual({
++      width: 1240,
++      height: 1748,
++    });
++    // 2–4 are flips, not rotations: the shape is unchanged.
++    expect(orientedPixelSize({ width: 1240, height: 1748, orientation: 3 })).toEqual({
++      width: 1240,
++      height: 1748,
++    });
++  });
++
++  it("means a rotated phone photo of the right shape passes the gate", () => {
++    const seen = orientedPixelSize({ width: 1748, height: 1240, orientation: 6 });
++    expect(backgroundArtworkVerdict(seen)).toEqual({ ok: true });
++    // …and that judging the raw header would have wrongly refused it.
++    expect(backgroundArtworkVerdict({ width: 1748, height: 1240 })).toMatchObject({ ok: false });
++  });
++});
++
++describe("elementDistortion", () => {
++  it("is zero when the box is the image's own shape", () => {
++    expect(elementDistortion({ width: 1000, height: 1500 }, { width: 200, height: 300 })).toBe(0);
++  });
++
++  it("reports the old custom-artwork flow's 450 × 600 box as a distortion of an A6 upload", () => {
++    // 1240 × 1748 (1:1.4097) forced into 3:4 (1:1.333): a 5.7% vertical squash.
++    const d = elementDistortion({ width: 1240, height: 1748 }, { width: 450, height: 600 });
++    expect(d).toBeCloseTo(0.057, 3);
++    expect(d).toBeGreaterThan(DISTORTION_OK_BELOW);
++  });
++
++  it("is symmetric in direction — a stretch and a squash of the same size read the same", () => {
++    const stretched = elementDistortion({ width: 100, height: 100 }, { width: 110, height: 100 });
++    const squashed = elementDistortion({ width: 110, height: 100 }, { width: 100, height: 100 });
++    expect(stretched).toBeCloseTo(0.1, 6);
++    expect(squashed).toBeCloseTo(0.1, 6);
++  });
++
++  it("forgives a rounding-sized difference", () => {
++    // fitWithinBox rounds to whole units; 200 × 282 for a 1240 × 1748 source.
++    expect(
++      elementDistortion({ width: 1240, height: 1748 }, { width: 200, height: 282 }),
++    ).toBeLessThan(DISTORTION_OK_BELOW);
++  });
++
++  it("is zero for a degenerate size rather than NaN", () => {
++    expect(elementDistortion({ width: 0, height: 0 }, { width: 10, height: 10 })).toBe(0);
++    expect(elementDistortion({ width: 10, height: 10 }, { width: 0, height: 10 })).toBe(0);
++  });
++});
++
++describe("customArtworkDocument", () => {
++  const url = "https://x.supabase.co/storage/v1/object/public/design-assets/acc/a.png";
++
++  it("puts the upload on the front as a background, not a fixed-size element", () => {
++    const doc = customArtworkDocument(url);
++    const front = doc.pages.find((p) => p.name === "front")!;
++    expect(front.background).toEqual({ type: "image", assetUrl: url });
++    expect(front.elements).toEqual([]);
++  });
++
++  it("has all four faces, the other three blank", () => {
++    const doc = customArtworkDocument(url);
++    expect(doc.pages.map((p) => p.name)).toEqual(["front", "inside-left", "inside-right", "back"]);
++    for (const page of doc.pages.slice(1)) {
++      expect(page.elements).toEqual([]);
++      expect(page.background).toBeUndefined();
++    }
++  });
++
++  it("never pins anything to the retired 450 × 600 canvas", () => {
++    // The regression this replaces: an element sized to a canvas that grew to
++    // 634 tall in ADR 0161. Nothing in the new document carries a size at all.
++    const json = JSON.stringify(customArtworkDocument(url));
++    expect(json).not.toContain('"height":600');
++    expect(json).not.toContain(`"height":${CARD_HEIGHT}`);
++    expect(json).not.toContain(`"width":${CARD_WIDTH}`);
++  });
++});
++
++describe("newMemberBackgroundUrls", () => {
++  const member = "https://x.supabase.co/storage/v1/object/public/design-assets/acc/mine.png";
++  const catalog = "https://x.supabase.co/storage/v1/object/public/design-assets/catalog/ours.png";
++
++  function doc(backgrounds: (string | undefined)[]): DesignDocument {
++    const names = ["front", "inside-left", "inside-right", "back"] as const;
++    return {
++      version: 1,
++      pages: names.map((name, i) => ({
++        name,
++        elements: [],
++        ...(backgrounds[i]
++          ? { background: { type: "image" as const, assetUrl: backgrounds[i] } }
++          : {}),
++      })),
++    };
++  }
++
++  it("returns a member's background on a fresh design", () => {
++    expect(newMemberBackgroundUrls(doc([member]))).toEqual([member]);
++  });
++
++  it("skips catalog artwork — that is measured at the sync, and is not the customer's to fix", () => {
++    expect(newMemberBackgroundUrls(doc([catalog]))).toEqual([]);
++  });
++
++  it("skips a background the design already had, so an unrelated edit still saves", () => {
++    expect(newMemberBackgroundUrls(doc([member]), doc([member]))).toEqual([]);
++  });
++
++  it("catches a background moved to a different face only if it is new to the design", () => {
++    expect(newMemberBackgroundUrls(doc([undefined, member]), doc([member]))).toEqual([]);
++  });
++
++  it("returns a newly set background on an existing design", () => {
++    const other = member.replace("mine", "new");
++    expect(newMemberBackgroundUrls(doc([member, other]), doc([member]))).toEqual([other]);
++  });
++
++  it("deduplicates a background used on more than one face", () => {
++    expect(newMemberBackgroundUrls(doc([member, member]))).toEqual([member]);
++  });
++
++  it("ignores colour backgrounds", () => {
++    const d = doc([]);
++    d.pages[0]!.background = { type: "color", color: "#fff" };
++    expect(newMemberBackgroundUrls(d)).toEqual([]);
++  });
++});
+diff --git a/apps/api/src/saved-designs/artwork-gate.service.spec.ts b/apps/api/src/saved-designs/artwork-gate.service.spec.ts
+new file mode 100644
+index 0000000..3af0d27
+--- /dev/null
++++ b/apps/api/src/saved-designs/artwork-gate.service.spec.ts
+@@ -0,0 +1,161 @@
++import { BadRequestException } from "@nestjs/common";
++import type { ConfigService } from "@nestjs/config";
++import sharp from "sharp";
++import type { DesignDocument } from "@kudos/shared-types";
++import type { FetchLike } from "../print-pdf";
++import { ArtworkGateService } from "./artwork-gate.service";
++
++const STORAGE = "https://proj.supabase.co/storage/v1/object/public/design-assets";
++const MEMBER = `${STORAGE}/acct-1/`;
++const CATALOG = `${STORAGE}/catalog/`;
++
++/** A PNG of exactly this size, as the browser would have uploaded it. */
++async function png(width: number, height: number): Promise<Buffer> {
++  return sharp({ create: { width, height, channels: 3, background: "#fff" } })
++    .png()
++    .toBuffer();
++}
++
++/** A JPEG stored `width × height` with an EXIF tag saying "rotate 90°" — a
++ * phone photo. Every viewer shows it as height × width. */
++async function rotatedJpeg(width: number, height: number): Promise<Buffer> {
++  return sharp({ create: { width, height, channels: 3, background: "#fff" } })
++    .jpeg()
++    .withMetadata({ orientation: 6 })
++    .toBuffer();
++}
++
++function fetchFixtures(files: Record<string, Buffer>): { fetch: FetchLike; calls: string[] } {
++  const calls: string[] = [];
++  const fetch: FetchLike = (url) => {
++    calls.push(url);
++    const body = files[url];
++    return Promise.resolve({
++      ok: body !== undefined,
++      status: body ? 200 : 404,
++      headers: { get: () => null },
++      arrayBuffer: () =>
++        body
++          ? Promise.resolve(
++              body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer,
++            )
++          : Promise.reject(new Error("no body")),
++    });
++  };
++  return { fetch, calls };
++}
++
++function gate(fetch: FetchLike): ArtworkGateService {
++  const config = {
++    get: () => "https://proj.supabase.co",
++  } as unknown as ConfigService<never, true>;
++  return new ArtworkGateService(config, fetch);
++}
++
++function doc(front?: string, back?: string): DesignDocument {
++  return {
++    version: 1,
++    pages: [
++      {
++        name: "front",
++        elements: [],
++        ...(front ? { background: { type: "image", assetUrl: front } } : {}),
++      },
++      { name: "inside-left", elements: [] },
++      { name: "inside-right", elements: [] },
++      {
++        name: "back",
++        elements: [],
++        ...(back ? { background: { type: "image", assetUrl: back } } : {}),
++      },
++    ],
++  };
++}
++
++describe("ArtworkGateService", () => {
++  it("lets a background of the card's shape at print resolution through", async () => {
++    const url = `${MEMBER}good.png`;
++    const { fetch } = fetchFixtures({ [url]: await png(1240, 1748) });
++    await expect(gate(fetch).assertBackgroundsPrintable(doc(url))).resolves.toBeUndefined();
++  });
++
++  it("refuses the 2:3 shape that cropped the catalog, with the re-export size in the message", async () => {
++    const url = `${MEMBER}two-three.png`;
++    const { fetch } = fetchFixtures({ [url]: await png(1000, 1500) });
++    const attempt = gate(fetch).assertBackgroundsPrintable(doc(url));
++    await expect(attempt).rejects.toBeInstanceOf(BadRequestException);
++    await expect(attempt).rejects.toThrow(/6% of its height/);
++    await expect(attempt).rejects.toThrow(/1240 × 1748/);
++  });
++
++  it("refuses the right shape with too few pixels", async () => {
++    const url = `${MEMBER}small.png`;
++    const { fetch } = fetchFixtures({ [url]: await png(620, 874) });
++    await expect(gate(fetch).assertBackgroundsPrintable(doc(url))).rejects.toThrow(/dpi/);
++  });
++
++  it("reads EXIF orientation, so a rotated phone photo of the right shape is accepted", async () => {
++    // Stored 1748 × 1240 (landscape) with "rotate 90°": seen as 1240 × 1748.
++    const url = `${MEMBER}phone.jpg`;
++    const { fetch } = fetchFixtures({ [url]: await rotatedJpeg(1748, 1240) });
++    await expect(gate(fetch).assertBackgroundsPrintable(doc(url))).resolves.toBeUndefined();
++  });
++
++  it("does not measure catalog artwork — the sync's gate owns that", async () => {
++    const url = `${CATALOG}ours.png`;
++    const { fetch, calls } = fetchFixtures({ [url]: await png(1000, 1500) });
++    await expect(gate(fetch).assertBackgroundsPrintable(doc(url))).resolves.toBeUndefined();
++    expect(calls).toEqual([]);
++  });
++
++  it("does not re-judge a background the design already carried", async () => {
++    // A legacy design with a 2:3 member background: a text edit must still save.
++    const url = `${MEMBER}legacy.png`;
++    const { fetch, calls } = fetchFixtures({ [url]: await png(1000, 1500) });
++    await expect(
++      gate(fetch).assertBackgroundsPrintable(doc(url), doc(url)),
++    ).resolves.toBeUndefined();
++    expect(calls).toEqual([]);
++  });
++
++  it("judges a background that is new to the design even when another is not", async () => {
++    const kept = `${MEMBER}kept.png`;
++    const added = `${MEMBER}added.png`;
++    const { fetch, calls } = fetchFixtures({
++      [kept]: await png(1000, 1500),
++      [added]: await png(2000, 2000),
++    });
++    await expect(
++      gate(fetch).assertBackgroundsPrintable(doc(kept, added), doc(kept)),
++    ).rejects.toThrow(/29% of its width/);
++    expect(calls).toEqual([added]);
++  });
++
++  it("never fetches a host that is not our storage (SSRF), and lets the save through", async () => {
++    const url = "http://169.254.169.254/latest/meta-data/";
++    const { fetch, calls } = fetchFixtures({});
++    await expect(gate(fetch).assertBackgroundsPrintable(doc(url))).resolves.toBeUndefined();
++    expect(calls).toEqual([]);
++  });
++
++  it("fails open when storage cannot be reached, rather than blocking every save", async () => {
++    const url = `${MEMBER}missing.png`;
++    const { fetch } = fetchFixtures({});
++    await expect(gate(fetch).assertBackgroundsPrintable(doc(url))).resolves.toBeUndefined();
++  });
++
++  it("fails open on bytes that are not an image", async () => {
++    const url = `${MEMBER}not-an-image.png`;
++    const { fetch } = fetchFixtures({ [url]: Buffer.from("definitely not a png") });
++    await expect(gate(fetch).assertBackgroundsPrintable(doc(url))).resolves.toBeUndefined();
++  });
++
++  it("measures each URL once", async () => {
++    const url = `${MEMBER}once.png`;
++    const { fetch, calls } = fetchFixtures({ [url]: await png(1240, 1748) });
++    const service = gate(fetch);
++    await service.assertBackgroundsPrintable(doc(url));
++    await service.assertBackgroundsPrintable(doc(url, url));
++    expect(calls).toEqual([url]);
++  });
++});
+diff --git a/apps/api/src/saved-designs/artwork-gate.service.ts b/apps/api/src/saved-designs/artwork-gate.service.ts
+new file mode 100644
+index 0000000..07c0a7e
+--- /dev/null
++++ b/apps/api/src/saved-designs/artwork-gate.service.ts
+@@ -0,0 +1,129 @@
++import { BadRequestException, Inject, Injectable, Logger, Optional } from "@nestjs/common";
++import { ConfigService } from "@nestjs/config";
++import sharp from "sharp";
++import {
++  backgroundArtworkVerdict,
++  newMemberBackgroundUrls,
++  orientedPixelSize,
++  type DesignDocument,
++  type PixelSize,
++} from "@kudos/shared-types";
++import type { EnvConfig } from "../config/env.schema";
++import { fetchAssetBytes, hostOf, isHostAllowed, type FetchLike } from "../print-pdf";
++
++/** Injection token for a fetch stand-in, so tests can hand the gate fixtures
++ * instead of a network. Production leaves it unset and uses the global. */
++export const ARTWORK_GATE_FETCH = Symbol("ARTWORK_GATE_FETCH");
++
++/** Uploads are capped at 10MB by the design-assets bucket; anything larger
++ * is not one of ours and is not worth buffering to find out. */
++const MAX_ARTWORK_BYTES = 10 * 1024 * 1024;
++const FETCH_TIMEOUT_MS = 10_000;
++/** Measurements kept, by URL. A background URL is a one-off (uuid in the path),
++ * so this is a short-term memo for the save→re-save cycle, not an index. */
++const CACHE_LIMIT = 500;
++
++/**
++ * The save-time guarantee that a member's background artwork is the right
++ * shape and carries enough pixels — `backgroundArtworkVerdict`, applied where
++ * every persisted document already passes (`SavedDesignsService.parseDocument`,
++ * the choke point ADR 0171 chose for the reserved-footer rule, for the same
++ * reasons: it closes every downstream route at once and it fails with the
++ * design open in front of the customer).
++ *
++ * The browser applies the same verdict before the upload begins, so a customer
++ * who follows the happy path never meets this. It exists for everyone else: a
++ * stale tab, a forged request, a library asset chosen from the "Your uploads"
++ * picker that was uploaded before the rule, a future surface that forgets.
++ *
++ * What it measures, and what it leaves alone — see `newMemberBackgroundUrls`:
++ * only image backgrounds, only the customer's own (catalog artwork is measured
++ * at the sync), and only ones new to the design since it was last saved.
++ *
++ * **Fails open on infrastructure, closed on artwork.** The bytes live in
++ * Supabase Storage and the API never saw them at upload (the browser PUTs
++ * straight to a signed URL), so measuring means one HEAD-sized fetch of the
++ * header. If that fetch fails — storage down, a timeout — the save goes ahead
++ * with a warning in the log: the alternative is that a storage blip stops
++ * every customer saving every design, and the editor's own pre-upload check
++ * has already had its say. A file that *is* measured and is wrong is refused.
++ */
++@Injectable()
++export class ArtworkGateService {
++  private readonly logger = new Logger(ArtworkGateService.name);
++  private readonly cache = new Map<string, Promise<PixelSize | null>>();
++  private readonly allowedHosts: string[];
++
++  constructor(
++    config: ConfigService<EnvConfig, true>,
++    @Optional() @Inject(ARTWORK_GATE_FETCH) private readonly fetchImpl?: FetchLike,
++  ) {
++    const host = hostOf(config.get("SUPABASE_URL", { infer: true }));
++    this.allowedHosts = host ? [host] : [];
++  }
++
++  /**
++   * Refuse `document` if a background the customer has just added is not fit
++   * to print. `previous` is the design's stored document on an update, so a
++   * background it already carried is not re-judged.
++   */
++  async assertBackgroundsPrintable(
++    document: DesignDocument,
++    previous?: DesignDocument | null,
++  ): Promise<void> {
++    for (const url of newMemberBackgroundUrls(document, previous)) {
++      const natural = await this.measure(url);
++      if (natural === null) continue;
++      const verdict = backgroundArtworkVerdict(natural);
++      if (!verdict.ok) {
++        throw new BadRequestException(
++          `This background can't be printed as it is. ${verdict.message}`,
++        );
++      }
++    }
++  }
++
++  /**
++   * The size an image at `url` is seen at (EXIF orientation applied), or null
++   * when it could not be measured: not on our storage host, unreachable, or
++   * not an image sharp can read. Memoised per URL.
++   */
++  measure(url: string): Promise<PixelSize | null> {
++    const cached = this.cache.get(url);
++    if (cached) return cached;
++    const pending = this.measureUncached(url).catch((error: unknown) => {
++      this.logger.warn(`Could not measure background artwork (${url}): ${String(error)}`);
++      return null;
++    });
++    if (this.cache.size >= CACHE_LIMIT) {
++      const oldest = this.cache.keys().next().value;
++      if (oldest !== undefined) this.cache.delete(oldest);
++    }
++    this.cache.set(url, pending);
++    return pending;
++  }
++
++  private async measureUncached(url: string): Promise<PixelSize | null> {
++    // Same allowlist discipline as the print engine: a design document is
++    // customer-supplied and this runs server-side, so an unlisted host is an
++    // SSRF vector, not a measurement to make. A member background elsewhere
++    // is already a print problem (the engine will not fetch it either) and is
++    // reported as such by the print pre-flight, not here.
++    if (!isHostAllowed(url, this.allowedHosts)) {
++      this.logger.warn(`Background artwork not on the storage host, left unmeasured: ${url}`);
++      return null;
++    }
++    const fetched = await fetchAssetBytes(url, {
++      fetchImpl: this.fetchImpl,
++      maxBytes: MAX_ARTWORK_BYTES,
++      timeoutMs: FETCH_TIMEOUT_MS,
++      onWarn: (message) => this.logger.warn(message),
++    });
++    if (!fetched) return null;
++    // `metadata()` reads the header only — no decode. `orientation` is the EXIF
++    // tag, which the browser and pdfkit both honour and the header size ignores.
++    const { width, height, orientation } = await sharp(fetched.buffer).metadata();
++    if (!width || !height) return null;
++    return orientedPixelSize({ width, height, orientation });
++  }
++}
+diff --git a/apps/api/src/saved-designs/saved-designs.module.ts b/apps/api/src/saved-designs/saved-designs.module.ts
+index b5ae19b..d070c72 100644
+--- a/apps/api/src/saved-designs/saved-designs.module.ts
++++ b/apps/api/src/saved-designs/saved-designs.module.ts
+@@ -1,13 +1,14 @@
+ import { Module } from "@nestjs/common";
+ import { SavedDesignsController } from "./saved-designs.controller";
+ import { SavedDesignsService } from "./saved-designs.service";
++import { ArtworkGateService } from "./artwork-gate.service";
+ import { CardDesignsModule } from "../card-designs/card-designs.module";
+ import { EntitlementsModule } from "../entitlements/entitlements.module";
+ 
+ @Module({
+   imports: [CardDesignsModule, EntitlementsModule],
+   controllers: [SavedDesignsController],
+-  providers: [SavedDesignsService],
++  providers: [SavedDesignsService, ArtworkGateService],
+   exports: [SavedDesignsService],
+ })
+ export class SavedDesignsModule {}
+diff --git a/apps/api/src/saved-designs/saved-designs.service.ts b/apps/api/src/saved-designs/saved-designs.service.ts
+index d84db4f..7266955 100644
+--- a/apps/api/src/saved-designs/saved-designs.service.ts
++++ b/apps/api/src/saved-designs/saved-designs.service.ts
+@@ -5,10 +5,15 @@ import {
+   NotFoundException,
+ } from "@nestjs/common";
+ import { Prisma, type SavedDesign } from "@prisma/client";
+-import { designDocumentSchema, reservedFooterViolation } from "@kudos/shared-types";
++import {
++  designDocumentSchema,
++  reservedFooterViolation,
++  type DesignDocument,
++} from "@kudos/shared-types";
+ import { PrismaService } from "../prisma/prisma.service";
+ import { CardDesignsService } from "../card-designs/card-designs.service";
+ import { EntitlementsService } from "../entitlements/entitlements.service";
++import { ArtworkGateService } from "./artwork-gate.service";
+ import type { CreateSavedDesignDto } from "./dto/create-saved-design.dto";
+ import type { UpdateSavedDesignDto } from "./dto/update-saved-design.dto";
+ 
+@@ -25,6 +30,7 @@ export class SavedDesignsService {
+     private readonly prisma: PrismaService,
+     private readonly cardDesigns: CardDesignsService,
+     private readonly entitlements: EntitlementsService,
++    private readonly artworkGate: ArtworkGateService,
+   ) {}
+ 
+   async create(accountId: string, dto: CreateSavedDesignDto): Promise<SavedDesign> {
+@@ -38,7 +44,7 @@ export class SavedDesignsService {
+       // too — otherwise a template with a badly placed back element would be the
+       // one way to get an unprintable design into the library.
+       const document = dto.document
+-        ? this.parseDocument(dto.document)
++        ? await this.parseDocument(dto.document, template.document as unknown as DesignDocument)
+         : (this.assertPrintable(template.document as Record<string, unknown>), template.document);
+       return this.prisma.savedDesign.create({
+         data: {
+@@ -61,7 +67,7 @@ export class SavedDesignsService {
+         "Uploading your own artwork is available on the Pro and Centre plans",
+       );
+     }
+-    const document = this.parseDocument(dto.document);
++    const document = await this.parseDocument(dto.document);
+     return this.prisma.savedDesign.create({
+       data: {
+         accountId,
+@@ -92,7 +98,21 @@ export class SavedDesignsService {
+   }
+ 
+   async update(accountId: string, id: string, dto: UpdateSavedDesignDto): Promise<SavedDesign> {
+-    const document = dto.document ? this.parseDocument(dto.document) : undefined;
++    // The stored document is the artwork gate's "previous": a background the
++    // design already carries was accepted once and is not judged again, so a
++    // text edit on an older design can never be refused over its artwork.
++    const previous = dto.document
++      ? await this.prisma.savedDesign.findFirst({
++          where: { id, accountId, archivedAt: null },
++          select: { document: true },
++        })
++      : null;
++    const document = dto.document
++      ? await this.parseDocument(
++          dto.document,
++          (previous?.document as unknown as DesignDocument | undefined) ?? null,
++        )
++      : undefined;
+ 
+     const { count } = await this.prisma.savedDesign.updateMany({
+       where: { id, accountId, archivedAt: null },
+@@ -145,7 +165,17 @@ export class SavedDesignsService {
+     }
+   }
+ 
+-  private parseDocument(document: Record<string, unknown>): Record<string, unknown> {
++  /**
++   * Validate a document on its way to storage: shape (zod), the reserved
++   * footer (ADR 0171), and — for a background the customer has just added —
++   * that the artwork is the right shape and resolution to print
++   * (`ArtworkGateService`). `previous` is the document the design already
++   * holds, so only a *new* background is measured.
++   */
++  private async parseDocument(
++    document: Record<string, unknown>,
++    previous?: DesignDocument | null,
++  ): Promise<Record<string, unknown>> {
+     const result = designDocumentSchema.safeParse(document);
+     if (!result.success) {
+       throw new BadRequestException(
+@@ -153,6 +183,7 @@ export class SavedDesignsService {
+       );
+     }
+     this.assertPrintable(result.data);
++    await this.artworkGate.assertBackgroundsPrintable(result.data, previous);
+     return result.data;
+   }
+ 
+diff --git a/apps/web/src/app/(app)/designs/[id]/edit/design-editor-client.tsx b/apps/web/src/app/(app)/designs/[id]/edit/design-editor-client.tsx
+index 65b3bc5..56e613b 100644
+--- a/apps/web/src/app/(app)/designs/[id]/edit/design-editor-client.tsx
++++ b/apps/web/src/app/(app)/designs/[id]/edit/design-editor-client.tsx
+@@ -21,7 +21,10 @@ import {
+   FONT_CATEGORY_ORDER,
+   MERGE_FIELDS,
+   PRINT_DPI_TARGET,
++  backgroundArtworkVerdict,
+   backgroundCropLoss,
++  DISTORTION_OK_BELOW,
++  elementDistortion,
+   cropLossPerEdgeMm,
+   cropLossPercent,
+   cropVerdict,
+@@ -45,7 +48,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
+ import { ApiError } from "@/lib/api";
+ import { clientApiFetch } from "@/lib/api.client";
+ import { createClient } from "@/lib/supabase/client";
+-import { loadNaturalSize } from "@/lib/image-natural-size";
++import { loadNaturalSize, readFileNaturalSize } from "@/lib/image-natural-size";
+ 
+ /**
+  * What we know about a background image. The states are kept apart rather than
+@@ -434,6 +437,33 @@ export function DesignEditorClient({
+     return imagePrintDpi(natural, printed);
+   }, [selectedElement, selectedImageUrl, imageNaturalSizes]);
+ 
++  // How far the selected image's box departs from the image's own shape. An
++  // element is drawn stretched to its box on every renderer, so unlike a
++  // background it never loses its edges — it loses its proportions, silently.
++  // The aspect lock (ADR 0069) keeps a fresh placement honest; this catches the
++  // lock switched off, a legacy design, and the retired "Upload your own
++  // artwork" flow that pinned every upload to 450×600. Null until measured.
++  const selectedImageDistortion = useMemo(() => {
++    if (selectedElement?.kind !== "image" || !selectedImageUrl) return null;
++    const natural = imageNaturalSizes[selectedImageUrl];
++    if (!natural) return null;
++    return elementDistortion(natural, {
++      width: selectedElement.width,
++      height: selectedElement.height,
++    });
++  }, [selectedElement, selectedImageUrl, imageNaturalSizes]);
++
++  /** Restore the selected image's own proportions, keeping its width. */
++  function fixSelectedImageShape() {
++    if (selectedElement?.kind !== "image" || !selectedImageUrl) return;
++    const natural = imageNaturalSizes[selectedImageUrl];
++    if (!natural) return;
++    updateElement({
++      ...selectedElement,
++      height: Math.max(1, Math.round((selectedElement.width * natural.height) / natural.width)),
++    });
++  }
++
+   /** Change the selection, clearing any stale overflow warning — the canvas
+    * re-reports for the newly selected text element (and never for non-text). */
+   function selectElement(id: string | null) {
+@@ -649,6 +679,21 @@ export function DesignEditorClient({
+     setError(null);
+     setBgUploading(true);
+     try {
++      // Measure before anything is uploaded. A background is the card — the
++      // wrong shape prints with its edges cut off, too few pixels prints soft —
++      // and both are known now, with the file still in the customer's hand.
++      // The API applies the same verdict at the save (ArtworkGateService), so
++      // this is the kind message, not the guarantee. See
++      // docs/card-artwork-print-integrity.md.
++      const measured = await readFileNaturalSize(file);
++      if (measured === null) {
++        throw new Error(
++          "That file doesn't look like an image we can read. Please upload a PNG or JPEG.",
++        );
++      }
++      const verdict = backgroundArtworkVerdict(measured);
++      if (!verdict.ok) throw new Error(verdict.message);
++
+       const signed = await clientApiFetch<SignedUpload>("/uploads/design-assets", {
+         method: "POST",
+         body: JSON.stringify({ fileName: file.name, contentType: file.type }),
+@@ -1841,6 +1886,29 @@ export function DesignEditorClient({
+                     </div>
+                   );
+                 })()}
++              {selectedImageDistortion !== null &&
++                selectedImageDistortion > DISTORTION_OK_BELOW && (
++                  <div
++                    className="rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-800"
++                    data-image-distortion
++                  >
++                    <p className="font-medium">
++                      ⚠ This image is stretched {Math.round(selectedImageDistortion * 100)}% out of
++                      shape
++                    </p>
++                    <p className="mt-0.5">
++                      It prints exactly as it looks here — squashed. Restore its own proportions, or
++                      resize it with the aspect ratio locked.
++                    </p>
++                    <button
++                      type="button"
++                      onClick={fixSelectedImageShape}
++                      className="mt-1 rounded-full border border-red-300 bg-white px-2 py-0.5 text-[11px] font-medium text-red-800 hover:bg-red-100"
++                    >
++                      Restore proportions
++                    </button>
++                  </div>
++                )}
+               <label className="flex items-center gap-2 text-xs text-foreground/70">
+                 <input
+                   type="checkbox"
+diff --git a/apps/web/src/app/(app)/designs/designs-client.tsx b/apps/web/src/app/(app)/designs/designs-client.tsx
+index 368a545..49ca6dc 100644
+--- a/apps/web/src/app/(app)/designs/designs-client.tsx
++++ b/apps/web/src/app/(app)/designs/designs-client.tsx
+@@ -1,6 +1,7 @@
+ "use client";
+ 
+ import type { CardDesign, DesignDocument, SavedDesign } from "@kudos/shared-types";
++import { backgroundArtworkVerdict, customArtworkDocument } from "@kudos/shared-types";
+ import Image from "next/image";
+ import dynamic from "next/dynamic";
+ import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
+@@ -10,6 +11,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
+ import { ApiError } from "@/lib/api";
+ import { clientApiFetch } from "@/lib/api.client";
+ import { createClient } from "@/lib/supabase/client";
++import { readFileNaturalSize } from "@/lib/image-natural-size";
+ 
+ // The read-only Konva renderer that draws a design's front page (artwork + text)
+ // from its document — the same one bulk-send and fulfillment use. Client-only
+@@ -47,12 +49,6 @@ function SavedDesignThumb({ document }: { document: DesignDocument }) {
+ 
+ const ALL_CATEGORIES = "all";
+ 
+-// The card canvas is 450×600 (see design-canvas.tsx). Uploaded artwork is placed
+-// as a single full-bleed image on the front page so it fills the card edge to
+-// edge; the member can then reposition or add text/QR in the editor.
+-const CARD_WIDTH = 450;
+-const CARD_HEIGHT = 600;
+-
+ const DESIGN_ASSETS_BUCKET = "design-assets";
+ const ARTWORK_ACCEPT = "image/png,image/jpeg,image/webp";
+ 
+@@ -67,33 +63,6 @@ function formatCategory(category: string): string {
+   return category.charAt(0).toUpperCase() + category.slice(1);
+ }
+ 
+-/** A full-bleed custom design document built around the member's uploaded image. */
+-function artworkDocument(assetUrl: string) {
+-  return {
+-    version: 1 as const,
+-    pages: [
+-      {
+-        name: "front" as const,
+-        elements: [
+-          {
+-            kind: "image" as const,
+-            id: crypto.randomUUID(),
+-            assetUrl,
+-            x: 0,
+-            y: 0,
+-            width: CARD_WIDTH,
+-            height: CARD_HEIGHT,
+-            rotation: 0,
+-          },
+-        ],
+-      },
+-      { name: "inside-left" as const, elements: [] },
+-      { name: "inside-right" as const, elements: [] },
+-      { name: "back" as const, elements: [] },
+-    ],
+-  };
+-}
+-
+ export function DesignsClient({
+   templates,
+   initialSavedDesigns,
+@@ -145,6 +114,22 @@ export function DesignsClient({
+     setError(null);
+     setUploading(true);
+     try {
++      // Measure before anything is uploaded. A background is the card: the
++      // wrong shape prints with its edges cut off and too few pixels prints
++      // soft, and both are known now, with the file still in the customer's
++      // hand. The API applies the same rule at the save, so this is the kind
++      // message rather than the guarantee. See docs/card-artwork-print-integrity.md.
++      const natural = await readFileNaturalSize(file);
++      if (natural === null) {
++        throw new Error(
++          "That file doesn't look like an image we can read. Please upload a PNG or JPEG.",
++        );
++      }
++      const verdict = backgroundArtworkVerdict(natural);
++      if (!verdict.ok) {
++        throw new Error(verdict.message);
++      }
++
+       // Same signed-upload → Supabase Storage flow the editor uses for images.
+       const signed = await clientApiFetch<SignedUpload>("/uploads/design-assets", {
+         method: "POST",
+@@ -165,7 +150,10 @@ export function DesignsClient({
+         method: "POST",
+         body: JSON.stringify({
+           name: baseName.slice(0, 120),
+-          document: artworkDocument(signed.publicUrl),
++          // A full-bleed *background*, not a fixed-size image element: the old
++          // 450×600 element left a white strip on the 634-tall canvas and
++          // stretched every upload to 3:4. See customArtworkDocument.
++          document: customArtworkDocument(signed.publicUrl),
+         }),
+       });
+       router.push(`/designs/${created.id}/edit`);
+diff --git a/apps/web/src/lib/image-natural-size.ts b/apps/web/src/lib/image-natural-size.ts
+index 14891bd..2618e6f 100644
+--- a/apps/web/src/lib/image-natural-size.ts
++++ b/apps/web/src/lib/image-natural-size.ts
+@@ -20,3 +20,33 @@ export function loadNaturalSize(url: string): Promise<{ width: number; height: n
+     img.src = url;
+   });
+ }
++
++/**
++ * The natural pixel size of a file the customer has just chosen, before it is
++ * uploaded — so a background that cannot print can be refused with the file
++ * still in their hand, instead of after a round trip to storage.
++ *
++ * `naturalWidth`/`naturalHeight` are already EXIF-oriented in every current
++ * browser (`image-orientation: from-image` is the default), so a phone photo
++ * measures the way it will be seen. Resolves `null` when the browser cannot
++ * decode the file; the caller decides whether that is a refusal.
++ */
++export function readFileNaturalSize(file: File): Promise<{ width: number; height: number } | null> {
++  return new Promise((resolve) => {
++    const url = URL.createObjectURL(file);
++    const img = new window.Image();
++    img.onload = () => {
++      URL.revokeObjectURL(url);
++      resolve(
++        img.naturalWidth > 0 && img.naturalHeight > 0
++          ? { width: img.naturalWidth, height: img.naturalHeight }
++          : null,
++      );
++    };
++    img.onerror = () => {
++      URL.revokeObjectURL(url);
++      resolve(null);
++    };
++    img.src = url;
++  });
++}
+diff --git a/docs/card-artwork-print-integrity.md b/docs/card-artwork-print-integrity.md
+new file mode 100644
+index 0000000..9742588
+--- /dev/null
++++ b/docs/card-artwork-print-integrity.md
+@@ -0,0 +1,164 @@
++# Artwork that cannot print is not allowed onto a card
++
++The third document about the same subject, and the one that changes the rule.
++`card-artwork-crop-plan.md` made the loss measurable. `card-artwork-shape-plan.md`
++found that the loss was one wrong export preset applied 207 times, and said the
++fix is the artwork, not the software. Both left every gate advisory except the
++catalog sync's, and that one is off.
++
++This plan closes the door. It is the outcome of a full read of every path a
++piece of artwork takes from a file on someone's desk to a sheet of A6 card, and
++of one decision taken on the back of it: **artwork of the wrong shape or too few
++pixels is refused at the door, not reported afterwards.**
++
++## What the read found
++
++Every renderer agrees, and every renderer is correct. `coverCrop` (browser),
++pdfkit `cover` (PDF) and the crop maths (`card-crop.ts`) are the same rule; the
++preview and the print differ by 0.06mm. The cropping in the field is not a
++rendering fault. It is artwork that is the wrong shape, drawn correctly.
++
++Beyond that, four things the previous two plans did not cover:
++
++1. **"Upload your own artwork" was broken in two ways at once.**
++   `designs-client.tsx` built its document with a **450 × 600 image element** on
++   a canvas that has been **450 × 634** since ADR 0161 — the same regression the
++   catalog builder was fixed for, in a file that was not. Every custom upload got
++   an 8mm white strip along the bottom of the front, and because an image
++   element is _stretched_ to its box on every renderer, the artwork was forced
++   into 3:4 whatever shape it was. An A6-correct 1240 × 1748 upload was squashed
++   5.7%. Nothing measured it, because no distortion check existed.
++2. **Nothing enforced anything on a customer's background.** The upload goes
++   browser → Supabase on a signed URL; the API never sees the bytes, and the
++   only server-side check on a document (`parseDocument`) is the reserved
++   footer. The editor's crop note, the ops pre-flight and the low-DPI warnings
++   are all advisory, and `DesignAsset.width/height` are whatever the browser
++   said.
++3. **EXIF orientation was measured wrong.** A phone photo is often stored
++   landscape with a tag saying "rotate". The browser and pdfkit honour the tag;
++   `sharp.metadata()` reports the un-rotated header size. The catalog sync
++   measures with the header, so a rotated portrait photo of exactly the right
++   shape reads as landscape and "47% cropped".
++4. **Image elements can be distorted silently.** The aspect lock (ADR 0069) is
++   a default, not a rule: a lock switched off, a legacy design, or the flow in
++   (1) stretches an image and nothing in the editor, the pre-send check or the
++   print run says so.
++
++## Decisions
++
++**D1 — A background must be the right shape and carry enough pixels.** One
++verdict, `backgroundArtworkVerdict` in `shared-types/card-artwork.ts`, derived
++from the two pre-flights beside it: shape passes when `cropVerdict` is `ok`
++(≤2% of an axis, ~1.5mm per edge on A6 — forgives a true-A6 export against the
++634-unit canvas), pixels pass when `printDpiVerdict` is not `low` (200dpi:
++827 × 1165 on A6). The catalog sync's gate uses the same crop rule, so our
++artwork and the customer's are judged alike.
++
++**D2 — Refuse twice: before the upload, and at the save.** The browser measures
++the chosen file (`readFileNaturalSize`) and refuses before a byte is uploaded,
++with the message naming the size to export at. The API applies the identical
++verdict in `SavedDesignsService.parseDocument` via `ArtworkGateService` — the
++choke point ADR 0171 chose, for the same reasons: every downstream route is
++closed at once, and it fails with the design open in front of the customer.
++
++**D3 — The gate is on the door, not the room.** Only a background that is _new
++to the design_ is measured (`newMemberBackgroundUrls`). A background the design
++already carried was accepted once; refusing it on the next save would trap a
++customer in a design they can neither fix nor keep. Catalog artwork is skipped —
++it is measured at the sync, and most of it would fail here until the re-export
++lands, which would stop a customer saving a text edit on artwork they cannot
++change.
++
++**D4 — Fail open on infrastructure, closed on artwork.** The server-side check
++needs one fetch of the file header from storage. If storage is unreachable the
++save goes ahead with a warning in the log; the pre-upload check has already had
++its say, and a storage blip must not stop every customer saving every design. A
++file that _is_ measured and is wrong is refused.
++
++**D5 — Elements are warned, not refused.** ADR 0162's reasoning stands for
++image elements: a small logo is a legitimate element, and an element never loses
++its edges. What it can lose is its proportions, so `elementDistortion` measures
++that and the editor says so, with a one-click "Restore proportions". Making
++distortion a save-time refusal is deliberately not done: a customer who
++switches the lock off and stretches a texture has done it on purpose.
++
++**D6 — Custom artwork is a background.** `customArtworkDocument` replaces the
++450 × 600 element with a full-bleed front background — undistorted, locked under
++the customer's text, and measured by D1 like everything else.
++
++**D7 — Orientation is applied before anything is judged.** `orientedPixelSize`
++swaps the axes for EXIF 5–8. The gate uses it; the catalog sync should (Phase 3).
++
++## What shipped in this change
++
++- `shared-types/card-artwork.ts`: `backgroundArtworkVerdict`,
++  `orientedPixelSize`, `elementDistortion`, `customArtworkDocument`,
++  `newMemberBackgroundUrls`. Pure, tested in `apps/api/src/common/card-artwork.spec.ts`
++  against the real cases (the 2:3 export, the A6 fix, the rotated photo, the
++  450 × 600 squash).
++- `apps/api/src/saved-designs/artwork-gate.service.ts`, wired into
++  `SavedDesignsService.create` (both branches) and `update` (with the stored
++  document as `previous`). Tested with fixture bytes, including SSRF and
++  fail-open.
++- `designs-client.tsx`: measures before uploading, refuses with the export
++  size, builds the document from `customArtworkDocument`.
++- `design-editor-client.tsx`: the same pre-upload refusal for a page
++  background; a distortion warning and "Restore proportions" for a selected
++  image element.
++- `lib/image-natural-size.ts`: `readFileNaturalSize`.
++
++## Phases still to do
++
++Each its own PR, merged when green before the next.
++
++### Phase 1 — Re-export the catalog and close its gate
++
++Re-export the 207 designs at **1748 × 2480** (A5 at 300dpi; the same shape as
++A6 and enough pixels for either size), re-attach in Airtable, run the sync,
++confirm `cropped` is empty in the sync summary, then switch
++`catalog_reject_cropped_artwork` on. This is the fix for the card in the
++screenshot; nothing in software removes that crop.
++
++### Phase 2 — Calibrate the borderless printer
++
++A borderless office printer reaches the edge by _enlarging_ the page a few
++per cent and cropping the overhang, and the amount is a driver setting. Print
++`kudos-borderless-calibration.pdf` (one A6 page, one A5) on the real stock and
++read the loss per edge off the rulers. Under ~1mm: the exact-trim PDF is right
++as it is. Over: add an `overscanMm` option to `faceGeometry` (page stays trim
++size; the design is scaled into trim − 2·overscan; the background covers the
++page) and an admin setting to carry the measured number, so what the printer
++throws away is bleed rather than card.
++
++### Phase 3 — Orientation in the catalog sync
++
++`copyImage` measures with `sharp.metadata()`; pass the result through
++`orientedPixelSize` so a rotated attachment is judged the way it is seen.
++Persist `artworkWidth/Height` oriented.
++
++### Phase 4 — Distortion at the point of sale
++
++A design-level finding in the pre-send check ("an image on the front is
++stretched 6% out of shape"), the same shape as the reserved-footer warning, so a
++legacy design from the old upload flow is caught before payment.
++
++### Phase 5 — Browser print, retired or made honest
++
++`Browser print` insets the card 5mm for a printer that leaves a margin. The
++printer does not, and the PDF is full-bleed at trim, so the two outputs differ
++by 10% in card width. Either remove the button or render it at trim like the
++PDF.
++
++### Phase 6 — Measure at upload, once
++
++`POST /design-assets` records the browser's word for `width/height`. Have the
++API measure the object itself on that call (the gate's `measure`, cached onto
++the row) so the "Your uploads" picker can grey out a background that would be
++refused before the customer picks it.
++
++## What this does not fix
++
++Custom-artwork designs saved by the old flow still carry a 450 × 600 element.
++They render exactly as they did — squashed, with the strip — until the customer
++opens the design and selects the image (the editor now says so and offers the
++one-click fix), or Phase 4 catches it at the point of sale. Cards already printed are printed.
+diff --git a/packages/shared-types/src/card-artwork.ts b/packages/shared-types/src/card-artwork.ts
+new file mode 100644
+index 0000000..7987fcb
+--- /dev/null
++++ b/packages/shared-types/src/card-artwork.ts
+@@ -0,0 +1,212 @@
++/**
++ * The rule for artwork that is allowed onto a card, stated once.
++ *
++ * Two pre-flights already exist and both are advisory: `print-quality.ts`
++ * says whether an image has enough pixels, `card-crop.ts` says whether its
++ * shape will be cut. Nothing *refuses* — the crop plan (docs/card-artwork-
++ * crop-plan.md, D4) reserved refusal for the catalog sync, and ADR 0162
++ * deliberately left customer uploads un-gated on the argument that a hard
++ * minimum would reject small logos and stickers.
++ *
++ * That argument is right for an image *element* — a logo on a card can be any
++ * shape and is scaled to its own box. It is wrong for a *background*: a
++ * background is the card. It fills the whole face, it is centre-cropped to the
++ * card's shape, and it is printed edge to edge at trim size. A background of
++ * the wrong shape is a card with its edges cut off, every time, and one with
++ * too few pixels is a soft card, every time. Both are known the moment the
++ * file is chosen and both are cheaper to refuse than to explain later.
++ *
++ * So: **a background must be the right shape and carry enough pixels.** This
++ * module is the one definition of "right" and "enough", derived from the
++ * pre-flights it sits beside so a background that passes here is one both of
++ * them call fine. The browser applies it before an upload starts (so the
++ * customer is told with the file still in their hand) and the API applies it
++ * at the save (so nothing can route around the browser). See
++ * docs/card-artwork-print-integrity.md.
++ */
++
++import type { DesignDocument, DesignPage } from "./card";
++import { isCatalogArtwork } from "./card";
++import {
++  PRINT_RUN_BLEED_MM,
++  cropLossPerEdgeMm,
++  cropLossPercent,
++  cropVerdict,
++  croppedAxis,
++  idealArtworkPixels,
++  printedCropLoss,
++} from "./card-crop";
++import { DEFAULT_CARD_SIZE, type CardSize } from "./card-format";
++import {
++  PRINT_DPI_TARGET,
++  PRINT_DPI_WARN_BELOW,
++  backgroundPrintedSizeMm,
++  imagePrintDpi,
++  printDpiVerdict,
++  type PixelSize,
++} from "./print-quality";
++
++/**
++ * A measured image, as `sharp` metadata or the browser reports it.
++ *
++ * `orientation` is the EXIF tag (1..8). A phone photo is very often stored
++ * landscape with a tag saying "rotate me": the browser, pdfkit and every
++ * viewer honour the tag, so what everyone *sees* is portrait — but `width` and
++ * `height` in the file header are the un-rotated ones. A measurement that
++ * ignores the tag reports the wrong shape for exactly the uploads most likely
++ * to be photos. Optional, because the browser's `naturalWidth`/`naturalHeight`
++ * are already oriented and carry no tag.
++ */
++export interface MeasuredImage extends PixelSize {
++  orientation?: number;
++}
++
++/** The size an image is *seen* at, with any EXIF rotation applied. Pure. */
++export function orientedPixelSize(image: MeasuredImage): PixelSize {
++  const rotated = (image.orientation ?? 1) >= 5;
++  return rotated
++    ? { width: image.height, height: image.width }
++    : { width: image.width, height: image.height };
++}
++
++export type BackgroundArtworkVerdict =
++  | { ok: true }
++  | {
++      ok: false;
++      /** Which rule failed. Shape is checked first: a wrong-shaped file is
++       *  re-exported, and the re-export fixes the pixel count as well. */
++      reason: "shape" | "resolution";
++      /** One sentence a customer can act on, ending with the size to export at. */
++      message: string;
++    };
++
++/**
++ * Whether an image may be a page background. Pure.
++ *
++ * Judged against what the press produces (`printedCropLoss` at the shipping
++ * bleed), at the house size, exactly as the catalog sync's gate judges catalog
++ * artwork — the same rule for our artwork and the customer's. The shape floor
++ * is `cropVerdict`'s `ok` band (2% of an axis, about 1.5mm off each edge of an
++ * A6), which forgives a true-A6 export against the 634-unit canvas and nothing
++ * a person would notice. The pixel floor is the resolution pre-flight's `low`
++ * band (200dpi): an A6 background needs 827 × 1165, and the ideal 1240 × 1748
++ * clears both at once.
++ */
++export function backgroundArtworkVerdict(
++  natural: PixelSize,
++  size: CardSize = DEFAULT_CARD_SIZE,
++): BackgroundArtworkVerdict {
++  const ideal = idealArtworkPixels(size);
++  const exportAt = `Export it at ${ideal.width} × ${ideal.height} pixels (${size} at ${PRINT_DPI_TARGET} dpi) and upload that.`;
++
++  const loss = printedCropLoss(natural, { size, bleedMm: PRINT_RUN_BLEED_MM });
++  const axis = croppedAxis(loss);
++  if (axis !== null && cropVerdict(loss) !== "ok") {
++    const edge = axis === "width" ? "side" : "of the top and bottom";
++    return {
++      ok: false,
++      reason: "shape",
++      message:
++        `This image is ${natural.width} × ${natural.height} pixels, which is not the card's shape: ` +
++        `${cropLossPercent(loss)}% of its ${axis} (about ${cropLossPerEdgeMm(loss, size).toFixed(1)}mm off each ${edge}) ` +
++        `would be cut off to fill the card. ${exportAt}`,
++    };
++  }
++
++  const dpi = imagePrintDpi(natural, backgroundPrintedSizeMm(size));
++  if (printDpiVerdict(dpi) === "low") {
++    return {
++      ok: false,
++      reason: "resolution",
++      message:
++        `This image is ${natural.width} × ${natural.height} pixels, which prints at about ${Math.round(dpi)} dpi ` +
++        `across a ${size} card — below the ${PRINT_DPI_WARN_BELOW} dpi minimum, so it would look soft. ${exportAt}`,
++    };
++  }
++
++  return { ok: true };
++}
++
++/**
++ * How far an image *element*'s box departs from the image's own shape, as a
++ * fraction: 0 is undistorted, 0.1 is a 10% stretch on one axis. Pure.
++ *
++ * An element is drawn stretched to its box on every renderer (Konva's
++ * `<Image width height>`, pdfkit's `{ width, height }`), so unlike a
++ * background it never loses its edges — it loses its proportions instead,
++ * which is worse and which nothing measured. The editor locks aspect ratio by
++ * default (ADR 0069), so this catches a lock switched off, a legacy design, and
++ * the old "Upload your own artwork" flow that pinned every upload to 450 × 600.
++ */
++export function elementDistortion(natural: PixelSize, box: PixelSize): number {
++  if (natural.width <= 0 || natural.height <= 0 || box.width <= 0 || box.height <= 0) return 0;
++  const imgRatio = natural.width / natural.height;
++  const boxRatio = box.width / box.height;
++  // The larger of the two ratios over the smaller, so a 10% stretch and the
++  // 10% squash that undoes it read as the same amount of distortion.
++  return Math.max(boxRatio / imgRatio, imgRatio / boxRatio) - 1;
++}
++
++/** At or below this, a stretch is rounding rather than distortion. */
++export const DISTORTION_OK_BELOW = 0.02;
++
++/**
++ * The document a member's own uploaded artwork starts from: the artwork as a
++ * full-bleed **background** on the front, the other faces blank.
++ *
++ * A background, not an image element. The previous builder placed a 450 × 600
++ * image element on a canvas that has been 450 × 634 since ADR 0161, which did
++ * two wrong things to every custom upload at once: it left a 34-unit (~8mm on
++ * A6) white strip along the bottom, and — because an element stretches to its
++ * box — it forced whatever shape the upload was into 3:4. The catalog builder
++ * (`buildCardDocument`) was corrected for the same regression; this one was
++ * not. As a background the artwork is full-bleed, undistorted, locked under the
++ * customer's text, and measured by the same gate as everything else.
++ */
++export function customArtworkDocument(assetUrl: string): DesignDocument {
++  const front: DesignPage = {
++    name: "front",
++    elements: [],
++    background: { type: "image", assetUrl },
++  };
++  return {
++    version: 1,
++    pages: [
++      front,
++      { name: "inside-left", elements: [] },
++      { name: "inside-right", elements: [] },
++      { name: "back", elements: [] },
++    ],
++  };
++}
++
++/**
++ * The background image URLs in `document` that the customer supplied and that
++ * are new since `previous` — the ones a save-time gate should measure. Pure.
++ *
++ * Two exclusions, both deliberate. Catalog artwork is ours: it is measured at
++ * the catalog sync (the door it comes in through) and until the re-export
++ * lands most of it would fail here, which would stop a customer saving a text
++ * edit on a card whose artwork they cannot change. And a background already
++ * stored on the design was accepted once; refusing it on the next save — a
++ * renamed text box, a moved QR — would trap a customer in a design they can
++ * neither fix nor keep. The gate is on the door, not the room.
++ */
++export function newMemberBackgroundUrls(
++  document: DesignDocument,
++  previous?: DesignDocument | null,
++): string[] {
++  const before = new Set<string>();
++  for (const page of previous?.pages ?? []) {
++    if (page.background?.type === "image") before.add(page.background.assetUrl);
++  }
++  const urls: string[] = [];
++  for (const page of document.pages) {
++    const background = page.background;
++    if (background?.type !== "image") continue;
++    const url = background.assetUrl;
++    if (isCatalogArtwork(url) || before.has(url) || urls.includes(url)) continue;
++    urls.push(url);
++  }
++  return urls;
++}
+diff --git a/packages/shared-types/src/index.ts b/packages/shared-types/src/index.ts
+index 7e3f2dc..266876c 100644
+--- a/packages/shared-types/src/index.ts
++++ b/packages/shared-types/src/index.ts
+@@ -14,6 +14,7 @@ export * from "./segment";
+ export * from "./pricing";
+ export * from "./card-content";
+ export * from "./card-crop";
++export * from "./card-artwork";
+ export * from "./card-format";
+ export * from "./preflight";
+ export * from "./plans";
+-- 
+2.43.0
+
+
+From 25a8e2a482390709c68a1ac4a322d766cdb7e8b3 Mon Sep 17 00:00:00 2001
+From: Kudos Cards <tech@kudoscards.co.uk>
+Date: Tue, 15 Sep 2026 20:11:52 +0000
+Subject: [PATCH 2/2] Print for the printer in the room: folded A5 sheets,
+ borderless overhang, printed footer
+
+The cards are printed on a Canon imagePROGRAF PRO-310 onto A5 blanks folded
+to A6. The engine emitted one A6 face per page and left the imposition to the
+driver, on a printer that has no borderless A6 at all.
+
+- print-pdf: sheetGeometry + renderCardsPdf. 'folded-sheet' lays the outside
+  (back | front) and inside (inside-left | inside-right) on a landscape sheet
+  twice the trim width, in manual-duplex order. borderlessExtensionMm models
+  the driver's enlargement so the trim lands on the paper edge after it.
+  backFooter 'print' draws the reserved strip (QR, caption, logo) in-house.
+- shared-types/print-profile: the house setup as one setting; PrintProfile
+  service/module, GET/PUT /admin/print/profile, 'Print setup' admin panel.
+- print run: reads the profile; per-run layout/footer overrides in the
+  overlay and DTO; the calibrated extension is never a per-run choice.
+- docs/card-artwork-print-integrity.md: D8-D10 and the re-ordered phases.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01L2KsRmCAxgQP1g6MX31SDa
+---
+ apps/api/src/admin/admin.controller.ts        |  18 ++
+ apps/api/src/admin/admin.module.ts            |   2 +
+ .../src/admin/dto/update-print-profile.dto.ts |  27 ++
+ .../src/billing/platform-settings.service.ts  |   3 +
+ .../fulfillment/dto/render-print-run.dto.ts   |  21 +-
+ .../src/fulfillment/fulfillment.controller.ts |   1 +
+ .../api/src/fulfillment/fulfillment.module.ts |   9 +-
+ .../fulfillment/print-run-pdf.service.spec.ts |  68 +++--
+ .../src/fulfillment/print-run-pdf.service.ts  |  69 +++--
+ apps/api/src/print-pdf/geometry.spec.ts       | 116 +++++++-
+ apps/api/src/print-pdf/geometry.ts            | 210 ++++++++++++++
+ apps/api/src/print-pdf/index.ts               |  27 +-
+ apps/api/src/print-pdf/render.spec.ts         | 118 +++++++-
+ apps/api/src/print-pdf/render.ts              | 261 +++++++++++++++---
+ .../src/print-profile/print-profile.module.ts |  12 +
+ .../print-profile.service.spec.ts             |  48 ++++
+ .../print-profile/print-profile.service.ts    |  54 ++++
+ .../src/app/(ops)/admin/print-size-setup.tsx  | 172 +++++++++++-
+ .../fulfillment/fulfillment-client.test.tsx   |  20 ++
+ .../(ops)/fulfillment/fulfillment-client.tsx  |   6 +
+ .../src/app/(ops)/fulfillment/page.test.tsx   |   1 +
+ apps/web/src/app/(ops)/fulfillment/page.tsx   |  15 +-
+ .../fulfillment/print-run-overlay.test.tsx    |  77 ++++++
+ .../(ops)/fulfillment/print-run-overlay.tsx   |  87 +++++-
+ apps/web/src/app/(ops)/ops-role.test.tsx      |  10 +-
+ docs/card-artwork-print-integrity.md          | 104 +++++--
+ packages/shared-types/src/index.ts            |   1 +
+ packages/shared-types/src/print-profile.ts    |  69 +++++
+ 28 files changed, 1505 insertions(+), 121 deletions(-)
+ create mode 100644 apps/api/src/admin/dto/update-print-profile.dto.ts
+ create mode 100644 apps/api/src/print-profile/print-profile.module.ts
+ create mode 100644 apps/api/src/print-profile/print-profile.service.spec.ts
+ create mode 100644 apps/api/src/print-profile/print-profile.service.ts
+ create mode 100644 packages/shared-types/src/print-profile.ts
+
+diff --git a/apps/api/src/admin/admin.controller.ts b/apps/api/src/admin/admin.controller.ts
+index 01024c7..c59772f 100644
+--- a/apps/api/src/admin/admin.controller.ts
++++ b/apps/api/src/admin/admin.controller.ts
+@@ -16,6 +16,7 @@ import type {
+   Customer360,
+   DispatchReminderConfig,
+   OccasionRedateSummary,
++  PrintProfile,
+   SeasonalDispatchRule,
+ } from "@kudos/shared-types";
+ import { PlatformAdminGuard } from "../auth/platform-admin.guard";
+@@ -27,6 +28,8 @@ import { CardSizeConfigService } from "./card-size-config.service";
+ import { UpdateSeasonalRulesDto } from "./dto/update-seasonal-rules.dto";
+ import { UpdateReminderConfigDto } from "./dto/update-reminder-config.dto";
+ import { UpdatePrintCardSizeDto } from "./dto/update-print-card-size.dto";
++import { UpdatePrintProfileDto } from "./dto/update-print-profile.dto";
++import { PrintProfileService } from "../print-profile/print-profile.service";
+ import {
+   AdminService,
+   type AdminOverview,
+@@ -68,6 +71,7 @@ export class AdminController {
+     private readonly seatBilling: SeatBillingService,
+     private readonly dispatchConfig: DispatchConfigService,
+     private readonly cardSizeConfig: CardSizeConfigService,
++    private readonly printProfiles: PrintProfileService,
+     private readonly opsDigest: OpsDigestService,
+     private readonly subscriptionInvoices: SubscriptionInvoicesService,
+     private readonly batchOrders: BatchOrdersService,
+@@ -335,4 +339,18 @@ export class AdminController {
+   async updatePrintCardSize(@Body() dto: UpdatePrintCardSizeDto): Promise<{ size: CardSize }> {
+     return { size: await this.cardSizeConfig.setDefaultSize(dto.size) };
+   }
++
++  /** The house print setup — layout, back footer, calibrated borderless
++   * extension — plus the bundled default. See docs/card-artwork-print-integrity.md. */
++  @Get("print/profile")
++  async printProfile(): Promise<{ profile: PrintProfile; default: PrintProfile }> {
++    return { profile: await this.printProfiles.get(), default: this.printProfiles.getDefault() };
++  }
++
++  /** Set the house print setup. Persisted; the next print run uses it. */
++  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
++  @Put("print/profile")
++  async updatePrintProfile(@Body() dto: UpdatePrintProfileDto): Promise<{ profile: PrintProfile }> {
++    return { profile: await this.printProfiles.set(dto) };
++  }
+ }
+diff --git a/apps/api/src/admin/admin.module.ts b/apps/api/src/admin/admin.module.ts
+index 666e3c8..0c570bc 100644
+--- a/apps/api/src/admin/admin.module.ts
++++ b/apps/api/src/admin/admin.module.ts
+@@ -9,6 +9,7 @@ import { AdminCustomerService } from "./admin-customer.service";
+ import { AdminTeamController } from "./admin-team.controller";
+ import { AdminTeamService } from "./admin-team.service";
+ import { CardSizeConfigService } from "./card-size-config.service";
++import { PrintProfileModule } from "../print-profile/print-profile.module";
+ import { BatchOrdersModule } from "../batch-orders/batch-orders.module";
+ import { WalletModule } from "../wallet/wallet.module";
+ import { OccasionsModule } from "../occasions/occasions.module";
+@@ -30,6 +31,7 @@ import { OccasionsModule } from "../occasions/occasions.module";
+     BatchOrdersModule,
+     WalletModule,
+     OccasionsModule,
++    PrintProfileModule,
+   ],
+   controllers: [AdminController, AdminTeamController],
+   providers: [AdminService, AdminCustomerService, AdminTeamService, CardSizeConfigService],
+diff --git a/apps/api/src/admin/dto/update-print-profile.dto.ts b/apps/api/src/admin/dto/update-print-profile.dto.ts
+new file mode 100644
+index 0000000..d43fd11
+--- /dev/null
++++ b/apps/api/src/admin/dto/update-print-profile.dto.ts
+@@ -0,0 +1,27 @@
++import { ApiProperty } from "@nestjs/swagger";
++import { IsIn, IsNumber, Max, Min } from "class-validator";
++import {
++  BACK_FOOTER_MODES,
++  MAX_BORDERLESS_EXTENSION_MM,
++  PRINT_LAYOUTS,
++  type BackFooterMode,
++  type PrintLayoutSetting,
++} from "@kudos/shared-types";
++
++/** The house print setup. Re-validated against the shared `printProfileSchema`
++ * in PrintProfileService; this guards the envelope. */
++export class UpdatePrintProfileDto {
++  @ApiProperty({ enum: PRINT_LAYOUTS })
++  @IsIn(PRINT_LAYOUTS)
++  layout!: PrintLayoutSetting;
++
++  @ApiProperty({ enum: BACK_FOOTER_MODES })
++  @IsIn(BACK_FOOTER_MODES)
++  backFooter!: BackFooterMode;
++
++  @ApiProperty({ description: "Borderless overhang per long edge, mm, from a calibration print" })
++  @IsNumber()
++  @Min(0)
++  @Max(MAX_BORDERLESS_EXTENSION_MM)
++  borderlessExtensionMm!: number;
++}
+diff --git a/apps/api/src/billing/platform-settings.service.ts b/apps/api/src/billing/platform-settings.service.ts
+index d041f46..0db6fcd 100644
+--- a/apps/api/src/billing/platform-settings.service.ts
++++ b/apps/api/src/billing/platform-settings.service.ts
+@@ -20,6 +20,9 @@ export const PLATFORM_SETTING_KEYS = {
+    * proportion; on afterwards, so it cannot regress. See
+    * docs/card-artwork-shape-plan.md. */
+   catalogRejectCroppedArtwork: "catalog_reject_cropped_artwork",
++  /** JSON `PrintProfile` — how the house printer puts a card on paper. See
++   * docs/card-artwork-print-integrity.md. */
++  printProfile: "print_profile",
+ } as const;
+ 
+ /**
+diff --git a/apps/api/src/fulfillment/dto/render-print-run.dto.ts b/apps/api/src/fulfillment/dto/render-print-run.dto.ts
+index 0979d06..1876974 100644
+--- a/apps/api/src/fulfillment/dto/render-print-run.dto.ts
++++ b/apps/api/src/fulfillment/dto/render-print-run.dto.ts
+@@ -1,6 +1,13 @@
+ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+ import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsOptional, IsUUID } from "class-validator";
+-import { CARD_SIZES, type CardSize } from "@kudos/shared-types";
++import {
++  BACK_FOOTER_MODES,
++  CARD_SIZES,
++  PRINT_LAYOUTS,
++  type BackFooterMode,
++  type CardSize,
++  type PrintLayoutSetting,
++} from "@kudos/shared-types";
+ 
+ /**
+  * The jobs to render into one print-ready PDF, plus the trim size the operator
+@@ -18,4 +25,16 @@ export class RenderPrintRunDto {
+   @IsOptional()
+   @IsIn(CARD_SIZES)
+   size?: CardSize;
++
++  /** Per-run override of the house print profile's layout. */
++  @ApiPropertyOptional({ enum: PRINT_LAYOUTS })
++  @IsOptional()
++  @IsIn(PRINT_LAYOUTS)
++  layout?: PrintLayoutSetting;
++
++  /** Per-run override of how the back footer is handled. */
++  @ApiPropertyOptional({ enum: BACK_FOOTER_MODES })
++  @IsOptional()
++  @IsIn(BACK_FOOTER_MODES)
++  backFooter?: BackFooterMode;
+ }
+diff --git a/apps/api/src/fulfillment/fulfillment.controller.ts b/apps/api/src/fulfillment/fulfillment.controller.ts
+index b0f5851..844c45b 100644
+--- a/apps/api/src/fulfillment/fulfillment.controller.ts
++++ b/apps/api/src/fulfillment/fulfillment.controller.ts
+@@ -133,6 +133,7 @@ export class FulfillmentController {
+       admin.userId,
+       dto,
+       dto.size ?? DEFAULT_CARD_SIZE,
++      { layout: dto.layout, backFooter: dto.backFooter },
+     );
+     return new StreamableFile(pdf, {
+       type: "application/pdf",
+diff --git a/apps/api/src/fulfillment/fulfillment.module.ts b/apps/api/src/fulfillment/fulfillment.module.ts
+index 43dcb36..4987a26 100644
+--- a/apps/api/src/fulfillment/fulfillment.module.ts
++++ b/apps/api/src/fulfillment/fulfillment.module.ts
+@@ -10,9 +10,16 @@ import { AuditModule } from "../audit/audit.module";
+ import { ShippingModule } from "../shipping/shipping.module";
+ import { PlatformNotificationsModule } from "../platform-notifications/platform-notifications.module";
+ import { DispatchModule } from "../dispatch/dispatch.module";
++import { PrintProfileModule } from "../print-profile/print-profile.module";
+ 
+ @Module({
+-  imports: [AuditModule, ShippingModule, PlatformNotificationsModule, DispatchModule],
++  imports: [
++    AuditModule,
++    ShippingModule,
++    PlatformNotificationsModule,
++    DispatchModule,
++    PrintProfileModule,
++  ],
+   controllers: [FulfillmentController],
+   providers: [
+     FulfillmentService,
+diff --git a/apps/api/src/fulfillment/print-run-pdf.service.spec.ts b/apps/api/src/fulfillment/print-run-pdf.service.spec.ts
+index cde080a..fa16f17 100644
+--- a/apps/api/src/fulfillment/print-run-pdf.service.spec.ts
++++ b/apps/api/src/fulfillment/print-run-pdf.service.spec.ts
+@@ -2,12 +2,14 @@ import type { ConfigService } from "@nestjs/config";
+ import type { DesignDocument } from "@kudos/shared-types";
+ import { PrintRunPdfService } from "./print-run-pdf.service";
+ import type { FulfillmentService, PrintRunCard } from "./fulfillment.service";
+-import { renderRunPdf } from "../print-pdf";
++import { renderCardsPdf } from "../print-pdf";
++import type { PrintProfileService } from "../print-profile/print-profile.service";
++import { DEFAULT_PRINT_PROFILE, type PrintProfile } from "@kudos/shared-types";
+ 
+-// Mock the engine so we can inspect the faces it's handed (merge + faces + qrUrl)
++// Mock the engine so we can inspect the cards it's handed (merge + qrUrl)
+ // without parsing PDF bytes.
+ jest.mock("../print-pdf", () => ({
+-  renderRunPdf: jest.fn().mockResolvedValue(Buffer.from("%PDF-mock")),
++  renderCardsPdf: jest.fn().mockResolvedValue(Buffer.from("%PDF-mock")),
+   createImageResolver: jest.fn().mockReturnValue(() => Promise.resolve(null)),
+   hostOf: (url: string) => {
+     try {
+@@ -18,7 +20,7 @@ jest.mock("../print-pdf", () => ({
+   },
+ }));
+ 
+-const renderRunPdfMock = renderRunPdf as jest.MockedFunction<typeof renderRunPdf>;
++const renderRunPdfMock = renderCardsPdf as jest.MockedFunction<typeof renderCardsPdf>;
+ 
+ function validDocument(text: string): DesignDocument {
+   return {
+@@ -64,11 +66,16 @@ describe("PrintRunPdfService", () => {
+   const printRun = jest.fn();
+   const fulfillment = { printRun } as unknown as FulfillmentService;
+   const config = { get: () => "https://app.example.com" } as unknown as ConfigService<never, true>;
+-  const service = new PrintRunPdfService(fulfillment, config);
++  let profile: PrintProfile = DEFAULT_PRINT_PROFILE;
++  const printProfile = {
++    get: () => Promise.resolve(profile),
++  } as unknown as PrintProfileService;
++  const service = new PrintRunPdfService(fulfillment, config, printProfile);
+ 
+   beforeEach(() => {
+     renderRunPdfMock.mockClear();
+     printRun.mockReset();
++    profile = DEFAULT_PRINT_PROFILE;
+   });
+ 
+   it("reuses the audited printRun read and renders merged faces", async () => {
+@@ -80,16 +87,16 @@ describe("PrintRunPdfService", () => {
+     // Audited read reused verbatim.
+     expect(printRun).toHaveBeenCalledWith("actor-1", dto);
+ 
+-    const faces = renderRunPdfMock.mock.calls[0]![0];
+-    // Two faces (front + inside-right), each carrying the merged document.
+-    expect(faces.map((f) => f.face)).toEqual(["front", "inside-right"]);
+-    const frontText = faces[0]!.document.pages.find((p) => p.name === "front")!.elements[0];
++    const inputs = renderRunPdfMock.mock.calls[0]![0];
++    // One card, carrying the merged document; the engine lays out its faces.
++    expect(inputs).toHaveLength(1);
++    const frontText = inputs[0]!.document.pages.find((p) => p.name === "front")!.elements[0];
+     expect(frontText).toMatchObject({ kind: "text", text: "Dear Sam," });
+     // QR URL built from WEB_APP_URL + slug.
+-    expect(faces[0]!.qrUrl).toBe("https://app.example.com/r/abc123");
++    expect(inputs[0]!.qrUrl).toBe("https://app.example.com/r/abc123");
+ 
+     expect(result.cardCount).toBe(1);
+-    expect(result.filename).toBe("kudos-print-run-1-card-A6.pdf");
++    expect(result.filename).toBe("kudos-print-run-1-card-A6-folded.pdf");
+     expect(result.pdf.toString()).toBe("%PDF-mock");
+   });
+ 
+@@ -99,12 +106,39 @@ describe("PrintRunPdfService", () => {
+     expect(renderRunPdfMock.mock.calls[0]![1]).toMatchObject({ size: "A5" });
+   });
+ 
+-  it("renders a clean print-and-fold page: no crop marks, no bleed", async () => {
++  it("renders a clean page the printer's borderless mode fills: no crop marks, no bleed", async () => {
+     printRun.mockResolvedValue([card()]);
+     await service.render("actor-1", { jobIds: ["job-1"] }, "A6");
+     expect(renderRunPdfMock.mock.calls[0]![1]).toMatchObject({ cropMarks: false, bleedMm: 0 });
+   });
+ 
++  it("lays the run out per the house print profile", async () => {
++    profile = { layout: "folded-sheet", backFooter: "print", borderlessExtensionMm: 1.5 };
++    printRun.mockResolvedValue([card()]);
++    await service.render("actor-1", { jobIds: ["job-1"] }, "A6");
++    expect(renderRunPdfMock.mock.calls[0]![1]).toMatchObject({
++      layout: "folded-sheet",
++      backFooter: "print",
++      borderlessExtensionMm: 1.5,
++      footerLogoUrl: "/marketing/logo.png",
++    });
++  });
++
++  it("lets a run override the layout and footer, but never the calibrated extension", async () => {
++    profile = { layout: "folded-sheet", backFooter: "reserved", borderlessExtensionMm: 2 };
++    printRun.mockResolvedValue([card()]);
++    const result = await service.render("actor-1", { jobIds: ["job-1"] }, "A6", {
++      layout: "face-per-page",
++      backFooter: "print",
++    });
++    expect(renderRunPdfMock.mock.calls[0]![1]).toMatchObject({
++      layout: "face-per-page",
++      backFooter: "print",
++      borderlessExtensionMm: 2,
++    });
++    expect(result.filename).toBe("kudos-print-run-1-card-A6.pdf");
++  });
++
+   it("skips a card whose design document is invalid without failing the run", async () => {
+     printRun.mockResolvedValue([
+       card({ jobId: "bad", document: { nope: true } as unknown as DesignDocument }),
+@@ -113,9 +147,9 @@ describe("PrintRunPdfService", () => {
+ 
+     const result = await service.render("actor-1", { jobIds: ["bad", "good"] }, "A6");
+ 
+-    const faces = renderRunPdfMock.mock.calls[0]![0];
+-    // Only the good card's two faces survive; the invalid one contributes none.
+-    expect(faces).toHaveLength(2);
++    const inputs = renderRunPdfMock.mock.calls[0]![0];
++    // Only the good card survives; the invalid one contributes nothing.
++    expect(inputs).toHaveLength(1);
+     // cardCount counts audited cards read (both), not rendered faces.
+     expect(result.cardCount).toBe(2);
+   });
+@@ -123,7 +157,7 @@ describe("PrintRunPdfService", () => {
+   it("omits the QR URL when a card has no message-page slug", async () => {
+     printRun.mockResolvedValue([card({ messagePageSlug: null })]);
+     await service.render("actor-1", { jobIds: ["job-1"] }, "A6");
+-    const faces = renderRunPdfMock.mock.calls[0]![0];
+-    expect(faces[0]!.qrUrl).toBeUndefined();
++    const inputs = renderRunPdfMock.mock.calls[0]![0];
++    expect(inputs[0]!.qrUrl).toBeUndefined();
+   });
+ });
+diff --git a/apps/api/src/fulfillment/print-run-pdf.service.ts b/apps/api/src/fulfillment/print-run-pdf.service.ts
+index ea83573..8c21a5d 100644
+--- a/apps/api/src/fulfillment/print-run-pdf.service.ts
++++ b/apps/api/src/fulfillment/print-run-pdf.service.ts
+@@ -5,17 +5,26 @@ import {
+   applyMergeTokens,
+   DEFAULT_CARD_SIZE,
+   designDocumentSchema,
++  type BackFooterMode,
+   type CardSize,
+-  type DesignDocument,
+-  type DesignPage,
++  type PrintLayoutSetting,
+ } from "@kudos/shared-types";
+-import { createImageResolver, hostOf, renderRunPdf, type PrintFaceInput } from "../print-pdf";
++import { createImageResolver, hostOf, renderCardsPdf, type PrintCardInput } from "../print-pdf";
+ import type { EnvConfig } from "../config/env.schema";
++import { PrintProfileService } from "../print-profile/print-profile.service";
+ import { FulfillmentService, type PrintRunCard } from "./fulfillment.service";
+ import type { ExportAddressesDto } from "./dto/export-addresses.dto";
+ 
+-/** The faces a card design has, in print order — mirrors the web's `facesOf`. */
+-const FACE_ORDER: DesignPage["name"][] = ["front", "inside-left", "inside-right", "back"];
++/** The logo drawn into a printed back footer — the web app's own marketing
++ * mark, fetched through the same allowlisted resolver as every sticker. */
++const FOOTER_LOGO_PATH = "/marketing/logo.png";
++
++/** Per-run overrides an operator may make on the day; anything unset comes
++ * from the house print profile. */
++export interface PrintRunOverrides {
++  layout?: PrintLayoutSetting;
++  backFooter?: BackFooterMode;
++}
+ 
+ export interface RenderedPrintRun {
+   pdf: Buffer;
+@@ -38,19 +47,21 @@ export class PrintRunPdfService {
+   constructor(
+     private readonly fulfillment: FulfillmentService,
+     private readonly config: ConfigService<EnvConfig, true>,
++    private readonly printProfile: PrintProfileService,
+   ) {}
+ 
+   async render(
+     actorUserId: string,
+     dto: ExportAddressesDto,
+     size: CardSize = DEFAULT_CARD_SIZE,
++    overrides: PrintRunOverrides = {},
+   ): Promise<RenderedPrintRun> {
+     // Audited read — records a fulfillment_print_run per card, same as the web path.
+     const cards = await this.fulfillment.printRun(actorUserId, dto);
+     const webAppUrl = this.config.get("WEB_APP_URL", { infer: true });
+ 
+-    const faces = cards.flatMap((card) => this.facesForCard(card, webAppUrl));
+-    if (faces.length === 0) {
++    const inputs = cards.flatMap((card) => this.cardInput(card, webAppUrl));
++    if (inputs.length === 0) {
+       // Every selected card failed validation (or none resolved) — tell the
+       // operator, don't stream an empty/invalid PDF.
+       throw new BadRequestException("No printable cards in this run.");
+@@ -70,33 +81,42 @@ export class PrintRunPdfService {
+       onWarn: (message) => this.logger.warn(message),
+     });
+ 
+-    const pdf = await renderRunPdf(faces, {
++    const profile = await this.printProfile.get();
++    const layout = overrides.layout ?? profile.layout;
++    const backFooter = overrides.backFooter ?? profile.backFooter;
++
++    const pdf = await renderCardsPdf(inputs, {
+       size,
+       imageResolver: resolver,
+       title: `Kudos print run — ${cards.length} card${cards.length === 1 ? "" : "s"}`,
+-      // Kudos prints and folds these cards rather than trimming them, so the PDF
+-      // is the exact trim size with no bleed and no crop marks — a clean page to
+-      // print and fold. (The engine keeps bleed + crop marks available for a
+-      // future print house that trims.) See docs/adr/0162.
++      // The house setup (docs/card-artwork-print-integrity.md): a folded sheet
++      // or one face per page, the back footer clipped for pre-printed stock or
++      // printed by us, and the calibrated borderless overhang. The page is the
++      // paper — no bleed grown around it and no crop marks — because the
++      // printer's own borderless mode does the reaching-to-the-edge. (The
++      // engine keeps bleed + crop marks available for a print house that trims.)
+       cropMarks: false,
+       // Shared with the crop measurement, which has to describe the geometry
+-      // this renderer actually uses: at 3mm the background is scaled to fill a
+-      // larger page and cut back, and a 2:3 source loses 11.1% of its height
+-      // rather than 6%. See docs/card-artwork-shape-plan.md, D5.
++      // this renderer actually uses. See docs/card-artwork-shape-plan.md, D5.
+       bleedMm: PRINT_RUN_BLEED_MM,
++      layout,
++      backFooter,
++      borderlessExtensionMm: profile.borderlessExtensionMm,
++      footerLogoUrl: FOOTER_LOGO_PATH,
+     });
+ 
+     return {
+       pdf,
+       cardCount: cards.length,
+-      filename: `kudos-print-run-${cards.length}-card${cards.length === 1 ? "" : "s"}-${size}.pdf`,
++      filename:
++        `kudos-print-run-${cards.length}-card${cards.length === 1 ? "" : "s"}-${size}` +
++        `${layout === "folded-sheet" ? "-folded" : ""}.pdf`,
+     };
+   }
+ 
+-  /** Merge one card's recipient into its design and expand it to one entry per
+-   * face. A design that fails validation is skipped (logged) so one bad record
+-   * can't fail the whole run. */
+-  private facesForCard(card: PrintRunCard, webAppUrl: string): PrintFaceInput[] {
++  /** Merge one card's recipient into its design. A design that fails
++   * validation is skipped (logged) so one bad record can't fail the whole run. */
++  private cardInput(card: PrintRunCard, webAppUrl: string): PrintCardInput[] {
+     const parsed = designDocumentSchema.safeParse(card.document);
+     if (!parsed.success) {
+       this.logger.warn(`print run: skipping card ${card.jobId} — invalid design document`);
+@@ -112,17 +132,10 @@ export class PrintRunPdfService {
+     });
+ 
+     const qrUrl = card.messagePageSlug ? `${webAppUrl}/r/${card.messagePageSlug}` : undefined;
+-
+-    return facesOf(merged).map((face) => ({ document: merged, face, qrUrl }));
++    return [{ document: merged, qrUrl }];
+   }
+ }
+ 
+-/** The faces present on a design, in canonical print order. */
+-function facesOf(document: DesignDocument): DesignPage["name"][] {
+-  const present = new Set(document.pages.map((page) => page.name));
+-  return FACE_ORDER.filter((name) => present.has(name));
+-}
+-
+ /** Human occasion label for the `{occasion}` token: a custom title wins, else the
+  * type title-cased — matches the web overlay's `occasionLabel`. */
+ function occasionLabel(card: PrintRunCard): string | null {
+diff --git a/apps/api/src/print-pdf/geometry.spec.ts b/apps/api/src/print-pdf/geometry.spec.ts
+index e072a44..a0e0985 100644
+--- a/apps/api/src/print-pdf/geometry.spec.ts
++++ b/apps/api/src/print-pdf/geometry.spec.ts
+@@ -1,5 +1,13 @@
+ import { CARD_HEIGHT, CARD_WIDTH } from "@kudos/shared-types";
+-import { BLEED_MM, cropMarks, faceGeometry, PT_PER_MM } from "./geometry";
++import {
++  BLEED_MM,
++  cropMarks,
++  faceGeometry,
++  PT_PER_MM,
++  sheetGeometry,
++  sheetCropMarks,
++  type FacePlacement,
++} from "./geometry";
+ 
+ describe("faceGeometry", () => {
+   it("sizes the A6 page as trim + 3mm bleed on every edge", () => {
+@@ -94,3 +102,109 @@ describe("cropMarks", () => {
+     expect(Math.max(...ys)).toBeCloseTo(g.pageHeightPt, 6);
+   });
+ });
++
++describe("sheetGeometry", () => {
++  const MM = 72 / 25.4;
++  const near = (pt: number, mm: number) => expect(pt / MM).toBeCloseTo(mm, 3);
++
++  it("face-per-page with no extension is exactly faceGeometry", () => {
++    const sheet = sheetGeometry("A6", { bleedMm: 0 });
++    const g = faceGeometry("A6", 0);
++    expect(sheet.faces).toHaveLength(1);
++    near(sheet.pageWidthPt, 105);
++    near(sheet.pageHeightPt, 148);
++    expect(sheet.faces[0]!.trim).toEqual(g.trim);
++    expect(sheet.faces[0]!.scalePtPerUnit).toBe(g.scalePtPerUnit);
++    expect(sheet.faces[0]!.box).toEqual({
++      xPt: 0,
++      yPt: 0,
++      widthPt: g.pageWidthPt,
++      heightPt: g.pageHeightPt,
++    });
++  });
++
++  it("a folded A6 card is a landscape A5 sheet with the fold at the centre", () => {
++    const sheet = sheetGeometry("A6", { layout: "folded-sheet", bleedMm: 0 });
++    near(sheet.pageWidthPt, 210);
++    near(sheet.pageHeightPt, 148);
++    expect(sheet.faces).toHaveLength(2);
++    const [left, right] = sheet.faces as [FacePlacement, FacePlacement];
++    near(left.trim.xPt, 0);
++    near(left.trim.widthPt, 105);
++    near(right.trim.xPt, 105);
++    near(right.trim.widthPt, 105);
++    // Each face's box is its own half, so a background cannot cross the fold.
++    near(left.box.widthPt, 105);
++    near(right.box.xPt, 105);
++    expect(sheet.bleedPt).toBe(0);
++  });
++
++  it("a folded A5 card is a 296 × 210 sheet — two A5s, a millimetre short of A4", () => {
++    const sheet = sheetGeometry("A5", { layout: "folded-sheet", bleedMm: 0 });
++    near(sheet.pageWidthPt, 296);
++    near(sheet.pageHeightPt, 210);
++  });
++
++  it("with bleed, the folded sheet grows on the outside only and the fold stays a fold", () => {
++    const sheet = sheetGeometry("A6", { layout: "folded-sheet", bleedMm: 3 });
++    near(sheet.pageWidthPt, 216);
++    near(sheet.pageHeightPt, 154);
++    const [left, right] = sheet.faces as [FacePlacement, FacePlacement];
++    near(left.trim.xPt, 3);
++    near(right.trim.xPt, 108);
++    // Marks sit around the outside; none of the eight touches the fold.
++    const marks = sheetCropMarks(sheet);
++    expect(marks).toHaveLength(8);
++    for (const m of marks) {
++      const foldPt = 108 * MM;
++      expect(Math.abs(m.x1 - foldPt)).toBeGreaterThan(1);
++      expect(Math.abs(m.x2 - foldPt)).toBeGreaterThan(1);
++    }
++  });
++
++  it("borderless extension keeps the page at paper size and draws the trim smaller, centred", () => {
++    // The printer will scale a 210mm-wide page by (210+4)/210 and drop 2mm
++    // off each long edge. After that, the trim must land on the paper edge.
++    const e = 2;
++    const sheet = sheetGeometry("A6", { layout: "folded-sheet", borderlessExtensionMm: e });
++    near(sheet.pageWidthPt, 210);
++    near(sheet.pageHeightPt, 148);
++    expect(sheet.bleedPt).toBe(0);
++    const k = (210 + 2 * e) / 210;
++    const [left, right] = sheet.faces as [FacePlacement, FacePlacement];
++    near(left.trim.widthPt, 105 / k);
++    near(left.trim.heightPt, 148 / k);
++    // Left trim ends at the fold; right trim starts at it.
++    near(left.trim.xPt + left.trim.widthPt, 105);
++    near(right.trim.xPt, 105);
++    // Vertically centred.
++    near(left.trim.yPt, (148 - 148 / k) / 2);
++
++    // The proof: scale the page about its centre by k, and the trim's outer
++    // edge lands exactly on the paper's edge (x = 0 on the paper).
++    const pageCentreMm = 105;
++    const trimLeftMm = left.trim.xPt / MM;
++    const onPaper = pageCentreMm + (trimLeftMm - pageCentreMm) * k;
++    expect(onPaper).toBeCloseTo(0, 6);
++  });
++
++  it("borderless extension on a single face uses its long edge (the height)", () => {
++    const e = 1.5;
++    const sheet = sheetGeometry("A6", { borderlessExtensionMm: e });
++    const k = (148 + 2 * e) / 148;
++    const [face] = sheet.faces as [FacePlacement];
++    near(face.trim.widthPt, 105 / k);
++    near(face.trim.heightPt, 148 / k);
++    near(face.trim.xPt, (105 - 105 / k) / 2);
++    // Scaling the page about its centre lands the trim top on the paper edge.
++    const onPaper = 74 + (face.trim.yPt / MM - 74) * k;
++    expect(onPaper).toBeCloseTo(0, 6);
++  });
++
++  it("ignores bleed when an extension is given — a borderless page is the paper", () => {
++    const sheet = sheetGeometry("A6", { bleedMm: 3, borderlessExtensionMm: 1 });
++    near(sheet.pageWidthPt, 105);
++    expect(sheet.bleedPt).toBe(0);
++    expect(sheetCropMarks(sheet)).toEqual([]);
++  });
++});
+diff --git a/apps/api/src/print-pdf/geometry.ts b/apps/api/src/print-pdf/geometry.ts
+index ae688cd..b4aceab 100644
+--- a/apps/api/src/print-pdf/geometry.ts
++++ b/apps/api/src/print-pdf/geometry.ts
+@@ -147,3 +147,213 @@ export function cropMarks(geometry: FaceGeometry): CropMarkLine[] {
+   }
+   return marks;
+ }
++
++// ---------------------------------------------------------------------------
++// Sheets: how faces are laid on the physical page (docs/card-artwork-print-integrity.md).
++// ---------------------------------------------------------------------------
++
++/**
++ * How a run is put on paper.
++ *
++ * - `face-per-page`: one card face per PDF page at the trim size, the layout
++ *   this engine started with.
++ * - `folded-sheet`: two faces side by side on a landscape sheet twice the trim
++ *   width — A5 for an A6 card, A4 for an A5 card — which the operator prints on
++ *   both sides and folds down the middle. Page 1 is the **outside** (back on
++ *   the left, front on the right), page 2 the **inside** (inside-left, then
++ *   inside-right). Manual duplex in the printer driver prints the odd pages,
++ *   asks for the stack back, then prints the even pages, so a run of N cards is
++ *   2N pages in exactly the order that mode wants.
++ */
++export type PrintLayout = "face-per-page" | "folded-sheet";
++
++/** A rectangle on the page, in points, y-down as pdfkit draws it. */
++export interface PageRect {
++  xPt: number;
++  yPt: number;
++  widthPt: number;
++  heightPt: number;
++}
++
++/**
++ * Where one face sits on a page. `box` is the area its white base and
++ * background fill — the whole page for a face on its own, one half of a folded
++ * sheet otherwise, and in both cases the part that runs out to the paper edge
++ * so a borderless printer's overhang cuts bleed rather than card. `trim` is
++ * the finished card face on the page; the design transform maps the 450×634
++ * space into it exactly as `faceGeometry` does.
++ */
++export interface FacePlacement {
++  box: PageRect;
++  trim: PageRect;
++  translateXPt: number;
++  translateYPt: number;
++  scalePtPerUnit: number;
++}
++
++export interface SheetGeometry {
++  layout: PrintLayout;
++  pageWidthPt: number;
++  pageHeightPt: number;
++  /** One placement per face slot on the page: `[face]` or `[left, right]`. */
++  faces: FacePlacement[];
++  /** Bleed beyond the trim, for crop marks; 0 on a page that is the paper size. */
++  bleedPt: number;
++}
++
++export interface SheetOptions {
++  layout?: PrintLayout;
++  /** Bleed beyond the trim on every outer edge, with the page grown to match —
++   * the print-house form. Ignored when `borderlessExtensionMm` is set. */
++  bleedMm?: number;
++  /**
++   * How far past each **long** edge of the paper a borderless printer's own
++   * enlargement pushes the image, in millimetres — the number read off a
++   * calibration print (Canon calls it the "Amount of Extension").
++   *
++   * A borderless driver does not print to the edge; it scales the whole page up
++   * by a factor and lets the overhang fall off the paper. Anything drawn
++   * outside the PDF's own page box never reaches the driver, so bleed cannot
++   * be added *outside* the page: the page has to stay the paper size and the
++   * card has to be drawn slightly *smaller and centred*, so that after the
++   * printer's scaling the trim lands exactly on the paper edge and what it
++   * throws away is background. That is what this does. 0 = the printer prints
++   * the page exactly (or the loss is not worth modelling).
++   */
++  borderlessExtensionMm?: number;
++}
++
++/** Points for a millimetre rectangle. */
++function rectPt(xMm: number, yMm: number, wMm: number, hMm: number): PageRect {
++  return {
++    xPt: xMm * PT_PER_MM,
++    yPt: yMm * PT_PER_MM,
++    widthPt: wMm * PT_PER_MM,
++    heightPt: hMm * PT_PER_MM,
++  };
++}
++
++/** A placement whose design space is fitted into a trim rectangle (mm): full
++ * width, centred vertically (the design is never taller than the trim). */
++function placeDesign(
++  box: PageRect,
++  trimMm: { x: number; y: number; w: number; h: number },
++): FacePlacement {
++  const unitToMm = trimMm.w / CARD_WIDTH;
++  const designHeightMm = CARD_HEIGHT * unitToMm;
++  const verticalOffsetMm = Math.max(0, (trimMm.h - designHeightMm) / 2);
++  return {
++    box,
++    trim: rectPt(trimMm.x, trimMm.y, trimMm.w, trimMm.h),
++    translateXPt: trimMm.x * PT_PER_MM,
++    translateYPt: (trimMm.y + verticalOffsetMm) * PT_PER_MM,
++    scalePtPerUnit: unitToMm * PT_PER_MM,
++  };
++}
++
++/**
++ * Lay a card's faces on the page for a layout. Pure.
++ *
++ * With `borderlessExtensionMm = e` on a page of width `W` (the long edge), the
++ * printer scales the page by `k = (W + 2e) / W` about its centre, so a trim of
++ * `w × h` mm is drawn at `w/k × h/k` and positioned so that it lands on the
++ * paper edge after scaling — for a folded sheet, against the fold on the inner
++ * side and against the edge on the outer, with the fold itself staying put at
++ * the centre because the scaling is about the centre.
++ */
++export function sheetGeometry(size: CardSize, options: SheetOptions = {}): SheetGeometry {
++  const layout = options.layout ?? "face-per-page";
++  const { widthMm: w, heightMm: h } = CARD_SIZE_DIMENSIONS_MM[size];
++  const extension = Math.max(0, options.borderlessExtensionMm ?? 0);
++  // A borderless page is the paper; bleed is expressed inside it, not around it.
++  const bleedMm = extension > 0 ? 0 : Math.max(0, options.bleedMm ?? BLEED_MM);
++
++  if (layout === "face-per-page") {
++    const g = faceGeometry(size, bleedMm);
++    if (extension === 0) {
++      return {
++        layout,
++        pageWidthPt: g.pageWidthPt,
++        pageHeightPt: g.pageHeightPt,
++        bleedPt: g.bleedPt,
++        faces: [
++          {
++            box: { xPt: 0, yPt: 0, widthPt: g.pageWidthPt, heightPt: g.pageHeightPt },
++            trim: g.trim,
++            translateXPt: g.translateXPt,
++            translateYPt: g.translateYPt,
++            scalePtPerUnit: g.scalePtPerUnit,
++          },
++        ],
++      };
++    }
++    // The long edge of a portrait face is its height.
++    const k = (h + 2 * extension) / h;
++    const tw = w / k;
++    const th = h / k;
++    const box = rectPt(0, 0, w, h);
++    return {
++      layout,
++      pageWidthPt: w * PT_PER_MM,
++      pageHeightPt: h * PT_PER_MM,
++      bleedPt: 0,
++      faces: [placeDesign(box, { x: (w - tw) / 2, y: (h - th) / 2, w: tw, h: th })],
++    };
++  }
++
++  // folded-sheet: landscape, two trims side by side, fold down the middle.
++  const sheetW = 2 * w;
++  const sheetH = h;
++  if (extension === 0) {
++    const pageW = sheetW + 2 * bleedMm;
++    const pageH = sheetH + 2 * bleedMm;
++    return {
++      layout,
++      pageWidthPt: pageW * PT_PER_MM,
++      pageHeightPt: pageH * PT_PER_MM,
++      bleedPt: bleedMm * PT_PER_MM,
++      faces: [
++        placeDesign(rectPt(0, 0, pageW / 2, pageH), { x: bleedMm, y: bleedMm, w, h }),
++        placeDesign(rectPt(pageW / 2, 0, pageW / 2, pageH), { x: bleedMm + w, y: bleedMm, w, h }),
++      ],
++    };
++  }
++  const k = (sheetW + 2 * extension) / sheetW;
++  const tw = w / k;
++  const th = h / k;
++  const yOff = (h - th) / 2;
++  return {
++    layout,
++    pageWidthPt: sheetW * PT_PER_MM,
++    pageHeightPt: sheetH * PT_PER_MM,
++    bleedPt: 0,
++    faces: [
++      // Left trim ends at the fold (page centre); right trim starts there.
++      placeDesign(rectPt(0, 0, w, h), { x: w - tw, y: yOff, w: tw, h: th }),
++      placeDesign(rectPt(w, 0, w, h), { x: w, y: yOff, w: tw, h: th }),
++    ],
++  };
++}
++
++/**
++ * Crop marks for a sheet: none on a page with no bleed, and on a folded sheet
++ * one set around the *outside* of both faces — the fold is not a cut, and a
++ * mark there would land in the middle of the neighbouring face.
++ */
++export function sheetCropMarks(sheet: SheetGeometry): CropMarkLine[] {
++  if (sheet.bleedPt <= 0 || sheet.faces.length === 0) return [];
++  const left = Math.min(...sheet.faces.map((f) => f.trim.xPt));
++  const top = Math.min(...sheet.faces.map((f) => f.trim.yPt));
++  const right = Math.max(...sheet.faces.map((f) => f.trim.xPt + f.trim.widthPt));
++  const bottom = Math.max(...sheet.faces.map((f) => f.trim.yPt + f.trim.heightPt));
++  const first = sheet.faces[0]!;
++  return cropMarks({
++    pageWidthPt: sheet.pageWidthPt,
++    pageHeightPt: sheet.pageHeightPt,
++    trim: { xPt: left, yPt: top, widthPt: right - left, heightPt: bottom - top },
++    translateXPt: first.translateXPt,
++    translateYPt: first.translateYPt,
++    scalePtPerUnit: first.scalePtPerUnit,
++    bleedPt: sheet.bleedPt,
++  });
++}
+diff --git a/apps/api/src/print-pdf/index.ts b/apps/api/src/print-pdf/index.ts
+index c479bf9..ec419cd 100644
+--- a/apps/api/src/print-pdf/index.ts
++++ b/apps/api/src/print-pdf/index.ts
+@@ -3,8 +3,14 @@
+  * See render.ts for the pipeline; geometry/fonts/text-layout/shapes/qr/color are
+  * the reusable, individually-tested pieces.
+  */
+-export { renderRunPdf } from "./render";
+-export type { PrintFaceInput, RenderRunOptions, ImageResolver, ResolvedImage } from "./render";
++export { renderRunPdf, renderCardsPdf } from "./render";
++export type {
++  PrintFaceInput,
++  PrintCardInput,
++  RenderRunOptions,
++  ImageResolver,
++  ResolvedImage,
++} from "./render";
+ export {
+   createImageResolver,
+   decodeImage,
+@@ -14,8 +20,21 @@ export {
+   hostOf,
+ } from "./image-loader";
+ export type { ImageResolverOptions, FetchLike } from "./image-loader";
+-export { faceGeometry, cropMarks, BLEED_MM, PT_PER_MM } from "./geometry";
+-export type { FaceGeometry } from "./geometry";
++export {
++  faceGeometry,
++  cropMarks,
++  sheetGeometry,
++  sheetCropMarks,
++  BLEED_MM,
++  PT_PER_MM,
++} from "./geometry";
++export type {
++  FaceGeometry,
++  FacePlacement,
++  SheetGeometry,
++  SheetOptions,
++  PrintLayout,
++} from "./geometry";
+ export { resolveFace } from "./fonts";
+ export { wrapText, baselineMetrics, alignOffset, LINE_HEIGHT } from "./text-layout";
+ export { parseColor } from "./color";
+diff --git a/apps/api/src/print-pdf/render.spec.ts b/apps/api/src/print-pdf/render.spec.ts
+index 732aea1..341058e 100644
+--- a/apps/api/src/print-pdf/render.spec.ts
++++ b/apps/api/src/print-pdf/render.spec.ts
+@@ -7,7 +7,7 @@ import {
+   CARD_WIDTH,
+   type DesignDocument,
+ } from "@kudos/shared-types";
+-import { renderRunPdf } from "./render";
++import { renderCardsPdf, renderRunPdf } from "./render";
+ 
+ /** A document exercising every element kind + a colour background. */
+ const document: DesignDocument = {
+@@ -237,3 +237,119 @@ describe("reserved back footer", () => {
+     }
+   });
+ });
++
++/**
++ * Folded sheets and the printed footer — the layout the PRO-310 actually
++ * prints (A5 blanks folded to A6). See docs/card-artwork-print-integrity.md.
++ */
++describe("renderCardsPdf", () => {
++  const MM = 72 / 25.4;
++
++  /** Every page's MediaBox in mm, in order. */
++  function mediaBoxesMm(pdf: Buffer): { w: number; h: number }[] {
++    const raw = pdf.toString("latin1");
++    const re = /\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g;
++    const out: { w: number; h: number }[] = [];
++    let m: RegExpExecArray | null;
++    while ((m = re.exec(raw))) out.push({ w: Number(m[1]) / MM, h: Number(m[2]) / MM });
++    return out;
++  }
++
++  const fourFaces: DesignDocument = {
++    version: 1,
++    pages: [
++      { name: "front", elements: [], background: { type: "color", color: "#ffeeaa" } },
++      { name: "inside-left", elements: [] },
++      { name: "inside-right", elements: [] },
++      { name: "back", elements: [] },
++    ],
++  };
++
++  it("face-per-page is the old behaviour: one trim-size page per face present", async () => {
++    const pdf = await renderCardsPdf([{ document: fourFaces }], { bleedMm: 0, cropMarks: false });
++    const boxes = mediaBoxesMm(pdf);
++    expect(boxes).toHaveLength(4);
++    for (const b of boxes) {
++      expect(b.w).toBeCloseTo(105, 2);
++      expect(b.h).toBeCloseTo(148, 2);
++    }
++  });
++
++  it("folded-sheet emits two landscape A5 pages per A6 card: outside, then inside", async () => {
++    const pdf = await renderCardsPdf([{ document: fourFaces }, { document: fourFaces }], {
++      layout: "folded-sheet",
++      bleedMm: 0,
++    });
++    const boxes = mediaBoxesMm(pdf);
++    expect(boxes).toHaveLength(4);
++    for (const b of boxes) {
++      expect(b.w).toBeCloseTo(210, 2);
++      expect(b.h).toBeCloseTo(148, 2);
++    }
++  });
++
++  it("a front-only design still folds: the inside sheet is blank paper, not missing", async () => {
++    const frontOnly: DesignDocument = {
++      version: 1,
++      pages: [{ name: "front", elements: [] }],
++    };
++    const pdf = await renderCardsPdf([{ document: frontOnly }], {
++      layout: "folded-sheet",
++      bleedMm: 0,
++    });
++    expect(mediaBoxesMm(pdf)).toHaveLength(2);
++  });
++
++  it("with the print-house bleed, the sheet is 216 × 154 with crop marks", async () => {
++    const pdf = await renderCardsPdf([{ document: fourFaces }], {
++      layout: "folded-sheet",
++      bleedMm: 3,
++    });
++    const [outside] = mediaBoxesMm(pdf);
++    expect(outside!.w).toBeCloseTo(216, 2);
++    expect(outside!.h).toBeCloseTo(154, 2);
++  });
++
++  it("with a borderless extension, the sheet stays exactly A5", async () => {
++    const pdf = await renderCardsPdf([{ document: fourFaces }], {
++      layout: "folded-sheet",
++      borderlessExtensionMm: 2,
++    });
++    const [outside] = mediaBoxesMm(pdf);
++    expect(outside!.w).toBeCloseTo(210, 2);
++    expect(outside!.h).toBeCloseTo(148, 2);
++  });
++
++  it("refuses an empty run", async () => {
++    await expect(renderCardsPdf([], { layout: "folded-sheet" })).rejects.toThrow(/no cards/);
++  });
++
++  it("prints the footer itself when asked: a QR for the card's link, no reserved clip", async () => {
++    const withQr: DesignDocument = {
++      version: 1,
++      pages: [
++        { name: "front", elements: [] },
++        { name: "back", elements: [], background: { type: "color", color: "#101010" } },
++      ],
++    };
++    const clipped = await renderRunPdf(
++      [{ document: withQr, face: "back", qrUrl: "https://k.co/r/x" }],
++      {
++        bleedMm: 0,
++        cropMarks: false,
++      },
++    );
++    const printed = await renderRunPdf(
++      [{ document: withQr, face: "back", qrUrl: "https://k.co/r/x" }],
++      {
++        bleedMm: 0,
++        cropMarks: false,
++        backFooter: "print",
++      },
++    );
++    // The printed footer draws a QR (many small filled squares) that the
++    // clipped one does not, so it is the longer content.
++    expect(printed.length).toBeGreaterThan(clipped.length + 500);
++    expect(printed.subarray(0, 5).toString("latin1")).toBe("%PDF-");
++  });
++});
+diff --git a/apps/api/src/print-pdf/render.ts b/apps/api/src/print-pdf/render.ts
+index efb9127..7190197 100644
+--- a/apps/api/src/print-pdf/render.ts
++++ b/apps/api/src/print-pdf/render.ts
+@@ -15,6 +15,7 @@
+ 
+ import PDFDocument from "pdfkit";
+ import {
++  BACK_RESERVED_FOOTER_MM,
+   CARD_HEIGHT,
+   CARD_WIDTH,
+   DEFAULT_CARD_SIZE,
+@@ -25,7 +26,16 @@ import {
+   type DesignElement,
+   type DesignPage,
+ } from "@kudos/shared-types";
+-import { cropMarks, CROP_MARK_WEIGHT_PT, faceGeometry, type FaceGeometry } from "./geometry";
++import {
++  CROP_MARK_WEIGHT_PT,
++  PT_PER_MM,
++  sheetCropMarks,
++  sheetGeometry,
++  type FacePlacement,
++  type PrintLayout,
++  type SheetGeometry,
++  type SheetOptions,
++} from "./geometry";
+ import { fallbackFaces, registerFace, resolveFace, type FontFace } from "./fonts";
+ import { coverageForFace } from "./coverage";
+ import { splitGlyphRuns } from "./glyph-runs";
+@@ -74,8 +84,38 @@ export interface RenderRunOptions {
+   imageResolver?: ImageResolver;
+   /** PDF document metadata title. */
+   title?: string;
++  /** How faces are put on paper. Default `face-per-page`. See {@link PrintLayout}. */
++  layout?: PrintLayout;
++  /** Borderless-printer overhang per long edge, in mm; see {@link SheetOptions}. */
++  borderlessExtensionMm?: number;
++  /**
++   * What happens to the bottom 30mm of the back (ADR 0166).
++   *
++   * - `reserved` (default): clipped — the stock is pre-printed with the logo
++   *   and QR, and nothing the customer authored may reach it.
++   * - `print`: the strip is ours and we print it: a white band, this card's
++   *   QR (the same link as a QR element on the card), a caption, and the logo
++   *   if `footerLogoUrl` resolves. For blank stock printed in-house, so the
++   *   footer is laid down in the same pass as the artwork and always in
++   *   register with it.
++   */
++  backFooter?: "reserved" | "print";
++  /** Logo drawn in a printed footer, resolved through `imageResolver`. */
++  footerLogoUrl?: string;
+ }
+ 
++/** One card: its (merge-tokenised) document and the link its QR encodes. */
++export interface PrintCardInput {
++  document: DesignDocument;
++  qrUrl?: string;
++}
++
++/** The face order of a folded sheet: outside, then inside. */
++const FOLDED_SHEET_SIDES: [DesignPage["name"], DesignPage["name"]][] = [
++  ["back", "front"],
++  ["inside-left", "inside-right"],
++];
++
+ /** pdfkit exposes the current font's em-scaled metrics on `_font`; typed narrowly. */
+ interface FontMetrics {
+   ascender: number;
+@@ -99,15 +139,92 @@ export async function renderRunPdf(
+   faces: PrintFaceInput[],
+   options: RenderRunOptions = {},
+ ): Promise<Buffer> {
+-  const size = options.size ?? DEFAULT_CARD_SIZE;
+-  const withCropMarks = options.cropMarks ?? true;
+-  const geometry = faceGeometry(size, options.bleedMm);
+-
+   // A zero-face run would finalise a page-less (invalid) PDF; fail loud instead
+   // so the caller reports "nothing to print" rather than streaming a broken file.
+   if (faces.length === 0) {
+     throw new Error("renderRunPdf: no faces to render");
+   }
++  const sheet = sheetGeometry(options.size ?? DEFAULT_CARD_SIZE, {
++    ...sheetOptions(options),
++    layout: "face-per-page",
++  });
++  return renderPages(
++    faces.map((entry) => [{ entry, placement: sheet.faces[0]! }]),
++    sheet,
++    options,
++  );
++}
++
++/**
++ * Render whole cards, laid out per `options.layout`. `face-per-page` emits
++ * each face the card has, in reading order; `folded-sheet` emits two pages per
++ * card — outside (back | front) and inside (inside-left | inside-right) — with
++ * a missing face left as white paper, so a front-only design still folds into
++ * a card with a blank inside.
++ */
++export async function renderCardsPdf(
++  cards: PrintCardInput[],
++  options: RenderRunOptions = {},
++): Promise<Buffer> {
++  if (cards.length === 0) {
++    throw new Error("renderCardsPdf: no cards to render");
++  }
++  const layout = options.layout ?? "face-per-page";
++  if (layout === "face-per-page") {
++    return renderRunPdf(
++      cards.flatMap((card) =>
++        facesPresent(card.document).map((face) => ({
++          document: card.document,
++          face,
++          qrUrl: card.qrUrl,
++        })),
++      ),
++      options,
++    );
++  }
++  const sheet = sheetGeometry(options.size ?? DEFAULT_CARD_SIZE, sheetOptions(options));
++  const pages = cards.flatMap((card) =>
++    FOLDED_SHEET_SIDES.map((side) =>
++      side.flatMap((face, slot) => {
++        const present = card.document.pages.some((p) => p.name === face);
++        if (!present) return [];
++        return [
++          {
++            entry: { document: card.document, face, qrUrl: card.qrUrl },
++            placement: sheet.faces[slot]!,
++          },
++        ];
++      }),
++    ),
++  );
++  return renderPages(pages, sheet, options);
++}
++
++function sheetOptions(options: RenderRunOptions): SheetOptions {
++  return {
++    layout: options.layout,
++    bleedMm: options.bleedMm,
++    borderlessExtensionMm: options.borderlessExtensionMm,
++  };
++}
++
++/** The faces a document has, in the canonical reading order. */
++function facesPresent(document: DesignDocument): DesignPage["name"][] {
++  const order: DesignPage["name"][] = ["front", "inside-left", "inside-right", "back"];
++  const present = new Set(document.pages.map((p) => p.name));
++  return order.filter((name) => present.has(name));
++}
++
++/** One page of output: the faces on it, each with where it goes. */
++type PageSpec = { entry: PrintFaceInput; placement: FacePlacement }[];
++
++async function renderPages(
++  pages: PageSpec[],
++  sheet: SheetGeometry,
++  options: RenderRunOptions,
++): Promise<Buffer> {
++  const size = options.size ?? DEFAULT_CARD_SIZE;
++  const withCropMarks = (options.cropMarks ?? true) && sheet.bleedPt > 0;
+ 
+   const doc = new PDFDocument({
+     autoFirstPage: false,
+@@ -121,30 +238,42 @@ export async function renderRunPdf(
+     doc.on("error", reject);
+   });
+ 
+-  for (const entry of faces) {
+-    doc.addPage({ size: [geometry.pageWidthPt, geometry.pageHeightPt], margin: 0 });
+-
+-    await renderFace(doc, entry, geometry, size, options.imageResolver);
+-    if (withCropMarks) drawCropMarks(doc, geometry);
++  for (const page of pages) {
++    doc.addPage({ size: [sheet.pageWidthPt, sheet.pageHeightPt], margin: 0 });
++    // Paper first: a slot with no face (a front-only design's inside) stays white.
++    doc.save();
++    doc.rect(0, 0, sheet.pageWidthPt, sheet.pageHeightPt).fill("#ffffff");
++    doc.restore();
++    for (const { entry, placement } of page) {
++      await renderFace(doc, entry, placement, size, options, page.length > 1);
++    }
++    if (withCropMarks) drawCropMarks(doc, sheet);
+   }
+ 
+   doc.end();
+   return done;
+ }
+ 
+-/** Draw one face onto the current page of `doc`. */
++/** Draw one face into its placement on the current page of `doc`. */
+ async function renderFace(
+   doc: PDFKit.PDFDocument,
+   entry: PrintFaceInput,
+-  geometry: FaceGeometry,
++  geometry: FacePlacement,
+   size: CardSize,
+-  imageResolver?: ImageResolver,
++  options: RenderRunOptions,
++  /** Whether other faces share this page, so this one must stay inside its
++   * own box (a background covers past a box's edge on the fold side). */
++  sharedPage: boolean,
+ ): Promise<void> {
+   const page = pageForFace(entry.document, entry.face);
+   const elements = page?.elements ?? [];
++  const imageResolver = options.imageResolver;
++  const { box } = geometry;
+ 
+-  // The back's bottom strip is already printed on the stock — the Kudos logo and
+-  // QR — so nothing the customer authored may be drawn over it.
++  // The back's bottom strip is the Kudos logo and QR — either already printed
++  // on the stock (reserved: clip it) or printed by us in this pass (print: draw
++  // it after the customer's content). Either way nothing the customer authored
++  // may show there.
+   //
+   // Enforced here rather than only in the editor because the editor is a
+   // convenience and this is the guarantee: a design saved before the rule
+@@ -162,28 +291,27 @@ async function renderFace(
+     entry.face === "back"
+       ? geometry.translateYPt + backReservedFooterTop(size) * geometry.scalePtPerUnit
+       : null;
++  const footerMode = options.backFooter ?? "reserved";
+ 
+   // Applied at page level, before the background: a background bleeds to the
+   // page edge, so clipping only the design space would let a full-bleed image
+   // on the back print straight over the logo.
+-  if (reservedFromPt !== null) {
++  if (reservedFromPt !== null && footerMode === "reserved") {
+     doc.save();
+-    doc.rect(0, 0, geometry.pageWidthPt, reservedFromPt).clip();
++    doc.rect(box.xPt, box.yPt, box.widthPt, reservedFromPt - box.yPt).clip();
+   }
+ 
+-  // --- Page level (absolute points): white base, then background, both bleeding
+-  // to the page edge. ---
++  // --- Face box (absolute points): white base, then background, both running
++  // to the edge of the face's area on the page. ---
+   doc.save();
+-  doc.rect(0, 0, geometry.pageWidthPt, geometry.pageHeightPt).fill("#ffffff");
++  if (sharedPage) doc.rect(box.xPt, box.yPt, box.widthPt, box.heightPt).clip();
++  doc.rect(box.xPt, box.yPt, box.widthPt, box.heightPt).fill("#ffffff");
+   if (page?.background) {
+     if (page.background.type === "color") {
+       const bg = parseColor(page.background.color);
+-      doc
+-        .rect(0, 0, geometry.pageWidthPt, geometry.pageHeightPt)
+-        .fillColor(bg.color, bg.opacity)
+-        .fill();
++      doc.rect(box.xPt, box.yPt, box.widthPt, box.heightPt).fillColor(bg.color, bg.opacity).fill();
+     } else if (imageResolver) {
+-      await drawImageBackground(doc, page.background.assetUrl, geometry, imageResolver);
++      await drawImageBackground(doc, page.background.assetUrl, box, imageResolver);
+     }
+   }
+   doc.restore();
+@@ -202,8 +330,74 @@ async function renderFace(
+   doc.restore();
+ 
+   if (reservedFromPt !== null) {
+-    doc.restore();
++    if (footerMode === "reserved") {
++      doc.restore();
++    } else {
++      await drawPrintedFooter(doc, geometry, reservedFromPt, entry.qrUrl, options);
++    }
++  }
++}
++
++/**
++ * The footer we print ourselves on blank stock: a white band over the reserved
++ * strip (so it is white paper exactly as the pre-printed stock would be), this
++ * card's QR on the left, a caption beside it, and the logo on the right.
++ * Layout in millimetres of card, so it is the same footer at every size.
++ */
++async function drawPrintedFooter(
++  doc: PDFKit.PDFDocument,
++  geometry: FacePlacement,
++  reservedFromPt: number,
++  qrUrl: string | undefined,
++  options: RenderRunOptions,
++): Promise<void> {
++  const { box, trim } = geometry;
++  const bandBottomPt = box.yPt + box.heightPt;
++  doc.save();
++  doc.rect(box.xPt, reservedFromPt, box.widthPt, bandBottomPt - reservedFromPt).fill("#ffffff");
++
++  const mm = PT_PER_MM;
++  const bandTopPt = trim.yPt + trim.heightPt - BACK_RESERVED_FOOTER_MM * mm;
++  const bandHeightPt = BACK_RESERVED_FOOTER_MM * mm;
++  const qrSidePt = 18 * mm;
++  const qrX = trim.xPt + 8 * mm;
++  const qrY = bandTopPt + (bandHeightPt - qrSidePt) / 2;
++
++  doc.save();
++  doc.translate(qrX, qrY);
++  if (qrUrl) drawQr(doc, qrSidePt, qrUrl);
++  else drawQrPlaceholder(doc, qrSidePt);
++  doc.restore();
++
++  doc
++    .font("Helvetica")
++    .fontSize(2.6 * mm)
++    .fillColor("#444444")
++    .text("Scan to see your message", qrX + qrSidePt + 3 * mm, qrY + qrSidePt / 2 - 1.6 * mm, {
++      width: 40 * mm,
++      lineBreak: false,
++    });
++
++  if (options.footerLogoUrl && options.imageResolver) {
++    const logo = await options.imageResolver(options.footerLogoUrl);
++    if (logo) {
++      const maxW = 32 * mm;
++      const maxH = 16 * mm;
++      const scale = Math.min(maxW / logo.width, maxH / logo.height);
++      const w = logo.width * scale;
++      const h = logo.height * scale;
++      doc.image(
++        logo.data,
++        trim.xPt + trim.widthPt - 8 * mm - w,
++        bandTopPt + (bandHeightPt - h) / 2,
++        {
++          width: w,
++          height: h,
++        },
++      );
++    }
+   }
++  doc.restore();
+ }
+ 
+ /** Dispatch one element to its drawer. */
+@@ -352,29 +546,30 @@ async function drawImageElement(
+   doc.restore();
+ }
+ 
+-/** Draw a cover-cropped background image over the whole bleed page (page points). */
++/** Draw a cover-cropped background image over a face's box (page points). */
+ async function drawImageBackground(
+   doc: PDFKit.PDFDocument,
+   assetUrl: string,
+-  geometry: ReturnType<typeof faceGeometry>,
++  box: FacePlacement["box"],
+   imageResolver: ImageResolver,
+ ): Promise<void> {
+   const resolved = await imageResolver(assetUrl);
+   if (!resolved) return;
+   // pdfkit's `cover` fits the image to the box centre-cropped — the same rule as
+-  // the editor's coverCrop, applied to the full page so the background bleeds.
+-  doc.image(resolved.data, 0, 0, {
+-    cover: [geometry.pageWidthPt, geometry.pageHeightPt],
++  // the editor's coverCrop, applied to the whole face box so the background
++  // bleeds to the paper edge (on a shared page the caller has clipped to the box).
++  doc.image(resolved.data, box.xPt, box.yPt, {
++    cover: [box.widthPt, box.heightPt],
+     align: "center",
+     valign: "center",
+   });
+ }
+ 
+ /** Draw the crop marks for the current page (absolute points). */
+-function drawCropMarks(doc: PDFKit.PDFDocument, geometry: FaceGeometry): void {
++function drawCropMarks(doc: PDFKit.PDFDocument, sheet: SheetGeometry): void {
+   doc.save();
+   doc.strokeColor("#000000").lineWidth(CROP_MARK_WEIGHT_PT);
+-  for (const m of cropMarks(geometry)) {
++  for (const m of sheetCropMarks(sheet)) {
+     doc.moveTo(m.x1, m.y1).lineTo(m.x2, m.y2).stroke();
+   }
+   doc.restore();
+diff --git a/apps/api/src/print-profile/print-profile.module.ts b/apps/api/src/print-profile/print-profile.module.ts
+new file mode 100644
+index 0000000..f2ac2d1
+--- /dev/null
++++ b/apps/api/src/print-profile/print-profile.module.ts
+@@ -0,0 +1,12 @@
++import { Module } from "@nestjs/common";
++import { BillingModule } from "../billing/billing.module";
++import { PrintProfileService } from "./print-profile.service";
++
++/** The house print setup, shared by the admin panel that edits it and the
++ * fulfilment print run that reads it. */
++@Module({
++  imports: [BillingModule],
++  providers: [PrintProfileService],
++  exports: [PrintProfileService],
++})
++export class PrintProfileModule {}
+diff --git a/apps/api/src/print-profile/print-profile.service.spec.ts b/apps/api/src/print-profile/print-profile.service.spec.ts
+new file mode 100644
+index 0000000..af5e281
+--- /dev/null
++++ b/apps/api/src/print-profile/print-profile.service.spec.ts
+@@ -0,0 +1,48 @@
++import { BadRequestException } from "@nestjs/common";
++import { DEFAULT_PRINT_PROFILE } from "@kudos/shared-types";
++import type { PlatformSettingsService } from "../billing/platform-settings.service";
++import { PrintProfileService } from "./print-profile.service";
++
++function service(stored: string | null) {
++  const store = { value: stored };
++  const settings = {
++    get: () => Promise.resolve(store.value),
++    set: (_key: string, value: string) => {
++      store.value = value;
++      return Promise.resolve();
++    },
++  } as unknown as PlatformSettingsService;
++  return { service: new PrintProfileService(settings), store };
++}
++
++describe("PrintProfileService", () => {
++  it("falls back to the house default when nothing is stored", async () => {
++    await expect(service(null).service.get()).resolves.toEqual(DEFAULT_PRINT_PROFILE);
++  });
++
++  it("falls back to the default on a corrupt or invalid value rather than failing a print", async () => {
++    await expect(service("not json").service.get()).resolves.toEqual(DEFAULT_PRINT_PROFILE);
++    await expect(service(JSON.stringify({ layout: "sideways" })).service.get()).resolves.toEqual(
++      DEFAULT_PRINT_PROFILE,
++    );
++  });
++
++  it("round-trips a valid profile", async () => {
++    const { service: s, store } = service(null);
++    const next = {
++      layout: "folded-sheet",
++      backFooter: "print",
++      borderlessExtensionMm: 1.5,
++    } as const;
++    await expect(s.set(next)).resolves.toEqual(next);
++    expect(JSON.parse(store.value!)).toEqual(next);
++    await expect(s.get()).resolves.toEqual(next);
++  });
++
++  it("refuses an extension no printer produces", async () => {
++    const { service: s } = service(null);
++    await expect(
++      s.set({ layout: "folded-sheet", backFooter: "reserved", borderlessExtensionMm: 25 }),
++    ).rejects.toBeInstanceOf(BadRequestException);
++  });
++});
+diff --git a/apps/api/src/print-profile/print-profile.service.ts b/apps/api/src/print-profile/print-profile.service.ts
+new file mode 100644
+index 0000000..6fdf775
+--- /dev/null
++++ b/apps/api/src/print-profile/print-profile.service.ts
+@@ -0,0 +1,54 @@
++import { BadRequestException, Injectable, Logger } from "@nestjs/common";
++import { DEFAULT_PRINT_PROFILE, printProfileSchema, type PrintProfile } from "@kudos/shared-types";
++import {
++  PlatformSettingsService,
++  PLATFORM_SETTING_KEYS,
++} from "../billing/platform-settings.service";
++
++/**
++ * The house print setup (`PrintProfile`), stored as one JSON platform setting.
++ *
++ * Same shape as `CardSizeConfigService`: a super admin sets it, the print run
++ * reads it, and a missing or unreadable value falls back to the default rather
++ * than failing a print. The default is the physical setup as it stands (A5
++ * blanks folded to A6, pre-printed back strip, uncalibrated printer); the
++ * calibration print is what turns `borderlessExtensionMm` into a real number.
++ */
++@Injectable()
++export class PrintProfileService {
++  private readonly logger = new Logger(PrintProfileService.name);
++
++  constructor(private readonly settings: PlatformSettingsService) {}
++
++  async get(): Promise<PrintProfile> {
++    const raw = await this.settings.get(PLATFORM_SETTING_KEYS.printProfile);
++    if (raw === null) return DEFAULT_PRINT_PROFILE;
++    try {
++      const parsed = printProfileSchema.safeParse(JSON.parse(raw));
++      if (parsed.success) return parsed.data;
++      this.logger.warn("Stored print profile failed validation — using the default");
++    } catch {
++      this.logger.warn("Stored print profile is not JSON — using the default");
++    }
++    return DEFAULT_PRINT_PROFILE;
++  }
++
++  getDefault(): PrintProfile {
++    return DEFAULT_PRINT_PROFILE;
++  }
++
++  async set(value: unknown): Promise<PrintProfile> {
++    const parsed = printProfileSchema.safeParse(value);
++    if (!parsed.success) {
++      throw new BadRequestException(
++        `Invalid print profile: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
++      );
++    }
++    await this.settings.set(PLATFORM_SETTING_KEYS.printProfile, JSON.stringify(parsed.data));
++    this.logger.log(
++      `Print profile updated: ${parsed.data.layout}, footer ${parsed.data.backFooter}, ` +
++        `borderless extension ${parsed.data.borderlessExtensionMm}mm`,
++    );
++    return parsed.data;
++  }
++}
+diff --git a/apps/web/src/app/(ops)/admin/print-size-setup.tsx b/apps/web/src/app/(ops)/admin/print-size-setup.tsx
+index 6b06e3b..f0883e3 100644
+--- a/apps/web/src/app/(ops)/admin/print-size-setup.tsx
++++ b/apps/web/src/app/(ops)/admin/print-size-setup.tsx
+@@ -1,7 +1,15 @@
+ "use client";
+ 
+-import type { CardSize } from "@kudos/shared-types";
+-import { CARD_SIZES, cardSizeLabel } from "@kudos/shared-types";
++import type { CardSize, PrintProfile } from "@kudos/shared-types";
++import {
++  BACK_FOOTER_LABELS,
++  BACK_FOOTER_MODES,
++  CARD_SIZES,
++  MAX_BORDERLESS_EXTENSION_MM,
++  PRINT_LAYOUTS,
++  PRINT_LAYOUT_LABELS,
++  cardSizeLabel,
++} from "@kudos/shared-types";
+ import { useEffect, useState } from "react";
+ import { ApiError } from "@/lib/api";
+ import { clientApiFetch } from "@/lib/api.client";
+@@ -105,6 +113,166 @@ export function PrintSizeSetup() {
+           </div>
+         )}
+       </SuperAdminEditable>
++
++      <PrintProfileSetup />
++    </div>
++  );
++}
++
++/**
++ * The house print setup (docs/card-artwork-print-integrity.md): how faces are
++ * laid on the sheet, whether we print the back footer, and the borderless
++ * overhang measured from a calibration print. Layout and footer can also be
++ * overridden per run in the print overlay; the extension cannot — it describes
++ * the printer, not a run.
++ */
++function PrintProfileSetup() {
++  const [profile, setProfile] = useState<PrintProfile | null>(null);
++  const [extension, setExtension] = useState("");
++  const [busy, setBusy] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const [saved, setSaved] = useState(false);
++
++  useEffect(() => {
++    let active = true;
++    clientApiFetch<{ profile: PrintProfile }>("/admin/print/profile")
++      .then((r) => {
++        if (!active || !r?.profile) return;
++        setProfile(r.profile);
++        setExtension(String(r.profile.borderlessExtensionMm));
++      })
++      .catch(() => {
++        if (active) setError("Couldn't load the print setup.");
++      });
++    return () => {
++      active = false;
++    };
++  }, []);
++
++  function save(next: PrintProfile) {
++    setBusy(true);
++    setError(null);
++    setSaved(false);
++    clientApiFetch<{ profile: PrintProfile }>("/admin/print/profile", {
++      method: "PUT",
++      body: JSON.stringify(next),
++    })
++      .then((r) => {
++        setProfile(r.profile);
++        setExtension(String(r.profile.borderlessExtensionMm));
++        setSaved(true);
++      })
++      .catch((e) => setError(e instanceof ApiError ? e.message : "Could not save the setting"))
++      .finally(() => setBusy(false));
++  }
++
++  function saveExtension() {
++    if (!profile) return;
++    const value = Number(extension);
++    if (!Number.isFinite(value) || value < 0 || value > MAX_BORDERLESS_EXTENSION_MM) {
++      setError(`Enter a number between 0 and ${MAX_BORDERLESS_EXTENSION_MM} mm.`);
++      return;
++    }
++    save({ ...profile, borderlessExtensionMm: value });
++  }
++
++  const toggle = "px-4 py-1.5 text-sm font-medium disabled:opacity-50";
++  const on = "bg-foreground text-surface";
++  const off = "bg-surface text-foreground hover:bg-border/40";
++
++  return (
++    <div className="flex flex-col gap-4 border-t border-border pt-4">
++      <div className="flex items-baseline justify-between gap-3">
++        <h2 className="text-xs font-medium tracking-wide text-muted uppercase">Print setup</h2>
++        {saved && <span className="text-xs font-medium text-emerald-700">Saved</span>}
++      </div>
++      <p className="text-sm text-muted">
++        How the print-ready PDF is shaped for the printer and card stock in the room. Layout and
++        footer can be switched for an individual run in the print preview.
++      </p>
++      {error && <p className="text-sm font-medium text-danger">{error}</p>}
++      <SuperAdminEditable>
++        {profile === null ? (
++          <p className="text-sm text-muted">Loading…</p>
++        ) : (
++          <div className="flex flex-col gap-4">
++            <div className="flex flex-wrap items-center gap-3">
++              <span className="w-28 text-sm text-foreground">Layout</span>
++              <div
++                className="flex items-center overflow-hidden rounded-full border border-border"
++                role="group"
++                aria-label="Print layout"
++              >
++                {PRINT_LAYOUTS.map((option) => (
++                  <button
++                    key={option}
++                    type="button"
++                    onClick={() => save({ ...profile, layout: option })}
++                    disabled={busy}
++                    aria-pressed={profile.layout === option}
++                    className={`${toggle} ${profile.layout === option ? on : off}`}
++                  >
++                    {PRINT_LAYOUT_LABELS[option]}
++                  </button>
++                ))}
++              </div>
++            </div>
++            <div className="flex flex-wrap items-center gap-3">
++              <span className="w-28 text-sm text-foreground">Back footer</span>
++              <div
++                className="flex items-center overflow-hidden rounded-full border border-border"
++                role="group"
++                aria-label="Back footer"
++              >
++                {BACK_FOOTER_MODES.map((option) => (
++                  <button
++                    key={option}
++                    type="button"
++                    onClick={() => save({ ...profile, backFooter: option })}
++                    disabled={busy}
++                    aria-pressed={profile.backFooter === option}
++                    className={`${toggle} ${profile.backFooter === option ? on : off}`}
++                  >
++                    {BACK_FOOTER_LABELS[option]}
++                  </button>
++                ))}
++              </div>
++            </div>
++            <div className="flex flex-wrap items-center gap-3">
++              <label htmlFor="borderless-extension" className="w-28 text-sm text-foreground">
++                Borderless overhang
++              </label>
++              <input
++                id="borderless-extension"
++                type="number"
++                inputMode="decimal"
++                min={0}
++                max={MAX_BORDERLESS_EXTENSION_MM}
++                step={0.1}
++                value={extension}
++                onChange={(e) => setExtension(e.target.value)}
++                disabled={busy}
++                className="w-24 rounded-md border border-border bg-surface px-2 py-1 text-sm"
++              />
++              <span className="text-sm text-muted">mm per long edge</span>
++              <button
++                type="button"
++                onClick={saveExtension}
++                disabled={busy || Number(extension) === profile.borderlessExtensionMm}
++                className="rounded-full border border-border px-3 py-1 text-sm disabled:opacity-50"
++              >
++                Save
++              </button>
++            </div>
++            <p className="text-xs text-muted">
++              Read this off the calibration print: how many millimetres the printer’s borderless
++              mode pushes past each long edge of the sheet. With it set, the PDF draws each card
++              fractionally smaller so the trim lands on the paper edge after the printer’s own
++              enlargement, and what it throws away is background rather than card.
++            </p>
++          </div>
++        )}
++      </SuperAdminEditable>
+     </div>
+   );
+ }
+diff --git a/apps/web/src/app/(ops)/fulfillment/fulfillment-client.test.tsx b/apps/web/src/app/(ops)/fulfillment/fulfillment-client.test.tsx
+index e7bc38d..4410e8e 100644
+--- a/apps/web/src/app/(ops)/fulfillment/fulfillment-client.test.tsx
++++ b/apps/web/src/app/(ops)/fulfillment/fulfillment-client.test.tsx
+@@ -59,6 +59,11 @@ describe("FulfillmentClient — the tracking prompt before posting", () => {
+         counts={COUNTS}
+         dueOn={null}
+         defaultPrintSize={"a5" as never}
++        defaultPrintProfile={{
++          layout: "folded-sheet",
++          backFooter: "reserved",
++          borderlessExtensionMm: 0,
++        }}
+       />,
+     );
+   }
+@@ -205,6 +210,11 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
+         counts={COUNTS}
+         dueOn="2026-09-04"
+         defaultPrintSize={"a5" as never}
++        defaultPrintProfile={{
++          layout: "folded-sheet",
++          backFooter: "reserved",
++          borderlessExtensionMm: 0,
++        }}
+       />,
+     );
+   }
+@@ -229,6 +239,11 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
+         counts={COUNTS}
+         dueOn={null}
+         defaultPrintSize={"a5" as never}
++        defaultPrintProfile={{
++          layout: "folded-sheet",
++          backFooter: "reserved",
++          borderlessExtensionMm: 0,
++        }}
+       />,
+     );
+ 
+@@ -267,6 +282,11 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
+         counts={COUNTS}
+         dueOn="2026-09-04"
+         defaultPrintSize={"a5" as never}
++        defaultPrintProfile={{
++          layout: "folded-sheet",
++          backFooter: "reserved",
++          borderlessExtensionMm: 0,
++        }}
+       />,
+     );
+ 
+diff --git a/apps/web/src/app/(ops)/fulfillment/fulfillment-client.tsx b/apps/web/src/app/(ops)/fulfillment/fulfillment-client.tsx
+index d881987..ee0ba51 100644
+--- a/apps/web/src/app/(ops)/fulfillment/fulfillment-client.tsx
++++ b/apps/web/src/app/(ops)/fulfillment/fulfillment-client.tsx
+@@ -10,6 +10,7 @@ import type {
+   DesignDocument,
+   DueFilter,
+   FulfillmentCounts,
++  PrintProfile,
+ } from "@kudos/shared-types";
+ import {
+   applyMergeTokens,
+@@ -295,6 +296,7 @@ export function FulfillmentClient({
+   counts,
+   dueOn,
+   defaultPrintSize,
++  defaultPrintProfile,
+ }: {
+   initialJobs: FulfillmentJob[];
+   /** The active status tab, or null when a calendar day is pinned with no
+@@ -308,6 +310,9 @@ export function FulfillmentClient({
+   /** The card size the print overlay opens on (super-admin default); ops can
+    * still switch per run. See ADR 0138. */
+   defaultPrintSize: CardSize;
++  /** The house print setup the PDF button opens on; ops can switch layout
++   * and footer per run. See docs/card-artwork-print-integrity.md. */
++  defaultPrintProfile: PrintProfile;
+ }) {
+   const router = useRouter();
+   const [jobs, setJobs] = useState(initialJobs);
+@@ -1177,6 +1182,7 @@ export function FulfillmentClient({
+         <PrintRunOverlay
+           cards={printCards}
+           defaultSize={defaultPrintSize}
++          defaultProfile={defaultPrintProfile}
+           onClose={() => setPrintCards(null)}
+         />
+       )}
+diff --git a/apps/web/src/app/(ops)/fulfillment/page.test.tsx b/apps/web/src/app/(ops)/fulfillment/page.test.tsx
+index ca6fa71..0bee6d3 100644
+--- a/apps/web/src/app/(ops)/fulfillment/page.test.tsx
++++ b/apps/web/src/app/(ops)/fulfillment/page.test.tsx
+@@ -19,6 +19,7 @@ describe("FulfillmentPage — the status tab the server accepted", () => {
+     serverApiFetch.mockImplementation((path: string) => {
+       if (String(path).includes("/counts")) return Promise.resolve(null);
+       if (String(path).includes("card-size")) return Promise.resolve({ size: "a5" });
++      if (String(path).includes("print/profile")) return Promise.resolve(null);
+       return Promise.resolve({ items: [], total: 0, page: 1, perPage: 100 });
+     });
+   });
+diff --git a/apps/web/src/app/(ops)/fulfillment/page.tsx b/apps/web/src/app/(ops)/fulfillment/page.tsx
+index 24cd679..4ce6cd4 100644
+--- a/apps/web/src/app/(ops)/fulfillment/page.tsx
++++ b/apps/web/src/app/(ops)/fulfillment/page.tsx
+@@ -1,5 +1,10 @@
+-import type { CardSize, DueFilter, FulfillmentCounts } from "@kudos/shared-types";
+-import { DEFAULT_CARD_SIZE, DUE_FILTERS, FULFILLMENT_STATUSES } from "@kudos/shared-types";
++import type { CardSize, DueFilter, FulfillmentCounts, PrintProfile } from "@kudos/shared-types";
++import {
++  DEFAULT_CARD_SIZE,
++  DEFAULT_PRINT_PROFILE,
++  DUE_FILTERS,
++  FULFILLMENT_STATUSES,
++} from "@kudos/shared-types";
+ import { serverApiFetch } from "@/lib/api.server";
+ import {
+   FulfillmentClient,
+@@ -62,13 +67,16 @@ export default async function FulfillmentPage({
+     jobsQuery.set("status", explicitStatus ?? "pending");
+   }
+ 
+-  const [result, counts, printSize] = await Promise.all([
++  const [result, counts, printSize, printProfile] = await Promise.all([
+     serverApiFetch<Paginated<FulfillmentJob>>(`/fulfillment/jobs?${jobsQuery.toString()}`),
+     serverApiFetch<FulfillmentCounts>("/fulfillment/counts"),
+     // The super-admin default print size the print overlay opens on. Both this
+     // page and the setting live behind PlatformAdminGuard (the whole ops area),
+     // so reading the admin setting here is in-scope. See ADR 0138.
+     serverApiFetch<{ size: CardSize }>("/admin/print/card-size"),
++    // The house print setup the PDF button opens on (layout, footer). Same
++    // scope argument as the size. See docs/card-artwork-print-integrity.md.
++    serverApiFetch<{ profile: PrintProfile }>("/admin/print/profile"),
+   ]);
+ 
+   const emptyCounts: FulfillmentCounts = {
+@@ -98,6 +106,7 @@ export default async function FulfillmentPage({
+       counts={counts ?? emptyCounts}
+       dueOn={dueOn}
+       defaultPrintSize={printSize?.size ?? DEFAULT_CARD_SIZE}
++      defaultPrintProfile={printProfile?.profile ?? DEFAULT_PRINT_PROFILE}
+     />
+   );
+ }
+diff --git a/apps/web/src/app/(ops)/fulfillment/print-run-overlay.test.tsx b/apps/web/src/app/(ops)/fulfillment/print-run-overlay.test.tsx
+index 4b35c54..1bf44b6 100644
+--- a/apps/web/src/app/(ops)/fulfillment/print-run-overlay.test.tsx
++++ b/apps/web/src/app/(ops)/fulfillment/print-run-overlay.test.tsx
+@@ -340,3 +340,80 @@ describe("PrintRunOverlay — one line about the crop, in millimetres", () => {
+     expect(loud.className).toContain("amber");
+   });
+ });
++
++/**
++ * The PDF is shaped for the printer in the room (docs/card-artwork-print-
++ * integrity.md): the house layout and footer are the starting point, and an
++ * operator can switch both for one run without touching the setting.
++ */
++describe("PrintRunOverlay — how the PDF is laid on paper", () => {
++  const { clientApiDownload } = jest.requireMock("@/lib/api.client") as {
++    clientApiDownload: jest.Mock;
++  };
++
++  beforeEach(() => {
++    clientApiDownload.mockReset().mockResolvedValue(undefined);
++    stubImageLoader({ width: 1240, height: 1748 });
++  });
++  afterEach(() => {
++    jest.restoreAllMocks();
++  });
++
++  it("opens on the house profile and sends it with the download", async () => {
++    render(
++      <PrintRunOverlay
++        cards={[card]}
++        onClose={() => {}}
++        defaultProfile={{
++          layout: "folded-sheet",
++          backFooter: "reserved",
++          borderlessExtensionMm: 1,
++        }}
++      />,
++    );
++    expect(screen.getByRole("button", { name: "Folded sheet" })).toHaveAttribute(
++      "aria-pressed",
++      "true",
++    );
++    await userEvent.click(screen.getByRole("button", { name: "Download print-ready PDF" }));
++    const [, init, filename] = clientApiDownload.mock.calls[0] as [string, RequestInit, string];
++    expect(JSON.parse(String(init.body))).toMatchObject({
++      layout: "folded-sheet",
++      backFooter: "reserved",
++    });
++    // The calibrated extension is the printer's, not the run's: never sent.
++    expect(JSON.parse(String(init.body))).not.toHaveProperty("borderlessExtensionMm");
++    expect(filename).toMatch(/-folded\.pdf$/);
++  });
++
++  it("lets the operator switch to one face per page for this run only", async () => {
++    render(
++      <PrintRunOverlay
++        cards={[card]}
++        onClose={() => {}}
++        defaultProfile={{
++          layout: "folded-sheet",
++          backFooter: "reserved",
++          borderlessExtensionMm: 0,
++        }}
++      />,
++    );
++    await userEvent.click(screen.getByRole("button", { name: "Face per page" }));
++    await userEvent.click(screen.getByRole("button", { name: "Download print-ready PDF" }));
++    const [, init, filename] = clientApiDownload.mock.calls[0] as [string, RequestInit, string];
++    expect(JSON.parse(String(init.body))).toMatchObject({ layout: "face-per-page" });
++    expect(filename).not.toMatch(/folded/);
++  });
++
++  it("offers the footer choice only when the run has a back to print", () => {
++    render(
++      <PrintRunOverlay
++        cards={[{ ...card, document: frontOnly("https://cdn.example.com/a6.png") }]}
++        onClose={() => {}}
++      />,
++    );
++    expect(screen.queryByRole("button", { name: "Print footer" })).not.toBeInTheDocument();
++    render(<PrintRunOverlay cards={[card]} onClose={() => {}} />);
++    expect(screen.getByRole("button", { name: "Print footer" })).toBeInTheDocument();
++  });
++});
+diff --git a/apps/web/src/app/(ops)/fulfillment/print-run-overlay.tsx b/apps/web/src/app/(ops)/fulfillment/print-run-overlay.tsx
+index 2d49557..90c970f 100644
+--- a/apps/web/src/app/(ops)/fulfillment/print-run-overlay.tsx
++++ b/apps/web/src/app/(ops)/fulfillment/print-run-overlay.tsx
+@@ -1,9 +1,21 @@
+ "use client";
+ 
+-import type { CardSize, DesignDocument, DesignPage } from "@kudos/shared-types";
++import type {
++  BackFooterMode,
++  CardSize,
++  DesignDocument,
++  DesignPage,
++  PrintLayoutSetting,
++  PrintProfile,
++} from "@kudos/shared-types";
+ import {
+   applyMergeTokens,
++  BACK_FOOTER_LABELS,
++  BACK_FOOTER_MODES,
+   BACK_RESERVED_FOOTER_MM,
++  DEFAULT_PRINT_PROFILE,
++  PRINT_LAYOUTS,
++  PRINT_LAYOUT_LABELS,
+   CARD_SIZES,
+   faceAssetUrls,
+   cardSizeLabel,
+@@ -148,10 +160,12 @@ export function PrintRunOverlay({
+   cards,
+   onClose,
+   defaultSize = DEFAULT_CARD_SIZE,
++  defaultProfile = DEFAULT_PRINT_PROFILE,
+ }: {
+   cards: PrintRunCard[];
+   onClose: () => void;
+   defaultSize?: CardSize;
++  defaultProfile?: PrintProfile;
+ }) {
+   const [size, setSize] = useState<CardSize>(defaultSize);
+   // Whether the back's reserved strip hides the artwork under it (what prints)
+@@ -160,6 +174,10 @@ export function PrintRunOverlay({
+   // the hidden part is exactly the part in question. See ADR 0166.
+   const [artworkView, setArtworkView] = useState<"as-printed" | "full">("as-printed");
+   const [downloading, setDownloading] = useState(false);
++  // The two per-run choices about the PDF, starting from the house print setup
++  // (docs/card-artwork-print-integrity.md).
++  const [layout, setLayout] = useState<PrintLayoutSetting>(defaultProfile.layout);
++  const [backFooter, setBackFooter] = useState<BackFooterMode>(defaultProfile.backFooter);
+   const [artworkBusy, setArtworkBusy] = useState<string | null>(null);
+   const [downloadError, setDownloadError] = useState<string | null>(null);
+   // Pre-flight: how many source images are too low-resolution for print at this
+@@ -244,8 +262,17 @@ export function PrintRunOverlay({
+     try {
+       await clientApiDownload(
+         "/fulfillment/print-run/pdf",
+-        { method: "POST", body: JSON.stringify({ jobIds: cards.map((card) => card.jobId), size }) },
+-        `kudos-print-run-${cards.length}-card${cards.length === 1 ? "" : "s"}-${size}.pdf`,
++        {
++          method: "POST",
++          body: JSON.stringify({
++            jobIds: cards.map((card) => card.jobId),
++            size,
++            layout,
++            backFooter,
++          }),
++        },
++        `kudos-print-run-${cards.length}-card${cards.length === 1 ? "" : "s"}-${size}` +
++          `${layout === "folded-sheet" ? "-folded" : ""}.pdf`,
+       );
+     } catch (error) {
+       setDownloadError(
+@@ -440,6 +467,58 @@ export function PrintRunOverlay({
+             ))}
+           </div>
+           <span className="hidden text-xs text-black/50 sm:inline">{cardSizeLabel(size)}</span>
++          {/* How the PDF is laid on paper and who prints the back strip — the
++              house setup by default, switchable for this run. Both are about
++              the print-ready PDF only; the preview below is always one face
++              per page. */}
++          <div
++            className="flex items-center overflow-hidden rounded-full border border-black/20"
++            role="group"
++            aria-label="PDF layout"
++          >
++            {PRINT_LAYOUTS.map((option) => (
++              <button
++                key={option}
++                type="button"
++                onClick={() => setLayout(option)}
++                aria-pressed={layout === option}
++                title={
++                  option === "folded-sheet"
++                    ? "Two faces per side on a sheet twice the card width — outside then inside — to print both sides and fold"
++                    : "One card face per page at the trim size"
++                }
++                className={`px-3 py-1.5 text-sm font-medium ${
++                  layout === option ? "bg-black text-white" : "bg-white text-black hover:bg-black/5"
++                }`}
++              >
++                {option === "folded-sheet" ? "Folded sheet" : "Face per page"}
++              </button>
++            ))}
++          </div>
++          {hasBack && (
++            <div
++              className="flex items-center overflow-hidden rounded-full border border-black/20"
++              role="group"
++              aria-label="Back footer"
++            >
++              {BACK_FOOTER_MODES.map((option) => (
++                <button
++                  key={option}
++                  type="button"
++                  onClick={() => setBackFooter(option)}
++                  aria-pressed={backFooter === option}
++                  title={`${BACK_FOOTER_LABELS[option]} — the bottom ${BACK_RESERVED_FOOTER_MM}mm of the back`}
++                  className={`px-3 py-1.5 text-sm font-medium ${
++                    backFooter === option
++                      ? "bg-black text-white"
++                      : "bg-white text-black hover:bg-black/5"
++                  }`}
++                >
++                  {option === "print" ? "Print footer" : "Pre-printed footer"}
++                </button>
++              ))}
++            </div>
++          )}
+           {/* Back-artwork view. Only offered when the run actually has a back to
+               look at, so it isn't a permanently inert control on a run of
+               front-only cards. */}
+@@ -480,7 +559,7 @@ export function PrintRunOverlay({
+             type="button"
+             onClick={() => void downloadPdf()}
+             disabled={downloading}
+-            title="Print-ready PDF: vector text, full-resolution images, exact trim size — ready to print and fold"
++            title={`Print-ready PDF: vector text, full-resolution images, ${PRINT_LAYOUT_LABELS[layout].toLowerCase()}`}
+             className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+           >
+             {downloading ? "Generating…" : "Download print-ready PDF"}
+diff --git a/apps/web/src/app/(ops)/ops-role.test.tsx b/apps/web/src/app/(ops)/ops-role.test.tsx
+index ecc472d..6c301ec 100644
+--- a/apps/web/src/app/(ops)/ops-role.test.tsx
++++ b/apps/web/src/app/(ops)/ops-role.test.tsx
+@@ -18,7 +18,15 @@ jest.mock("@/lib/api.client", () => ({
+ describe("the ops role gates", () => {
+   beforeEach(() => {
+     fetchMock.mockReset();
+-    fetchMock.mockResolvedValue({ size: "A5", default: "A5" });
++    fetchMock.mockImplementation((path: unknown) =>
++      Promise.resolve(
++        String(path).includes("print/profile")
++          ? {
++              profile: { layout: "folded-sheet", backFooter: "reserved", borderlessExtensionMm: 0 },
++            }
++          : { size: "A5", default: "A5" },
++      ),
++    );
+   });
+ 
+   describe("SuperAdminEditable", () => {
+diff --git a/docs/card-artwork-print-integrity.md b/docs/card-artwork-print-integrity.md
+index 9742588..5eee39a 100644
+--- a/docs/card-artwork-print-integrity.md
++++ b/docs/card-artwork-print-integrity.md
+@@ -87,7 +87,7 @@ switches the lock off and stretches a texture has done it on purpose.
+ the customer's text, and measured by D1 like everything else.
+ 
+ **D7 — Orientation is applied before anything is judged.** `orientedPixelSize`
+-swaps the axes for EXIF 5–8. The gate uses it; the catalog sync should (Phase 3).
++swaps the axes for EXIF 5–8. The gate uses it; the catalog sync should (Phase 4).
+ 
+ ## What shipped in this change
+ 
+@@ -106,6 +106,53 @@ swaps the axes for EXIF 5–8. The gate uses it; the catalog sync should (Phase
+   background; a distortion warning and "Restore proportions" for a selected
+   image element.
+ - `lib/image-natural-size.ts`: `readFileNaturalSize`.
++- `print-pdf/geometry.ts` `sheetGeometry` + `render.ts` `renderCardsPdf`: the
++  folded-sheet layout, the borderless-extension geometry and the printed
++  footer (D8–D10), tested in `geometry.spec.ts` and `render.spec.ts`.
++- `print-profile/`: the profile setting, service and admin endpoints;
++  `print-run-pdf.service.ts` reads it; the print overlay and the admin "Print
++  setup" panel expose it.
++
++## The printer, and what it changes
++
++The cards are printed in-house on a **Canon imagePROGRAF PRO-310** onto **A5
++300gsm card blanks** that fold to A6. That is not the setup the print engine
++was written for — it emits one A6 face per page at exact trim, which the
++driver then has to impose two-up onto the A5 sheet, and the PRO-310 has no A6
++in its borderless size list at all (A5 is there; custom sizes cannot be
++borderless). Three things follow, and the engine now does all three:
++
++**D8 — The engine imposes the sheet; the driver does not.** `folded-sheet`
++layout (`sheetGeometry`, `renderCardsPdf`): per card, page 1 is the outside
++(back | front) and page 2 the inside (inside-left | inside-right) on one
++landscape sheet twice the trim width — 210 × 148 for A6, which is A5, the size
++the printer _does_ print borderless. The order is exactly what the driver's
++manual duplex wants (odd pages, reload, even pages). A front-only design still
++gets a blank inside sheet so it folds into a card. `face-per-page` stays as a
++layout for anyone who needs it.
++
++**D9 — Borderless overhang is modelled, not hoped away.** A borderless driver
++does not print to the edge; it _enlarges the page_ and lets the overhang fall
++off the paper (Canon: "the printed image is enlarged to fill the whole page …
++slight cropping may occur at the edges"). Nothing outside the PDF's page box
++ever reaches the driver, so bleed cannot be added _around_ the page. Instead
++`borderlessExtensionMm` — read off a calibration print and stored in the print
++profile — makes the engine draw each card fractionally smaller and centred, so
++that after the printer's scaling the trim lands on the paper edge and what is
++cut off is background. Pinned by test: scale the page about its centre by the
++printer's factor and the trim's outer edge lands at exactly 0.
++
++**D10 — The back strip can be ours to print.** The stock is blank and the QR is
++printed in-house, so `backFooter: "print"` draws the reserved 30mm itself — a
++white band over whatever the customer put there (the same rule as clipping),
++this card's QR, a caption, and the logo — in the same pass as the artwork, so
++it is always in register. `reserved` (clip) stays for pre-printed stock and
++for a QR batch done out of house.
++
++All three live in one **print profile** (`shared-types/print-profile.ts`,
++`PrintProfileService`, `PUT /admin/print/profile`, the "Print setup" panel):
++layout, back footer, borderless extension. Layout and footer can be switched
++per run in the print overlay; the extension cannot — it describes the printer.
+ 
+ ## Phases still to do
+ 
+@@ -119,46 +166,53 @@ confirm `cropped` is empty in the sync summary, then switch
+ `catalog_reject_cropped_artwork` on. This is the fix for the card in the
+ screenshot; nothing in software removes that crop.
+ 
+-### Phase 2 — Calibrate the borderless printer
++### Phase 2 — Calibrate the PRO-310 and set the profile
+ 
+-A borderless office printer reaches the edge by _enlarging_ the page a few
+-per cent and cropping the overhang, and the amount is a driver setting. Print
+-`kudos-borderless-calibration.pdf` (one A6 page, one A5) on the real stock and
+-read the loss per edge off the rulers. Under ~1mm: the exact-trim PDF is right
+-as it is. Over: add an `overscanMm` option to `faceGeometry` (page stays trim
+-size; the design is scaled into trim − 2·overscan; the background covers the
+-page) and an admin setting to carry the measured number, so what the printer
+-throws away is bleed rather than card.
++Print `kudos-borderless-calibration.pdf` (page 1 is the A5-landscape sheet) on
++the real blanks, borderless, media type as for cards. Read the loss on the long
++edges and enter it as the profile's borderless overhang. Set layout
++`folded-sheet`; set the footer to `print` unless a batch of pre-printed backs
++is in use. Then print one card, fold it, and check the fold lands on the
++centre and the front reaches all four edges.
+ 
+-### Phase 3 — Orientation in the catalog sync
++### Phase 3 — Colour: one profile per stock
++
++The PRO-310 is a ten-ink pigment printer and the blanks are a third-party
++matte card, so the driver's built-in media profiles are a guess. Make an ICC
++for the stock (a printed target and a profiling service, or a Canon-matched
++media from the supplier), set it in the driver, and normalise every raster to
++sRGB in `decodeImage` (`sharp().toColourspace("srgb")`) so a JPEG saved in
++Adobe RGB or CMYK does not print flat. Text prints in matte black on matte
++media automatically.
++
++### Phase 4 — Orientation in the catalog sync
+ 
+ `copyImage` measures with `sharp.metadata()`; pass the result through
+ `orientedPixelSize` so a rotated attachment is judged the way it is seen.
+-Persist `artworkWidth/Height` oriented.
+ 
+-### Phase 4 — Distortion at the point of sale
++### Phase 5 — Distortion at the point of sale
+ 
+ A design-level finding in the pre-send check ("an image on the front is
+-stretched 6% out of shape"), the same shape as the reserved-footer warning, so a
+-legacy design from the old upload flow is caught before payment.
++stretched 6% out of shape"), so a legacy design from the old upload flow is
++caught before payment.
+ 
+-### Phase 5 — Browser print, retired or made honest
++### Phase 6 — Retire Browser print
+ 
+-`Browser print` insets the card 5mm for a printer that leaves a margin. The
+-printer does not, and the PDF is full-bleed at trim, so the two outputs differ
+-by 10% in card width. Either remove the button or render it at trim like the
+-PDF.
++It insets the card 5mm for a printer that leaves a margin. This one does not,
++the PDF is imposed and full-bleed, and the two outputs no longer resemble each
++other. Remove the button.
+ 
+-### Phase 6 — Measure at upload, once
++### Phase 7 — Measure at upload, once
+ 
+ `POST /design-assets` records the browser's word for `width/height`. Have the
+-API measure the object itself on that call (the gate's `measure`, cached onto
+-the row) so the "Your uploads" picker can grey out a background that would be
+-refused before the customer picks it.
++API measure the object itself (the gate's `measure`, cached onto the row) so
++the "Your uploads" picker can grey out a background that would be refused
++before the customer picks it.
+ 
+ ## What this does not fix
+ 
+ Custom-artwork designs saved by the old flow still carry a 450 × 600 element.
+ They render exactly as they did — squashed, with the strip — until the customer
+ opens the design and selects the image (the editor now says so and offers the
+-one-click fix), or Phase 4 catches it at the point of sale. Cards already printed are printed.
++one-click fix), or Phase 5 catches it at the point of sale. Cards already
++printed are printed.
+diff --git a/packages/shared-types/src/index.ts b/packages/shared-types/src/index.ts
+index 266876c..8f060bf 100644
+--- a/packages/shared-types/src/index.ts
++++ b/packages/shared-types/src/index.ts
+@@ -15,6 +15,7 @@ export * from "./pricing";
+ export * from "./card-content";
+ export * from "./card-crop";
+ export * from "./card-artwork";
++export * from "./print-profile";
+ export * from "./card-format";
+ export * from "./preflight";
+ export * from "./plans";
+diff --git a/packages/shared-types/src/print-profile.ts b/packages/shared-types/src/print-profile.ts
+new file mode 100644
+index 0000000..63245a2
+--- /dev/null
++++ b/packages/shared-types/src/print-profile.ts
+@@ -0,0 +1,69 @@
++/**
++ * How the house printer puts a card on paper — the settings that describe the
++ * physical print setup rather than any one card, so the print-ready PDF comes
++ * out shaped for the printer and stock actually in the room.
++ *
++ * Set once by a super admin (after a calibration print), stored as one JSON
++ * platform setting, read by the print run. Per-run overrides for the two
++ * choices an operator might sensibly change on the day (layout, footer) go on
++ * the request; the calibrated extension does not — it is a property of the
++ * printer, not of a run. See docs/card-artwork-print-integrity.md.
++ */
++
++import { z } from "zod";
++
++/**
++ * - `face-per-page`: one card face per page at the trim size (the original
++ *   output; right for pre-cut single-face stock or a print house that imposes).
++ * - `folded-sheet`: two faces side by side on a sheet twice the trim width
++ *   (A5 for an A6 card), outside then inside, for print-both-sides-and-fold.
++ */
++export const PRINT_LAYOUTS = ["face-per-page", "folded-sheet"] as const;
++export type PrintLayoutSetting = (typeof PRINT_LAYOUTS)[number];
++
++/**
++ * - `reserved`: the bottom 30mm of the back is pre-printed on the stock, so it
++ *   is clipped out of the render (ADR 0166).
++ * - `print`: blank stock — we print the logo and this card's QR into the strip
++ *   ourselves, in the same pass as the artwork.
++ */
++export const BACK_FOOTER_MODES = ["reserved", "print"] as const;
++export type BackFooterMode = (typeof BACK_FOOTER_MODES)[number];
++
++/** A borderless driver's overhang is a few millimetres at most; anything
++ * larger is a typo, not a printer. */
++export const MAX_BORDERLESS_EXTENSION_MM = 6;
++
++export const printProfileSchema = z.object({
++  layout: z.enum(PRINT_LAYOUTS),
++  backFooter: z.enum(BACK_FOOTER_MODES),
++  /**
++   * How far past each long edge of the paper the printer's borderless mode
++   * pushes the image, in mm — read off a calibration print. 0 means the page
++   * is printed at exactly its size and the PDF is drawn at the trim.
++   */
++  borderlessExtensionMm: z.number().min(0).max(MAX_BORDERLESS_EXTENSION_MM),
++});
++export type PrintProfile = z.infer<typeof printProfileSchema>;
++
++/**
++ * The house setup: A5 blanks folded to A6 with a pre-printed back strip, on a
++ * printer not yet calibrated. `folded-sheet` rather than `face-per-page`
++ * because that is how the cards are physically made; the old one-face-per-page
++ * output stays available as a layout for anyone who needs it.
++ */
++export const DEFAULT_PRINT_PROFILE: PrintProfile = {
++  layout: "folded-sheet",
++  backFooter: "reserved",
++  borderlessExtensionMm: 0,
++};
++
++export const PRINT_LAYOUT_LABELS: Record<PrintLayoutSetting, string> = {
++  "face-per-page": "One face per page",
++  "folded-sheet": "Folded sheet (two faces per side)",
++};
++
++export const BACK_FOOTER_LABELS: Record<BackFooterMode, string> = {
++  reserved: "Pre-printed on the stock",
++  print: "Printed with the card",
++};
+-- 
+2.43.0
+
