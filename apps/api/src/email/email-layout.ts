@@ -26,13 +26,20 @@ const FONT_STACK = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica
 export interface BrandedEmailOptions {
   /** Base URL of the web app — sources the hosted logo and footer links. */
   webAppUrl: string;
-  /** Hidden inbox-preview text (the grey line beside the subject). */
+  /** Hidden inbox-preview text (the grey line beside the subject). Plain text —
+   * escaped here, so a name or organisation can go straight in. */
   preheader: string;
-  /** The email's H1. */
+  /** The email's H1 (and the document title). Plain text — escaped here. */
   heading: string;
-  /** Main body — trusted HTML the caller has already escaped where needed. */
+  /**
+   * Main body — **the one trusted-HTML field**. Callers compose markup here and
+   * are responsible for running user-supplied values through `escapeHtml` on the
+   * way in. Everything else on this interface is plain text and is escaped by
+   * renderBrandedEmail itself, so no caller can forget.
+   */
   bodyHtml: string;
-  /** Optional primary call-to-action rendered as the branded button. */
+  /** Optional primary call-to-action rendered as the branded button. Both the
+   * URL and the label are escaped here. */
   cta?: { url: string; label: string };
   /**
    * When true, a plain "button not working? paste this link" fallback is shown
@@ -40,7 +47,8 @@ export interface BrandedEmailOptions {
    * render (auth: confirm, magic link, password reset).
    */
   showLinkFallback?: boolean;
-  /** Optional small print above the standard footer (e.g. an opt-out note). */
+  /** Optional small print above the standard footer (e.g. an opt-out note).
+   * Plain text — escaped here. */
   footerNote?: string;
 }
 
@@ -53,15 +61,51 @@ export function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * Flattens control characters to spaces. Every field below is a single line —
+ * a heading, a preheader, a button label — so an embedded newline or NUL is
+ * never meaningful content, and a newline in something that later becomes a
+ * mail header is how header injection starts.
+ */
+function flatten(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[\u0000-\u001f\u007f]+/g, " ");
+}
+
+/** Escape a single-line, possibly user-supplied string for HTML text content. */
+function escapeLine(value: string): string {
+  return escapeHtml(flatten(value));
+}
+
+/**
+ * Escape a URL for both `href="..."` and the visible link text beneath it.
+ *
+ * Deliberately leaves `&` alone, unlike escapeHtml. Encoding it to `&amp;` is
+ * the strictly-correct HTML and every mail client decodes it — but the links
+ * running through here include password-reset and magic-link URLs whose query
+ * strings are the difference between a customer getting back into their account
+ * and not, and `&` is not an escape vector. Breaking out of the attribute needs
+ * a raw quote; opening a tag needs a raw angle bracket. Those are what this
+ * removes. An `&amp;` already inside a URL decodes to a `&` in the attribute's
+ * *value*, which is still just part of the URL, so nothing escapes this way.
+ */
+export function escapeUrlAttribute(value: string): string {
+  return flatten(value)
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 /** A bulletproof, table-based CTA button that survives Outlook and dark mode. */
 export function emailButton(url: string, label: string): string {
   return `
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0">
       <tr>
         <td align="center" bgcolor="${BRAND.accent}" style="border-radius:9999px">
-          <a href="${url}"
+          <a href="${escapeUrlAttribute(url)}"
              style="display:inline-block;padding:13px 28px;font-family:${FONT_STACK};font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:9999px">
-            ${label}
+            ${escapeLine(label)}
           </a>
         </td>
       </tr>
@@ -70,7 +114,16 @@ export function emailButton(url: string, label: string): string {
 
 /** Wrap body content in the full branded HTML document. */
 export function renderBrandedEmail(options: BrandedEmailOptions): string {
-  const { webAppUrl, preheader, heading, bodyHtml, cta, showLinkFallback, footerNote } = options;
+  const { webAppUrl, bodyHtml, cta, showLinkFallback } = options;
+  // Escaped here, at the one boundary, rather than at each call site. Every
+  // caller already escapes what it puts in `bodyHtml` and not one of them
+  // escaped the preheader — which is a trap in this function's contract, not
+  // fourteen independent oversights, so the fix belongs in the trap. `bodyHtml`
+  // stays trusted markup by design: it is the field whose whole purpose is HTML.
+  const preheader = escapeLine(options.preheader);
+  const heading = escapeLine(options.heading);
+  const footerNote = options.footerNote ? escapeLine(options.footerNote) : options.footerNote;
+  const ctaUrl = cta ? escapeUrlAttribute(cta.url) : "";
   const logoUrl = `${webAppUrl}/marketing/logo.png`;
   // The footer link text is derived from the web app's host so it always matches
   // where the link actually goes (rather than a hardcoded domain that can drift
@@ -82,7 +135,7 @@ export function renderBrandedEmail(options: BrandedEmailOptions): string {
     cta && showLinkFallback
       ? `<p style="margin:4px 0 0;font-family:${FONT_STACK};font-size:12px;line-height:18px;color:${BRAND.muted}">
            Button not working? Copy and paste this link into your browser:<br>
-           <a href="${cta.url}" style="color:${BRAND.accent};word-break:break-all">${cta.url}</a>
+           <a href="${ctaUrl}" style="color:${BRAND.accent};word-break:break-all">${ctaUrl}</a>
          </p>`
       : "";
   const footerNoteHtml = footerNote
