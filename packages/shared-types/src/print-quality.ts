@@ -69,6 +69,24 @@ export interface PixelSize {
   height: number;
 }
 
+/**
+ * A stored pixel size corrected for its EXIF orientation tag.
+ *
+ * A camera writes the sensor's own pixels and a tag saying which way up they
+ * are. Browsers apply that tag when they decode; `sharp.metadata()` reports the
+ * stored size and the tag separately and applies neither. So the same photo
+ * measures 4000x3000 on one surface and 3000x4000 on another, and a rule built
+ * on the wrong one refuses good artwork and passes bad.
+ *
+ * Orientations 5-8 carry a quarter turn, which is what swaps the axes; 1-4 are
+ * identity, flips and a half turn, none of which change the dimensions.
+ */
+export function orientedPixelSize(stored: PixelSize, orientation?: number): PixelSize {
+  return orientation !== undefined && orientation > 4
+    ? { width: stored.height, height: stored.width }
+    : stored;
+}
+
 export interface PrintedSizeMm {
   widthMm: number;
   heightMm: number;
