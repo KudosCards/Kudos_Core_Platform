@@ -52,6 +52,65 @@ export interface ResolvedImage {
  * engine stays network-free; implemented in the image-pipeline slice. */
 export type ImageResolver = (assetUrl: string) => Promise<ResolvedImage | null>;
 
+/**
+ * A pdfkit image already opened against the document, ready to draw on any page.
+ *
+ * pdfkit de-duplicates an image only when you hand it a **string** — `openImage`
+ * fills `_imageRegistry[src]` under `if (typeof src === 'string')`, and `image()`
+ * consults that registry under the same guard. We hand it Buffers, so every draw
+ * used to create a fresh PDFImage and write another full copy of the bytes into
+ * the file: fifty pages of one background measured **30.9x** the size of the same
+ * run with the image opened once. On a 500-recipient run that is the difference
+ * between a PDF an operator can print and one that exhausts the API's memory
+ * before it finishes.
+ *
+ * Opening it ourselves and passing the resulting object takes pdfkit's
+ * `if (src.width && src.height) image = src` branch, which reuses the one XObject
+ * on every page. @types/pdfkit does not model that branch, hence the casts below.
+ */
+type EmbeddedImage = { width: number; height: number };
+
+/** Draws an already-embedded image, or null when the asset could not be had. */
+type ImageEmbedder = (assetUrl: string) => Promise<EmbeddedImage | null>;
+
+interface DocumentWithOpenImage {
+  openImage(src: Buffer): EmbeddedImage;
+}
+
+/**
+ * Resolve each asset once per *document* rather than once per page.
+ *
+ * The resolver's own cache de-duplicates the fetch and the decode, which is what
+ * hid the duplication above: one asset was downloaded once and then embedded N
+ * times. This memoises the embed as well.
+ */
+function createImageEmbedder(
+  doc: PDFKit.PDFDocument,
+  resolver: ImageResolver | undefined,
+  onWarn?: (message: string) => void,
+): ImageEmbedder {
+  const embedded = new Map<string, EmbeddedImage | null>();
+  return async (assetUrl: string) => {
+    const cached = embedded.get(assetUrl);
+    if (cached !== undefined) return cached;
+    let image: EmbeddedImage | null = null;
+    if (resolver) {
+      const resolved = await resolver(assetUrl);
+      if (resolved) {
+        try {
+          image = (doc as unknown as DocumentWithOpenImage).openImage(resolved.data);
+        } catch (error) {
+          // A header pdfkit cannot parse. Skipped like any other unusable asset
+          // rather than failing the run — the same policy as the resolver (ADR 0162).
+          onWarn?.(`print image unembeddable (${assetUrl}): ${String(error)}`);
+        }
+      }
+    }
+    embedded.set(assetUrl, image);
+    return image;
+  };
+}
+
 /** One physical page: a (already merge-tokenised) document, which face to draw,
  * and the absolute link this card's QR should encode. */
 export interface PrintFaceInput {
@@ -74,6 +133,8 @@ export interface RenderRunOptions {
   imageResolver?: ImageResolver;
   /** PDF document metadata title. */
   title?: string;
+  /** Optional warn sink for assets that could not be embedded. */
+  onWarn?: (message: string) => void;
 }
 
 /** pdfkit exposes the current font's em-scaled metrics on `_font`; typed narrowly. */
@@ -114,6 +175,8 @@ export async function renderRunPdf(
     info: { Title: options.title ?? "Kudos print run" },
   });
 
+  const embed = createImageEmbedder(doc, options.imageResolver, options.onWarn);
+
   const chunks: Buffer[] = [];
   const done = new Promise<Buffer>((resolve, reject) => {
     doc.on("data", (c: Buffer) => chunks.push(c));
@@ -124,7 +187,7 @@ export async function renderRunPdf(
   for (const entry of faces) {
     doc.addPage({ size: [geometry.pageWidthPt, geometry.pageHeightPt], margin: 0 });
 
-    await renderFace(doc, entry, geometry, size, options.imageResolver);
+    await renderFace(doc, entry, geometry, size, embed);
     if (withCropMarks) drawCropMarks(doc, geometry);
   }
 
@@ -138,7 +201,7 @@ async function renderFace(
   entry: PrintFaceInput,
   geometry: FaceGeometry,
   size: CardSize,
-  imageResolver?: ImageResolver,
+  embed: ImageEmbedder,
 ): Promise<void> {
   const page = pageForFace(entry.document, entry.face);
   const elements = page?.elements ?? [];
@@ -182,8 +245,8 @@ async function renderFace(
         .rect(0, 0, geometry.pageWidthPt, geometry.pageHeightPt)
         .fillColor(bg.color, bg.opacity)
         .fill();
-    } else if (imageResolver) {
-      await drawImageBackground(doc, page.background.assetUrl, geometry, imageResolver);
+    } else {
+      await drawImageBackground(doc, page.background.assetUrl, geometry, embed);
     }
   }
   doc.restore();
@@ -196,7 +259,7 @@ async function renderFace(
   doc.rect(0, 0, CARD_WIDTH, CARD_HEIGHT).clip();
 
   for (const element of elements) {
-    await drawElement(doc, element, entry.qrUrl, imageResolver);
+    await drawElement(doc, element, entry.qrUrl, embed);
   }
 
   doc.restore();
@@ -211,7 +274,7 @@ async function drawElement(
   doc: PDFKit.PDFDocument,
   element: DesignElement,
   qrUrl: string | undefined,
-  imageResolver: ImageResolver | undefined,
+  embed: ImageEmbedder,
 ): Promise<void> {
   switch (element.kind) {
     case "text":
@@ -233,7 +296,7 @@ async function drawElement(
       doc.restore();
       return;
     case "image":
-      if (imageResolver) await drawImageElement(doc, element, imageResolver);
+      await drawImageElement(doc, element, embed);
       return;
   }
 }
@@ -341,14 +404,17 @@ function drawText(
 async function drawImageElement(
   doc: PDFKit.PDFDocument,
   element: Extract<DesignElement, { kind: "image" }>,
-  imageResolver: ImageResolver,
+  embed: ImageEmbedder,
 ): Promise<void> {
-  const resolved = await imageResolver(element.assetUrl);
-  if (!resolved) return;
+  const image = await embed(element.assetUrl);
+  if (!image) return;
   doc.save();
   doc.translate(element.x, element.y);
   if (element.rotation) doc.rotate(element.rotation);
-  doc.image(resolved.data, 0, 0, { width: element.width, height: element.height });
+  doc.image(image as unknown as Buffer, 0, 0, {
+    width: element.width,
+    height: element.height,
+  });
   doc.restore();
 }
 
@@ -357,13 +423,13 @@ async function drawImageBackground(
   doc: PDFKit.PDFDocument,
   assetUrl: string,
   geometry: ReturnType<typeof faceGeometry>,
-  imageResolver: ImageResolver,
+  embed: ImageEmbedder,
 ): Promise<void> {
-  const resolved = await imageResolver(assetUrl);
-  if (!resolved) return;
+  const image = await embed(assetUrl);
+  if (!image) return;
   // pdfkit's `cover` fits the image to the box centre-cropped — the same rule as
   // the editor's coverCrop, applied to the full page so the background bleeds.
-  doc.image(resolved.data, 0, 0, {
+  doc.image(image as unknown as Buffer, 0, 0, {
     cover: [geometry.pageWidthPt, geometry.pageHeightPt],
     align: "center",
     valign: "center",

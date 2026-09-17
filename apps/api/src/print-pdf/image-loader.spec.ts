@@ -11,12 +11,13 @@ import {
 import { renderRunPdf } from "./render";
 
 /** A tiny solid-colour raster in the requested format. */
-async function raster(format: "png" | "webp" | "gif"): Promise<Buffer> {
+async function raster(format: "png" | "webp" | "gif" | "jpeg"): Promise<Buffer> {
   const img = sharp({
     create: { width: 8, height: 6, channels: 4, background: { r: 200, g: 30, b: 90, alpha: 1 } },
   });
   if (format === "png") return img.png().toBuffer();
   if (format === "webp") return img.webp().toBuffer();
+  if (format === "jpeg") return img.jpeg().toBuffer();
   return img.gif().toBuffer();
 }
 
@@ -69,13 +70,27 @@ describe("absoluteUrl", () => {
 });
 
 describe("decodeImage", () => {
-  it("passes PNG through untouched with its dimensions", async () => {
+  // This test used to assert the opposite — that PNG bytes were handed on as the
+  // same Buffer, no re-encode. That was the defect, not the contract: pdfkit runs
+  // its own PNG decoder and rethrows a zlib failure inside an async callback,
+  // where nothing on this path can catch it and the process dies. Decoding it
+  // ourselves is what makes a corrupt PNG a skipped asset. Deliberately changed,
+  // not relaxed — engine-resilience.spec.ts is where the reason is pinned.
+  it("re-encodes PNG rather than trusting the bytes, keeping its dimensions", async () => {
     const png = await raster("png");
     const resolved = await decodeImage(png, "image/png", "https://x/a.png");
     expect(resolved).not.toBeNull();
-    expect(resolved!.data).toBe(png); // same buffer, no re-encode
+    expect(resolved!.data).not.toBe(png);
+    expect((await sharp(resolved!.data).metadata()).format).toBe("png");
     expect(resolved!.width).toBe(8);
     expect(resolved!.height).toBe(6);
+  });
+
+  it("passes JPEG through untouched — pdfkit never decodes it", async () => {
+    const jpeg = await raster("jpeg");
+    const resolved = await decodeImage(jpeg, "image/jpeg", "https://x/a.jpg");
+    expect(resolved!.data).toBe(jpeg);
+    expect(resolved!.width).toBe(8);
   });
 
   it("transcodes WebP to PNG for pdfkit", async () => {
