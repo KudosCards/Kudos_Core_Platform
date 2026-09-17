@@ -1,4 +1,5 @@
 import {
+  orientedPixelSize,
   backgroundPrintedSizeMm,
   collectPrintImageTargets,
   effectivePrintDpi,
@@ -112,5 +113,27 @@ describe("collectPrintImageTargets", () => {
     });
     const photo = targets.find((t) => t.assetUrl === "https://x/photo.png");
     expect(photo?.printed.widthMm).toBeCloseTo((200 * 105) / 450, 4);
+  });
+});
+
+/**
+ * EXIF orientation, which is the one measurement three surfaces disagree about:
+ * browsers apply the tag, `sharp` reports it separately and applies neither, and
+ * pdfkit applies it for JPEG only. Tags 5-8 carry a quarter turn and so swap the
+ * axes; 1-4 are identity, flips and a half turn, and must not. See ADR 0247.
+ */
+describe("orientedPixelSize", () => {
+  const stored = { width: 4000, height: 3000 };
+
+  it.each([1, 2, 3, 4])("leaves the axes alone for orientation %i", (orientation) => {
+    expect(orientedPixelSize(stored, orientation)).toEqual(stored);
+  });
+
+  it.each([5, 6, 7, 8])("swaps the axes for orientation %i", (orientation) => {
+    expect(orientedPixelSize(stored, orientation)).toEqual({ width: 3000, height: 4000 });
+  });
+
+  it("leaves an untagged image alone", () => {
+    expect(orientedPixelSize(stored)).toEqual(stored);
   });
 });

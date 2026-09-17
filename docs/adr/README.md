@@ -255,5 +255,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0244 — Classifying a bot without telling it](./0244-classifying-a-bot-without-telling-it.md)
 - [0245 — An engine that survives its inputs](./0245-an-engine-that-survives-its-inputs.md)
 - [0246 — Three ways a card stopped being the card that was chosen](./0246-the-card-that-comes-back-is-the-card-that-was-sent.md)
+- [0247 — Orientation belongs to the pixels, not the metadata](./0247-orientation-belongs-to-the-pixels.md)
 
 <!-- adr-index:end -->

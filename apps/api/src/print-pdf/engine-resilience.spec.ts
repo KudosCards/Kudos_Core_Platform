@@ -1,5 +1,6 @@
 import zlib from "node:zlib";
 import sharp from "sharp";
+import PDFDocument from "pdfkit";
 import { MAX_ARTWORK_PIXELS, MAX_DECODE_PIXELS } from "@kudos/shared-types";
 import { decodeImage } from "./image-loader";
 import { renderRunPdf, type ImageResolver } from "./render";
@@ -165,6 +166,152 @@ describe("decodeImage resilience", () => {
     // Shape preserved — a downscale must not become a distortion.
     expect(result!.width / result!.height).toBeCloseTo(1, 2);
     expect(warnings.join(" ")).toContain("downscaled");
+  });
+});
+
+/**
+ * A phone photo is stored the way the sensor read it, with a tag saying which
+ * way up it goes. Browsers apply that tag; `sharp` does not; and pdfkit applies
+ * it for JPEG only. Three surfaces, three answers — so the editor showed a
+ * portrait photo upright and the card printed it on its side.
+ *
+ * The contract these pin: what `decodeImage` returns — bytes *and* dimensions —
+ * describes what the renderer will actually draw. See ADR 0247.
+ */
+describe("decodeImage orientation", () => {
+  /** A landscape image tagged "turn a quarter clockwise to display". */
+  async function taggedPortrait(format: "jpeg" | "webp" | "png"): Promise<Buffer> {
+    const base = sharp({
+      create: { width: 200, height: 100, channels: 3, background: { r: 200, g: 40, b: 40 } },
+    }).withMetadata({ orientation: 6 });
+    if (format === "jpeg") return base.jpeg().toBuffer();
+    if (format === "webp") return base.webp().toBuffer();
+    return base.png().toBuffer();
+  }
+
+  /** What pdfkit will draw, which is the only thing that matters. */
+  function drawnSize(data: Buffer): { width: number; height: number } {
+    const doc = new PDFDocument({ autoFirstPage: false });
+    const image = (
+      doc as unknown as {
+        openImage(b: Buffer): { width: number; height: number; orientation?: number };
+      }
+    ).openImage(data);
+    // pdfkit swaps the axes at draw time for orientations above 4.
+    return (image.orientation ?? 1) > 4
+      ? { width: image.height, height: image.width }
+      : { width: image.width, height: image.height };
+  }
+
+  it("turns a WebP upright instead of printing it on its side", async () => {
+    // The defect. WebP is accepted by both upload inputs in the editor, PNG
+    // carries no orientation tag, and pdfkit reads EXIF only from JPEG — so
+    // transcoding without baking the rotation in loses it silently.
+    const resolved = await decodeImage(
+      await taggedPortrait("webp"),
+      "image/webp",
+      "https://x/p",
+      {},
+    );
+
+    expect(resolved).not.toBeNull();
+    expect(drawnSize(resolved!.data)).toEqual({ width: 100, height: 200 });
+  });
+
+  it("reports the size it will be drawn at, not the size it was stored at", async () => {
+    // A cover-crop fitted from the stored size crops the wrong axis even when
+    // the picture itself comes out the right way up.
+    const resolved = await decodeImage(
+      await taggedPortrait("webp"),
+      "image/webp",
+      "https://x/p",
+      {},
+    );
+
+    expect(resolved!.width).toBe(100);
+    expect(resolved!.height).toBe(200);
+  });
+
+  it("leaves a JPEG's bytes alone and still describes it upright", async () => {
+    // pdfkit turns a JPEG itself, so re-encoding would cost detail for nothing —
+    // but the dimensions must still say what lands on the card.
+    const jpeg = await taggedPortrait("jpeg");
+    const resolved = await decodeImage(jpeg, "image/jpeg", "https://x/p.jpg", {});
+
+    expect(resolved!.data.equals(jpeg)).toBe(true);
+    expect({ width: resolved!.width, height: resolved!.height }).toEqual({
+      width: 100,
+      height: 200,
+    });
+    expect(drawnSize(resolved!.data)).toEqual({ width: 100, height: 200 });
+  });
+
+  it("turns an oversized photo's pixels upright, not just its dimensions", async () => {
+    // The downscale branch re-encodes, so it has to bake the rotation in too.
+    // Dimensions alone cannot catch a miss: without the rotation the resize
+    // still *reports* a portrait box, because `fit: "fill"` happily squashes the
+    // untouched landscape into one. So this follows a marker.
+    //
+    // A bright square sits at the stored top-left. A quarter turn clockwise —
+    // which is what orientation 6 means — carries it to the top *right*. Leave
+    // the rotation out and it stays top-left.
+    const side = 3200; // 6400 x 3200 = 20.5 Mpx, over the ceiling
+    const marker = await sharp({
+      create: { width: 600, height: 600, channels: 3, background: { r: 255, g: 255, b: 255 } },
+    })
+      .png()
+      .toBuffer();
+    const huge = await sharp({
+      create: {
+        width: side * 2,
+        height: side,
+        channels: 3,
+        background: { r: 10, g: 10, b: 10 },
+      },
+    })
+      .composite([{ input: marker, left: 0, top: 0 }])
+      .withMetadata({ orientation: 6 })
+      .png()
+      .toBuffer();
+
+    const resolved = await decodeImage(huge, "image/png", "https://x/big.png", {});
+
+    expect(resolved).not.toBeNull();
+    expect(resolved!.width * resolved!.height).toBeLessThanOrEqual(MAX_ARTWORK_PIXELS);
+    expect(resolved!.height).toBeGreaterThan(resolved!.width);
+
+    /** Mean brightness of one corner. Materialised first — `stats()` reads the
+     *  input image, not the chained crop, so a piped extract measures nothing. */
+    const cornerBrightness = async (fromRight: boolean): Promise<number> => {
+      const box = Math.floor(resolved!.width * 0.15);
+      const crop = await sharp(resolved!.data)
+        .extract({
+          left: fromRight ? resolved!.width - box : 0,
+          top: 0,
+          width: box,
+          height: box,
+        })
+        .toBuffer();
+      return (await sharp(crop).stats()).channels[0]!.mean;
+    };
+
+    expect(await cornerBrightness(true)).toBeGreaterThan(200); // marker, turned
+    expect(await cornerBrightness(false)).toBeLessThan(60); // background
+  });
+
+  it("leaves an untagged image exactly as it was", async () => {
+    const plain = await sharp({
+      create: { width: 60, height: 30, channels: 3, background: { r: 1, g: 2, b: 3 } },
+    })
+      .webp()
+      .toBuffer();
+
+    const resolved = await decodeImage(plain, "image/webp", "https://x/plain.webp", {});
+
+    expect({ width: resolved!.width, height: resolved!.height }).toEqual({
+      width: 60,
+      height: 30,
+    });
   });
 });
 

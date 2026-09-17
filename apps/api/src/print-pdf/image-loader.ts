@@ -19,7 +19,7 @@
  */
 
 import sharp from "sharp";
-import { MAX_ARTWORK_PIXELS, MAX_DECODE_PIXELS } from "@kudos/shared-types";
+import { MAX_ARTWORK_PIXELS, MAX_DECODE_PIXELS, orientedPixelSize } from "@kudos/shared-types";
 import type { ImageResolver, ResolvedImage } from "./render";
 
 /** How SVGs are rasterised: a generous longest-edge size + a high nominal density
@@ -224,7 +224,14 @@ export async function decodeImage(
     // the header rather than by letting the decode fail, because the decode is
     // the thing we are protecting: a 74-byte PNG can declare 256 megapixels.
     const meta = await sharp(buffer).metadata();
-    const pixels = (meta.width ?? 0) * (meta.height ?? 0);
+    // Everything below works in *display* orientation. A phone photo is stored
+    // landscape with a tag saying "turn me", and the tag is the difference
+    // between a portrait card and a sideways one.
+    const upright = orientedPixelSize(
+      { width: meta.width ?? 0, height: meta.height ?? 0 },
+      meta.orientation,
+    );
+    const pixels = upright.width * upright.height;
 
     if (pixels > MAX_DECODE_PIXELS) {
       options.onWarn?.(
@@ -238,11 +245,15 @@ export async function decodeImage(
       // refused: an oversized upload is a real customer sending us a real photo,
       // and the right answer is to print it, not to drop it from the card.
       const scale = Math.sqrt(MAX_ARTWORK_PIXELS / pixels);
-      const resized = sharp(buffer, { limitInputPixels: MAX_DECODE_PIXELS }).resize({
-        width: Math.max(1, Math.floor((meta.width ?? 1) * scale)),
-        height: Math.max(1, Math.floor((meta.height ?? 1) * scale)),
-        fit: "fill",
-      });
+      // `.rotate()` with no argument bakes the EXIF tag into the pixels, so the
+      // resize targets below are in the orientation the card will show.
+      const resized = sharp(buffer, { limitInputPixels: MAX_DECODE_PIXELS })
+        .rotate()
+        .resize({
+          width: Math.max(1, Math.floor(upright.width * scale)),
+          height: Math.max(1, Math.floor(upright.height * scale)),
+          fit: "fill",
+        });
       // Re-encoding a JPEG is lossy, but resampling already is; at this size the
       // card cannot show the difference. PNG stays lossless.
       const out =
@@ -255,14 +266,26 @@ export async function decodeImage(
       return withDimensions(out);
     }
 
-    if (meta.format === "jpeg" && meta.width && meta.height) {
-      // The one passthrough. pdfkit embeds the JPEG without decoding it, and
-      // re-encoding would throw away detail for nothing.
-      return { data: buffer, width: meta.width, height: meta.height };
+    if (meta.format === "jpeg" && upright.width && upright.height) {
+      // The one passthrough, and the one place the bytes keep their EXIF tag —
+      // which is fine, because pdfkit reads orientation from a JPEG and turns it
+      // at draw time. The dimensions returned are the upright ones, so they
+      // describe what actually lands on the card rather than how it is stored.
+      return { data: buffer, width: upright.width, height: upright.height };
     }
 
     // PNG, WebP, GIF (first frame), TIFF, AVIF, … → a PNG we have decoded ourselves.
-    const png = await sharp(buffer, { limitInputPixels: MAX_DECODE_PIXELS }).png().toBuffer();
+    //
+    // `.rotate()` is load-bearing here, not tidiness. pdfkit reads EXIF only
+    // from JPEG, and PNG carries no orientation tag at all — so transcoding
+    // without baking the rotation in silently drops it, and a WebP phone photo
+    // that shows upright in the editor prints on its side and is cover-cropped
+    // on the wrong axis. The editor is not wrong: browsers apply the tag when
+    // they decode WebP. See docs/card-print-quality-plan.md, D6.
+    const png = await sharp(buffer, { limitInputPixels: MAX_DECODE_PIXELS })
+      .rotate()
+      .png()
+      .toBuffer();
     return withDimensions(png);
   } catch (error) {
     options.onWarn?.(`print image undecodable (${url}): ${String(error)}`);
