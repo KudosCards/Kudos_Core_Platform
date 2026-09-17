@@ -111,6 +111,11 @@ commit 2 needs re-applying by hand rather than by `git am`.
 
 ## Route forward
 
+> Superseded by [docs/card-print-quality-plan.md](../../card-print-quality-plan.md),
+> which folds this section, the Cowork recon's §5 and the sweep addendum below
+> into one ordered plan. The reasoning here is kept as the record of how that
+> order was arrived at.
+
 The recon's phase order is right on its own terms; I would change where it
 starts. Its Phase 0 lands both commits together, which couples a clean-applying
 customer-facing bug fix to a print pipeline that no longer applies and whose
