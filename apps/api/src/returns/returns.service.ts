@@ -56,6 +56,10 @@ const CASE_INCLUDE = {
       documentSnapshot: true,
       occasionId: true,
       postageClass: true,
+      /** The sender's chosen message page — the QR's destination. Selected here
+       * because the reprint copies it; without it settlement mints a new, empty
+       * page and the replacement card's QR leads nowhere worth going. */
+      messagePageId: true,
       batchOrder: { select: { orderNumber: true, accountId: true } },
       occasion: { select: { type: true, title: true, occasionDate: true } },
       // The address this card came back from — what the contact's other queued
@@ -606,6 +610,13 @@ export class ReturnsService {
           // have moved on in the weeks a return takes. Recovering a returned
           // card is precisely when you want the same card again.
           documentSnapshot: found.orderRecipient.documentSnapshot as Prisma.InputJsonValue,
+          // …and so is the QR's destination. Every other order-creation path sets
+          // this; the reprint did not, so settlement fell through to its
+          // auto-page branch and minted a fresh page titled "Your message". The
+          // replacement card then carried a perfectly scannable code to a page
+          // the sender never wrote — for the one recipient most certain to scan
+          // it, because this is the card that finally arrived.
+          messagePageId: found.orderRecipient.messagePageId,
           shippingAddressLine1: address.line1,
           shippingAddressLine2: address.line2,
           shippingAddressCity: address.city,

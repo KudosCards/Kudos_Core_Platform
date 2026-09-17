@@ -1,5 +1,6 @@
 "use client";
 
+import { buildCardDocument } from "@kudos/shared-types";
 import type { CardDesign, DesignDocument, SavedDesign } from "@kudos/shared-types";
 import Image from "next/image";
 import dynamic from "next/dynamic";
@@ -47,12 +48,6 @@ function SavedDesignThumb({ document }: { document: DesignDocument }) {
 
 const ALL_CATEGORIES = "all";
 
-// The card canvas is 450×600 (see design-canvas.tsx). Uploaded artwork is placed
-// as a single full-bleed image on the front page so it fills the card edge to
-// edge; the member can then reposition or add text/QR in the editor.
-const CARD_WIDTH = 450;
-const CARD_HEIGHT = 600;
-
 const DESIGN_ASSETS_BUCKET = "design-assets";
 const ARTWORK_ACCEPT = "image/png,image/jpeg,image/webp";
 
@@ -65,33 +60,6 @@ interface SignedUpload {
 /** "well done" -> "Well done", "birthday" -> "Birthday". */
 function formatCategory(category: string): string {
   return category.charAt(0).toUpperCase() + category.slice(1);
-}
-
-/** A full-bleed custom design document built around the member's uploaded image. */
-function artworkDocument(assetUrl: string) {
-  return {
-    version: 1 as const,
-    pages: [
-      {
-        name: "front" as const,
-        elements: [
-          {
-            kind: "image" as const,
-            id: crypto.randomUUID(),
-            assetUrl,
-            x: 0,
-            y: 0,
-            width: CARD_WIDTH,
-            height: CARD_HEIGHT,
-            rotation: 0,
-          },
-        ],
-      },
-      { name: "inside-left" as const, elements: [] },
-      { name: "inside-right" as const, elements: [] },
-      { name: "back" as const, elements: [] },
-    ],
-  };
 }
 
 export function DesignsClient({
@@ -165,7 +133,7 @@ export function DesignsClient({
         method: "POST",
         body: JSON.stringify({
           name: baseName.slice(0, 120),
-          document: artworkDocument(signed.publicUrl),
+          document: buildCardDocument(signed.publicUrl),
         }),
       });
       router.push(`/designs/${created.id}/edit`);

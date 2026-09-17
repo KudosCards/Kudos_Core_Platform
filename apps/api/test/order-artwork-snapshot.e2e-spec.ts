@@ -293,4 +293,63 @@ describe("A card's stored artwork (e2e)", () => {
     });
     expect(messagesOn(recovery.documentSnapshot)).toEqual(["To Cole\n\nGood luck at college,"]);
   });
+
+  it("gives a returned card's reprint the QR destination that was chosen too", async () => {
+    // The reprint copied the occasion, the design and the snapshot, and dropped
+    // `messagePageId` — it was not even selected. Settlement then read null,
+    // fell into its auto-page branch, and minted a fresh page titled "Your
+    // message". So the replacement card carried a perfectly scannable code to a
+    // page the sender never wrote, for the one recipient most certain to scan
+    // it, because this is the card that finally arrived.
+    const token = await signUp();
+    const nadia = await orderSaying(token, "Nadia", "To Nadia\n\nWelcome to the team,");
+
+    const { batchOrder } = await prisma.orderRecipient.findFirstOrThrow({
+      where: { id: nadia.orderRecipientId },
+      select: { batchOrder: { select: { accountId: true } } },
+    });
+    // The page the sender actually curated — a title they wrote, not the default.
+    const chosen = await prisma.messagePage.create({
+      data: { accountId: batchOrder.accountId, title: "Nadia's first day" },
+    });
+    await prisma.orderRecipient.update({
+      where: { id: nadia.orderRecipientId },
+      data: { messagePageId: chosen.id },
+    });
+
+    await prisma.fulfillmentJob.update({
+      where: { id: nadia.jobId },
+      data: { status: "returned_to_sender" },
+    });
+    const returnCase = await prisma.returnCase.create({
+      data: {
+        accountId: batchOrder.accountId,
+        orderRecipientId: nadia.orderRecipientId,
+        recipientId: nadia.recipientId,
+        reason: "incorrect_address",
+        markedByUserId: randomUUID(),
+        status: "awaiting_resend",
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post(`/returns/${returnCase.id}/resend`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const recovery = await prisma.orderRecipient.findFirstOrThrow({
+      where: { recipientId: nadia.recipientId, id: { not: nadia.orderRecipientId } },
+      select: { id: true, messagePageId: true },
+    });
+    expect(recovery.messagePageId).toBe(chosen.id);
+
+    // And the link settlement minted points at that page, not a new one — a
+    // fresh slug per card, the same destination behind it.
+    const link = await prisma.messagePageLink.findFirstOrThrow({
+      where: { orderRecipientId: recovery.id },
+      select: { messagePageId: true, slug: true },
+    });
+    expect(link.messagePageId).toBe(chosen.id);
+    expect(link.slug).toBeTruthy();
+  });
 });
