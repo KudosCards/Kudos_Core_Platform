@@ -5,8 +5,13 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, type SavedDesign } from "@prisma/client";
-import { designDocumentSchema, reservedFooterViolation } from "@kudos/shared-types";
+import {
+  designDocumentSchema,
+  reservedFooterViolation,
+  type DesignDocument,
+} from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
+import { ArtworkGateService } from "./artwork-gate.service";
 import { CardDesignsService } from "../card-designs/card-designs.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import type { CreateSavedDesignDto } from "./dto/create-saved-design.dto";
@@ -25,6 +30,7 @@ export class SavedDesignsService {
     private readonly prisma: PrismaService,
     private readonly cardDesigns: CardDesignsService,
     private readonly entitlements: EntitlementsService,
+    private readonly artworkGate: ArtworkGateService,
   ) {}
 
   async create(accountId: string, dto: CreateSavedDesignDto): Promise<SavedDesign> {
@@ -38,7 +44,7 @@ export class SavedDesignsService {
       // too — otherwise a template with a badly placed back element would be the
       // one way to get an unprintable design into the library.
       const document = dto.document
-        ? this.parseDocument(dto.document)
+        ? await this.parseDocument(dto.document, template.document as DesignDocument)
         : (this.assertPrintable(template.document as Record<string, unknown>), template.document);
       return this.prisma.savedDesign.create({
         data: {
@@ -61,7 +67,7 @@ export class SavedDesignsService {
         "Uploading your own artwork is available on the Pro and Centre plans",
       );
     }
-    const document = this.parseDocument(dto.document);
+    const document = await this.parseDocument(dto.document);
     return this.prisma.savedDesign.create({
       data: {
         accountId,
@@ -92,7 +98,21 @@ export class SavedDesignsService {
   }
 
   async update(accountId: string, id: string, dto: UpdateSavedDesignDto): Promise<SavedDesign> {
-    const document = dto.document ? this.parseDocument(dto.document) : undefined;
+    // The stored document, read before the write, so the artwork gate can tell a
+    // background the member has just chosen from one the design already carried.
+    // Only the former is judged — see `judgeableBackgroundUrls`.
+    const existing = dto.document
+      ? await this.prisma.savedDesign.findFirst({
+          where: { id, accountId, archivedAt: null },
+          select: { document: true },
+        })
+      : null;
+    const document = dto.document
+      ? await this.parseDocument(
+          dto.document,
+          (existing?.document ?? null) as DesignDocument | null,
+        )
+      : undefined;
 
     const { count } = await this.prisma.savedDesign.updateMany({
       where: { id, accountId, archivedAt: null },
@@ -145,7 +165,10 @@ export class SavedDesignsService {
     }
   }
 
-  private parseDocument(document: Record<string, unknown>): Record<string, unknown> {
+  private async parseDocument(
+    document: Record<string, unknown>,
+    previous?: DesignDocument | null,
+  ): Promise<Record<string, unknown>> {
     const result = designDocumentSchema.safeParse(document);
     if (!result.success) {
       throw new BadRequestException(
@@ -153,6 +176,10 @@ export class SavedDesignsService {
       );
     }
     this.assertPrintable(result.data);
+    // Shape and resolution, for a background the member has just chosen. The
+    // browser refuses this before the upload starts; this is the copy that
+    // cannot be bypassed. See ADR 0248.
+    await this.artworkGate.assertAcceptable(result.data, previous);
     return result.data;
   }
 

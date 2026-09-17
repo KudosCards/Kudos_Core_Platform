@@ -21,6 +21,7 @@ import {
   FONT_CATEGORY_ORDER,
   MERGE_FIELDS,
   PRINT_DPI_TARGET,
+  backgroundArtworkVerdict,
   backgroundCropLoss,
   cropLossPerEdgeMm,
   cropLossPercent,
@@ -46,7 +47,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { createClient } from "@/lib/supabase/client";
-import { loadNaturalSize } from "@/lib/image-natural-size";
+import { loadNaturalSize, readFileNaturalSize } from "@/lib/image-natural-size";
 
 /**
  * What we know about a background image. The states are kept apart rather than
@@ -708,6 +709,17 @@ export function DesignEditorClient({
    * signed-upload flow as element images and records it in the uploads library. */
   async function handleBackgroundUpload(file: File) {
     setError(null);
+
+    // The same rule the server applies at the save, run before the upload
+    // starts. A background *is* the card, so its shape and pixel count decide
+    // what the recipient sees. ADR 0248.
+    const natural = await readFileNaturalSize(file);
+    const refusal = natural ? backgroundArtworkVerdict(natural) : null;
+    if (refusal) {
+      setError(refusal.message);
+      return;
+    }
+
     setBgUploading(true);
     try {
       const signed = await clientApiFetch<SignedUpload>("/uploads/design-assets", {

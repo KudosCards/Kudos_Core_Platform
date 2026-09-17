@@ -14,6 +14,7 @@ export * from "./segment";
 export * from "./pricing";
 export * from "./card-content";
 export * from "./card-crop";
+export * from "./card-artwork";
 export * from "./card-document";
 export * from "./card-format";
 export * from "./preflight";

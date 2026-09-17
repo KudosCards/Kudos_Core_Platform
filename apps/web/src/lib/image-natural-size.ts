@@ -20,3 +20,32 @@ export function loadNaturalSize(url: string): Promise<{ width: number; height: n
     img.src = url;
   });
 }
+
+/**
+ * Read a chosen file's natural pixel size, before it is uploaded.
+ *
+ * Resolves `null` when the file cannot be decoded, and that is the whole
+ * difference from the editor's `readImageSize`, which falls back to a square so
+ * an insert still gets a sensible box. A square fallback is fine for sizing and
+ * wrong for a gate: it would be judged as heavily cropped and the upload refused
+ * because we failed to read it. Unmeasurable must mean "say nothing" here — the
+ * server gate fails open for the same reason.
+ */
+export function readFileNaturalSize(file: File): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new window.Image();
+    const done = (size: { width: number; height: number } | null) => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(size);
+    };
+    img.onload = () =>
+      done(
+        img.naturalWidth && img.naturalHeight
+          ? { width: img.naturalWidth, height: img.naturalHeight }
+          : null,
+      );
+    img.onerror = () => done(null);
+    img.src = objectUrl;
+  });
+}

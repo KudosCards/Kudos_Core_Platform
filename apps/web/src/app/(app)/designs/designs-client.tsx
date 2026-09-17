@@ -1,6 +1,6 @@
 "use client";
 
-import { buildCardDocument } from "@kudos/shared-types";
+import { backgroundArtworkVerdict, buildCardDocument } from "@kudos/shared-types";
 import type { CardDesign, DesignDocument, SavedDesign } from "@kudos/shared-types";
 import Image from "next/image";
 import dynamic from "next/dynamic";
@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { readFileNaturalSize } from "@/lib/image-natural-size";
 import { createClient } from "@/lib/supabase/client";
 
 // The read-only Konva renderer that draws a design's front page (artwork + text)
@@ -111,6 +112,18 @@ export function DesignsClient({
 
   async function uploadArtwork(file: File) {
     setError(null);
+
+    // Measured and judged *before* a byte is sent. The server refuses the same
+    // artwork at the save (ArtworkGateService), but a customer should hear it
+    // here, while the file is still on their machine and there is nothing to
+    // undo. An unmeasurable file says nothing — see readFileNaturalSize. ADR 0248.
+    const natural = await readFileNaturalSize(file);
+    const refusal = natural ? backgroundArtworkVerdict(natural) : null;
+    if (refusal) {
+      setError(refusal.message);
+      return;
+    }
+
     setUploading(true);
     try {
       // Same signed-upload → Supabase Storage flow the editor uses for images.
