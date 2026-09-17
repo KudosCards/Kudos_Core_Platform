@@ -20,6 +20,11 @@ export const PLATFORM_SETTING_KEYS = {
    * proportion; on afterwards, so it cannot regress. See
    * docs/card-artwork-shape-plan.md. */
   catalogRejectCroppedArtwork: "catalog_reject_cropped_artwork",
+  /** JSON PrintProfile — how a print run is laid out on paper (folded sheet vs
+   * one face per page), the borderless overhang measured off the calibration
+   * sheet, and whether the back's footer is pre-printed or drawn here. Belongs
+   * to the printer, not the run. See docs/card-print-quality-plan.md (P4). */
+  printProfile: "print_profile",
 } as const;
 
 /**
