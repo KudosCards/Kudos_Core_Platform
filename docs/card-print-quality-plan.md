@@ -190,24 +190,35 @@ engine rasters every SVG to a fixed 1024 px — 248 dpi at A6 and 176 dpi at A5,
 the latter below our own warning threshold. Either raster to the printed size, or
 measure SVGs against the raster the engine will actually make.
 
-### P4 — The sheet the printer takes (D1, D2, D3)
+### P4 — The sheet the printer takes (D1, D2, D3) — **done**, ADR 0249
 
-The second commit of the Cowork patch, re-applied by hand — it no longer applies,
-because #455 rewrote `print-run-pdf.service.ts` and #457/#460 rewrote the
-fulfilment client after it was cut.
+Built, not the Cowork patch's second commit — that no longer applied, because
+#455 rewrote `print-run-pdf.service.ts` and #457/#460 rewrote the fulfilment
+client after it was cut.
 
-- `folded-sheet` layout, defaulting on: outside (back | front), inside
-  (inside-left | inside-right) on one 210 × 148 sheet, in the page order manual
-  duplex expects — with P0's flip answer applied.
-- `borderlessExtensionMm` from P0, defaulting to 0 until measured.
-- `backFooter: "print"`, with **no placeholder QR**: a card with no message page
-  gets a plain white band, not a fake QR beside the words "Scan to see your
-  message".
+- `folded-sheet` layout, **on by default**: outside (back | front), inside
+  (inside-left | inside-right) on one 210 × 148 sheet, interleaved so every
+  outside is an odd page. P0's flip answer applied: the operator turns the stack
+  about the **short** edge, so nothing is rotated.
+- `borderlessOverhangMm`, defaulting to 0 until measured, compensated by scaling
+  the sheet about its centre by the exact inverse of the driver's enlargement.
+- **No placeholder QR** on a sheet: a card with no message page gets a plain
+  white band, not a fake QR beside the words "Scan to see your message".
+- `backFooter: "print"` built and selectable, but **not the default** — the stock
+  in the building is pre-printed, so drawing the strip would overprint it. It is
+  switched on when blank stock arrives, after a proof.
 - Print profile behind `GET/PUT /admin/print/profile`, super-admin gated.
 
-**Falsifying check**: print one real card end to end — odd pages, turn, even
-pages, fold. The fold lands on the centre, the front reaches all four edges, and
-nothing important is cut.
+**Falsifying check, still outstanding**: print one real card end to end — odd
+pages, turn, even pages, fold. The fold lands on the centre, the front reaches
+all four edges, and nothing important is cut.
+
+**Still needed from the printer**: the borderless overhang. The calibration sheet
+has now been printed three times and each time came back with a clean white
+border and the full rulers intact, which means borderless never engaged — most
+likely Acrobat's "Actual size" fighting the A5 Borderless paper size. Until it
+engages there is no figure to enter, and 0 is the correct setting: cards print
+full size, exactly as they do today.
 
 ### P5 — Colour (D-none; it is simply wrong today)
 

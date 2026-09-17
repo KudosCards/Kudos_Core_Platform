@@ -10,9 +10,20 @@ import { AuditModule } from "../audit/audit.module";
 import { ShippingModule } from "../shipping/shipping.module";
 import { PlatformNotificationsModule } from "../platform-notifications/platform-notifications.module";
 import { DispatchModule } from "../dispatch/dispatch.module";
+import { BillingModule } from "../billing/billing.module";
+import { PrintProfileService } from "../admin/print-profile.service";
 
 @Module({
-  imports: [AuditModule, ShippingModule, PlatformNotificationsModule, DispatchModule],
+  // BillingModule for PlatformSettingsService: the print profile is a runtime
+  // setting the PDF export reads, and providing the (stateless, read-through)
+  // accessor here keeps fulfilment from depending on the whole admin surface.
+  imports: [
+    AuditModule,
+    ShippingModule,
+    PlatformNotificationsModule,
+    DispatchModule,
+    BillingModule,
+  ],
   controllers: [FulfillmentController],
   providers: [
     FulfillmentService,
@@ -21,6 +32,7 @@ import { DispatchModule } from "../dispatch/dispatch.module";
     ArrivalNotificationService,
     PrintRunPdfService,
     PrintRunArtworkService,
+    PrintProfileService,
   ],
 })
 export class FulfillmentModule {}

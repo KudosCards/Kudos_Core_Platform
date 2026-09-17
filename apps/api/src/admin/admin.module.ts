@@ -9,6 +9,7 @@ import { AdminCustomerService } from "./admin-customer.service";
 import { AdminTeamController } from "./admin-team.controller";
 import { AdminTeamService } from "./admin-team.service";
 import { CardSizeConfigService } from "./card-size-config.service";
+import { PrintProfileService } from "./print-profile.service";
 import { BatchOrdersModule } from "../batch-orders/batch-orders.module";
 import { WalletModule } from "../wallet/wallet.module";
 import { OccasionsModule } from "../occasions/occasions.module";
@@ -32,6 +33,13 @@ import { OccasionsModule } from "../occasions/occasions.module";
     OccasionsModule,
   ],
   controllers: [AdminController, AdminTeamController],
-  providers: [AdminService, AdminCustomerService, AdminTeamService, CardSizeConfigService],
+  providers: [
+    AdminService,
+    AdminCustomerService,
+    AdminTeamService,
+    CardSizeConfigService,
+    PrintProfileService,
+  ],
+  exports: [PrintProfileService],
 })
 export class AdminModule {}

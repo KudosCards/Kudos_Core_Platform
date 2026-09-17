@@ -15,9 +15,12 @@
 
 import PDFDocument from "pdfkit";
 import {
+  BACK_FOOTER_CAPTION,
+  type BackFooterMode,
   CARD_HEIGHT,
   CARD_WIDTH,
   DEFAULT_CARD_SIZE,
+  backFooterLayout,
   backReservedFooterTop,
   textWrapWidth,
   type CardSize,
@@ -25,7 +28,13 @@ import {
   type DesignElement,
   type DesignPage,
 } from "@kudos/shared-types";
-import { cropMarks, CROP_MARK_WEIGHT_PT, faceGeometry, type FaceGeometry } from "./geometry";
+import {
+  cropMarks,
+  CROP_MARK_WEIGHT_PT,
+  faceGeometry,
+  foldedSheetGeometry,
+  type FaceGeometry,
+} from "./geometry";
 import { fallbackFaces, registerFace, resolveFace, type FontFace } from "./fonts";
 import { coverageForFace } from "./coverage";
 import { splitGlyphRuns } from "./glyph-runs";
@@ -135,7 +144,48 @@ export interface RenderRunOptions {
   title?: string;
   /** Optional warn sink for assets that could not be embedded. */
   onWarn?: (message: string) => void;
+  /**
+   * What to do with the 30 mm strip across the bottom of the back.
+   *
+   * `"reserved"` (the default, and what every run does today) keeps customer
+   * content out of it and leaves it blank, because the strip is already printed
+   * on the stock. `"print"` draws it here instead — the band, this card's QR,
+   * the caption and the Kudos mark — which is what blank stock needs. Switching
+   * it on against pre-printed stock would overprint the branding, so it is a
+   * deliberate choice, never a default.
+   */
+  backFooter?: BackFooterMode;
+  /**
+   * Draw the grey placeholder square for a QR element on a card with no message
+   * page. True (the editor's preview behaviour) for the face-per-page output;
+   * the folded sheet turns it off, because a placeholder on a card that is about
+   * to be posted is a square the recipient can only read as a printing fault.
+   */
+  qrPlaceholder?: boolean;
+  /**
+   * Absolute URL of the Kudos mark for `backFooter: "print"`, fetched through the
+   * same allow-listed resolver as any other asset. Omitted = no mark drawn.
+   */
+  logoUrl?: string;
 }
+
+/** One card, for the folded-sheet layout — which needs all four faces together
+ * on two sheets, not a flat list of faces. */
+export interface PrintCardInput {
+  document: DesignDocument;
+  qrUrl?: string;
+}
+
+/** The per-face choices the panel renderer needs, resolved once per run. */
+interface FaceDrawOptions {
+  backFooter: BackFooterMode;
+  qrPlaceholder: boolean;
+  logoUrl?: string;
+}
+
+/** The font the printed footer caption is set in — a brand sans with a real
+ * bold, so the strip reads as ours rather than as the customer's design. */
+const FOOTER_FONT_FAMILY = "Montserrat";
 
 /** pdfkit exposes the current font's em-scaled metrics on `_font`; typed narrowly. */
 interface FontMetrics {
@@ -170,6 +220,145 @@ export async function renderRunPdf(
     throw new Error("renderRunPdf: no faces to render");
   }
 
+  return buildPdf(options, async (doc, embed) => {
+    const draw = faceDrawOptions(options, true);
+    for (const entry of faces) {
+      doc.addPage({ size: [geometry.pageWidthPt, geometry.pageHeightPt], margin: 0 });
+
+      await renderFace(doc, entry, geometry, size, embed, draw);
+      if (withCropMarks) drawCropMarks(doc, geometry);
+    }
+  });
+}
+
+/**
+ * The outside of the sheet, left panel first. Folding the left half *behind* the
+ * right leaves the right half facing out, so the right panel is the front cover
+ * and the left is the back.
+ */
+const OUTSIDE_PANELS: DesignPage["name"][] = ["back", "front"];
+/**
+ * The inside, left panel first — and the same order, which is the part worth
+ * explaining.
+ *
+ * Manual duplex turns the stack about the sheet's short edge: the operator turns
+ * it like a page, left to right. That mirrors the sheet horizontally, so what
+ * was printed on the right half of side one is now the left half of side two —
+ * which is exactly the panel the card opens onto. It also leaves top and bottom
+ * where they were, so nothing needs rotating.
+ *
+ * That is not an assumption. The P0 duplex test printed an arrow on each side
+ * and both came back pointing at the top edge; a turn about the *long* edge
+ * would have inverted the second one and the insides would print upside-down.
+ * If that ever changes at the printer, this is the constant that changes with it.
+ */
+const INSIDE_PANELS: DesignPage["name"][] = ["inside-left", "inside-right"];
+
+/** Pages per card in the folded layout: one sheet outside, one sheet inside. */
+const FOLDED_SHEETS: DesignPage["name"][][] = [OUTSIDE_PANELS, INSIDE_PANELS];
+
+export interface FoldedRunOptions extends Omit<RenderRunOptions, "cropMarks" | "bleedMm"> {
+  /**
+   * The long-edge loss read off the borderless calibration sheet, in mm. The
+   * sheet's contents are drawn that much smaller so the driver's enlargement
+   * brings the trim back to the paper edge. Defaults to 0 — full size, which is
+   * also correct for a printer that is not enlarging.
+   */
+  borderlessOverhangMm?: number;
+}
+
+/**
+ * Render a print run as the sheets the printer actually takes: one landscape
+ * sheet per side of each card, two faces to a sheet, fold down the middle.
+ *
+ * Pages come out interleaved — card 1 outside, card 1 inside, card 2 outside,
+ * card 2 inside — so the odd pages are every outside and the even pages every
+ * inside. That is the order manual duplex wants: print odd pages, turn the
+ * stack, print even pages.
+ *
+ * A face the design does not carry prints as a blank white panel. It is not
+ * substituted with the front (which the single-face renderer does defensively),
+ * because on a real card that would post the cover artwork on the back.
+ */
+export async function renderFoldedRunPdf(
+  cards: PrintCardInput[],
+  options: FoldedRunOptions = {},
+): Promise<Buffer> {
+  const size = options.size ?? DEFAULT_CARD_SIZE;
+  const sheet = foldedSheetGeometry(size, options.borderlessOverhangMm);
+
+  if (cards.length === 0) {
+    throw new Error("renderFoldedRunPdf: no cards to render");
+  }
+
+  return buildPdf(options, async (doc, embed) => {
+    // A placeholder QR is a preview affordance; these pages get posted.
+    const draw = faceDrawOptions(options, false);
+    for (const card of cards) {
+      for (const panels of FOLDED_SHEETS) {
+        doc.addPage({ size: [sheet.pageWidthPt, sheet.pageHeightPt], margin: 0 });
+        doc.save();
+        applyBorderlessShrink(doc, sheet.shrink, sheet.pageWidthPt, sheet.pageHeightPt);
+
+        for (const [index, face] of panels.entries()) {
+          doc.save();
+          doc.translate(sheet.panelXPt[index] ?? 0, 0);
+          await renderPanel(
+            doc,
+            pageNamed(card.document, face),
+            face,
+            card.qrUrl,
+            sheet.panel,
+            size,
+            embed,
+            draw,
+          );
+          doc.restore();
+        }
+
+        doc.restore();
+      }
+    }
+  });
+}
+
+/**
+ * Scale the sheet's contents about its centre so the trim survives a borderless
+ * driver's enlargement. A centred scale gets both axes right at once: the
+ * enlargement is uniform, so the short edge loses proportionally less, and this
+ * reproduces that without a second measurement. No-op at shrink 1.
+ */
+function applyBorderlessShrink(
+  doc: PDFKit.PDFDocument,
+  shrink: number,
+  pageWidthPt: number,
+  pageHeightPt: number,
+): void {
+  if (shrink === 1) return;
+  doc.translate(pageWidthPt / 2, pageHeightPt / 2);
+  doc.scale(shrink);
+  doc.translate(-pageWidthPt / 2, -pageHeightPt / 2);
+}
+
+/** The run-wide face choices, with the layout's own default for the placeholder. */
+function faceDrawOptions(options: RenderRunOptions, placeholderDefault: boolean): FaceDrawOptions {
+  return {
+    backFooter: options.backFooter ?? "reserved",
+    qrPlaceholder: options.qrPlaceholder ?? placeholderDefault,
+    logoUrl: options.logoUrl,
+  };
+}
+
+/** The exact page of a document, with no fallback — see `renderFoldedRunPdf`. */
+function pageNamed(document: DesignDocument, face: DesignPage["name"]): DesignPage | undefined {
+  return document.pages.find((page) => page.name === face);
+}
+
+/** Create the document, collect its bytes, run `build`, and resolve to the PDF. */
+async function buildPdf(
+  options: RenderRunOptions,
+  build: (doc: PDFKit.PDFDocument, embed: ImageEmbedder) => Promise<void>,
+): Promise<Buffer> {
   const doc = new PDFDocument({
     autoFirstPage: false,
     info: { Title: options.title ?? "Kudos print run" },
@@ -184,26 +373,54 @@ export async function renderRunPdf(
     doc.on("error", reject);
   });
 
-  for (const entry of faces) {
-    doc.addPage({ size: [geometry.pageWidthPt, geometry.pageHeightPt], margin: 0 });
-
-    await renderFace(doc, entry, geometry, size, embed);
-    if (withCropMarks) drawCropMarks(doc, geometry);
-  }
+  await build(doc, embed);
 
   doc.end();
   return done;
 }
 
-/** Draw one face onto the current page of `doc`. */
+/** Draw one face onto the current page of `doc`, at the page's own origin. */
 async function renderFace(
   doc: PDFKit.PDFDocument,
   entry: PrintFaceInput,
   geometry: FaceGeometry,
   size: CardSize,
   embed: ImageEmbedder,
+  draw: FaceDrawOptions,
 ): Promise<void> {
-  const page = pageForFace(entry.document, entry.face);
+  return renderPanel(
+    doc,
+    pageForFace(entry.document, entry.face),
+    entry.face,
+    entry.qrUrl,
+    geometry,
+    size,
+    embed,
+    draw,
+  );
+}
+
+/**
+ * Draw one face into the box at the current origin.
+ *
+ * Everything is relative to that origin and to `geometry`'s own page size, which
+ * is what lets the folded-sheet layout place two of these side by side on one
+ * sheet without the face renderer knowing anything about sheets.
+ *
+ * `page` is passed in rather than looked up, so the caller decides what a
+ * missing face means: the single-face path falls back to the front, the folded
+ * sheet leaves the panel blank.
+ */
+async function renderPanel(
+  doc: PDFKit.PDFDocument,
+  page: DesignPage | undefined,
+  face: DesignPage["name"],
+  qrUrl: string | undefined,
+  geometry: FaceGeometry,
+  size: CardSize,
+  embed: ImageEmbedder,
+  draw: FaceDrawOptions,
+): Promise<void> {
   const elements = page?.elements ?? [];
 
   // The back's bottom strip is already printed on the stock — the Kudos logo and
@@ -222,7 +439,7 @@ async function renderFace(
   // centred there) — so on A5 print reserves a hair more than the physical
   // 30 mm, never less.
   const reservedFromPt =
-    entry.face === "back"
+    face === "back"
       ? geometry.translateYPt + backReservedFooterTop(size) * geometry.scalePtPerUnit
       : null;
 
@@ -259,13 +476,18 @@ async function renderFace(
   doc.rect(0, 0, CARD_WIDTH, CARD_HEIGHT).clip();
 
   for (const element of elements) {
-    await drawElement(doc, element, entry.qrUrl, embed);
+    await drawElement(doc, element, qrUrl, embed, draw.qrPlaceholder);
   }
 
   doc.restore();
 
   if (reservedFromPt !== null) {
     doc.restore();
+
+    // Outside the clip, so it can paint over the band the clip kept empty.
+    if (draw.backFooter === "print") {
+      await drawBackFooter(doc, geometry, size, reservedFromPt, qrUrl, embed, draw.logoUrl);
+    }
   }
 }
 
@@ -275,6 +497,7 @@ async function drawElement(
   element: DesignElement,
   qrUrl: string | undefined,
   embed: ImageEmbedder,
+  qrPlaceholder: boolean,
 ): Promise<void> {
   switch (element.kind) {
     case "text":
@@ -292,7 +515,7 @@ async function drawElement(
       doc.translate(element.x, element.y);
       if (element.rotation) doc.rotate(element.rotation);
       if (qrUrl) drawQr(doc, element.size, qrUrl);
-      else drawQrPlaceholder(doc, element.size);
+      else if (qrPlaceholder) drawQrPlaceholder(doc, element.size);
       doc.restore();
       return;
     case "image":
@@ -443,5 +666,98 @@ function drawCropMarks(doc: PDFKit.PDFDocument, geometry: FaceGeometry): void {
   for (const m of cropMarks(geometry)) {
     doc.moveTo(m.x1, m.y1).lineTo(m.x2, m.y2).stroke();
   }
+  doc.restore();
+}
+
+/**
+ * Draw the back's bottom strip in-house: the white band, this card's QR, the
+ * caption and the Kudos mark (docs/card-print-quality-plan.md, P4).
+ *
+ * The band is filled in *page* points, from the reserved line to the bottom of
+ * the page, so it covers the whole strip on either card size — the design is
+ * centred within the trim on A5, and filling the design's band would leave a
+ * 0.75 mm sliver of the customer's background showing below it. The contents are
+ * then placed in design units, where the shared layout lives.
+ *
+ * A card with no message page gets the band and the mark and nothing else. The
+ * caption is not drawn without a QR to explain, and no placeholder stands in for
+ * one: "Scan to see your message" beside a grey square is an instruction the
+ * recipient cannot follow.
+ */
+async function drawBackFooter(
+  doc: PDFKit.PDFDocument,
+  geometry: FaceGeometry,
+  size: CardSize,
+  reservedFromPt: number,
+  qrUrl: string | undefined,
+  embed: ImageEmbedder,
+  logoUrl: string | undefined,
+): Promise<void> {
+  const layout = backFooterLayout(size, Boolean(qrUrl));
+
+  doc.save();
+  doc
+    .rect(0, reservedFromPt, geometry.pageWidthPt, geometry.pageHeightPt - reservedFromPt)
+    .fill("#ffffff");
+  doc.restore();
+
+  doc.save();
+  doc.translate(geometry.translateXPt, geometry.translateYPt);
+  doc.scale(geometry.scalePtPerUnit);
+
+  if (layout.qr && qrUrl) {
+    doc.save();
+    doc.translate(layout.qr.x, layout.qr.y);
+    drawQr(doc, layout.qr.width, qrUrl);
+    doc.restore();
+  }
+
+  if (layout.caption) drawFooterCaption(doc, layout.caption);
+
+  if (logoUrl) {
+    const image = await embed(logoUrl);
+    if (image) {
+      doc.image(image as unknown as Buffer, layout.logo.x, layout.logo.y, {
+        width: layout.logo.width,
+        height: layout.logo.height,
+      });
+    }
+  }
+
+  doc.restore();
+}
+
+/**
+ * The footer caption, wrapped to its box and centred in it both ways.
+ *
+ * Uses the same baseline convention as every other line of text the engine draws
+ * (`baselineMetrics` + an alphabetic baseline), so the words sit on the QR's
+ * optical centre rather than a pdfkit default that would ride high.
+ */
+function drawFooterCaption(
+  doc: PDFKit.PDFDocument,
+  box: { x: number; y: number; width: number; height: number; fontSize: number },
+): void {
+  const fontName = registerFace(doc, resolveFace(FOOTER_FONT_FAMILY, false, false));
+  doc.font(fontName).fontSize(box.fontSize);
+
+  const metrics = (doc as unknown as { _font: FontMetrics })._font;
+  const ascentEm = metrics.ascender / 1000;
+  const descentEm = -metrics.descender / 1000;
+
+  const lines = wrapText(BACK_FOOTER_CAPTION, box.width, (text) => doc.widthOfString(text));
+  const { lineHeightPx, firstBaseline } = baselineMetrics(box.fontSize, ascentEm, descentEm);
+  const blockTop = box.y + Math.max(0, (box.height - lineHeightPx * lines.length) / 2);
+
+  doc.save();
+  doc.fillColor("#000000");
+  lines.forEach((line, index) => {
+    if (line === "") return;
+    const x = box.x + alignOffset("center", box.width, doc.widthOfString(line));
+    doc.text(line, x, blockTop + firstBaseline + index * lineHeightPx, {
+      baseline: "alphabetic",
+      lineBreak: false,
+    });
+  });
   doc.restore();
 }

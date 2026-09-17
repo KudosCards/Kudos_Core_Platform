@@ -16,6 +16,8 @@ import {
   CARD_HEIGHT,
   CARD_WIDTH,
   CARD_SIZE_DIMENSIONS_MM,
+  borderlessShrink,
+  foldedSheetMm,
   type CardSize,
 } from "@kudos/shared-types";
 
@@ -146,4 +148,50 @@ export function cropMarks(geometry: FaceGeometry): CropMarkLine[] {
     marks.push({ x1: cx + sx * gap, y1: cy, x2: cx + sx * (gap + len), y2: cy });
   }
   return marks;
+}
+
+export interface FoldedSheetGeometry {
+  /** The whole sheet, in points — 210 × 148 mm for an A6 card. */
+  pageWidthPt: number;
+  pageHeightPt: number;
+  /** One panel: a card face at exact trim, no bleed, no crop marks. */
+  panel: FaceGeometry;
+  /** Left edge of each panel in sheet points, in page order (left, right). */
+  panelXPt: [number, number];
+  /** Where the fold falls, in points from the sheet's left edge. */
+  foldXPt: number;
+  /**
+   * Uniform scale to apply about the sheet's centre before drawing anything, so
+   * the card's trim survives a borderless driver's enlargement. Exactly 1 when
+   * no overhang has been measured. See `borderlessShrink`.
+   */
+  shrink: number;
+}
+
+/**
+ * The page a folded card is actually printed on: two faces side by side on one
+ * landscape sheet, with the fold down the middle.
+ *
+ * The panel is a plain {@link faceGeometry} at zero bleed, so every element,
+ * background and reserved-footer rule the single-face renderer already enforces
+ * applies unchanged inside each panel — the sheet only decides *where* the two
+ * panels sit. Two panels exactly tile the sheet, so the fold is the shared edge
+ * and a full-bleed background runs off the outer edge with nothing to trim.
+ *
+ * `overhangMm` is the figure read off the borderless calibration sheet; 0 (the
+ * default) draws the sheet full size. Pure.
+ */
+export function foldedSheetGeometry(size: CardSize, overhangMm = 0): FoldedSheetGeometry {
+  const { widthMm, heightMm } = foldedSheetMm(size);
+  const panel = faceGeometry(size, 0);
+  const panelWidthPt = panel.pageWidthPt;
+
+  return {
+    pageWidthPt: widthMm * PT_PER_MM,
+    pageHeightPt: heightMm * PT_PER_MM,
+    panel,
+    panelXPt: [0, panelWidthPt],
+    foldXPt: panelWidthPt,
+    shrink: borderlessShrink(overhangMm, widthMm),
+  };
 }

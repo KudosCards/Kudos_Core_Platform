@@ -16,6 +16,7 @@ import type {
   Customer360,
   DispatchReminderConfig,
   OccasionRedateSummary,
+  PrintProfile,
   SeasonalDispatchRule,
 } from "@kudos/shared-types";
 import { PlatformAdminGuard } from "../auth/platform-admin.guard";
@@ -24,9 +25,11 @@ import { SeatBillingService, type SeatPriceStatus } from "../billing/seat-billin
 import { DispatchConfigService } from "../dispatch/dispatch-config.service";
 import { BatchOrdersService, type CardArtworkResync } from "../batch-orders/batch-orders.service";
 import { CardSizeConfigService } from "./card-size-config.service";
+import { PrintProfileService } from "./print-profile.service";
 import { UpdateSeasonalRulesDto } from "./dto/update-seasonal-rules.dto";
 import { UpdateReminderConfigDto } from "./dto/update-reminder-config.dto";
 import { UpdatePrintCardSizeDto } from "./dto/update-print-card-size.dto";
+import { UpdatePrintProfileDto } from "./dto/update-print-profile.dto";
 import {
   AdminService,
   type AdminOverview,
@@ -68,6 +71,7 @@ export class AdminController {
     private readonly seatBilling: SeatBillingService,
     private readonly dispatchConfig: DispatchConfigService,
     private readonly cardSizeConfig: CardSizeConfigService,
+    private readonly printProfile: PrintProfileService,
     private readonly opsDigest: OpsDigestService,
     private readonly subscriptionInvoices: SubscriptionInvoicesService,
     private readonly batchOrders: BatchOrdersService,
@@ -334,5 +338,25 @@ export class AdminController {
   @Put("print/card-size")
   async updatePrintCardSize(@Body() dto: UpdatePrintCardSizeDto): Promise<{ size: CardSize }> {
     return { size: await this.cardSizeConfig.setDefaultSize(dto.size) };
+  }
+
+  /** The print profile in force, plus the bundled default, for the ops "Print
+   * setup" panel. Describes the printer (sheet layout, borderless overhang,
+   * whether the back's strip is pre-printed) rather than any one run.
+   * See docs/card-print-quality-plan.md (P4). */
+  @Get("print/profile")
+  async printProfileSettings(): Promise<{ profile: PrintProfile; default: PrintProfile }> {
+    return {
+      profile: await this.printProfile.getProfile(),
+      default: this.printProfile.getHouseDefaultProfile(),
+    };
+  }
+
+  /** Replace the print profile. Persisted, so the overhang measured at the
+   * printer reaches the engine with no redeploy. See docs/card-print-quality-plan.md. */
+  @UseGuards(PlatformAdminGuard, SuperAdminGuard)
+  @Put("print/profile")
+  async updatePrintProfile(@Body() dto: UpdatePrintProfileDto): Promise<{ profile: PrintProfile }> {
+    return { profile: await this.printProfile.setProfile(dto) };
   }
 }
