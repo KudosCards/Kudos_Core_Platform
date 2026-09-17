@@ -5,7 +5,9 @@ off at the edges. It is. This is what is happening, what is not happening, and
 what we are going to do about it.
 
 > **Corrected by the first real measurement — see
-> [docs/card-artwork-shape-plan.md](./card-artwork-shape-plan.md).**
+> [docs/card-artwork-shape-plan.md](./card-artwork-shape-plan.md). Both are now
+> superseded for _forward_ work by
+> [docs/card-print-quality-plan.md](./card-print-quality-plan.md).**
 >
 > The five phases below shipped, and the very first catalog sync measured 217
 > designs. The diagnosis in this document was **wrong**: there is not one square

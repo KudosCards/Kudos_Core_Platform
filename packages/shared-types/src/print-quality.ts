@@ -21,9 +21,48 @@ const MM_PER_INCH = 25.4;
 
 /** The print-house target every image should meet. */
 export const PRINT_DPI_TARGET = 300;
+
+/**
+ * The most pixels an image can usefully carry for a printed card, and the ceiling
+ * the print engine downscales to.
+ *
+ * Derived, not chosen: the largest face we print at twice the target DPI. Above
+ * this an image cannot make the card any better — 600 dpi is already beyond what
+ * the paper resolves — while it costs memory in the renderer and bytes in the
+ * PDF in direct proportion.
+ *
+ * It is a **downscale** ceiling rather than a refusal: a photographer's 50-megapixel
+ * upload is a legitimate thing to send us, and the right answer is to print it
+ * beautifully at the size it will actually appear, not to drop it.
+ */
+export const MAX_ARTWORK_PIXELS = maxPrintablePixels();
+
+/**
+ * The most pixels we will decode at all.
+ *
+ * Downscaling requires decoding, so an image big enough to exhaust memory during
+ * the decode cannot be rescued by the ceiling above — it has to be refused before
+ * `sharp` touches it. A PNG header costs 74 bytes and can declare 16000 x 16000
+ * (256 megapixels), which is the whole attack: tiny file, enormous allocation.
+ *
+ * Set above the largest consumer camera sensor (~61 MP) so no real photograph is
+ * ever refused, and far below `sharp`'s own 268-megapixel default.
+ */
+export const MAX_DECODE_PIXELS = 80_000_000;
 /** At or below this, an image is soft enough to warn about (noticeably fuzzy in
  * print). Between this and the target is acceptable-but-not-ideal. */
 export const PRINT_DPI_WARN_BELOW = 200;
+
+/** 600 dpi across the largest card size we print — see MAX_ARTWORK_PIXELS. */
+function maxPrintablePixels(): number {
+  const dpi = PRINT_DPI_TARGET * 2;
+  return Math.max(
+    ...Object.values(CARD_SIZE_DIMENSIONS_MM).map(
+      ({ widthMm, heightMm }) =>
+        Math.ceil((widthMm / MM_PER_INCH) * dpi) * Math.ceil((heightMm / MM_PER_INCH) * dpi),
+    ),
+  );
+}
 
 export interface PixelSize {
   width: number;

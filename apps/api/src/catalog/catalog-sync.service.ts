@@ -16,6 +16,7 @@ import {
   printedCropLoss,
   cropLossPercent,
   cropVerdict,
+  MAX_DECODE_PIXELS,
   croppedAxis,
   deriveCardSlugBase,
   uniqueCardSlug,
@@ -603,7 +604,11 @@ interface CopiedArtwork {
 async function measurePixels(buffer: Buffer): Promise<PixelSize | null> {
   try {
     // `metadata()` on a Buffer reads the header only — no decode, no pixels.
-    const { width, height } = await sharp(buffer).metadata();
+    // `limitInputPixels` still matters: it makes a header declaring an absurd
+    // size fail here rather than somewhere later that decodes it.
+    const { width, height } = await sharp(buffer, {
+      limitInputPixels: MAX_DECODE_PIXELS,
+    }).metadata();
     return width && height ? { width, height } : null;
   } catch {
     return null;

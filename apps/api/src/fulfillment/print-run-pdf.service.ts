@@ -71,6 +71,7 @@ export class PrintRunPdfService {
       size,
       imageResolver: resolver,
       title: `Kudos print run — ${cards.length} card${cards.length === 1 ? "" : "s"}`,
+      onWarn: (message) => this.logger.warn(message),
       // Kudos prints and folds these cards rather than trimming them, so the PDF
       // is the exact trim size with no bleed and no crop marks — a clean page to
       // print and fold. (The engine keeps bleed + crop marks available for a

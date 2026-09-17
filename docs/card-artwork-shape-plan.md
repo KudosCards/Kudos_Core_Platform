@@ -1,5 +1,12 @@
 # The artwork is the wrong shape
 
+> **All five phases below shipped. What remained — the re-export itself, and
+> everything the printer turned out to dictate — is now carried by
+> [docs/card-print-quality-plan.md](./card-print-quality-plan.md).** This
+> document is still the correct account of _why_ the catalog crops and what the
+> numbers are; read it for the diagnosis, and the print-quality plan for what
+> happens next.
+
 The first real measurement of the catalog came back, and it says something we
 did not know and did not guess: **207 of 217 designs lose exactly 6% of their
 height.** Not a spread. One number, on 95% of the catalog.

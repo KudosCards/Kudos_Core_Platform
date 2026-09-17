@@ -19,6 +19,7 @@
  */
 
 import sharp from "sharp";
+import { MAX_ARTWORK_PIXELS, MAX_DECODE_PIXELS } from "@kudos/shared-types";
 import type { ImageResolver, ResolvedImage } from "./render";
 
 /** How SVGs are rasterised: a generous longest-edge size + a high nominal density
@@ -183,7 +184,24 @@ export async function fetchAssetBytes(
   }
 }
 
-/** Decode raw bytes into an embeddable raster (PNG/JPEG). Exported for testing. */
+/**
+ * Decode raw bytes into an embeddable raster (PNG/JPEG). Exported for testing.
+ *
+ * **Only JPEG is passed through untouched**, and only because pdfkit embeds the
+ * DCT stream without decoding it — so malformed JPEG bytes become a bad image in
+ * a PDF viewer, never our problem. Everything else is re-encoded through `sharp`,
+ * which is what makes the bytes *known-decodable* before pdfkit's own PNG decoder
+ * ever sees them.
+ *
+ * That is not tidiness. pdfkit inflates a PNG's IDAT with
+ * `zlib.inflate(data, (err) => { if (err) throw err })` — a throw inside an async
+ * callback, which no `try`/`catch` on this path can see and which takes the whole
+ * process down. Verified: a PNG with a valid IHDR and a corrupted IDAT passes
+ * `metadata()`, `doc.image()` returns without throwing, and the process then exits
+ * on an uncaught `invalid bit length repeat`. Re-encoding turns that into a
+ * `vipspng: libpng read error` rejection, caught below, and the asset is skipped
+ * like any other unreadable one.
+ */
 export async function decodeImage(
   buffer: Buffer,
   contentType: string | null,
@@ -192,20 +210,59 @@ export async function decodeImage(
 ): Promise<ResolvedImage | null> {
   try {
     if (isSvg(buffer, contentType, url)) {
-      const png = await sharp(buffer, { density: SVG_RASTER_DENSITY })
+      const png = await sharp(buffer, {
+        density: SVG_RASTER_DENSITY,
+        limitInputPixels: MAX_DECODE_PIXELS,
+      })
         .resize({ width: SVG_RASTER_SIZE, height: SVG_RASTER_SIZE, fit: "inside" })
         .png()
         .toBuffer();
       return withDimensions(png);
     }
 
+    // Header only — no decode, no pixels. The pixel budget has to be applied off
+    // the header rather than by letting the decode fail, because the decode is
+    // the thing we are protecting: a 74-byte PNG can declare 256 megapixels.
     const meta = await sharp(buffer).metadata();
-    if (meta.format === "png" || meta.format === "jpeg") {
-      if (!meta.width || !meta.height) return withDimensions(buffer);
+    const pixels = (meta.width ?? 0) * (meta.height ?? 0);
+
+    if (pixels > MAX_DECODE_PIXELS) {
+      options.onWarn?.(
+        `print image skipped (${url}): ${meta.width}x${meta.height} exceeds the decode limit`,
+      );
+      return null;
+    }
+
+    if (pixels > MAX_ARTWORK_PIXELS) {
+      // More pixels than the largest card can print at 600 dpi. Downscaled, not
+      // refused: an oversized upload is a real customer sending us a real photo,
+      // and the right answer is to print it, not to drop it from the card.
+      const scale = Math.sqrt(MAX_ARTWORK_PIXELS / pixels);
+      const resized = sharp(buffer, { limitInputPixels: MAX_DECODE_PIXELS }).resize({
+        width: Math.max(1, Math.floor((meta.width ?? 1) * scale)),
+        height: Math.max(1, Math.floor((meta.height ?? 1) * scale)),
+        fit: "fill",
+      });
+      // Re-encoding a JPEG is lossy, but resampling already is; at this size the
+      // card cannot show the difference. PNG stays lossless.
+      const out =
+        meta.format === "jpeg"
+          ? await resized.jpeg({ quality: 95 }).toBuffer()
+          : await resized.png().toBuffer();
+      options.onWarn?.(
+        `print image downscaled (${url}): ${meta.width}x${meta.height} over the print ceiling`,
+      );
+      return withDimensions(out);
+    }
+
+    if (meta.format === "jpeg" && meta.width && meta.height) {
+      // The one passthrough. pdfkit embeds the JPEG without decoding it, and
+      // re-encoding would throw away detail for nothing.
       return { data: buffer, width: meta.width, height: meta.height };
     }
-    // WebP, GIF (first frame), TIFF, AVIF, … → PNG for pdfkit.
-    const png = await sharp(buffer).png().toBuffer();
+
+    // PNG, WebP, GIF (first frame), TIFF, AVIF, … → a PNG we have decoded ourselves.
+    const png = await sharp(buffer, { limitInputPixels: MAX_DECODE_PIXELS }).png().toBuffer();
     return withDimensions(png);
   } catch (error) {
     options.onWarn?.(`print image undecodable (${url}): ${String(error)}`);
