@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { CARD_HEIGHT, CARD_WIDTH } from "./design-layout";
+import { CARD_HEIGHT, CARD_WIDTH, textWrapWidth } from "./design-layout";
 
 /** The paper sizes we can print, as short codes. Order is the UI order. */
 export const CARD_SIZES = ["A6", "A5"] as const;
@@ -227,6 +227,35 @@ export const CARD_SIZE_NOTICE = `All cards are printed ${CARD_SIZE_LABEL}.`;
  * over a design we simply could not read. Unreadable is the renderer's problem
  * to report, in the editor, where it can be fixed.
  */
+/**
+ * How far below its own `y` an element's painted box reaches.
+ *
+ * Konva rotates about the element's origin, so a rotated box does **not** span
+ * `y .. y + height`. At 270 degrees it runs *upward* from `y`; at 90 it runs
+ * downward by the element's *width*. Verified against Konva's own transform: a
+ * 200x60 logo at y=480 rotated 270 paints 280..480.
+ *
+ * This matters because the caller decides whether a design may be **saved at
+ * all**. Ignoring rotation refused art that is visibly clear of the band — that
+ * logo sits 25 units above the line and the save returned 400, telling the
+ * customer to move something that was already where it should be — while
+ * passing text rotated *into* the band, which then printed clipped.
+ *
+ * The editor's guide has always been rotation-aware: it measures the rendered
+ * node's client rect. So the screen and the server disagreed in both directions.
+ * They agree now.
+ */
+function rotatedBottom(width: number, height: number, rotation: number): number {
+  if (!rotation) return height;
+  const radians = (rotation * Math.PI) / 180;
+  const sin = Math.sin(radians);
+  const cos = Math.cos(radians);
+  // The four corners of (0,0,w,h) rotated about the origin. Only the lowest one
+  // matters: the band is a floor, so an element is in it when its bottom edge is.
+  // At 90 degrees that bottom edge is the element's *width* below the origin.
+  return Math.max(0, width * sin, width * sin + height * cos, height * cos);
+}
+
 export function backArtworkInReservedFooter(
   document: { pages: { name: string; background?: unknown; elements: unknown[] }[] },
   size: CardSize = DEFAULT_CARD_SIZE,
@@ -240,10 +269,13 @@ export function backArtworkInReservedFooter(
   for (const raw of page.elements) {
     const el = raw as {
       kind?: string;
+      x?: number;
       y?: number;
+      width?: number;
       height?: number;
       size?: number;
       fontSize?: number;
+      rotation?: number;
     };
     if (typeof el.y !== "number") continue;
     const height =
@@ -252,7 +284,16 @@ export function backArtworkInReservedFooter(
         : el.kind === "text"
           ? (el.fontSize ?? 0) * 1.3
           : (el.height ?? 0);
-    if (isInBackReservedFooter({ y: el.y, height }, size)) elements += 1;
+    // Width is only consulted when the element is rotated, but it has to be the
+    // same width the renderer uses — for text that is the wrap box, not the glyphs.
+    const width =
+      el.kind === "qr"
+        ? (el.size ?? 0)
+        : el.kind === "text"
+          ? textWrapWidth({ x: typeof el.x === "number" ? el.x : 0, width: el.width })
+          : (el.width ?? 0);
+    const bottom = rotatedBottom(width, height, typeof el.rotation === "number" ? el.rotation : 0);
+    if (isInBackReservedFooter({ y: el.y, height: bottom }, size)) elements += 1;
   }
   return { background: page.background != null, elements };
 }

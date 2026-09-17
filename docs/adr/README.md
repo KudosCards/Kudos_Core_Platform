@@ -254,5 +254,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0243 — The field every caller forgot to escape](./0243-the-field-every-caller-forgot-to-escape.md)
 - [0244 — Classifying a bot without telling it](./0244-classifying-a-bot-without-telling-it.md)
 - [0245 — An engine that survives its inputs](./0245-an-engine-that-survives-its-inputs.md)
+- [0246 — Three ways a card stopped being the card that was chosen](./0246-the-card-that-comes-back-is-the-card-that-was-sent.md)
 
 <!-- adr-index:end -->

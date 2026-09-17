@@ -15,6 +15,7 @@ import {
   PRINT_RUN_BLEED_MM,
   printedCropLoss,
   cropLossPercent,
+  buildCardDocument,
   cropVerdict,
   MAX_DECODE_PIXELS,
   croppedAxis,
@@ -36,7 +37,6 @@ import {
   type CatalogFieldMapping,
   type CatalogSource,
 } from "./catalog-source";
-import { buildCardDocument } from "./card-document.util";
 import { CatalogPublisherService, type CatalogPublishResult } from "./catalog-publisher.service";
 import { CatalogCropGateService } from "./catalog-crop-gate.service";
 import {
