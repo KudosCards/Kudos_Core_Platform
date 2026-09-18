@@ -16,6 +16,7 @@ import {
   CARD_HEIGHT,
   CARD_WIDTH,
   CARD_SIZE_DIMENSIONS_MM,
+  borderlessShiftMm,
   borderlessShrink,
   foldedSheetMm,
   type CardSize,
@@ -166,6 +167,14 @@ export interface FoldedSheetGeometry {
    * no overhang has been measured. See `borderlessShrink`.
    */
   shrink: number;
+  /**
+   * Translation, in page points, applied before the scale — the correction for a
+   * printer that places the sheet off centre. Both 0 until measured. The scale
+   * cannot do this job: enlarging a card that is in the wrong place leaves it in
+   * the wrong place. See ADR 0251.
+   */
+  shiftXPt: number;
+  shiftYPt: number;
 }
 
 /**
@@ -181,10 +190,15 @@ export interface FoldedSheetGeometry {
  * `overhangMm` is the figure read off the borderless calibration sheet; 0 (the
  * default) draws the sheet full size. Pure.
  */
-export function foldedSheetGeometry(size: CardSize, overhangMm = 0): FoldedSheetGeometry {
+export function foldedSheetGeometry(
+  size: CardSize,
+  overhangMm = 0,
+  offset: { xMm?: number; yMm?: number } = {},
+): FoldedSheetGeometry {
   const { widthMm, heightMm } = foldedSheetMm(size);
   const panel = faceGeometry(size, 0);
   const panelWidthPt = panel.pageWidthPt;
+  const shrink = borderlessShrink(overhangMm, widthMm);
 
   return {
     pageWidthPt: widthMm * PT_PER_MM,
@@ -192,6 +206,8 @@ export function foldedSheetGeometry(size: CardSize, overhangMm = 0): FoldedSheet
     panel,
     panelXPt: [0, panelWidthPt],
     foldXPt: panelWidthPt,
-    shrink: borderlessShrink(overhangMm, widthMm),
+    shrink,
+    shiftXPt: borderlessShiftMm(offset.xMm ?? 0, shrink) * PT_PER_MM,
+    shiftYPt: borderlessShiftMm(offset.yMm ?? 0, shrink) * PT_PER_MM,
   };
 }

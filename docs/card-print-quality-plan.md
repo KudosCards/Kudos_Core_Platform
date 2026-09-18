@@ -237,19 +237,28 @@ client after it was cut.
 pages, turn, even pages, fold. The fold lands on the centre, the front reaches
 all four edges, and nothing important is cut.
 
-**Still needed from the printer**: the borderless overhang. Three prints came
-back with a clean white border and the full rulers intact, which means borderless
-never engaged — the paper size was A5 _portrait_ while the sheet is landscape, so
-there was nothing for the driver to expand. The sheet has been rebuilt landscape-
-native with that named on it, a band that makes "did borderless engage?" a
-one-second yes/no, and a four-edge reading instead of one figure. Until it
-engages there is no number to enter, and 0 is the correct setting: cards print
-full size, exactly as they do today.
+**Calibrated.** The fourth print engaged borderless and came back with ink off
+all four edges: top 2, bottom 2, left 1.5, right 5 mm. Three attempts had failed
+before it because the paper size was A5 _portrait_ while the sheet is landscape,
+so the driver had nothing to expand; the rebuilt sheet names that on its face.
 
-One of the returned prints was also visibly **off-centre**. The compensation
-scales about the sheet's centre and so assumes a symmetric enlargement; it cannot
-correct an off-centre feed. That is why the reading is now per-edge — see
-ADR 0249 and P0 above.
+Those four numbers are two faults, and the four-edge reading is what separates
+them. `(left + right) / 2` = **3.25 mm** is a uniform ~3% enlargement, which the
+scale corrects. `(left − right) / 2` = **−1.75 mm** is the printer placing the
+sheet right of where the driver thinks, which no scale can correct — so the
+profile gained a placement offset beside the overhang, exactly as ADR 0249 said
+it would need to. `(top − bottom) / 2` = 0: vertical placement is true.
+
+The settings this printer wants: `borderlessOverhangMm` **3.25**,
+`borderlessOffsetXMm` **−1.75**, `borderlessOffsetYMm` **0**. Entering the
+overhang without the offset would put a white strip down one edge of every card;
+entering the offset without the overhang would leave 3.25 mm of every design cut
+off each long edge. See ADR 0251.
+
+The compensation deliberately leaves about a millimetre overhanging rather than
+correcting to zero, because a printer that places one sheet 1.75 mm off centre
+will not place every sheet identically, and a white sliver is worse than a
+millimetre of lost background. That margin is a judgement pending more prints.
 
 ### P5 — Colour (D-none; it is simply wrong today)
 

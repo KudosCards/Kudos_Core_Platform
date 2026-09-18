@@ -91,6 +91,8 @@ export class PrintRunPdfService {
             title,
             onWarn,
             borderlessOverhangMm: profile.borderlessOverhangMm,
+            borderlessOffsetXMm: profile.borderlessOffsetXMm,
+            borderlessOffsetYMm: profile.borderlessOffsetYMm,
             backFooter: profile.backFooter,
             // Fetched through the same allow-listed resolver as any other asset
             // (the web origin is already on the list), so the mark needs no

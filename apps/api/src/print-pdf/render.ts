@@ -34,6 +34,7 @@ import {
   faceGeometry,
   foldedSheetGeometry,
   type FaceGeometry,
+  type FoldedSheetGeometry,
 } from "./geometry";
 import { fallbackFaces, registerFace, resolveFace, type FontFace } from "./fonts";
 import { coverageForFace } from "./coverage";
@@ -265,6 +266,10 @@ export interface FoldedRunOptions extends Omit<RenderRunOptions, "cropMarks" | "
    * also correct for a printer that is not enlarging.
    */
   borderlessOverhangMm?: number;
+  /** Placement offsets from the calibration sheet: `(left − right) ÷ 2` and
+   *  `(top − bottom) ÷ 2`. Default 0 — the sheet is drawn where it falls. */
+  borderlessOffsetXMm?: number;
+  borderlessOffsetYMm?: number;
 }
 
 /**
@@ -285,7 +290,10 @@ export async function renderFoldedRunPdf(
   options: FoldedRunOptions = {},
 ): Promise<Buffer> {
   const size = options.size ?? DEFAULT_CARD_SIZE;
-  const sheet = foldedSheetGeometry(size, options.borderlessOverhangMm);
+  const sheet = foldedSheetGeometry(size, options.borderlessOverhangMm, {
+    xMm: options.borderlessOffsetXMm,
+    yMm: options.borderlessOffsetYMm,
+  });
 
   if (cards.length === 0) {
     throw new Error("renderFoldedRunPdf: no cards to render");
@@ -298,7 +306,7 @@ export async function renderFoldedRunPdf(
       for (const panels of FOLDED_SHEETS) {
         doc.addPage({ size: [sheet.pageWidthPt, sheet.pageHeightPt], margin: 0 });
         doc.save();
-        applyBorderlessShrink(doc, sheet.shrink, sheet.pageWidthPt, sheet.pageHeightPt);
+        applyBorderlessCompensation(doc, sheet);
 
         for (const [index, face] of panels.entries()) {
           doc.save();
@@ -323,17 +331,26 @@ export async function renderFoldedRunPdf(
 }
 
 /**
- * Scale the sheet's contents about its centre so the trim survives a borderless
- * driver's enlargement. A centred scale gets both axes right at once: the
- * enlargement is uniform, so the short edge loses proportionally less, and this
- * reproduces that without a second measurement. No-op at shrink 1.
+ * Put the sheet where the paper actually is, and at the size the paper actually
+ * takes: a translation for a printer that places the sheet off centre, then a
+ * scale about the centre for the driver's borderless enlargement.
+ *
+ * Both, because they are different faults. The scale corrects a page the driver
+ * blows up; centring it gets both axes right at once, since the enlargement is
+ * uniform and the short edge loses proportionally less. The shift corrects paper
+ * arriving somewhere other than where the driver thinks, which no amount of
+ * scaling touches — enlarging a card that is in the wrong place leaves it in the
+ * wrong place, just bigger.
+ *
+ * The translation comes first so it is not itself scaled twice: `shiftXPt`
+ * already carries the shrink (see `borderlessShiftMm`).
+ *
+ * A no-op when nothing has been measured, so a sheet that needs no correction is
+ * not moved about at all.
  */
-function applyBorderlessShrink(
-  doc: PDFKit.PDFDocument,
-  shrink: number,
-  pageWidthPt: number,
-  pageHeightPt: number,
-): void {
+function applyBorderlessCompensation(doc: PDFKit.PDFDocument, sheet: FoldedSheetGeometry): void {
+  const { shrink, shiftXPt, shiftYPt, pageWidthPt, pageHeightPt } = sheet;
+  if (shiftXPt !== 0 || shiftYPt !== 0) doc.translate(shiftXPt, shiftYPt);
   if (shrink === 1) return;
   doc.translate(pageWidthPt / 2, pageHeightPt / 2);
   doc.scale(shrink);

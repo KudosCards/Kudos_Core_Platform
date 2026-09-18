@@ -259,5 +259,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0248 — One rule for artwork, refused twice](./0248-one-rule-for-artwork-refused-twice.md)
 - [0249 — The sheet the printer takes](./0249-the-sheet-the-printer-takes.md)
 - [0250 — Credits one at a time, lookups all at once](./0250-credits-one-at-a-time.md)
+- [0251 — The paper is not where the driver thinks](./0251-the-paper-is-not-where-the-driver-thinks.md)
 
 <!-- adr-index:end -->
