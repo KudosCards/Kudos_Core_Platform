@@ -1,22 +1,16 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import sharp from "sharp";
 import {
   backgroundArtworkVerdict,
   DEFAULT_CARD_SIZE,
   judgeableBackgroundUrls,
-  MAX_DECODE_PIXELS,
-  orientedPixelSize,
   type CardSize,
   type DesignDocument,
   type PixelSize,
 } from "@kudos/shared-types";
-import { fetchAssetBytes, hostOf, isHostAllowed } from "../print-pdf";
+import { hostOf } from "../print-pdf";
+import { measureAsset } from "../common/measure-asset";
 import type { EnvConfig } from "../config/env.schema";
-
-/** Bounded well below the print engine's cap: this reads a header, not a card. */
-const GATE_MAX_BYTES = 30 * 1024 * 1024;
-const GATE_TIMEOUT_MS = 8_000;
 
 /**
  * The server half of the artwork gate (docs/card-print-quality-plan.md, D5).
@@ -71,28 +65,7 @@ export class ArtworkGateService {
   }
 
   /** The artwork's size as the card will show it, or null if we cannot tell. */
-  private async measure(url: string, allowedHosts: string[]): Promise<PixelSize | null> {
-    if (!isHostAllowed(url, allowedHosts)) {
-      // Not our storage, so not ours to judge — and the print engine will not
-      // fetch it either. Left to the pre-flight the operator sees.
-      return null;
-    }
-    try {
-      const fetched = await fetchAssetBytes(url, {
-        maxBytes: GATE_MAX_BYTES,
-        timeoutMs: GATE_TIMEOUT_MS,
-        onWarn: (message) => this.logger.warn(`artwork gate: ${message}`),
-      });
-      if (!fetched) return null;
-      const meta = await sharp(fetched.buffer, { limitInputPixels: MAX_DECODE_PIXELS }).metadata();
-      if (!meta.width || !meta.height) return null;
-      // The same correction the renderer applies. Measuring the stored size
-      // would refuse a correctly-shaped phone photo as heavily cropped — see
-      // ADR 0247.
-      return orientedPixelSize({ width: meta.width, height: meta.height }, meta.orientation);
-    } catch (error) {
-      this.logger.warn(`artwork gate: could not measure ${url}: ${String(error)}`);
-      return null;
-    }
+  private measure(url: string, allowedHosts: string[]): Promise<PixelSize | null> {
+    return measureAsset(url, { allowedHosts, label: "artwork gate", logger: this.logger });
   }
 }

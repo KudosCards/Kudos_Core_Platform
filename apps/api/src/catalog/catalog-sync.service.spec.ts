@@ -31,12 +31,11 @@ import { CatalogCropGateService } from "./catalog-crop-gate.service";
 
 /** Real PNG bytes at a given shape, so the measurement under test is the real
  *  `sharp` reading a real header rather than a stub agreeing with itself. */
-function png(width: number, height: number): Promise<Buffer> {
-  return sharp({
+function png(width: number, height: number, orientation?: number): Promise<Buffer> {
+  const image = sharp({
     create: { width, height, channels: 3, background: { r: 200, g: 120, b: 90 } },
-  })
-    .png()
-    .toBuffer();
+  });
+  return (orientation ? image.withMetadata({ orientation }) : image).png().toBuffer();
 }
 
 function record(externalId: string, title: string, sku?: string | null): CatalogCardRecord {
@@ -175,6 +174,21 @@ describe("CatalogSyncService — measuring artwork at the door", () => {
     expect(upserts).toHaveLength(1);
     expect(upserts[0]?.update).toMatchObject({ artworkWidth: 1000, artworkHeight: 1000 });
     expect(upserts[0]?.create).toMatchObject({ artworkWidth: 1000, artworkHeight: 1000 });
+  });
+
+  it("stores a rotated photo's size the way it will be shown", async () => {
+    // A portrait photo sent in sideways with a tag saying "turn me" is stored
+    // 1748 x 1240 and displayed 1240 x 1748 — which is the card's shape exactly.
+    // Recording the stored size made the catalog the one surface that disagreed
+    // with the renderer, the artwork gate and the uploads library, and the crop
+    // gate would then refuse artwork that is precisely the right shape for a
+    // card. See ADR 0247.
+    const sideways = await png(1748, 1240, 6);
+    const { service, upserts } = makeService([record("rec1", "Turned")], () => sideways);
+
+    await service.sync();
+
+    expect(upserts[0]?.update).toMatchObject({ artworkWidth: 1240, artworkHeight: 1748 });
   });
 
   it("reports how much of each cropped design is not printed, worst first", async () => {

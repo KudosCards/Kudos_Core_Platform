@@ -18,6 +18,7 @@ import {
   buildCardDocument,
   cropVerdict,
   MAX_DECODE_PIXELS,
+  orientedPixelSize,
   croppedAxis,
   deriveCardSlugBase,
   uniqueCardSlug,
@@ -606,10 +607,17 @@ async function measurePixels(buffer: Buffer): Promise<PixelSize | null> {
     // `metadata()` on a Buffer reads the header only — no decode, no pixels.
     // `limitInputPixels` still matters: it makes a header declaring an absurd
     // size fail here rather than somewhere later that decodes it.
-    const { width, height } = await sharp(buffer, {
+    const { width, height, orientation } = await sharp(buffer, {
       limitInputPixels: MAX_DECODE_PIXELS,
     }).metadata();
-    return width && height ? { width, height } : null;
+    if (!width || !height) return null;
+    // In display orientation, like every other surface that measures artwork:
+    // the renderer, the artwork gate and the uploads library all correct for the
+    // EXIF tag (ADR 0247). Storing the *stored* size instead made the catalog
+    // the one place that disagreed — a correctly-shaped portrait photo sent in
+    // sideways reads as a heavily cropped landscape, so the crop gate would
+    // refuse artwork that is exactly the right shape.
+    return orientedPixelSize({ width, height }, orientation);
   } catch {
     return null;
   }
