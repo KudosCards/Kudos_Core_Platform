@@ -110,14 +110,38 @@ finished without its numbers.
 
 ### P0 — Calibrate the printer (no code, ~45 minutes)
 
-Print `docs/research/2026-09-artwork-print/kudos-borderless-calibration.pdf`
-page 1 on the real blanks: Actual size, borderless on, the media type you
-normally use, extension slider where you normally leave it. Then answer four
-questions, all of which the software or the process needs:
+Print `docs/research/2026-09-artwork-print/kudos-borderless-calibration.pdf` on
+the real blanks. Regenerate it with `pnpm --filter @kudos/api calibration-sheet`
+— the sheet is a generated artefact, and the script is the thing to edit when the
+question changes.
 
-1. **How much does each edge lose?** Read the long-edge figure off the rulers.
+**The paper size is the whole trick.** It must be **A5 borderless LANDSCAPE, 210
+× 148**. Three attempts came back with a clean white border and every ruler
+intact, which means borderless never engaged; the Page Setup on the last one read
+"A5 Borderless 148 by 210 mm", which is _portrait_. A portrait page size cannot
+match a landscape sheet, so the driver has nothing to expand and quietly falls
+back to its ordinary margins. Scaling must be Actual size / 100%, never "Fit".
+
+Then answer four questions, all of which the software or the process needs:
+
+1. **How much does each edge lose — all four, separately?** At the middle of each
+   edge, read the shallowest numbered step still visible. Write down TOP, RIGHT,
+   BOTTOM and LEFT as four numbers, and say whether the opposite pairs match.
+
+   The sheet used to ask for the long-edge figure alone, which silently assumed
+   the loss was symmetric. The compensation scales the sheet about its centre, so
+   that assumption is load-bearing: it corrects an even enlargement and cannot
+   correct a sheet that is also fed off-centre (ADR 0249). One of the returned
+   prints was visibly off-centre, so this is worth establishing rather than
+   inheriting. Four matching numbers cost nothing and settle it; four that differ
+   are the finding, not a measuring error.
+
+   Before any of it: **is there any white paper outside the grey band?** If so,
+   borderless did not engage and nothing else on the sheet means anything yet.
+
    This is D2's number. Repeat at the slider's minimum and keep whichever you
    will standardise on.
+
 2. **Which way do you turn the stack?** Print any two-page document, mark the
    sheet asymmetrically, and record whether the second side comes out upright
    when flipped about the long edge or the short edge. This decides whether P4's
@@ -213,12 +237,19 @@ client after it was cut.
 pages, turn, even pages, fold. The fold lands on the centre, the front reaches
 all four edges, and nothing important is cut.
 
-**Still needed from the printer**: the borderless overhang. The calibration sheet
-has now been printed three times and each time came back with a clean white
-border and the full rulers intact, which means borderless never engaged — most
-likely Acrobat's "Actual size" fighting the A5 Borderless paper size. Until it
-engages there is no figure to enter, and 0 is the correct setting: cards print
+**Still needed from the printer**: the borderless overhang. Three prints came
+back with a clean white border and the full rulers intact, which means borderless
+never engaged — the paper size was A5 _portrait_ while the sheet is landscape, so
+there was nothing for the driver to expand. The sheet has been rebuilt landscape-
+native with that named on it, a band that makes "did borderless engage?" a
+one-second yes/no, and a four-edge reading instead of one figure. Until it
+engages there is no number to enter, and 0 is the correct setting: cards print
 full size, exactly as they do today.
+
+One of the returned prints was also visibly **off-centre**. The compensation
+scales about the sheet's centre and so assumes a symmetric enlargement; it cannot
+correct an off-centre feed. That is why the reading is now per-edge — see
+ADR 0249 and P0 above.
 
 ### P5 — Colour (D-none; it is simply wrong today)
 

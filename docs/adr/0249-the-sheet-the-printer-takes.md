@@ -65,6 +65,28 @@ without a second reading. At 0 it is exactly 1 and the sheet is drawn untouched 
 which is both "nobody has calibrated yet" and the correct output for a printer
 that is not enlarging, so the uncalibrated default is also a safe one.
 
+**What centring assumes, and what would break it.** A centred scale corrects a
+_symmetric_ enlargement — the same loss off the left as off the right. That is
+what a borderless driver is supposed to do, and it is the only thing one number
+can describe. It does not correct a sheet that is also fed or placed
+**off-centre**: a feed shifted by `d` loses `overhang − d` on one edge and
+`overhang + d` on the other, and no amount of centred scaling moves the card
+sideways to meet it.
+
+This is not hypothetical. A calibration print came back visibly off-centre, with
+the full rulers intact and a white border — borderless never engaged, so the
+offset is the driver's ordinary margins rather than a measured overhang, but it
+is a printer that demonstrably does not place the sheet centrally. Correcting it
+would need an offset term as well as a scale.
+
+Nothing is wrong today: the overhang is 0, so no compensation is applied at all.
+The risk is entirely in the future, at the moment somebody types a measured
+figure into the panel under the assumption that one number is enough. So the
+calibration sheet now reads **all four edges separately** and asks outright
+whether the opposite pairs match (docs/card-print-quality-plan.md, P0). If they
+do, this assumption is established rather than inherited and nothing changes. If
+they do not, the offset gets built against a real measurement instead of a guess.
+
 **A profile, not a per-run option.** `GET/PUT /admin/print/profile`, super-admin
 gated, storing `layout`, `borderlessOverhangMm` and `backFooter` in the existing
 PlatformSetting table. This describes the printer, not the run: ops choose a card
@@ -90,6 +112,9 @@ when blank stock arrives — switched on after a proof, not before.
 - A face a design does not carry prints blank. The single-face renderer falls
   back to the front for a missing face; on a sheet that would post the cover
   artwork on the back of the card, so the folded path looks the face up strictly.
+- The compensation is scale-only. Should the four-edge reading come back
+  asymmetric, `borderlessOverhangMm` alone cannot describe this printer and the
+  profile needs an offset beside it — a schema change, not a tuning change.
 - Until the calibration sheet is read, `borderlessOverhangMm` is 0 and the card
   prints at full size. If the driver _is_ enlarging, cards keep losing the same
   1–3 mm they lose today — no worse, and fixed by typing one number into the
