@@ -266,12 +266,43 @@ export async function decodeImage(
       return withDimensions(out);
     }
 
-    if (meta.format === "jpeg" && upright.width && upright.height) {
+    if (meta.format === "jpeg" && upright.width && upright.height && !meta.icc) {
       // The one passthrough, and the one place the bytes keep their EXIF tag —
       // which is fine, because pdfkit reads orientation from a JPEG and turns it
       // at draw time. The dimensions returned are the upright ones, so they
       // describe what actually lands on the card rather than how it is stored.
+      //
+      // Only for a JPEG carrying **no ICC profile**, which by convention means
+      // sRGB. See `colourManagedJpeg` for the other half and why.
       return { data: buffer, width: upright.width, height: upright.height };
+    }
+
+    if (meta.format === "jpeg") {
+      // A JPEG that *does* carry a profile — an Adobe RGB export out of
+      // Lightroom, a Display P3 photo off a phone — cannot be passed through.
+      //
+      // pdfkit writes no ICC profile into the PDF at all (`COLOR_SPACE_MAP` is
+      // chosen by channel count), so whatever numbers we hand it are printed as
+      // device RGB. Hand it Adobe RGB numbers and the printer reads them as
+      // sRGB: every saturated colour lands muted and shifted, on a ten-ink
+      // pigment printer bought precisely for its colour.
+      //
+      // Re-encoding fixes it without any explicit colour call, because `sharp`
+      // honours the input profile and its output is sRGB: a Display P3 file
+      // storing green as (117, 251, 76) comes back as (3, 255, 0). `.rotate()`
+      // bakes the EXIF tag into the pixels as it does on the transcode path
+      // below, and sharp strips both EXIF and the profile on output, so pdfkit
+      // cannot rotate a second time on top of it.
+      //
+      // Lossy, and knowingly: one re-encode at 95 is invisible at card size,
+      // whereas the colour shift is not. A profile that happens to *be* sRGB is
+      // re-encoded too rather than parsed — the transform is then a no-op and
+      // the only cost is that same invisible generation.
+      const out = await sharp(buffer, { limitInputPixels: MAX_DECODE_PIXELS })
+        .rotate()
+        .jpeg({ quality: 95 })
+        .toBuffer();
+      return withDimensions(out);
     }
 
     // PNG, WebP, GIF (first frame), TIFF, AVIF, … → a PNG we have decoded ourselves.
