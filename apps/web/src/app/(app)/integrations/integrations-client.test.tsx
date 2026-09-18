@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { CrmConnection } from "@kudos/shared-types";
 import { IntegrationsClient } from "./integrations-client";
@@ -266,5 +266,99 @@ describe("IntegrationsClient — a partial import says so", () => {
     expect(summary.className).toContain("success");
     expect(summary).not.toHaveTextContent(/partial/i);
     expect(screen.queryByText(/partial: some contacts/i)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * CleanCloud connects on the same API-key lane as Brevo, and the one component
+ * now serves both. The slug used to be written into the connect, sync and
+ * disconnect URLs, so this is the test that would catch a second provider
+ * posting itself to Brevo's endpoints.
+ */
+describe("IntegrationsClient — CleanCloud", () => {
+  function renderClient(connections: CrmConnection[] = []) {
+    render(
+      <IntegrationsClient
+        initialKeys={[]}
+        initialConnections={connections}
+        apiBaseUrl="https://api.test"
+        connectedProvider={null}
+        errorProvider={null}
+        errorReason={null}
+      />,
+    );
+  }
+
+  /** The connector cards carry no heading role — the provider name is a span —
+   * so scope by the card the name sits in. Several cards offer a button
+   * labelled just "Connect". */
+  function card(name: string): HTMLElement {
+    const heading = screen.getByText(name);
+    const element = heading.closest("div.card");
+    if (!element) throw new Error(`No connector card for ${name}`);
+    return element as HTMLElement;
+  }
+
+  beforeEach(() => fetchMock.mockReset());
+
+  it("connects with the provider's own slug and its own word for the credential", async () => {
+    fetchMock.mockResolvedValue({
+      provider: "cleancloud",
+      syncEnabled: true,
+      lastSyncedAt: null,
+      lastSyncStatus: null,
+      createdAt: new Date(),
+    });
+    renderClient();
+
+    await userEvent.click(within(card("CleanCloud")).getByRole("button", { name: "Connect" }));
+    // "API token" is what CleanCloud calls it on its own screen; calling it an
+    // API key sends people hunting for a setting that is not there.
+    await userEvent.type(screen.getByLabelText("CleanCloud API token"), "cc-token");
+    await userEvent.click(screen.getByRole("button", { name: "Connect CleanCloud" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+    expect(url).toBe("/integrations/connections");
+    expect(JSON.parse(init.body)).toEqual({ provider: "cleancloud", apiKey: "cc-token" });
+  });
+
+  it("offers no field mapping, because CleanCloud's fields are fixed", async () => {
+    renderClient();
+
+    await userEvent.click(within(card("CleanCloud")).getByRole("button", { name: "Connect" }));
+    await userEvent.click(within(card("Brevo")).getByRole("button", { name: "Connect" }));
+
+    expect(screen.getByLabelText("CleanCloud API token")).toBeInTheDocument();
+    // Both forms are open; only Brevo's has anything to map.
+    expect(within(card("CleanCloud")).queryByText("Field mapping (optional)")).toBeNull();
+    expect(within(card("Brevo")).getByText("Field mapping (optional)")).toBeInTheDocument();
+  });
+
+  it("syncs and disconnects against its own endpoints", async () => {
+    const connection: CrmConnection = {
+      provider: "cleancloud",
+      syncEnabled: true,
+      lastSyncedAt: new Date("2026-09-01T09:00:00.000Z"),
+      lastSyncStatus: "ok",
+      createdAt: new Date("2026-08-01T09:00:00.000Z"),
+    };
+    fetchMock.mockResolvedValue({
+      fetched: 2,
+      created: 2,
+      updated: 0,
+      skipped: 0,
+      duplicates: 0,
+      unmappable: 0,
+      truncated: false,
+      errors: [],
+      readiness: { total: 2, withDateOfBirth: 2, withPostalAddress: 2, sendable: 2 },
+    });
+    renderClient([connection]);
+
+    await userEvent.click(within(card("CleanCloud")).getByRole("button", { name: "Sync now" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/integrations/connections/cleancloud/sync");
   });
 });

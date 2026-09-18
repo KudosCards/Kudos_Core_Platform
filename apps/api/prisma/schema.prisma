@@ -281,6 +281,12 @@ model Recipient {
   lastName                    String          @map("last_name")
   /// Nullable: not every occasion needs a DOB on file.
   dateOfBirth                 DateTime?       @map("date_of_birth") @db.Date
+  /// False when the source gave a day and month but no year — CleanCloud
+  /// captures `birthdayDay`/`birthdayMonth` and never asks for a year. The year
+  /// in `dateOfBirth` is then BIRTHDAY_PLACEHOLDER_YEAR and must never be shown.
+  /// Defaults true so every contact already on file, and every source that does
+  /// give a year, is untouched. See docs/adr/0252-cleancloud-integration.md.
+  birthYearKnown              Boolean         @default(true) @map("birth_year_known")
   email                       String?
   addressLine1                String?         @map("address_line1")
   addressLine2                String?         @map("address_line2")

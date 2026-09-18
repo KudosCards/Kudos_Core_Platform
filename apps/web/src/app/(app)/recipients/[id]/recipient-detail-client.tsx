@@ -1,6 +1,7 @@
 "use client";
 
 import { Cake } from "lucide-react";
+import { formatBirthDate } from "@kudos/shared-types";
 import type {
   KeyDateType,
   Occasion,
@@ -211,7 +212,7 @@ export function RecipientDetailClient({
           : {
               changed: true,
               text: after
-                ? `Saved. Date of birth is now ${formatOccasionDate(updated.dateOfBirth!)}.`
+                ? `Saved. Date of birth is now ${formatBirthDate(updated.dateOfBirth!, updated.birthYearKnown, "long")}.`
                 : "Saved. The date of birth was cleared.",
             },
       );
@@ -561,7 +562,7 @@ export function RecipientDetailClient({
           </h1>
           <p className="text-muted">
             {recipient.dateOfBirth
-              ? `Born ${formatOccasionDate(recipient.dateOfBirth)}`
+              ? `Born ${formatBirthDate(recipient.dateOfBirth, recipient.birthYearKnown, "long")}`
               : "No date of birth on file"}
             {recipient.addressPostcode ? ` · ${recipient.addressPostcode}` : ""}
           </p>
@@ -685,7 +686,7 @@ export function RecipientDetailClient({
               </dt>
               <dd className="text-sm">
                 {recipient.dateOfBirth ? (
-                  formatOccasionDate(recipient.dateOfBirth)
+                  formatBirthDate(recipient.dateOfBirth, recipient.birthYearKnown, "long")
                 ) : (
                   <span className="text-muted">Not on file</span>
                 )}
@@ -732,20 +733,37 @@ export function RecipientDetailClient({
                 className={inputClass}
               />
             </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted">Date of birth</span>
-              {/* Bounded in the browser as well as the API, so a mistyped year
-                  is refused at the point of typing rather than accepted and
-                  turned into a birthday the platform posts a card for. */}
-              <input
-                type="date"
-                name="dateOfBirth"
-                defaultValue={toDateInput(recipient.dateOfBirth)}
-                min={toDateInput(earliestPlausibleBirth())}
-                max={toDateInput(new Date())}
-                className={inputClass}
-              />
-            </label>
+            <div className="flex flex-col gap-1">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-muted">Date of birth</span>
+                {/* Bounded in the browser as well as the API, so a mistyped year
+                    is refused at the point of typing rather than accepted and
+                    turned into a birthday the platform posts a card for. */}
+                <input
+                  type="date"
+                  name="dateOfBirth"
+                  defaultValue={toDateInput(recipient.dateOfBirth)}
+                  min={toDateInput(earliestPlausibleBirth())}
+                  max={toDateInput(new Date())}
+                  className={inputClass}
+                />
+              </label>
+              {/* Outside the label on purpose: inside it, this paragraph would
+                  become part of the field's accessible name, and a screen
+                  reader would announce the whole explanation as the label.
+
+                  The field itself has to show a full date — it is a date
+                  picker, and blanking it would clear the birthday on the next
+                  save — so the honest thing left is to say which part of it is
+                  real. */}
+              {recipient.dateOfBirth && !recipient.birthYearKnown && (
+                <p className="text-xs text-muted">
+                  Your CRM gave us {formatBirthDate(recipient.dateOfBirth, false, "long")} with no
+                  year, so the year above is a placeholder. Leave it as it is, or enter the full
+                  date to record the real one.
+                </p>
+              )}
+            </div>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-muted">Email</span>
               <input

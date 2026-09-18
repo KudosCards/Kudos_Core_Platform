@@ -22,6 +22,8 @@ import {
 } from "../recipients/recipients.service";
 import type { OAuthCrmClient } from "./oauth-crm-client";
 import { BREVO_CLIENT, type BrevoClient } from "./brevo/brevo-client";
+import { CLEANCLOUD_CLIENT, type CleanCloudClient } from "./cleancloud/cleancloud-client";
+import { mapCleanCloudCustomer } from "./cleancloud/cleancloud.mapper";
 import {
   DEFAULT_BREVO_MAPPING,
   mapBrevoContact,
@@ -52,16 +54,36 @@ import {
 /** How a provider authenticates. Drives which connect path and sync fetch it uses. */
 type AuthType = "api_key" | "oauth";
 
+interface ProviderTraits {
+  authType: AuthType;
+  needsExternalAccount: boolean;
+  /**
+   * Whether the customer chooses which of the provider's fields feed ours.
+   *
+   * True where the provider lets each account name its own attributes (Brevo's
+   * custom attributes, HubSpot's properties) — there is no way to know in
+   * advance what a birthday is called. False where the fields are fixed by the
+   * product, as CleanCloud's are: there is nothing to configure, so there is no
+   * mapping step to show and no mapping to store.
+   */
+  configurableFields: boolean;
+}
+
 /** The CRMs we support and how each authenticates. Adding a provider is an entry
  * here plus its client + mapper — the ingest funnel is shared. */
 export const CRM_PROVIDERS = {
-  brevo: { authType: "api_key", needsExternalAccount: false },
-  hubspot: { authType: "oauth", needsExternalAccount: false },
+  brevo: { authType: "api_key", needsExternalAccount: false, configurableFields: true },
+  hubspot: { authType: "oauth", needsExternalAccount: false, configurableFields: true },
   // GoHighLevel scopes contacts to one location, so a grant without a locationId
   // can never sync. Its consent screen offers the agency as well as the
   // sub-accounts, and picking the agency yields exactly that. See ADR 0213.
-  gohighlevel: { authType: "oauth", needsExternalAccount: true },
-} as const satisfies Record<string, { authType: AuthType; needsExternalAccount: boolean }>;
+  gohighlevel: { authType: "oauth", needsExternalAccount: true, configurableFields: true },
+  // The point-of-sale a dry cleaner runs on. Its customer record has fixed
+  // fields, so nothing here is configurable — and it is the only source we read
+  // that holds a real postal address and a birthday as a matter of course.
+  // See ADR 0252.
+  cleancloud: { authType: "api_key", needsExternalAccount: false, configurableFields: false },
+} as const satisfies Record<string, ProviderTraits>;
 
 export type CrmProvider = keyof typeof CRM_PROVIDERS;
 export const SUPPORTED_PROVIDERS = Object.keys(CRM_PROVIDERS) as CrmProvider[];
@@ -196,6 +218,7 @@ export class CrmConnectionsService {
     private readonly audit: AuditService,
     private readonly config: ConfigService<EnvConfig, true>,
     @Inject(BREVO_CLIENT) private readonly brevo: BrevoClient,
+    @Inject(CLEANCLOUD_CLIENT) private readonly cleancloud: CleanCloudClient,
     @Inject(HUBSPOT_CLIENT) private readonly hubspot: HubSpotClient,
     @Inject(GOHIGHLEVEL_CLIENT) private readonly ghl: GoHighLevelClient,
   ) {}
@@ -280,8 +303,15 @@ export class CrmConnectionsService {
       throw new BadRequestException(`${provider} connects via OAuth, not an API key`);
     }
     this.assertCryptoConfigured();
+    if (fieldMapping && !CRM_PROVIDERS[provider].configurableFields) {
+      // Storing a mapping that nothing reads would leave the customer believing
+      // they had configured something.
+      throw new BadRequestException(
+        `${crmProviderLabel(provider)} has fixed fields — there is nothing to map`,
+      );
+    }
 
-    await this.brevo.verifyKey(apiKey);
+    await this.verifyApiKey(provider, apiKey);
 
     const encryptedApiKey = this.crypto.encrypt(apiKey);
     const mapping = (fieldMapping ?? null) as Prisma.InputJsonValue | null;
@@ -507,10 +537,31 @@ export class CrmConnectionsService {
   // Per-provider fetch: decrypt credentials, pull, map to NormalizedContact.
   // ---------------------------------------------------------------------------
 
+  /**
+   * Check a pasted key before storing it, with the right provider.
+   *
+   * A `switch`, not a call to whichever client happens to be first: this used
+   * to verify every api_key connection against Brevo, which was correct while
+   * Brevo was the only one and would have silently rejected every valid
+   * CleanCloud token the moment it was not.
+   */
+  private async verifyApiKey(provider: CrmProvider, apiKey: string): Promise<void> {
+    switch (provider) {
+      case "brevo":
+        return this.brevo.verifyKey(apiKey);
+      case "cleancloud":
+        return this.cleancloud.verifyKey(apiKey);
+      default:
+        throw new BadRequestException(`${provider} connects via OAuth, not an API key`);
+    }
+  }
+
   private async fetchContacts(connection: CrmConnection): Promise<ProviderFetch> {
     switch (connection.provider) {
       case "brevo":
         return this.fetchBrevoContacts(connection);
+      case "cleancloud":
+        return this.fetchCleanCloudContacts(connection);
       case "hubspot":
         return this.fetchHubSpotContacts(connection);
       case "gohighlevel":
@@ -529,6 +580,24 @@ export class CrmConnectionsService {
     const { contacts: raw, truncated } = await this.brevo.fetchContacts(apiKey);
     const contacts = raw
       .map((contact) => mapBrevoContact(contact, mapping))
+      .filter((c): c is NormalizedContact => c !== null);
+    return { contacts, fetched: raw.length, truncated };
+  }
+
+  /**
+   * CleanCloud has no field mapping — its customer record is fixed by the
+   * product — so this is the shortest fetch of the four: decrypt, pull, map.
+   * The mapper drops a row only when it carries no id or no usable name, and
+   * those show up as `unmappable`.
+   */
+  private async fetchCleanCloudContacts(connection: CrmConnection): Promise<ProviderFetch> {
+    if (!connection.encryptedApiKey) {
+      throw new BadRequestException("CleanCloud connection is missing its API token");
+    }
+    const apiToken = this.crypto.decrypt(connection.encryptedApiKey);
+    const { contacts: raw, truncated } = await this.cleancloud.fetchCustomers(apiToken);
+    const contacts = raw
+      .map((customer) => mapCleanCloudCustomer(customer))
       .filter((c): c is NormalizedContact => c !== null);
     return { contacts, fetched: raw.length, truncated };
   }

@@ -2,7 +2,7 @@
 
 import { CRM_PROVIDER_LABELS } from "@kudos/shared-types";
 import type { Recipient, RecipientListSummary } from "@kudos/shared-types";
-import { nextBirthdayOccurrence, startOfUtcDay } from "@kudos/shared-types";
+import { formatBirthDate, nextBirthdayOccurrence, startOfUtcDay } from "@kudos/shared-types";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
@@ -608,7 +608,7 @@ export function RecipientsClient({
       [
         r.firstName,
         r.lastName,
-        r.dateOfBirth ? new Date(r.dateOfBirth).toLocaleDateString("en-GB") : "",
+        r.dateOfBirth ? formatBirthDate(r.dateOfBirth, r.birthYearKnown) : "",
         r.addressLine1 ?? "",
         r.addressLine2 ?? "",
         r.addressCity ?? "",
@@ -1022,7 +1022,7 @@ export function RecipientsClient({
                     </td>
                     <td className="px-5 py-3 text-muted">
                       {recipient.dateOfBirth
-                        ? new Date(recipient.dateOfBirth).toLocaleDateString("en-GB")
+                        ? formatBirthDate(recipient.dateOfBirth, recipient.birthYearKnown)
                         : "—"}
                     </td>
                     <td className="px-5 py-3">
@@ -1147,7 +1147,7 @@ export function RecipientsClient({
                       <dt className="section-label">Date of birth</dt>
                       <dd className="text-muted">
                         {recipient.dateOfBirth
-                          ? new Date(recipient.dateOfBirth).toLocaleDateString("en-GB")
+                          ? formatBirthDate(recipient.dateOfBirth, recipient.birthYearKnown)
                           : "—"}
                       </dd>
                     </div>

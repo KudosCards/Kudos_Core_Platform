@@ -113,6 +113,7 @@ export const CRM_PROVIDER_LABELS: Record<string, string> = {
   hubspot: "HubSpot",
   gohighlevel: "LeadConnector",
   leadconnector: "LeadConnector",
+  cleancloud: "CleanCloud",
 };
 
 /**

@@ -8,6 +8,7 @@ import { ApiKeyGuard } from "./api-key.guard";
 import { CrmConnectionsService } from "./crm-connections.service";
 import { CrmSyncScheduler } from "./crm-sync.scheduler";
 import { brevoClientProvider } from "./brevo/brevo-client.provider";
+import { cleanCloudClientProvider } from "./cleancloud/cleancloud-client.provider";
 import { hubspotClientProvider } from "./hubspot/hubspot-client.provider";
 import { gohighlevelClientProvider } from "./gohighlevel/gohighlevel-client.provider";
 
@@ -21,6 +22,7 @@ import { gohighlevelClientProvider } from "./gohighlevel/gohighlevel-client.prov
     CrmConnectionsService,
     CrmSyncScheduler,
     brevoClientProvider,
+    cleanCloudClientProvider,
     hubspotClientProvider,
     gohighlevelClientProvider,
   ],
