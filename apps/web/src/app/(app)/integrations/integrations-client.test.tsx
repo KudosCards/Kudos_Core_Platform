@@ -26,6 +26,7 @@ describe("IntegrationsClient — a partial import says so", () => {
     syncEnabled: true,
     lastSyncedAt: new Date("2026-08-01T09:00:00.000Z"),
     lastSyncStatus: "ok",
+    externalAccountId: null,
     createdAt: new Date("2026-07-01T09:00:00.000Z"),
   };
 
@@ -335,12 +336,46 @@ describe("IntegrationsClient — CleanCloud", () => {
     expect(within(card("Brevo")).getByText("Field mapping (optional)")).toBeInTheDocument();
   });
 
+  it("names the sub-account a scoped connection actually reads from", async () => {
+    // "Location is not active" names a sub-account. Until this line existed we
+    // were the only ones who knew which one, so the message could not be acted
+    // on by the only person able to act on it.
+    renderClient([
+      {
+        provider: "gohighlevel",
+        syncEnabled: true,
+        lastSyncedAt: null,
+        lastSyncStatus: "error: LeadConnector rejected the access token — Location is not active",
+        externalAccountId: "ve9EPM428h8vShlRW1KT",
+        createdAt: new Date("2026-08-01T09:00:00.000Z"),
+      },
+    ]);
+
+    expect(within(card("LeadConnector")).getByText("ve9EPM428h8vShlRW1KT")).toBeInTheDocument();
+  });
+
+  it("says nothing about a sub-account for a provider that has none", () => {
+    renderClient([
+      {
+        provider: "cleancloud",
+        syncEnabled: true,
+        lastSyncedAt: new Date("2026-09-01T09:00:00.000Z"),
+        lastSyncStatus: "ok",
+        externalAccountId: null,
+        createdAt: new Date("2026-08-01T09:00:00.000Z"),
+      },
+    ]);
+
+    expect(within(card("CleanCloud")).queryByText(/Sub-account/)).toBeNull();
+  });
+
   it("syncs and disconnects against its own endpoints", async () => {
     const connection: CrmConnection = {
       provider: "cleancloud",
       syncEnabled: true,
       lastSyncedAt: new Date("2026-09-01T09:00:00.000Z"),
       lastSyncStatus: "ok",
+      externalAccountId: null,
       createdAt: new Date("2026-08-01T09:00:00.000Z"),
     };
     fetchMock.mockResolvedValue({

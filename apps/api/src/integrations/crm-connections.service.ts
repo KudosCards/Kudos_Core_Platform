@@ -114,6 +114,17 @@ export interface CrmConnectionView {
   syncEnabled: boolean;
   lastSyncedAt: Date | null;
   lastSyncStatus: string | null;
+  /**
+   * The sub-account this connection reads from, for providers that scope
+   * contacts to one — today only LeadConnector, whose every contacts call
+   * carries it.
+   *
+   * Not a secret: it is in the customer's own dashboard URL, which is where
+   * they are told to find it. Withholding it is what made "Location is not
+   * active" impossible to act on — the message names a sub-account and we were
+   * the only ones who knew which. See docs/leadconnector-private-token-plan.md.
+   */
+  externalAccountId: string | null;
   createdAt: Date;
 }
 
@@ -203,6 +214,7 @@ function toView(connection: CrmConnection): CrmConnectionView {
     syncEnabled: connection.syncEnabled,
     lastSyncedAt: connection.lastSyncedAt,
     lastSyncStatus: connection.lastSyncStatus,
+    externalAccountId: connection.externalAccountId,
     createdAt: connection.createdAt,
   };
 }
