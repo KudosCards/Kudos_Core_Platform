@@ -207,18 +207,53 @@ function LastSynced({ connection }: { connection: CrmConnection }) {
   );
 }
 
-/** Brevo — the API-key lane: paste a key, optionally map custom attributes. */
-function BrevoConnector({
-  connection,
-  onChange,
-}: {
+/** One of the provider fields a customer may need to name, because the provider
+ * lets each account name its own. Empty for a provider whose fields are fixed
+ * by the product, which is the whole of CleanCloud's mapping UI. */
+interface MappingField {
+  /** The NormalizedContact field this feeds. */
+  key: "dateOfBirth" | "addressPostcode";
+  label: string;
+  placeholder: string;
+}
+
+interface ApiKeyConnectorProps {
+  provider: string;
+  name: string;
   connection: CrmConnection | undefined;
   onChange: (next: CrmConnection | null) => void;
-}) {
+  /** What the credential is called on the provider's own screen — "API key"
+   * for Brevo, "API token" for CleanCloud. Getting this wrong sends people
+   * hunting for a setting that is not there. */
+  keyLabel: string;
+  keyPlaceholder?: string;
+  description?: string;
+  mappingFields?: MappingField[];
+  mappingHint?: string;
+}
+
+/**
+ * The API-key lane: paste a credential, optionally map the provider's fields.
+ *
+ * One component for every api_key provider. It was Brevo-only, with the slug
+ * "brevo" written into the connect, sync and disconnect calls — which is fine
+ * for one provider and a copy-paste of a hundred and twenty lines for the
+ * second.
+ */
+function ApiKeyConnector({
+  provider,
+  name,
+  connection,
+  onChange,
+  keyLabel,
+  keyPlaceholder,
+  description,
+  mappingFields = [],
+  mappingHint,
+}: ApiKeyConnectorProps) {
   const [open, setOpen] = useState(false);
   const [apiKey, setApiKey] = useState("");
-  const [dobAttr, setDobAttr] = useState("");
-  const [postcodeAttr, setPostcodeAttr] = useState("");
+  const [mapping, setMapping] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<null | "connect" | "sync" | "disconnect">(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CrmSyncResult | null>(null);
@@ -226,19 +261,21 @@ function BrevoConnector({
   async function connect(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!apiKey.trim()) {
-      setError("Paste your Brevo API key");
+      setError(`Paste your ${name} ${keyLabel}`);
       return;
     }
     setError(null);
     setBusy("connect");
     try {
       const fieldMapping: Record<string, string> = {};
-      if (dobAttr.trim()) fieldMapping.dateOfBirth = dobAttr.trim();
-      if (postcodeAttr.trim()) fieldMapping.addressPostcode = postcodeAttr.trim();
+      for (const field of mappingFields) {
+        const value = mapping[field.key]?.trim();
+        if (value) fieldMapping[field.key] = value;
+      }
       const created = await clientApiFetch<CrmConnection>("/integrations/connections", {
         method: "POST",
         body: JSON.stringify({
-          provider: "brevo",
+          provider,
           apiKey: apiKey.trim(),
           ...(Object.keys(fieldMapping).length > 0 && { fieldMapping }),
         }),
@@ -248,7 +285,7 @@ function BrevoConnector({
       setOpen(false);
     } catch (connectError) {
       setError(
-        connectError instanceof ApiError ? connectError.message : "Could not connect to Brevo",
+        connectError instanceof ApiError ? connectError.message : `Could not connect to ${name}`,
       );
     } finally {
       setBusy(null);
@@ -261,10 +298,8 @@ function BrevoConnector({
     setBusy("sync");
     try {
       const syncResult = await clientApiFetch<CrmSyncResult>(
-        "/integrations/connections/brevo/sync",
-        {
-          method: "POST",
-        },
+        `/integrations/connections/${provider}/sync`,
+        { method: "POST" },
       );
       setResult(syncResult);
       if (connection) {
@@ -287,7 +322,7 @@ function BrevoConnector({
     setError(null);
     setBusy("disconnect");
     try {
-      await clientApiFetch("/integrations/connections/brevo", { method: "DELETE" });
+      await clientApiFetch(`/integrations/connections/${provider}`, { method: "DELETE" });
       onChange(null);
       setResult(null);
     } catch (disconnectError) {
@@ -303,7 +338,7 @@ function BrevoConnector({
 
   return (
     <ConnectorShell
-      name="Brevo"
+      name={name}
       status={connection ? CONNECTED_PILL : null}
       actions={
         connection ? (
@@ -333,6 +368,7 @@ function BrevoConnector({
       }
     >
       {error && <p className="text-sm font-medium text-danger">{error}</p>}
+      {description && !connection && <p className="text-xs text-muted">{description}</p>}
       {connection && <LastSynced connection={connection} />}
       {result && <SyncSummary result={result} />}
 
@@ -342,50 +378,44 @@ function BrevoConnector({
           className="flex flex-col gap-3 border-t border-border pt-3"
         >
           <label className="flex flex-col gap-1 text-sm">
-            Brevo API key
+            {name} {keyLabel}
             <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="xkeysib-…"
+              placeholder={keyPlaceholder}
               className={inputClass}
               autoComplete="off"
             />
           </label>
-          <details className="text-sm">
-            <summary className="cursor-pointer text-muted">Field mapping (optional)</summary>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted">Date-of-birth attribute</span>
-                <input
-                  value={dobAttr}
-                  onChange={(e) => setDobAttr(e.target.value)}
-                  placeholder="e.g. DOB"
-                  className={inputClass}
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted">Postcode attribute</span>
-                <input
-                  value={postcodeAttr}
-                  onChange={(e) => setPostcodeAttr(e.target.value)}
-                  placeholder="e.g. POSTCODE"
-                  className={inputClass}
-                />
-              </label>
-            </div>
-            <p className="mt-1 text-xs text-muted">
-              Name and email use Brevo’s standard fields automatically. Set these only if you store
-              a birthday or postcode in custom Brevo attributes.
-            </p>
-          </details>
+          {mappingFields.length > 0 && (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-muted">Field mapping (optional)</summary>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {mappingFields.map((field) => (
+                  <label key={field.key} className="flex flex-col gap-1">
+                    <span className="text-xs text-muted">{field.label}</span>
+                    <input
+                      value={mapping[field.key] ?? ""}
+                      onChange={(e) =>
+                        setMapping((current) => ({ ...current, [field.key]: e.target.value }))
+                      }
+                      placeholder={field.placeholder}
+                      className={inputClass}
+                    />
+                  </label>
+                ))}
+              </div>
+              {mappingHint && <p className="mt-1 text-xs text-muted">{mappingHint}</p>}
+            </details>
+          )}
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={busy === "connect"}
               className="btn-accent flex-1 sm:flex-none"
             >
-              {busy === "connect" ? "Connecting…" : "Connect Brevo"}
+              {busy === "connect" ? "Connecting…" : `Connect ${name}`}
             </button>
             <button
               type="button"
@@ -575,6 +605,7 @@ export function IntegrationsClient({
   });
 
   const brevo = connections.find((c) => c.provider === "brevo");
+  const cleancloud = connections.find((c) => c.provider === "cleancloud");
   const hubspot = connections.find((c) => c.provider === "hubspot");
   const gohighlevel = connections.find((c) => c.provider === "gohighlevel");
 
@@ -660,7 +691,31 @@ export function IntegrationsClient({
           </p>
         )}
         <div className="flex flex-col gap-3">
-          <BrevoConnector connection={brevo} onChange={(next) => updateConnection("brevo", next)} />
+          <ApiKeyConnector
+            provider="brevo"
+            name="Brevo"
+            keyLabel="API key"
+            keyPlaceholder="xkeysib-…"
+            connection={brevo}
+            onChange={(next) => updateConnection("brevo", next)}
+            mappingFields={[
+              { key: "dateOfBirth", label: "Date-of-birth attribute", placeholder: "e.g. DOB" },
+              {
+                key: "addressPostcode",
+                label: "Postcode attribute",
+                placeholder: "e.g. POSTCODE",
+              },
+            ]}
+            mappingHint="Name and email use Brevo’s standard fields automatically. Set these only if you store a birthday or postcode in custom Brevo attributes."
+          />
+          <ApiKeyConnector
+            provider="cleancloud"
+            name={crmProviderLabel("cleancloud")}
+            keyLabel="API token"
+            connection={cleancloud}
+            onChange={(next) => updateConnection("cleancloud", next)}
+            description="Import your customers from CleanCloud, with the addresses and birthdays you already hold. Find your API token in CleanCloud under Settings → API. There is nothing to map — CleanCloud’s customer fields are the same for everyone. We only ever read; nothing is written back."
+          />
           <OAuthConnector
             provider="hubspot"
             name="HubSpot"

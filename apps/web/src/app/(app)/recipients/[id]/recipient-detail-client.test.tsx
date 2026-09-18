@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RecipientDetailClient } from "./recipient-detail-client";
+import { BIRTHDAY_PLACEHOLDER_YEAR } from "@kudos/shared-types";
 import type { Recipient } from "@kudos/shared-types";
 
 const fetchMock = jest.fn();
@@ -89,5 +90,67 @@ describe("RecipientDetailClient — clearing a field", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(savedBody()).toHaveProperty("email", "right@example.com");
+  });
+});
+
+/**
+ * A birthday from a source that never asked for a year. Nothing may show the
+ * placeholder year as if it were this person's: not the header, not the detail
+ * list, and not a save confirmation.
+ */
+describe("RecipientDetailClient — a birthday with no year", () => {
+  const base = {
+    id: "r-2",
+    firstName: "Ada",
+    lastName: "Lovelace",
+    dateOfBirth: new Date(Date.UTC(BIRTHDAY_PLACEHOLDER_YEAR, 2, 14)),
+    email: null,
+    addressLine1: "12 Acacia Avenue",
+    addressLine2: null,
+    addressCity: "London",
+    addressPostcode: "SW1A 1AA",
+    status: "active",
+    source: "cleancloud",
+    customFields: null,
+  };
+
+  function renderWith(birthYearKnown: boolean, dateOfBirth = base.dateOfBirth) {
+    render(
+      <RecipientDetailClient
+        recipient={{ ...base, dateOfBirth, birthYearKnown } as unknown as Recipient}
+        initialEvents={[]}
+        initialReturnCases={[]}
+        initialKeyDates={[]}
+      />,
+    );
+  }
+
+  beforeEach(() => fetchMock.mockReset());
+
+  it("shows the day and month without the placeholder year", () => {
+    renderWith(false);
+
+    expect(screen.getByText(/Born 14 March(?! \d)/)).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(String(BIRTHDAY_PLACEHOLDER_YEAR)))).toBeNull();
+  });
+
+  it("explains the placeholder on the edit form rather than leaving it to be believed", async () => {
+    renderWith(false);
+    await userEvent.click(screen.getByRole("button", { name: "Edit details" }));
+
+    expect(screen.getByText(/the year above is a placeholder/i)).toBeInTheDocument();
+    // The field itself still holds a full date: blanking it would clear the
+    // birthday on the next save.
+    expect(screen.getByLabelText("Date of birth")).toHaveValue(
+      `${BIRTHDAY_PLACEHOLDER_YEAR}-03-14`,
+    );
+  });
+
+  it("shows the year, and no note, once we really know it", async () => {
+    renderWith(true, new Date("1985-03-14T00:00:00.000Z"));
+
+    expect(screen.getByText(/Born 14 March 1985/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Edit details" }));
+    expect(screen.queryByText(/placeholder/i)).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 export * from "./enums";
 export * from "./dispatch";
 export * from "./next-birthday";
+export * from "./birthday";
 export * from "./london-time";
 export * from "./wallet-campaign";
 export * from "./account";

@@ -92,6 +92,30 @@ export interface ImportSummary {
 }
 
 /**
+ * Whether this update actually moves the date of birth.
+ *
+ * `undefined` means the field was not sent at all; equal timestamps mean the
+ * form posted back what was already on record, which is the ordinary case every
+ * time somebody edits an address and saves.
+ */
+function changesDateOfBirth(dto: UpdateRecipientDto, previous: Date | null): boolean {
+  if (dto.dateOfBirth === undefined) {
+    return false;
+  }
+  if (dto.dateOfBirth === null || previous === null) {
+    return dto.dateOfBirth !== previous;
+  }
+  return dto.dateOfBirth.getTime() !== previous.getTime();
+}
+
+/** Same calendar day and month, ignoring the year. UTC getters throughout: a
+ * `@db.Date` arrives as UTC midnight, and local getters read the day before it
+ * west of Greenwich. */
+function sameDayAndMonth(a: Date, b: Date): boolean {
+  return a.getUTCMonth() === b.getUTCMonth() && a.getUTCDate() === b.getUTCDate();
+}
+
+/**
  * A contact after DTO parsing — the normalized shape every integration source
  * maps to before it reaches the ingest funnel. `externalId` is the stable id in
  * the source system; the remaining fields are already coerced (dates parsed,
@@ -103,6 +127,12 @@ export interface NormalizedContact {
   lastName: string;
   email: string | null;
   dateOfBirth: Date | null;
+  /**
+   * False when the source gave a day and month but no year, so `dateOfBirth`
+   * carries `BIRTHDAY_PLACEHOLDER_YEAR` rather than a real one. Optional
+   * because almost every source does supply a year; absent means true.
+   */
+  birthYearKnown?: boolean;
   addressLine1: string | null;
   addressLine2: string | null;
   addressCity: string | null;
@@ -416,7 +446,22 @@ export class RecipientsService {
       this.prisma.$transaction(async (tx) => {
         let count: number;
         try {
-          ({ count } = await tx.recipient.updateMany({ where: { id, accountId }, data: dto }));
+          // A date of birth a person actually CHANGED carries a real year, so
+          // it clears any placeholder a yearless source (CleanCloud) left
+          // behind. Without this the contact would keep displaying as "14
+          // March" after someone had supplied the year by hand.
+          //
+          // Only on a change, though. The edit form posts every field on every
+          // save, so flipping the flag whenever `dateOfBirth` is present would
+          // turn opening the page and pressing Save into an assertion that the
+          // placeholder year is this person's real birth year.
+          ({ count } = await tx.recipient.updateMany({
+            where: { id, accountId },
+            data: {
+              ...dto,
+              ...(changesDateOfBirth(dto, previousDateOfBirth) && { birthYearKnown: true }),
+            },
+          }));
         } catch (error) {
           throw this.mapWriteError(error);
         }
@@ -854,11 +899,14 @@ export class RecipientsService {
     }
     const unique = [...byExternalId.values()];
 
+    // The birthday columns come back too, because a yearless source must not
+    // overwrite a year somebody typed in by hand — see toUpdateInput.
     const existing = await this.prisma.recipient.findMany({
       where: { accountId, source, externalId: { in: unique.map((c) => c.externalId) } },
-      select: { id: true, externalId: true },
+      select: { id: true, externalId: true, dateOfBirth: true, birthYearKnown: true },
     });
     const idByExternalId = new Map(existing.map((r) => [r.externalId as string, r.id]));
+    const storedByExternalId = new Map(existing.map((r) => [r.externalId as string, r]));
 
     const toUpdate = unique.filter((c) => idByExternalId.has(c.externalId));
     const toCreate = unique.filter((c) => !idByExternalId.has(c.externalId));
@@ -915,7 +963,7 @@ export class RecipientsService {
       try {
         await this.prisma.recipient.update({
           where: { id: idByExternalId.get(contact.externalId) },
-          data: this.toUpdateInput(contact),
+          data: this.toUpdateInput(contact, storedByExternalId.get(contact.externalId)),
         });
         updatedCount += 1;
       } catch (error) {
@@ -1018,6 +1066,7 @@ export class RecipientsService {
       lastName: contact.lastName,
       email: contact.email,
       dateOfBirth: contact.dateOfBirth,
+      birthYearKnown: contact.birthYearKnown ?? true,
       addressLine1: contact.addressLine1,
       addressLine2: contact.addressLine2,
       addressCity: contact.addressCity,
@@ -1028,18 +1077,56 @@ export class RecipientsService {
 
   /** Only the fields the contact actually carries — see the "merge, don't clear"
    * note in ingestFromSource. Name is always present (required upstream). */
-  private toUpdateInput(contact: NormalizedContact): Prisma.RecipientUpdateInput {
+  private toUpdateInput(
+    contact: NormalizedContact,
+    stored?: { dateOfBirth: Date | null; birthYearKnown: boolean },
+  ): Prisma.RecipientUpdateInput {
+    const birthday = this.birthdayUpdate(contact, stored);
     return {
       firstName: contact.firstName,
       lastName: contact.lastName,
       ...(contact.email !== null && { email: contact.email }),
-      ...(contact.dateOfBirth !== null && { dateOfBirth: contact.dateOfBirth }),
+      ...birthday,
       ...(contact.addressLine1 !== null && { addressLine1: contact.addressLine1 }),
       ...(contact.addressLine2 !== null && { addressLine2: contact.addressLine2 }),
       ...(contact.addressCity !== null && { addressCity: contact.addressCity }),
       ...(contact.addressPostcode !== null && { addressPostcode: contact.addressPostcode }),
       ...(contact.addressCountry !== null && { addressCountry: contact.addressCountry }),
     };
+  }
+
+  /**
+   * What a re-sync should do to a contact's date of birth.
+   *
+   * "Merge, don't clear" covers a source that carries nothing. A source that
+   * carries a day and month but no year is a third case, and the naive answer
+   * is wrong: CleanCloud would hand back 2000-03-14 every night and stamp out
+   * the real 1985 the customer had since typed in, for ever.
+   *
+   * So a yearless source may correct the day and month, and may fill a birthday
+   * that was empty — but where the day and month already agree with a date that
+   * has a real year on it, it leaves that date alone. The source is
+   * authoritative about *which day*; it never claimed to know the year.
+   */
+  private birthdayUpdate(
+    contact: NormalizedContact,
+    stored?: { dateOfBirth: Date | null; birthYearKnown: boolean },
+  ): Prisma.RecipientUpdateInput {
+    if (contact.dateOfBirth === null) {
+      return {};
+    }
+    const yearKnown = contact.birthYearKnown ?? true;
+    if (yearKnown) {
+      return { dateOfBirth: contact.dateOfBirth, birthYearKnown: true };
+    }
+    if (
+      stored?.dateOfBirth &&
+      stored.birthYearKnown &&
+      sameDayAndMonth(stored.dateOfBirth, contact.dateOfBirth)
+    ) {
+      return {};
+    }
+    return { dateOfBirth: contact.dateOfBirth, birthYearKnown: false };
   }
 
   /**

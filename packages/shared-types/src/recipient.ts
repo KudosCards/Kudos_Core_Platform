@@ -1,9 +1,56 @@
 import { z } from "zod";
 import { recipientStatusSchema } from "./enums";
 
-/** Single source of truth for UK postcode shape — apps/api imports this
- * directly rather than keeping its own copy in sync by hand. */
-export const ukPostcodeRegex = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
+/**
+ * Single source of truth for UK postcode shape — apps/api imports this
+ * directly rather than keeping its own copy in sync by hand.
+ *
+ * Written as a pattern string rather than a literal so the anchored validator
+ * and the unanchored finder below are provably the same shape. They were going
+ * to be two literals; two literals drift.
+ */
+function ukPostcodePattern(gap: string): string {
+  return `[A-Z]{1,2}\\d[A-Z\\d]?${gap}\\d[A-Z]{2}`;
+}
+
+/** Validates a postcode FIELD: the whole string must be a postcode. At most one
+ * space in the middle, because a field is something someone typed into a box
+ * meant only for this. */
+export const ukPostcodeRegex = new RegExp(`^${ukPostcodePattern("\\s?")}$`, "i");
+
+/**
+ * Finds a postcode INSIDE free text — the shape some CRMs hand us an address
+ * in (CleanCloud stores one `customerAddress` string, not structured fields).
+ *
+ * Returns the LAST match, because a UK address ends with its postcode: "12
+ * Sw1a Court, London SW1A 1AA" must yield the real one, not the street name.
+ * The boundaries stop a run of letters and digits inside a longer token
+ * ("ORDER-SW1A1AAX") from reading as a postcode.
+ *
+ * A fresh RegExp per call, deliberately: a shared global regex carries
+ * `lastIndex` between calls, so the second caller gets a different answer to
+ * the first from the same input.
+ */
+export function findUkPostcode(
+  text: string,
+): { postcode: string; start: number; end: number } | null {
+  // The one deliberate difference from the validator above: any run of spaces,
+  // not at most one. This reads a whole address somebody typed in free text,
+  // where "N1  9GU" is a typo to cope with rather than a value to reject —
+  // and where rejecting it means posting a card with no postcode on it.
+  const pattern = new RegExp(`(^|[^A-Z\\d])(${ukPostcodePattern("\\s*")})($|[^A-Z\\d])`, "gi");
+  let found: { postcode: string; start: number; end: number } | null = null;
+  for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
+    const lead = match[1] ?? "";
+    const postcode = match[2] ?? "";
+    const start = match.index + lead.length;
+    found = { postcode, start, end: start + postcode.length };
+    // Resume just past the postcode, not past the delimiter this match also
+    // consumed — otherwise that character cannot open the next candidate.
+    pattern.lastIndex = found.end;
+  }
+  return found;
+}
 
 /** Matches the CSV import contract's dd/mm/yyyy date format. Captures
  * day/month/year so apps/api's parser can reuse this directly instead of
@@ -33,6 +80,10 @@ export const recipientSchema = z.object({
   lastName: z.string().min(1).max(120),
   /** Nullable: not every occasion (e.g. a "thank you" recipient) needs a DOB. */
   dateOfBirth: z.coerce.date().nullable(),
+  /** False when the source gave a day and month but no year (CleanCloud
+   * captures exactly that). The year in `dateOfBirth` is then a placeholder
+   * and must never be shown — see `formatBirthDate`. */
+  birthYearKnown: z.boolean().default(true),
   email: z.string().email().nullable(),
   addressLine1: z.string().max(200).nullable(),
   addressLine2: z.string().max(200).nullable(),

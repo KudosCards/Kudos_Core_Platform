@@ -1,7 +1,10 @@
 # CleanCloud integration plan
 
-**Status:** plan only — nothing implemented. One fact is still missing (see
-[Blocked on](#blocked-on)) and the mapper cannot be written honestly without it.
+**Status:** built. Phases N1–N5 are implemented and tested; see
+[What shipped](#what-shipped) for where each decision landed and
+[ADR 0252](adr/0252-a-birthday-with-no-year.md) for the reasoning. One fact is
+still outstanding — the live date-range response shape — and is handled
+defensively rather than guessed; see [Still outstanding](#still-outstanding).
 
 ## Why this integration
 
@@ -127,42 +130,51 @@ CleanCloud needs **no field mapping**. Its fields are fixed by the product,
 unlike Brevo/HubSpot where the customer names their own attributes. The
 `fieldMapping` column stays NULL and the UI shows no mapping step.
 
-## Phases
+## What shipped
 
-- **N1 — client.** `cleancloud/cleancloud-client.ts` (interface + Symbol token),
-  `http-cleancloud-client.ts`: 31-day windowing, page/contact cap, request
-  budget, `truncated`. `verifyKey` = a single one-day window, so connecting
-  fails fast on a bad token.
-- **N2 — mapper.** `cleancloud.mapper.ts`: name split, address parse, birthday.
-  The risk lives here; it gets the mutation-tested unit suite.
-- **N3 — wiring.** `CRM_PROVIDERS.cleancloud = { authType: "api_key",
-needsExternalAccount: false }`, a `fetchCleanCloudContacts` case, label
-  entries (the `no-whitelabel-breach` guard requires them).
-- **N4 — UI.** A `CleanCloudConnector` beside `BrevoConnector` in
-  `integrations-client.tsx` (that component hardcodes `"brevo"`, so it is a
-  sibling, not a parameterisation — unless N4 generalises it, which is the
-  cleaner option if a fourth api_key provider is ever likely).
-- **N5 — e2e + ADR.** Connect → sync → readiness, against a stubbed client;
-  ADR recording the full-re-walk decision and the birthday-year decision.
-- **N6 — optional.** `getOrders` for lapsed-customer occasions ("we haven't
-  seen you in six months"). Out of scope until N1–N5 ship.
+| Phase | Where                                                                                                             |
+| ----- | ----------------------------------------------------------------------------------------------------------------- |
+| N1    | `cleancloud/cleancloud-client.ts`, `http-cleancloud-client.ts`, `cleancloud-windows.ts`, `cleancloud-response.ts` |
+| N2    | `cleancloud/cleancloud.mapper.ts`, `parse-address.ts`, `shared-types/birthday.ts`, `findUkPostcode`               |
+| N3    | `CRM_PROVIDERS.cleancloud`, `fetchCleanCloudContacts`, `verifyApiKey`, `birthYearKnown` through the ingest        |
+| N4    | `ApiKeyConnector` (Brevo's connector, generalised) + the CleanCloud card                                          |
+| N5    | `test/cleancloud.e2e-spec.ts`, ADR 0252                                                                           |
+| N6    | Not started — out of scope until this is running against a live token.                                            |
 
-## Blocked on
+### The four decisions, as taken
+
+1. **Mononyms are dropped** and counted as `unmappable`, which the customer can
+   see. "Dear Yusuf Yusuf" and an invented surname were both worse.
+2. **A placeholder year plus an explicit `birthYearKnown` column.** The sentinel
+   alone does not work in either direction — outside the 120-year window the API
+   refuses to save the contact; inside it, it hides the real birth year of every
+   customer who has one. One `BOOLEAN NOT NULL DEFAULT true` column, no backfill.
+3. **Ten years of history**, walked newest window first, ~118 requests a night.
+4. **Read-only.** Nothing is written back to CleanCloud.
+
+### Two corrections to the plan above
+
+- **A missing postcode does not break dedupe.** The recipient dedupe index is a
+  plain `CREATE UNIQUE INDEX`, so Postgres treats NULLs as distinct and those
+  rows never collide. The real consequence is that the contact imports but is
+  not postable, which `readinessFor` already reports.
+- **Windows run newest first, not oldest first.** A pull that stops early should
+  hold the people who signed up most recently, not the oldest tenth of the list.
+
+## Still outstanding
 
 1. **One real `getCustomer` date-range response, as JSON.** The published docs
-   show the single-customer shape and state that the range shape differs, but
-   do not print it. Writing the client against a guessed envelope is exactly
-   the shortcut this project does not take. `cleancloudapp.com` is blocked by
-   this environment's egress proxy, so it cannot be fetched from here.
-2. **Rate limits** (Getting Started page) — the only remaining unknown that
-   could change the design rather than just the code.
-3. **Bad-token behaviour** — HTTP status and body, so `verifyKey` can tell
-   "wrong key" from "CleanCloud is down".
+   show the single-customer shape and state that the range shape differs, but do
+   not print it. Rather than guess, `extractCustomers` accepts every shape that
+   sentence could mean and throws naming the top-level keys it actually got when
+   none fits — so the first live call either works or produces a one-line fix.
+   `cleancloudapp.com` is blocked by this environment's egress proxy.
+2. **Rate limits.** Not published. The retry honours `Retry-After` with
+   exponential backoff behind it, which is the right behaviour whatever the
+   limit turns out to be.
+3. **Bad-token behaviour.** `verifyKey` treats 401 and 403 as a rejected token
+   and everything else as an upstream failure; if CleanCloud signals a bad token
+   some third way, that mapping is one line.
 
-## Decisions for the account owner
-
-1. Mononyms: drop (recommended) or synthesise a surname?
-2. Birthday year: sentinel + display helper (recommended) or nullable column?
-3. First-sync horizon: how far back does the initial re-walk go — all history,
-   or the last N years?
-4. Read-only confirmed: this integration never writes to CleanCloud.
+None of the three blocks the code. All three are worth confirming on the first
+live connection.
