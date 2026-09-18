@@ -15,6 +15,7 @@
     "start:deploy": "prisma migrate deploy && node dist/main",
     "create-stripe-prices": "node scripts/create-stripe-prices.mjs",
     "royal-mail-sandbox-check": "node scripts/royal-mail-sandbox-check.mjs",
+    "calibration-sheet": "node scripts/print-calibration-sheet.mjs ../../docs/research/2026-09-artwork-print/kudos-borderless-calibration.pdf",
     "lint": "eslint \"{src,test}/**/*.ts\" --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "test": "jest",
