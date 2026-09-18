@@ -39,6 +39,45 @@ HighLevel's answer to "I want an API key, not an OAuth app".
 
 ### Why this is worth doing
 
+**The Marketplace app has a hard ceiling, and we are under it.**
+
+The Kudos Cards app exists and is working — Marketplace ID
+`6a7b05c62a9e0d6314e01596`, version 1.0.0, created 11 August 2026, status
+**Live**. Its distribution type is **Private**.
+
+HighLevel's Developer Policy for Private App Distribution Limits, which applies
+to private apps created on or after **18 November 2025**, says: **[confirmed]**
+
+> A private app may be installed in up to 5 Agencies. At 6 or more Agencies, new
+> installs are blocked.
+
+with one clarification that matters a great deal here:
+
+> One Agency equals one count, regardless of how many Sub-accounts are installed.
+
+Our app was created nine months after that policy date, so it is squarely inside
+it. Existing installs keep working; it is _new_ installs that stop.
+
+What that means in practice depends entirely on the shape of our customer base,
+which is a question for the business rather than the code:
+
+- If LeadConnector customers arrive as **sub-accounts under a handful of
+  agencies**, the cap is not close to binding — sub-accounts are unlimited.
+- If they arrive as **independent agencies**, the sixth one cannot install. There
+  is no error we can write, no retry, and no code change that gets past it.
+
+The two documented escapes are to publish the app publicly, which means a
+Marketplace review — the one that rejected our listing over white-labelling (ADR 0234) — or to request a Security Review, available only once the cap has already
+been hit, which lifts it while keeping the app private. **[confirmed]**
+
+**A Private Integration Token is subject to none of this.** The customer creates
+it inside their own sub-account; no Marketplace app is involved, so no
+distribution cap applies. That moves this work from a convenience to the route
+that actually scales, and it is why the token lane should be the LeadConnector
+card's primary action rather than its alternative.
+
+### Why it is also simply better for the customer
+
 The OAuth lane needs a HighLevel Marketplace app, and HighLevel has to approve
 it. A Private Integration needs nothing from HighLevel and nothing from us: the
 customer creates it in their own sub-account. It removes an approval dependency
@@ -181,10 +220,11 @@ same loop.
 
 ## What I would want confirmed before building
 
-1. **Is the LeadConnector Marketplace app actually approved and live?** It decides
-   whether this is a convenience or the only working route — and if OAuth is not
-   live, the token lane should be the card's primary action rather than its
-   alternative.
+1. **How do LeadConnector customers reach us — as agencies, or as sub-accounts
+   under a few agencies?** Answered, this says whether the 5-agency cap is a
+   live problem today or a distant one. It does not change the plan either way,
+   because the token lane sidesteps the cap entirely; it changes how urgent this
+   is. (The app itself is settled: Private, Live, created 11 August 2026.)
 2. **One look at `GET /contacts` in the docs** to settle whether it is deprecated,
    and at `POST /contacts/search` if it is.
 3. **One real Private Integration Token against one real sub-account** — the same
