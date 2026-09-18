@@ -218,6 +218,97 @@ The fix is small and belongs in the client: read `X-RateLimit-Remaining` and
 sleep when the window is nearly spent. Worth pairing with A, since both touch the
 same loop.
 
+## The live failure: "Location is not active"
+
+A connected account shows, on clicking Sync now:
+
+> LeadConnector rejected the access token — Location is not active
+
+Those last four words are **HighLevel's, not ours**. Our client wraps a 401 from
+the contacts call as `LeadConnector rejected the access token` and appends
+whatever the upstream body said (ADR 0212). So the upstream sentence is
+"Location is not active".
+
+### What that rules out
+
+Reading our own code, the request that produced it was structurally sound:
+
+- `externalAccountId` was present — had it been null, `fetchGoHighLevelContacts`
+  would have thrown the "this connection is to an agency" message instead, and
+  never reached HighLevel.
+- The token was current — `validAccessToken` refreshes anything inside the
+  expiry buffer before the call goes out.
+- The headers are right: `Authorization: Bearer`, `Version: 2021-07-28`.
+
+So this is not a malformed request, an expired token, or a missing location id.
+
+More usefully, it is **not a credentials problem at all**. A credentials problem
+says "invalid token" or "the token does not have access to this location" — both
+are messages HighLevel demonstrably uses. "Location is _not active_" is a
+statement about the state of the sub-account.
+
+**Which means reconnecting cannot fix it**, and reconnecting is the obvious
+instinct and almost certainly what has been tried repeatedly. Every reconnect
+mints a valid token for a location that is still not active, and fails
+identically. That is the same shape of trap as the "please reconnect it" wording
+ADR 0213 already fixed once: advice to repeat the action that just failed.
+
+### The decisive test, which takes two minutes
+
+Create a **Private Integration Token** in the affected sub-account
+(Settings → Private Integrations, scope `contacts.readonly`) and call the
+contacts endpoint directly with it:
+
+```
+curl -s -o /dev/null -w '%{http_code}\n' \
+  'https://services.leadconnectorhq.com/contacts/?locationId=<LOCATION_ID>&limit=1' \
+  -H 'Authorization: Bearer <PRIVATE_TOKEN>' \
+  -H 'Version: 2021-07-28'
+```
+
+- **Same "Location is not active"** → the sub-account's state at HighLevel is the
+  problem. Nothing in our code, our Marketplace app, or our OAuth flow is
+  involved, and no change to any of them will help. It is fixed in HighLevel or
+  by pointing at a different sub-account.
+- **It works** → the problem is specific to our Marketplace app's install on that
+  location, and the token lane in this plan unblocks that customer immediately.
+
+Either answer is actionable, and the token created to get it is the same artefact
+P1 needs to be verified against. One action, three answers.
+
+### Three things to check in HighLevel alongside it
+
+1. **Is the Kudos Cards app actually installed on that sub-account?** Not on the
+   agency — on the sub-account itself. A grant obtained through the
+   `chooselocation` screen is not the same thing as an install landing on that
+   location, and "not active" is a plausible way for HighLevel to describe the
+   difference.
+2. **What state is the sub-account in?** Paused, trial-expired, or created from a
+   snapshot and never activated would each fit the words exactly.
+3. **Which location id are we actually calling?** We hold it and never show it,
+   so this has been debugged blind. See below.
+
+### A small change worth making regardless
+
+The integrations page shows the error but not the sub-account it refers to. The
+location id is not a secret — it is in the customer's own dashboard URL — and
+showing it on a connected LeadConnector card turns "it says not active" into "it
+says _this_ sub-account is not active", which is the difference between guessing
+and checking. Small, and it would have shortened this.
+
+### Has this lane ever worked against a real HighLevel account?
+
+Worth asking plainly, because the answer changes how much to trust the client
+code. Every LeadConnector test in the suite runs against a mock — that is
+deliberate and correct, and it means the paging loop, the cursor handling and the
+field mapping have never been exercised against the real API. Brevo, HubSpot and
+now CleanCloud are in the same position by design; the difference is that this
+one has a live failure in front of it.
+
+If the answer is "no, never", then this is not a regression to bisect but a lane
+that has not yet had its first successful call — and the token route is the
+quickest way to get one.
+
 ## What I would want confirmed before building
 
 1. **How do LeadConnector customers reach us — as agencies, or as sub-accounts
