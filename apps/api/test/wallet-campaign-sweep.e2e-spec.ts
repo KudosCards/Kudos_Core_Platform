@@ -149,6 +149,33 @@ describe("Wallet campaign delivery (e2e)", () => {
     expect(await balanceOf(later)).toBe(500);
   });
 
+  it("credits a whole batch against a real database, across several windows", async () => {
+    // The sweep works its candidates in windows, and each credit is a
+    // Serializable transaction that sums the campaign's ledger and then writes
+    // into it. Against real Postgres, two of those running at once is a
+    // serialization cycle by construction; the credits are applied one at a
+    // time for exactly that reason (see `sweepOne`).
+    //
+    // Eight accounts, so the batch spans more than one window and a windowing
+    // bug that dropped or double-counted a tail would show up here rather than
+    // in production. `failed` must be zero: it is the counter that says an
+    // eligible customer was not paid.
+    const accountIds = [];
+    for (let i = 0; i < 8; i += 1) {
+      accountIds.push(await signedUpAt(IN_WINDOW));
+    }
+    await campaign();
+
+    const summary = await campaigns.sweep();
+
+    expect(summary.credited).toBe(8);
+    expect(summary.failed).toBe(0);
+    expect(summary.creditedMinor).toBe(4_000);
+    for (const accountId of accountIds) {
+      expect(await balanceOf(accountId)).toBe(500);
+    }
+  });
+
   it("credits nobody twice, however often it runs", async () => {
     const accountId = await signedUpAt(IN_WINDOW);
     await campaign();
@@ -169,12 +196,17 @@ describe("Wallet campaign delivery (e2e)", () => {
     const summary = await campaigns.sweep();
 
     expect(await balanceOf(guest)).toBe(0);
-    // `skipped` is the discriminator, and the reason this assertion is here:
-    // an unfiltered query would still not credit the guest — it has no owner
-    // membership to look up an address for — but it *would* fetch it and then
-    // decline, which is a candidate we paid to consider. Zero means the query
-    // never offered it.
+    // The counters are the discriminator, and the reason these assertions are
+    // here: an unfiltered query would still not credit the guest — it has no
+    // owner membership to look up an address for — but it *would* fetch it and
+    // then decline, which is a candidate we paid to consider. Zero on both
+    // means the query never offered it.
+    //
+    // Both, because an account that reaches the batch without an owner now
+    // counts as `failed` rather than `skipped`: checking only the one it used
+    // to land in would leave this guard passing while the query regressed.
     expect(summary.skipped).toBe(0);
+    expect(summary.failed).toBe(0);
   });
 
   it("leaves a guest account alone after it has been claimed", async () => {
@@ -199,6 +231,7 @@ describe("Wallet campaign delivery (e2e)", () => {
 
     expect(await balanceOf(guest)).toBe(0);
     expect(summary.skipped).toBe(0);
+    expect(summary.failed).toBe(0);
   });
 
   it("credits nobody while paused, and catches them up on resume", async () => {
@@ -302,6 +335,7 @@ describe("Wallet campaign delivery (e2e)", () => {
     // this the sweep's own `status: "live"` filter could be deleted and every
     // other assertion here would still pass.
     expect(summary.skipped).toBe(0);
+    expect(summary.failed).toBe(0);
   });
 
   it("credits at signup, without waiting for the sweep", async () => {
