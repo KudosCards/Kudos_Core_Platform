@@ -289,15 +289,42 @@ the summary's `cropped` list is empty, then switch on
 `catalog_reject_cropped_artwork`. Ops re-sync any unprinted orders that reference
 the old artwork. **Requires P1**, per D10.
 
-### P7 — Measurement hygiene
+### P7 — Measurement hygiene — **two of three done**
 
-- EXIF through `orientedPixelSize` in the catalog sync, so stored artwork
-  dimensions stop disagreeing with every other surface.
-- Distortion as a design-level finding in the pre-send check, alongside
-  `backArtworkClipped` — catching every legacy design before payment rather than
-  only when someone selects the image in the editor.
-- Measure `DesignAsset.width/height` server-side at upload instead of trusting
-  the browser, so "Your uploads" can grey out artwork the gate would refuse.
+- **Done.** EXIF through `orientedPixelSize` in the catalog sync, so stored
+  artwork dimensions stop disagreeing with every other surface. The catalog was
+  the last place measuring the _stored_ size: a portrait photo sent in sideways
+  read as a heavily cropped landscape, so the crop gate would have refused
+  artwork that is exactly the right shape for a card.
+- **Done.** `DesignAsset.width/height` are measured from the stored object at
+  upload instead of taken from the request. They decide what the editor believes
+  about a file and what the artwork gate would say about it, and a figure the
+  client supplies can answer neither — a stale tab or a forged request supplies
+  it too. Falls back to the client's number when storage cannot be reached, so a
+  blip does not stop an upload appearing in the library.
+  The measurement itself now lives in `common/measure-asset.ts`, shared with the
+  artwork gate: two surfaces answering "how big is it" differently is how the
+  orientation bug above happened in the first place.
+- **Not done, and bigger than this bullet made it look.** Distortion as a
+  design-level pre-send finding.
+
+  Two things found on attempting it. First, stretching an image is a **supported
+  choice**: the editor's `lockImageAspect` is on by default and is turned off
+  deliberately (#11). So the finding can only ever be a warning with a known
+  false-positive class — which the pre-send check's own rule permits, but it has
+  to be stated rather than discovered later.
+
+  Second, and the blocker: it needs each image's natural size server-side. The
+  only cheap source is `DesignAsset.width/height`, which the bullet above makes
+  trustworthy **for uploads made from now on**. The legacy designs this is meant
+  to catch reference legacy assets, whose stored dimensions are the browser's or
+  null. So it needs either a backfill of `DesignAsset` dimensions — ops work
+  against production — or a per-image fetch inside a preflight that runs on every
+  send review, which is a network round trip per image on a path a customer
+  waits on.
+
+  Worth doing after a backfill. Not worth shipping before one, because it would
+  stay quiet on exactly the designs it exists to catch.
 
 ### P8 — Retire browser print (D11) — **gated**, not yet retired
 

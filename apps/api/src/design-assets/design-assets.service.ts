@@ -1,6 +1,10 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { DesignAsset } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
+import { hostOf } from "../print-pdf";
+import { measureAsset } from "../common/measure-asset";
+import type { EnvConfig } from "../config/env.schema";
 import type { CreateDesignAssetDto } from "./dto/create-design-asset.dto";
 
 /**
@@ -12,7 +16,12 @@ import type { CreateDesignAssetDto } from "./dto/create-design-asset.dto";
  */
 @Injectable()
 export class DesignAssetsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(DesignAssetsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService<EnvConfig, true>,
+  ) {}
 
   async list(accountId: string): Promise<DesignAsset[]> {
     return this.prisma.designAsset.findMany({
@@ -22,17 +31,42 @@ export class DesignAssetsService {
     });
   }
 
+  /**
+   * Record a completed upload.
+   *
+   * The dimensions are measured from the stored object rather than taken from
+   * the request. They were whatever the browser posted, and they decide what the
+   * editor believes about the file and what the artwork gate would say about it
+   * — a number the client supplies cannot answer either question, because a
+   * stale tab or a forged request supplies it too. Measured here they also carry
+   * the EXIF orientation correction, which a browser's `naturalWidth` does not.
+   *
+   * Falls back to what the client sent when the object cannot be measured: a
+   * storage blip must not stop an upload appearing in the library, and the
+   * browser's figure is usually right even though it is never trustworthy. An
+   * image placed at the wrong aspect is the bug that made photos square before
+   * the editor read their real size, so no number at all is the worst outcome.
+   */
   async create(accountId: string, dto: CreateDesignAssetDto): Promise<DesignAsset> {
+    const measured = await this.measure(dto.url);
+
     return this.prisma.designAsset.create({
       data: {
         accountId,
         url: dto.url,
         fileName: dto.fileName,
-        width: dto.width ?? null,
-        height: dto.height ?? null,
+        width: measured?.width ?? dto.width ?? null,
+        height: measured?.height ?? dto.height ?? null,
       },
       select: { id: true, url: true, fileName: true, width: true, height: true, createdAt: true },
     });
+  }
+
+  /** Our own storage only — the url arrives in a request body. */
+  private measure(url: string): Promise<{ width: number; height: number } | null> {
+    const supabaseUrl = this.config.get("SUPABASE_URL", { infer: true });
+    const allowedHosts = [hostOf(supabaseUrl)].filter((host): host is string => host !== null);
+    return measureAsset(url, { allowedHosts, label: "design asset", logger: this.logger });
   }
 
   /** Removes the library entry (account-scoped). Storage is left untouched so
