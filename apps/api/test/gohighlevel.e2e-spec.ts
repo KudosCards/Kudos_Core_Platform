@@ -183,6 +183,13 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
       .expect(200);
     expect(JSON.stringify(list.body)).not.toContain("ghl-access-1");
     expect(JSON.stringify(list.body)).not.toContain("ghl-refresh-1");
+    // The sub-account IS returned, unlike the credentials. It is not a secret —
+    // it is in the customer's own dashboard URL — and an error that names a
+    // sub-account ("Location is not active") cannot be acted on by someone who
+    // cannot see which sub-account we are calling.
+    expect(list.body).toEqual([
+      expect.objectContaining({ provider: "gohighlevel", externalAccountId: LOCATION_ID }),
+    ]);
   });
 
   /**

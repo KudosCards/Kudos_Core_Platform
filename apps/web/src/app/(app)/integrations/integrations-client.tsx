@@ -197,13 +197,27 @@ function SyncRefusals({ errors }: { errors: CrmSyncResult["errors"] }) {
 /** "Last synced …" line shared by the connected connectors. */
 function LastSynced({ connection }: { connection: CrmConnection }) {
   return (
-    <p className="text-xs text-muted">
-      Last synced {formatDate(connection.lastSyncedAt)}
-      {connection.lastSyncStatus && connection.lastSyncStatus !== "ok"
-        ? ` · ${connection.lastSyncStatus}`
-        : ""}{" "}
-      · syncs automatically each night.
-    </p>
+    <>
+      <p className="text-xs text-muted">
+        Last synced {formatDate(connection.lastSyncedAt)}
+        {connection.lastSyncStatus && connection.lastSyncStatus !== "ok"
+          ? ` · ${connection.lastSyncStatus}`
+          : ""}{" "}
+        · syncs automatically each night.
+      </p>
+      {connection.externalAccountId && (
+        /* Which sub-account we are actually reading from.
+         *
+         * Only shown where the provider scopes contacts to one, and never a
+         * secret — it is in the customer's own dashboard URL, which is where
+         * they are told to look for it. It is here because an error naming a
+         * sub-account ("Location is not active") cannot be acted on by the one
+         * person who cannot see which sub-account is meant. */
+        <p className="text-xs text-muted">
+          Sub-account <code className="font-mono">{connection.externalAccountId}</code>
+        </p>
+      )}
+    </>
   );
 }
 

@@ -135,6 +135,10 @@ export const crmConnectionSchema = z.object({
   syncEnabled: z.boolean(),
   lastSyncedAt: z.coerce.date().nullable(),
   lastSyncStatus: z.string().nullable(),
+  /** The sub-account the connection reads from, where the provider scopes
+   * contacts to one. Null for the providers that do not. Never a secret — it is
+   * in the customer's own dashboard URL. */
+  externalAccountId: z.string().nullable().default(null),
   createdAt: z.coerce.date(),
 });
 export type CrmConnection = z.infer<typeof crmConnectionSchema>;
