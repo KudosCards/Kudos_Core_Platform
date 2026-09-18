@@ -285,11 +285,34 @@ millimetre of lost background. That margin is a judgement pending more prints.
   shows the answer you were testing for. The stored bytes have to be read
   directly.
 
-- Pick the closest Canon media type and print a test card.
-- If colour is still off, get an ICC profile for the stock — printed target and a
-  profiling service, or the supplier's — and select it with "printer manages
-  colours" off. On a ten-ink pigment printer this is the single biggest visible
-  quality step in the whole plan.
+- Pick the closest Canon media type and print a test card. **Handed over**:
+  `docs/ops/print-colour-setup.md`, with a purpose-built colour sheet
+  (`pnpm --filter @kudos/api colour-test-sheet`) printed once per candidate media
+  type at the same settings as a card.
+
+  The sheet leads with a neutral grey ramp, because that is the one band that
+  says whether the rest is worth reading: every patch is a true grey, so any
+  colour in them was added by the printer. A cast on _every_ media type is
+  almost always colour being managed twice — once by the application and again
+  by the driver — which no media type will fix, and which is the most common way
+  a print comes back wrong.
+
+  One constraint worth knowing before the trip: some Canon fine-art media types
+  **disable borderless printing**. A media type that does is unusable here, or
+  the folded-sheet approach changes — so the instructions ask for those to be
+  reported rather than skipped.
+
+- If colour is still off, get an ICC profile for the stock — the supplier's if
+  they publish one, otherwise a printed target and a profiling service — and
+  select it with the driver's own colour correction off. Same "only one thing
+  manages colour" rule, and getting it wrong is the usual reason a new profile
+  looks worse than none. On a ten-ink pigment printer this is the single biggest
+  visible quality step in the whole plan.
+
+- The same trip closes **P0's questions 3 and 4**, which have been open since the
+  first calibration: does the fold crack on 300 gsm with pigment over the crease,
+  and how long before the stack can be turned without the ink offsetting. Both
+  are process steps rather than code, and both need the real stock.
 
 ### P6 — Re-export the catalog and close its gate (D8, D9)
 
