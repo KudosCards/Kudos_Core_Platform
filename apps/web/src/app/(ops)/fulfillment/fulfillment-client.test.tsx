@@ -62,6 +62,7 @@ describe("FulfillmentClient — the tracking prompt before posting", () => {
         counts={COUNTS}
         dueOn={null}
         defaultPrintSize={"a5" as never}
+        printLayout="face-per-page"
       />,
     );
   }
@@ -211,6 +212,7 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
         counts={COUNTS}
         dueOn="2026-09-04"
         defaultPrintSize={"a5" as never}
+        printLayout="face-per-page"
       />,
     );
   }
@@ -236,6 +238,7 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
         counts={COUNTS}
         dueOn={null}
         defaultPrintSize={"a5" as never}
+        printLayout="face-per-page"
       />,
     );
 
@@ -275,6 +278,7 @@ describe("FulfillmentClient — advancing inside a deadline view", () => {
         counts={COUNTS}
         dueOn="2026-09-04"
         defaultPrintSize={"a5" as never}
+        printLayout="face-per-page"
       />,
     );
 
@@ -335,6 +339,7 @@ describe("FulfillmentClient — a card held because its address came back", () =
         counts={counts(held)}
         dueOn={null}
         defaultPrintSize={"a5" as never}
+        printLayout="face-per-page"
       />,
     );
   }
@@ -434,6 +439,7 @@ describe("FulfillmentClient — the work the front door does not list", () => {
         counts={counts as never}
         dueOn={null}
         defaultPrintSize={"a5" as never}
+        printLayout="face-per-page"
       />,
     );
   }
