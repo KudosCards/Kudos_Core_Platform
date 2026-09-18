@@ -9,6 +9,7 @@ import type {
   DesignDocument,
   DueFilter,
   HeldFilter,
+  PrintLayout,
   FulfillmentCounts,
 } from "@kudos/shared-types";
 import {
@@ -294,6 +295,7 @@ export function FulfillmentClient({
   counts,
   dueOn,
   defaultPrintSize,
+  printLayout,
 }: {
   initialJobs: FulfillmentJob[];
   /** The active status tab, or null when a calendar day is pinned with no
@@ -309,6 +311,7 @@ export function FulfillmentClient({
   /** The card size the print overlay opens on (super-admin default); ops can
    * still switch per run. See ADR 0138. */
   defaultPrintSize: CardSize;
+  printLayout: PrintLayout;
 }) {
   const router = useRouter();
   const [jobs, setJobs] = useState(initialJobs);
@@ -1292,6 +1295,7 @@ export function FulfillmentClient({
         <PrintRunOverlay
           cards={printCards}
           defaultSize={defaultPrintSize}
+          printLayout={printLayout}
           onClose={() => setPrintCards(null)}
         />
       )}

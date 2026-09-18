@@ -1,6 +1,6 @@
 "use client";
 
-import type { CardSize, DesignDocument, DesignPage } from "@kudos/shared-types";
+import type { CardSize, DesignDocument, DesignPage, PrintLayout } from "@kudos/shared-types";
 import {
   applyMergeTokens,
   BACK_RESERVED_FOOTER_MM,
@@ -15,6 +15,7 @@ import {
   cropLossPercent,
   cropVerdict,
   DEFAULT_CARD_SIZE,
+  DEFAULT_PRINT_PROFILE,
   cardSizeDimensions,
   croppedAxis,
   idealArtworkPixels,
@@ -135,11 +136,28 @@ export function PrintRunOverlay({
   cards,
   onClose,
   defaultSize = DEFAULT_CARD_SIZE,
+  printLayout = DEFAULT_PRINT_PROFILE.layout,
 }: {
   cards: PrintRunCard[];
   onClose: () => void;
   defaultSize?: CardSize;
+  /**
+   * The layout the print profile is set to. Defaults to the house profile's,
+   * which is `folded-sheet` — so a caller that has not been told the answer gets
+   * the safe one rather than the permissive one.
+   */
+  printLayout?: PrintLayout;
 }) {
+  // Browser print puts one card face on one page. Since ADR 0249 the PDF puts
+  // two faces on one landscape sheet that folds into a card, so under that
+  // profile these pages cannot be folded into anything — the operator would get
+  // a stack of loose faces at the wrong size and no fold. The two outputs used
+  // to resemble each other closely enough that either would do; they no longer
+  // do, which is the risk D11 named.
+  //
+  // Gated rather than deleted: `face-per-page` is still a selectable profile and
+  // this is its output, so it stays available exactly when it is correct.
+  const foldedSheets = printLayout === "folded-sheet";
   const [size, setSize] = useState<CardSize>(defaultSize);
   // Whether the back's reserved strip hides the artwork under it (what prints)
   // or is drawn over it (what the customer supplied). Defaults to what prints;
@@ -469,16 +487,24 @@ export function PrintRunOverlay({
           <button
             type="button"
             onClick={() => window.print()}
-            disabled={artworkView === "full"}
+            disabled={artworkView === "full" || foldedSheets}
             title={
-              artworkView === "full"
-                ? "Switch back to \u201cAs printed\u201d first — browser print rasterises what is on screen, and this view deliberately shows artwork that must not be printed"
-                : "Print from the browser (rasterised, no bleed or crop marks)"
+              foldedSheets
+                ? "The printer is set to folded sheets, and these pages are single card faces — they cannot be folded into a card. Use the print-ready PDF."
+                : artworkView === "full"
+                  ? "Switch back to \u201cAs printed\u201d first — browser print rasterises what is on screen, and this view deliberately shows artwork that must not be printed"
+                  : "Print from the browser (rasterised, no bleed or crop marks)"
             }
             className="rounded-full border border-black/20 px-4 py-1.5 text-sm text-black hover:bg-black/5 disabled:opacity-40"
           >
             Browser print
           </button>
+          {foldedSheets && (
+            <span className="text-xs text-black/60 print:hidden">
+              Browser print is off: this printer takes folded sheets, and these pages are single
+              card faces. Use the PDF.
+            </span>
+          )}
           <button
             type="button"
             onClick={onClose}

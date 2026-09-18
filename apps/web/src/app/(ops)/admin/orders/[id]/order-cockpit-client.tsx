@@ -8,6 +8,7 @@ import type {
   BatchOrderStatus,
   FulfillmentJobStatus,
   OccasionRedateSummary,
+  PrintLayout,
 } from "@kudos/shared-types";
 import { OPEN_FULFILLMENT_STATUSES, royalMailTrackingUrl } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
@@ -123,6 +124,7 @@ export function OrderCockpit({
   shippingEnabled,
   clickAndDropEnabled,
   isSuperAdmin,
+  printLayout,
 }: {
   orderId: string;
   orderStatus: BatchOrderStatus;
@@ -131,6 +133,8 @@ export function OrderCockpit({
   clickAndDropEnabled: boolean;
   /** Whether the viewer may run the super-admin-only occasion re-date. */
   isSuperAdmin: boolean;
+  /** The print profile's layout, which decides whether browser print is offered. */
+  printLayout: PrintLayout;
 }) {
   const router = useRouter();
   const [busyJob, setBusyJob] = useState<string | null>(null);
@@ -671,7 +675,13 @@ export function OrderCockpit({
         </table>
       </div>
 
-      {printCards && <PrintRunOverlay cards={printCards} onClose={() => setPrintCards(null)} />}
+      {printCards && (
+        <PrintRunOverlay
+          cards={printCards}
+          onClose={() => setPrintCards(null)}
+          printLayout={printLayout}
+        />
+      )}
     </section>
   );
 }

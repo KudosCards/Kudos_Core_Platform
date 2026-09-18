@@ -1,6 +1,13 @@
-import type { CardSize, DueFilter, FulfillmentCounts, HeldFilter } from "@kudos/shared-types";
+import type {
+  CardSize,
+  DueFilter,
+  FulfillmentCounts,
+  HeldFilter,
+  PrintProfile,
+} from "@kudos/shared-types";
 import {
   DEFAULT_CARD_SIZE,
+  DEFAULT_PRINT_PROFILE,
   DUE_FILTERS,
   FULFILLMENT_STATUSES,
   HELD_FILTERS,
@@ -82,13 +89,16 @@ export default async function FulfillmentPage({
     jobsQuery.set("status", explicitStatus ?? "pending");
   }
 
-  const [result, counts, printSize] = await Promise.all([
+  const [result, counts, printSize, printProfile] = await Promise.all([
     serverApiFetch<Paginated<FulfillmentJob>>(`/fulfillment/jobs?${jobsQuery.toString()}`),
     serverApiFetch<FulfillmentCounts>("/fulfillment/counts"),
     // The super-admin default print size the print overlay opens on. Both this
     // page and the setting live behind PlatformAdminGuard (the whole ops area),
     // so reading the admin setting here is in-scope. See ADR 0138.
     serverApiFetch<{ size: CardSize }>("/admin/print/card-size"),
+    // And the profile, because it decides whether browser print can produce
+    // anything foldable at all. Same guard as the size above. See ADR 0249.
+    serverApiFetch<{ profile: PrintProfile }>("/admin/print/profile"),
   ]);
 
   const emptyCounts: FulfillmentCounts = {
@@ -120,6 +130,7 @@ export default async function FulfillmentPage({
       counts={counts ?? emptyCounts}
       dueOn={dueOn}
       defaultPrintSize={printSize?.size ?? DEFAULT_CARD_SIZE}
+      printLayout={printProfile?.profile?.layout ?? DEFAULT_PRINT_PROFILE.layout}
     />
   );
 }

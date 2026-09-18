@@ -53,6 +53,7 @@ describe("OrderCockpit — the tracking prompt before posting", () => {
         shippingEnabled={false}
         clickAndDropEnabled={false}
         isSuperAdmin={false}
+        printLayout="folded-sheet"
       />,
     );
   }

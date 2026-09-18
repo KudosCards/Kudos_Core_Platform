@@ -279,9 +279,28 @@ the old artwork. **Requires P1**, per D10.
 - Measure `DesignAsset.width/height` server-side at upload instead of trusting
   the browser, so "Your uploads" can grey out artwork the gate would refuse.
 
-### P8 — Retire browser print (D11)
+### P8 — Retire browser print (D11) — **gated**, not yet retired
 
-Last, deliberately.
+D11's condition fired the moment P4 merged. The browser overlay still puts one
+card face on one page; the PDF now puts two faces on a landscape sheet that folds
+into a card. The two outputs no longer resemble each other, and the overlay's
+pages cannot be folded into anything — two buttons side by side, one of them
+now wrong.
+
+So browser print is **disabled whenever the profile says `folded-sheet`**, with
+the reason on the page rather than only in a tooltip, and the operator pointed at
+the PDF. Gated rather than deleted, because `face-per-page` is still a selectable
+profile and one face per page is exactly its output; the escape hatch stays
+usable precisely when it is correct. A caller that has not been told the layout
+gets the house profile's, which refuses.
+
+The overlay remains the _content_ preview — the merged names, the artwork, what
+the reserved strip covers — which is worth keeping whatever prints it. Making the
+preview itself show imposed sheets is a separate piece of work and is not what
+D11 asked for.
+
+Retiring it outright stays open, and is cheaper now that nothing can print the
+wrong shape.
 
 ## Out of scope, and why
 

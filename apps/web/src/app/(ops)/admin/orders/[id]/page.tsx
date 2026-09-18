@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { AdminIdentity, AdminOrderDetail } from "@kudos/shared-types";
+import type { AdminIdentity, AdminOrderDetail, PrintProfile } from "@kudos/shared-types";
 import {
+  DEFAULT_PRINT_PROFILE,
   describeSendSchedule,
   orderScheduleIsLive,
   summariseSendSchedule,
@@ -80,7 +81,7 @@ export default async function AdminOrderDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [order, shipping, clickAndDrop, me] = await Promise.all([
+  const [order, shipping, clickAndDrop, me, printProfile] = await Promise.all([
     serverApiFetch<AdminOrderDetail>(`/admin/orders/${id}`),
     serverApiFetch<{ enabled: boolean }>("/fulfillment/shipping-status"),
     serverApiFetch<{ enabled: boolean }>("/fulfillment/click-and-drop-status"),
@@ -88,6 +89,10 @@ export default async function AdminOrderDetailPage({
     // role so the button isn't offered to an operator who would only get a 403.
     // Non-fatal: without it the button is simply hidden.
     serverApiFetch<AdminIdentity>("/admin/me").catch(() => null),
+    // This page renders the print overlay too, and the overlay needs to know
+    // whether browser print can produce anything foldable. Non-fatal: without it
+    // the overlay falls back to the house profile, which refuses. See ADR 0249.
+    serverApiFetch<{ profile: PrintProfile }>("/admin/print/profile").catch(() => null),
   ]);
   if (!order) {
     notFound();
@@ -231,6 +236,7 @@ export default async function AdminOrderDetailPage({
       </div>
 
       <OrderCockpit
+        printLayout={printProfile?.profile?.layout ?? DEFAULT_PRINT_PROFILE.layout}
         orderId={order.id}
         orderStatus={order.status}
         lines={order.lines}

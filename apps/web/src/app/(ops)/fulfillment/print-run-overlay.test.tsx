@@ -340,3 +340,49 @@ describe("PrintRunOverlay — one line about the crop, in millimetres", () => {
     expect(loud.className).toContain("amber");
   });
 });
+
+/**
+ * Browser print puts one card face on one page. Since ADR 0249 the PDF puts two
+ * faces on a landscape sheet that folds into a card, so under that profile these
+ * pages fold into nothing — and the two buttons sit next to each other.
+ */
+describe("PrintRunOverlay — browser print against the folded-sheet profile", () => {
+  const browserPrint = (): HTMLButtonElement =>
+    screen.getByRole("button", { name: "Browser print" }) as HTMLButtonElement;
+
+  it("refuses browser print when the printer takes folded sheets", () => {
+    render(<PrintRunOverlay cards={[card]} onClose={() => {}} printLayout="folded-sheet" />);
+    expect(browserPrint()).toBeDisabled();
+  });
+
+  it("says why, on the page rather than only in a tooltip", () => {
+    // This button worked yesterday. An operator who finds it dead needs the
+    // reason without hovering it, and needs pointing at the thing that does work.
+    render(<PrintRunOverlay cards={[card]} onClose={() => {}} printLayout="folded-sheet" />);
+    expect(screen.getByText(/takes folded sheets/)).toBeInTheDocument();
+    expect(screen.getByText(/Use the PDF/)).toBeInTheDocument();
+  });
+
+  it("allows it under the layout whose output this actually is", () => {
+    // Gated, not deleted: `face-per-page` is still a selectable profile and one
+    // face per page is exactly what it wants.
+    render(<PrintRunOverlay cards={[card]} onClose={() => {}} printLayout="face-per-page" />);
+    expect(browserPrint()).toBeEnabled();
+    expect(screen.queryByText(/takes folded sheets/)).not.toBeInTheDocument();
+  });
+
+  it("defaults to refusing when nobody said which printer this is", () => {
+    // The house profile is folded-sheet, so a caller that has not been told the
+    // answer must get the safe one. The order cockpit renders this overlay
+    // without the prop.
+    render(<PrintRunOverlay cards={[card]} onClose={() => {}} />);
+    expect(browserPrint()).toBeDisabled();
+  });
+
+  it("leaves the print-ready PDF alone", () => {
+    // The PDF is the output that is correct under either profile, so nothing
+    // here may get in its way.
+    render(<PrintRunOverlay cards={[card]} onClose={() => {}} printLayout="folded-sheet" />);
+    expect(screen.getByRole("button", { name: /Download print-ready PDF/ })).toBeEnabled();
+  });
+});
