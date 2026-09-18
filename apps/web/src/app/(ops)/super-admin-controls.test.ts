@@ -57,6 +57,7 @@ const GATED: Record<string, string> = {
   "admin/seasonal-dispatch-setup.tsx": "SuperAdminEditable",
   "admin/dispatch-reminder-setup.tsx": "SuperAdminEditable",
   "admin/print-size-setup.tsx": "SuperAdminEditable",
+  "admin/print-profile-setup.tsx": "SuperAdminEditable",
   "admin/wallet-campaign-setup.tsx": "SuperAdminEditable",
   "admin/daily-summary-button.tsx": "SuperAdminOnly in admin/page.tsx",
   "admin/occasion-scheduler-button.tsx": "SuperAdminOnly in admin/page.tsx",
