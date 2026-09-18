@@ -5,7 +5,7 @@ import type { WalletCampaign } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { SUPABASE_ADMIN_CLIENT } from "../supabase/supabase-admin.provider";
 import { PlatformNotificationService } from "../platform-notifications/platform-notification.service";
-import { mapWithConcurrency } from "../common/map-with-concurrency";
+import { chunked, mapWithConcurrency } from "../common/map-with-concurrency";
 import { CAMPAIGN_SWEEP_BUDGET_MS, startFetchBudget } from "../common/fetch-budget";
 import { runSerializable } from "../common/run-serializable";
 import { CAMPAIGN_REFERENCE_PREFIX, campaignReference, WalletService } from "./wallet.service";
@@ -23,10 +23,12 @@ import { CAMPAIGN_REFERENCE_PREFIX, campaignReference, WalletService } from "./w
 export const CAMPAIGN_SWEEP_BATCH = 200;
 
 /**
- * Concurrent credits in flight. Each is one Supabase lookup plus one
- * serializable transaction, so this is a bound on connections held as much as
- * on outbound calls. Deliberately small: the sweep has an hour and no one is
- * waiting on it.
+ * Concurrent **address lookups** in flight, and so the size of one window.
+ *
+ * It bounds the Supabase round trips, which are the slow part of a credit. It
+ * deliberately does **not** bound concurrent credits: those are applied one at
+ * a time, for the reason written on `sweepOne`. Deliberately small either way —
+ * the sweep has an hour and no one is waiting on it.
  */
 export const CAMPAIGN_SWEEP_CONCURRENCY = 4;
 
@@ -35,10 +37,41 @@ export interface CampaignSweepSummary {
   campaignsConsidered: number;
   credited: number;
   creditedMinor: number;
+  /**
+   * Accounts the sweep looked at and deliberately did not credit: already
+   * credited, address unconfirmed, outside the window, campaign no longer live.
+   * Nothing is owed and nothing is wrong.
+   */
   skipped: number;
+  /**
+   * Accounts the sweep **should** have credited and could not — the credit threw
+   * and was swallowed so the rest of the batch could finish.
+   *
+   * Split out of `skipped`, which used to carry both. One counter meant an
+   * operator could not tell "twelve weren't eligible" from "twelve are owed
+   * money we failed to pay", and the second is the only one worth waking up for.
+   * Recoverable — the account still has no campaign ledger entry, so the next
+   * sweep retries it — but a number that stays above zero is a real fault.
+   */
+  failed: number;
   exhausted: string[];
   /** True when the wall-clock budget ended the run with accounts still to do. */
   truncated: boolean;
+}
+
+/** A sweep candidate, as the eligibility query selects it. */
+interface CandidateAccount {
+  id: string;
+  memberships: { userId: string }[];
+}
+
+/** A candidate after its address lookup — the slow half of a credit. */
+interface CandidateLookup {
+  accountId: string;
+  /** The confirmed address, or null when there is not one. */
+  email: string | null;
+  /** Set when the lookup failed, so the credit is never attempted. */
+  failure: string | null;
 }
 
 /**
@@ -73,6 +106,17 @@ export class WalletCampaignsService {
   async scheduledSweep(): Promise<void> {
     try {
       const summary = await this.sweep();
+      // A run that failed every credit used to log nothing at all here: the
+      // condition asked only about successes, so the one outcome worth noticing
+      // was the one that stayed silent. Each failure is logged individually
+      // below `sweepOne`, but the count is what says whether it is a blip or a
+      // pattern, and it is a warning rather than a log because money is owed.
+      if (summary.failed > 0) {
+        this.logger.warn(
+          `Wallet campaign sweep: ${summary.failed} account(s) eligible but not credited — ` +
+            `they will be retried on the next sweep`,
+        );
+      }
       if (summary.credited > 0 || summary.exhausted.length > 0) {
         this.logger.log(
           `Wallet campaign sweep: credited ${summary.credited} account(s), ` +
@@ -104,6 +148,7 @@ export class WalletCampaignsService {
       credited: 0,
       creditedMinor: 0,
       skipped: 0,
+      failed: 0,
       exhausted: [],
       truncated: false,
     };
@@ -122,7 +167,36 @@ export class WalletCampaignsService {
   }
 
   /**
-   * One campaign's batch.
+   * One campaign's batch: addresses confirmed concurrently, credits applied one
+   * at a time.
+   *
+   * **Why the credits are serial.** `creditCampaign` runs in a Serializable
+   * transaction that sums every ledger entry for the campaign to check the
+   * budget, and then inserts a row into that same set. Two of those running at
+   * once each read the predicate the other writes, which is a serialization
+   * cycle by construction — not bad luck. Postgres cancels one as a pivot, and
+   * on a loaded database a loser can exhaust all five retries inside the window
+   * the winner is still committing in. The credit then throws, gets swallowed
+   * below, and an eligible customer silently goes unpaid until the next sweep.
+   *
+   * That was not theoretical: it reached CI twice, on two unrelated PRs, as
+   * `credited: 1` where the test expected 2, with the Postgres log showing one
+   * backend losing the race six times in 300 ms on
+   * `INSERT INTO wallet_ledger_entries`. `run-serializable.ts` already names the
+   * same scenario in its own comment; the jitter it added made it rarer without
+   * making it impossible, because the conflict is structural.
+   *
+   * Applying the credits one at a time removes it at the source. Nothing is
+   * lost by doing so: a credit is a short database transaction, the sweep has an
+   * hour, and the concurrency was only ever worth having for the Supabase round
+   * trip — which is still concurrent, a window at a time.
+   *
+   * **Why a window rather than two passes.** Looking every address up first
+   * would do 200 round trips for a campaign that can afford three more credits.
+   * A window of `CAMPAIGN_SWEEP_CONCURRENCY` keeps the batch stopping within one
+   * window of the budget running out, and keeps candidates in `createdAt` order,
+   * so a budget that runs out mid-batch pays the earliest sign-ups rather than
+   * whichever four addresses happened to resolve first.
    *
    * Stops early once a credit comes back `budget_exhausted`, because the rest
    * of the batch would only be refused for the same reason. Whether the
@@ -157,34 +231,78 @@ export class WalletCampaignsService {
     });
 
     let exhausted = false;
-    await mapWithConcurrency(candidates, CAMPAIGN_SWEEP_CONCURRENCY, async (account) => {
-      if (budget.expired() || exhausted) {
-        summary.truncated = summary.truncated || budget.expired();
-        return;
-      }
-      const userId = account.memberships[0]?.userId;
-      if (!userId) {
-        summary.skipped += 1;
-        return;
-      }
-      // One bad account must not take the batch down — ADR 0186.
-      try {
-        const email = await this.confirmedEmailFor(userId);
-        const outcome = await this.wallet.creditCampaign(account.id, campaign, email);
-        if (outcome.status === "credited") {
-          summary.credited += 1;
-          summary.creditedMinor += outcome.amountMinor;
-        } else if (outcome.status === "budget_exhausted") {
-          exhausted = true;
-        } else {
-          summary.skipped += 1;
+    /** Marks the summary on the way out, so both loops read the same way. */
+    const overBudget = (): boolean => {
+      if (!budget.expired()) return false;
+      summary.truncated = true;
+      return true;
+    };
+    const couldNotCredit = (accountId: string, reason: string): void => {
+      summary.failed += 1;
+      this.logger.error(`Campaign ${campaign.id} could not credit ${accountId}: ${reason}`);
+    };
+
+    for (const window of chunked(candidates, CAMPAIGN_SWEEP_CONCURRENCY)) {
+      if (exhausted || overBudget()) break;
+
+      // The slow half, in parallel: one Supabase round trip each.
+      const looked = await mapWithConcurrency(window, CAMPAIGN_SWEEP_CONCURRENCY, (account) =>
+        this.lookUpAddress(account),
+      );
+
+      // The contended half, one at a time. See this method's comment.
+      for (const entry of looked) {
+        if (exhausted || overBudget()) break;
+
+        if (entry.failure !== null) {
+          couldNotCredit(entry.accountId, entry.failure);
+          continue;
         }
-      } catch (error) {
-        summary.skipped += 1;
-        const reason = error instanceof Error ? error.message : "Unknown error";
-        this.logger.error(`Campaign ${campaign.id} could not credit ${account.id}: ${reason}`);
+        // One bad account must not take the batch down — ADR 0186.
+        try {
+          const outcome = await this.wallet.creditCampaign(entry.accountId, campaign, entry.email);
+          if (outcome.status === "credited") {
+            summary.credited += 1;
+            summary.creditedMinor += outcome.amountMinor;
+          } else if (outcome.status === "budget_exhausted") {
+            exhausted = true;
+          } else {
+            summary.skipped += 1;
+          }
+        } catch (error) {
+          couldNotCredit(entry.accountId, error instanceof Error ? error.message : "Unknown error");
+        }
       }
-    });
+    }
+  }
+
+  /**
+   * One candidate's confirmed address, with any failure carried rather than
+   * thrown — the window is resolved with `Promise.all` underneath, where one
+   * rejection would abandon the three beside it.
+   */
+  private async lookUpAddress(account: CandidateAccount): Promise<CandidateLookup> {
+    const accountId = account.id;
+    const userId = account.memberships[0]?.userId;
+    if (!userId) {
+      // The query already required an owner membership, so this is a race (the
+      // membership went away underneath us), not an ineligible account — which
+      // is why it counts as failed rather than skipped.
+      return {
+        accountId,
+        email: null,
+        failure: "no owner membership to confirm an address against",
+      };
+    }
+    try {
+      return { accountId, email: await this.confirmedEmailFor(userId), failure: null };
+    } catch (error) {
+      return {
+        accountId,
+        email: null,
+        failure: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
   }
 
   /**
