@@ -8,6 +8,7 @@ import { SeatBillingSetup } from "./seat-billing-setup";
 import { SeasonalDispatchSetup } from "./seasonal-dispatch-setup";
 import { DispatchReminderSetup } from "./dispatch-reminder-setup";
 import { PrintSizeSetup } from "./print-size-setup";
+import { PrintProfileSetup } from "./print-profile-setup";
 import { WalletCampaignSetup } from "./wallet-campaign-setup";
 import { ArrivalSweepButton } from "./arrival-sweep-button";
 import { DailySummaryButton } from "./daily-summary-button";
@@ -281,6 +282,7 @@ export default async function AdminOverviewPage() {
 
       {/* Default print card size (A5/A6) the fulfilment print run opens on. */}
       <PrintSizeSetup />
+      <PrintProfileSetup />
 
       {/* Marketing wallet campaigns — free credit for sign-ups in a window. */}
       <WalletCampaignSetup />
