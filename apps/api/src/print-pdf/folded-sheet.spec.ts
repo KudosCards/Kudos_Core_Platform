@@ -134,8 +134,22 @@ describe("foldedSheetGeometry", () => {
     expect(foldedSheetGeometry("A6", 0).shrink).toBe(1);
   });
 
-  it("compensates a measured overhang", () => {
-    expect(foldedSheetGeometry("A6", 3).shrink).toBeCloseTo(210 / 216, 9);
+  it("compensates a measured overhang, less the safety margin", () => {
+    // 3 mm measured, 1 mm left deliberately overhanging, so 2 mm is corrected.
+    expect(foldedSheetGeometry("A6", 3).shrink).toBeCloseTo(210 / 214, 9);
+  });
+
+  it("is not shifted until a placement offset is measured", () => {
+    expect(foldedSheetGeometry("A6", 3).shiftXPt).toBe(0);
+    expect(foldedSheetGeometry("A6", 3).shiftYPt).toBe(0);
+  });
+
+  it("shifts by the measured offset, carrying the shrink", () => {
+    // The driver enlarges the shift along with everything else, so the page
+    // shift is the paper correction times the shrink.
+    const sheet = foldedSheetGeometry("A6", 3.25, { xMm: -1.75, yMm: 0 });
+    expect(sheet.shiftXPt / PT_PER_MM / sheet.shrink).toBeCloseTo(-1.75, 9);
+    expect(sheet.shiftYPt).toBe(0);
   });
 });
 
@@ -229,6 +243,8 @@ describe("borderless compensation", () => {
   it("draws the sheet untouched when nothing has been measured", async () => {
     const pdf = await renderFoldedRunPdf([{ document: colourCard(ALL_FACES) }], {
       borderlessOverhangMm: 0,
+      borderlessOffsetXMm: 0,
+      borderlessOffsetYMm: 0,
     });
     // Exactly one scale per panel — its own design scale — and nothing else.
     // An unconditional shrink would leave a white margin on every card.
@@ -250,7 +266,7 @@ describe("borderless compensation", () => {
     const scales = uniformScales(pageStreams(pdf)[0]!);
     // The two panel scales, plus one sheet-level shrink applied before them.
     expect(scales).toHaveLength(3);
-    expect(scales.filter((s) => Math.abs(s - 210 / 216) < 1e-4)).toHaveLength(1);
+    expect(scales.filter((s) => Math.abs(s - 210 / 214) < 1e-4)).toHaveLength(1);
 
     // Scaled about the sheet centre, not the origin — the giveaway is the
     // translate back out again. Scaling about the origin would pull the card
@@ -266,11 +282,43 @@ describe("borderless compensation", () => {
     // Scaling about the origin would pull the card into one corner: the far
     // edge would lose twice the overhang and the near edge none.
     const sheet = foldedSheetGeometry("A6", 3);
+    const CORRECTED_MM = 2; // 3 measured, 1 left deliberately overhanging.
     const insetLeft = (sheet.pageWidthPt * (1 - sheet.shrink)) / 2;
     const insetRight = sheet.pageWidthPt - (insetLeft + sheet.pageWidthPt * sheet.shrink);
     expect(insetRight).toBeCloseTo(insetLeft, 9);
-    // And that inset, enlarged by the driver, is exactly the 3 mm it throws away.
-    expect((insetLeft / PT_PER_MM) * (216 / 210)).toBeCloseTo(3, 6);
+    // And that inset, enlarged by the driver, is the part it throws away.
+    expect((insetLeft / PT_PER_MM) * (214 / 210)).toBeCloseTo(CORRECTED_MM, 6);
+  });
+
+  it("moves the sheet when the printer places it off centre", async () => {
+    // The first calibration that engaged borderless: 1.5 mm off the left edge,
+    // 5 mm off the right. The scale cannot fix that — enlarging a card that is
+    // in the wrong place leaves it in the wrong place. See ADR 0251.
+    const sheet = foldedSheetGeometry("A6", 3.25, { xMm: -1.75 });
+    const pdf = await renderFoldedRunPdf([{ document: colourCard(ALL_FACES) }], {
+      borderlessOverhangMm: 3.25,
+      borderlessOffsetXMm: -1.75,
+    });
+
+    const shifts = transforms(pageStreams(pdf)[0]!).filter(
+      (t) => t[0] === 1 && t[3] === 1 && Math.abs(t[4]! - sheet.shiftXPt) < 0.001,
+    );
+    expect(shifts).toHaveLength(1);
+    // Leftwards, because the printer is running right.
+    expect(sheet.shiftXPt).toBeLessThan(0);
+  });
+
+  it("leaves a centred printer alone even when it enlarges", async () => {
+    // The contrast: an overhang with no offset is a scale and nothing else.
+    const pdf = await renderFoldedRunPdf([{ document: colourCard(ALL_FACES) }], {
+      borderlessOverhangMm: 3.25,
+    });
+    const stream = pageStreams(pdf)[0]!;
+    const sheet = foldedSheetGeometry("A6", 3.25);
+    // Only the centring translates are negative; no placement shift joins them.
+    const negatives = transforms(stream).filter((t) => t[4]! < 0 || t[5]! < 0);
+    expect(negatives).toHaveLength(1);
+    expect(negatives[0]![4]).toBeCloseTo(-sheet.pageWidthPt / 2, 3);
   });
 });
 

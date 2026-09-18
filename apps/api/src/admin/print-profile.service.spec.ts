@@ -32,11 +32,19 @@ describe("PrintProfileService", () => {
 
   it("returns a stored profile", async () => {
     get.mockResolvedValue(
-      JSON.stringify({ layout: "face-per-page", borderlessOverhangMm: 2.5, backFooter: "print" }),
+      JSON.stringify({
+        layout: "face-per-page",
+        borderlessOverhangMm: 2.5,
+        borderlessOffsetXMm: -1.75,
+        borderlessOffsetYMm: 0,
+        backFooter: "print",
+      }),
     );
     await expect(service.getProfile()).resolves.toEqual({
       layout: "face-per-page",
       borderlessOverhangMm: 2.5,
+      borderlessOffsetXMm: -1.75,
+      borderlessOffsetYMm: 0,
       backFooter: "print",
     });
   });
@@ -56,6 +64,8 @@ describe("PrintProfileService", () => {
     const profile = {
       layout: "folded-sheet" as const,
       borderlessOverhangMm: 2.5,
+      borderlessOffsetXMm: -1.75,
+      borderlessOffsetYMm: 0,
       backFooter: "print" as const,
     };
 
@@ -69,16 +79,26 @@ describe("PrintProfileService", () => {
     const saved = await service.setProfile({
       layout: "folded-sheet",
       borderlessOverhangMm: 2.9,
+      borderlessOffsetXMm: -1.8,
+      borderlessOffsetYMm: 0,
       backFooter: "reserved",
     });
 
     expect(saved.borderlessOverhangMm).toBe(3);
+    // The offset rounds the same way, and keeps its sign doing it.
+    expect(saved.borderlessOffsetXMm).toBe(-1.75);
     expect(set.mock.calls[0]![1]).toContain('"borderlessOverhangMm":3');
   });
 
   it("rejects an invalid profile without writing anything", async () => {
     await expect(
-      service.setProfile({ layout: "2-up", borderlessOverhangMm: 0, backFooter: "reserved" }),
+      service.setProfile({
+        layout: "2-up",
+        borderlessOverhangMm: 0,
+        borderlessOffsetXMm: 0,
+        borderlessOffsetYMm: 0,
+        backFooter: "reserved",
+      }),
     ).rejects.toThrow(BadRequestException);
     expect(set).not.toHaveBeenCalled();
   });
@@ -88,6 +108,8 @@ describe("PrintProfileService", () => {
       service.setProfile({
         layout: "folded-sheet",
         borderlessOverhangMm: 40,
+        borderlessOffsetXMm: 0,
+        borderlessOffsetYMm: 0,
         backFooter: "reserved",
       }),
     ).rejects.toThrow(BadRequestException);

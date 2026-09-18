@@ -29,6 +29,26 @@ export class UpdatePrintProfileDto {
   borderlessOverhangMm!: number;
 
   @ApiProperty({
+    minimum: -MAX_BORDERLESS_OVERHANG_MM,
+    maximum: MAX_BORDERLESS_OVERHANG_MM,
+    description: "Long-axis placement offset, (left − right) ÷ 2 of the calibration readings",
+  })
+  @IsNumber()
+  @Min(-MAX_BORDERLESS_OVERHANG_MM)
+  @Max(MAX_BORDERLESS_OVERHANG_MM)
+  borderlessOffsetXMm!: number;
+
+  @ApiProperty({
+    minimum: -MAX_BORDERLESS_OVERHANG_MM,
+    maximum: MAX_BORDERLESS_OVERHANG_MM,
+    description: "Short-axis placement offset, (top − bottom) ÷ 2 of the calibration readings",
+  })
+  @IsNumber()
+  @Min(-MAX_BORDERLESS_OVERHANG_MM)
+  @Max(MAX_BORDERLESS_OVERHANG_MM)
+  borderlessOffsetYMm!: number;
+
+  @ApiProperty({
     enum: BACK_FOOTER_MODES,
     description: "Whether the back's bottom strip is pre-printed on the stock or drawn by us",
   })

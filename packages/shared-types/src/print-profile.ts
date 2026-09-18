@@ -35,6 +35,22 @@ export function foldedSheetMm(size: CardSize): { widthMm: number; heightMm: numb
  */
 export const MAX_BORDERLESS_OVERHANG_MM = 10;
 
+/**
+ * How much overhang the compensation deliberately leaves behind.
+ *
+ * Compensating a measured overhang *exactly* makes the card fill the paper
+ * exactly — and a sheet-fed printer does not place every sheet identically. The
+ * first calibration print was 1.75 mm off centre, so the feed clearly moves;
+ * correcting to zero would turn any variation into a white sliver down one edge
+ * of a finished card, which is worse than losing a millimetre of background.
+ *
+ * So the card is drawn to overrun the paper by about this much, and that much
+ * background is thrown away on purpose. It is a judgement, not a measurement:
+ * one sheet says where the feed sat, not how far it wanders. Several prints
+ * would say, and this is the number to revisit when they exist.
+ */
+export const BORDERLESS_SAFETY_MM = 1;
+
 /** How a print run is laid out on paper. */
 export const PRINT_LAYOUTS = ["folded-sheet", "face-per-page"] as const;
 export type PrintLayout = (typeof PRINT_LAYOUTS)[number];
@@ -68,6 +84,22 @@ export interface PrintProfile {
    * printer that is not enlarging at all, so it is a safe default either way.
    */
   borderlessOverhangMm: number;
+  /**
+   * How far the printer places the sheet off centre, in mm, along the sheet's
+   * **long** axis: `(left − right) ÷ 2` of the four calibration readings.
+   * Negative means it prints too far right, so the card is drawn further left.
+   *
+   * Separate from the overhang because it is a different fault with a different
+   * fix. The overhang is the driver enlarging the page, which a scale corrects.
+   * This is the paper arriving somewhere other than where the driver thinks,
+   * which no amount of scaling corrects — it has to be moved. ADR 0249 recorded
+   * that the compensation assumed these were the same thing; the first
+   * calibration print that engaged borderless proved they are not.
+   */
+  borderlessOffsetXMm: number;
+  /** The same along the short axis: `(top − bottom) ÷ 2`. Negative moves the
+   *  card up. Zero on the calibration print that produced these fields. */
+  borderlessOffsetYMm: number;
   /** Whether the back's bottom strip is already on the stock or drawn here. */
   backFooter: BackFooterMode;
 }
@@ -76,11 +108,21 @@ export interface PrintProfile {
 export const DEFAULT_PRINT_PROFILE: PrintProfile = {
   layout: "folded-sheet",
   borderlessOverhangMm: 0,
+  borderlessOffsetXMm: 0,
+  borderlessOffsetYMm: 0,
   // The stock in the building is pre-printed, so the safe default is to leave
   // the strip alone. Switched to "print" when blank stock arrives — after a
   // proof, not before.
   backFooter: "reserved",
 };
+
+/** A placement offset: either direction, and no finer than a ruler can read. */
+const offsetMm = z
+  .number()
+  .finite()
+  .min(-MAX_BORDERLESS_OVERHANG_MM)
+  .max(MAX_BORDERLESS_OVERHANG_MM)
+  .transform((mm) => Math.round(mm * 4) / 4);
 
 export const printProfileSchema = z.object({
   layout: z.enum(PRINT_LAYOUTS),
@@ -92,6 +134,8 @@ export const printProfileSchema = z.object({
     // Quarter-millimetre is finer than anyone can read off a printed ruler;
     // rounding here keeps a stored 2.8571428 out of the geometry.
     .transform((mm) => Math.round(mm * 4) / 4),
+  borderlessOffsetXMm: offsetMm,
+  borderlessOffsetYMm: offsetMm,
   backFooter: z.enum(BACK_FOOTER_MODES),
 });
 
@@ -119,5 +163,31 @@ export function borderlessShrink(overhangMm: number, sheetWidthMm: number): numb
   // and push the far panel off the page. Neither is a thing a ruler can show.
   const overhang = Math.min(Math.max(0, overhangMm), MAX_BORDERLESS_OVERHANG_MM);
   if (!(sheetWidthMm > 0)) return 1;
-  return sheetWidthMm / (sheetWidthMm + 2 * overhang);
+
+  // Corrected down to a deliberate residual, not to zero — see
+  // `BORDERLESS_SAFETY_MM`. A measured overhang at or below the safety band is
+  // already as small as we would aim for, so it is left alone entirely.
+  const correcting = Math.max(0, overhang - BORDERLESS_SAFETY_MM);
+  return sheetWidthMm / (sheetWidthMm + 2 * correcting);
+}
+
+/**
+ * How far the sheet's contents move, in mm of **page** space, to put a card the
+ * printer is placing off centre back in the middle.
+ *
+ * Scaled by the shrink because the driver enlarges whatever we draw: a shift of
+ * `d` on the page becomes `d ÷ shrink` on the paper. Getting this wrong is a
+ * 3% error on a 1.75 mm correction — under a tenth of a millimetre, and still
+ * not a reason to write it down wrong.
+ *
+ * The sign is the stored offset's: `(left − right) ÷ 2` is negative when the
+ * printer runs right, and a negative shift moves the card left.
+ */
+export function borderlessShiftMm(offsetMm: number, shrink: number): number {
+  if (!Number.isFinite(offsetMm)) return 0;
+  const offset = Math.min(
+    Math.max(-MAX_BORDERLESS_OVERHANG_MM, offsetMm),
+    MAX_BORDERLESS_OVERHANG_MM,
+  );
+  return offset * shrink;
 }

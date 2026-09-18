@@ -175,13 +175,20 @@ describe("PrintRunPdfService", () => {
   });
 
   it("passes the measured overhang and footer mode through to the engine", async () => {
-    profile = { layout: "folded-sheet", borderlessOverhangMm: 2.5, backFooter: "print" };
+    profile = {
+      layout: "folded-sheet",
+      borderlessOverhangMm: 2.5,
+      borderlessOffsetXMm: -1.75,
+      borderlessOffsetYMm: 0,
+      backFooter: "print",
+    };
     printRun.mockResolvedValue([card()]);
 
     await service.render("actor-1", { jobIds: ["job-1"] }, "A6");
 
     expect(renderFoldedMock.mock.calls[0]![1]).toMatchObject({
       borderlessOverhangMm: 2.5,
+      borderlessOffsetXMm: -1.75,
       backFooter: "print",
       logoUrl: "https://app.example.com/marketing/logo.png",
     });
