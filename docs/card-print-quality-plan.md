@@ -253,9 +253,29 @@ ADR 0249 and P0 above.
 
 ### P5 — Colour (D-none; it is simply wrong today)
 
-- Normalise every raster to sRGB at decode (`sharp().toColourspace("srgb")`),
-  because pdfkit discards the profile and the printer then reads Adobe RGB
-  numbers as sRGB. This is a correctness fix, not a refinement.
+- ~~Normalise every raster to sRGB at decode (`sharp().toColourspace("srgb")`)~~
+  — **done, and it was not what this said.** Both halves of that sentence were
+  wrong, and testing it rather than writing it is what found the real defect.
+
+  `toColourspace` sets how the pixels are _interpreted_ (srgb / cmyk / b-w). It
+  performs no ICC transform, so it would have changed nothing. And "every raster"
+  was one raster: `sharp` honours an input profile and emits sRGB on any
+  re-encode, so the SVG, downscale and PNG/WebP paths were already correct. A
+  Display P3 file storing green at (117, 251, 76) comes back out at (3, 255, 0)
+  with no colour call at all.
+
+  The hole was the **JPEG passthrough** — which the engine introduced itself in
+  P1, to avoid re-encoding. Those bytes never reach an encoder, so an Adobe RGB
+  export out of Lightroom or a P3 photo off a phone reached pdfkit with its
+  original numbers; pdfkit writes no ICC profile, and the printer read them as
+  sRGB. The passthrough now applies only to a JPEG carrying no profile, which by
+  convention means sRGB. A profiled one is re-encoded, which converts it.
+
+  Worth remembering for anything else in this area: measuring a profiled file by
+  reading it back through `sharp` converts it on the way out, so the measurement
+  shows the answer you were testing for. The stored bytes have to be read
+  directly.
+
 - Pick the closest Canon media type and print a test card.
 - If colour is still off, get an ICC profile for the stock — printed target and a
   profiling service, or the supplier's — and select it with "printer manages

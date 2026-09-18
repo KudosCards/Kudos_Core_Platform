@@ -132,9 +132,14 @@ describe("decodeImage resilience", () => {
     expect(result!.height).toBe(40);
   });
 
-  it("still passes a JPEG through untouched", async () => {
+  it("still passes an unprofiled JPEG through untouched", async () => {
     // pdfkit embeds the DCT stream without decoding it, so there is nothing to
     // protect against — and re-encoding would throw away detail for nothing.
+    //
+    // Unprofiled, and that matters since the colour fix: no ICC profile means
+    // sRGB by convention, so the numbers are already the ones the printer reads.
+    // A profiled JPEG is re-encoded instead. Built without `withMetadata`, which
+    // would attach a profile.
     const jpeg = await sharp({
       create: { width: 40, height: 40, channels: 3, background: { r: 9, g: 9, b: 9 } },
     })
@@ -232,13 +237,21 @@ describe("decodeImage orientation", () => {
     expect(resolved!.height).toBe(200);
   });
 
-  it("leaves a JPEG's bytes alone and still describes it upright", async () => {
-    // pdfkit turns a JPEG itself, so re-encoding would cost detail for nothing —
-    // but the dimensions must still say what lands on the card.
+  it("turns a profiled JPEG upright in its pixels, not by leaving a tag behind", async () => {
+    // This asserted `data.equals(jpeg)` until the colour fix. It no longer can,
+    // and the reason is worth keeping: `withMetadata({ orientation })` is the
+    // only call that writes the tag, and it attaches an sRGB ICC profile as it
+    // does so — so this fixture is a *profiled* JPEG, and a profiled JPEG is
+    // re-encoded rather than passed through (see decodeImage). Real photos out
+    // of a phone or Lightroom carry a profile too, so this is the common case
+    // rather than an awkward one.
+    //
+    // What has to stay true is the thing the test was always about: the card
+    // gets an upright picture, and the dimensions say what lands on it. The
+    // rotation now has to be in the pixels, because sharp strips the tag.
     const jpeg = await taggedPortrait("jpeg");
     const resolved = await decodeImage(jpeg, "image/jpeg", "https://x/p.jpg", {});
 
-    expect(resolved!.data.equals(jpeg)).toBe(true);
     expect({ width: resolved!.width, height: resolved!.height }).toEqual({
       width: 100,
       height: 200,

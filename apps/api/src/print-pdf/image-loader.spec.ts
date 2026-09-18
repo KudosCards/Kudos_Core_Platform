@@ -86,11 +86,105 @@ describe("decodeImage", () => {
     expect(resolved!.height).toBe(6);
   });
 
-  it("passes JPEG through untouched — pdfkit never decodes it", async () => {
+  it("passes an unprofiled JPEG through untouched — pdfkit never decodes it", async () => {
+    // No ICC profile means sRGB by convention, so the numbers are already the
+    // ones the printer will read. Nothing to fix, and re-encoding would only
+    // cost a generation of quality.
     const jpeg = await raster("jpeg");
     const resolved = await decodeImage(jpeg, "image/jpeg", "https://x/a.jpg");
     expect(resolved!.data).toBe(jpeg);
     expect(resolved!.width).toBe(8);
+  });
+
+  /**
+   * The colour half of the print path. pdfkit writes no ICC profile into the PDF
+   * (`COLOR_SPACE_MAP` is chosen by channel count), so whatever numbers reach it
+   * are printed as device RGB. A JPEG that carries a wide-gamut profile
+   * therefore has to be converted before it gets there, or the printer reads
+   * Adobe RGB numbers as sRGB and every saturated colour lands muted.
+   */
+  describe("a JPEG carrying a colour profile", () => {
+    /** sRGB green, stored in Display P3 — the same colour, different numbers. */
+    async function wideGamutGreen(): Promise<Buffer> {
+      const srgb = await sharp({
+        create: { width: 8, height: 8, channels: 3, background: { r: 0, g: 255, b: 0 } },
+      })
+        .png()
+        .toBuffer();
+      return sharp(srgb).withIccProfile("p3").jpeg({ quality: 100 }).toBuffer();
+    }
+
+    /**
+     * The first pixel of a file that carries **no** profile, which is the only
+     * case where this is safe: reading a *profiled* file back through `sharp`
+     * converts it to sRGB on the way out, so measuring the input this way would
+     * quietly show the answer we are trying to test for.
+     */
+    async function storedPixel(data: Buffer): Promise<number[]> {
+      const { data: raw } = await sharp(data).raw().toBuffer({ resolveWithObject: true });
+      return [raw[0]!, raw[1]!, raw[2]!];
+    }
+
+    it("is not passed through", async () => {
+      const jpeg = await wideGamutGreen();
+      const resolved = await decodeImage(jpeg, "image/jpeg", "https://x/wide.jpg");
+      expect(resolved!.data).not.toBe(jpeg);
+    });
+
+    it("lands on the card as sRGB numbers, not the profile's", async () => {
+      // Display P3 stores this green at roughly (117, 251, 76) — verified by
+      // decoding the PNG bytes by hand, since every route through `sharp`
+      // converts it. Printed as device RGB those numbers are a duller, yellower
+      // green than the customer chose. What must come out is sRGB's (0, 255, 0).
+      const jpeg = await wideGamutGreen();
+      expect((await sharp(jpeg).metadata()).icc).toBeDefined();
+
+      const resolved = await decodeImage(jpeg, "image/jpeg", "https://x/wide.jpg");
+      const [r, g, b] = await storedPixel(resolved!.data);
+      expect(r).toBeLessThan(16);
+      expect(g).toBeGreaterThan(240);
+      expect(b).toBeLessThan(16);
+    });
+
+    it("carries no profile out, so nothing downstream converts it twice", async () => {
+      const resolved = await decodeImage(await wideGamutGreen(), "image/jpeg", "https://x/w.jpg");
+      expect((await sharp(resolved!.data).metadata()).icc).toBeUndefined();
+    });
+
+    it("keeps it a JPEG rather than inflating a photo into a PNG", async () => {
+      const resolved = await decodeImage(await wideGamutGreen(), "image/jpeg", "https://x/w.jpg");
+      expect((await sharp(resolved!.data).metadata()).format).toBe("jpeg");
+    });
+
+    it("bakes the EXIF rotation in and drops the tag, so it cannot turn twice", async () => {
+      // The passthrough existed partly because pdfkit turns a JPEG itself. Once
+      // we re-encode, the rotation has to be in the pixels *and* the tag gone —
+      // either alone prints the card sideways.
+      const srgb = await sharp({
+        create: { width: 40, height: 20, channels: 3, background: { r: 0, g: 255, b: 0 } },
+      })
+        .png()
+        .toBuffer();
+      // `withMetadata({ orientation })` is the call that actually writes the
+      // tag; `withExif({ IFD0: { Orientation } })` silently leaves it at 1.
+      const rotated = await sharp(srgb)
+        .withIccProfile("p3")
+        .withMetadata({ orientation: 6 })
+        .jpeg({ quality: 100 })
+        .toBuffer();
+      expect((await sharp(rotated).metadata()).orientation).toBe(6);
+
+      const resolved = await decodeImage(rotated, "image/jpeg", "https://x/turned.jpg");
+      const meta = await sharp(resolved!.data).metadata();
+
+      expect(meta.orientation).toBeUndefined();
+      // Orientation 6 is a quarter turn, so a 40x20 source prints 20x40. The
+      // pixels must have actually moved, not just the reported numbers.
+      expect(meta.width).toBe(20);
+      expect(meta.height).toBe(40);
+      expect(resolved!.width).toBe(20);
+      expect(resolved!.height).toBe(40);
+    });
   });
 
   it("transcodes WebP to PNG for pdfkit", async () => {
