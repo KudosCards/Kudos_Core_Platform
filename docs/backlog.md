@@ -103,6 +103,21 @@ has asked for. See `docs/card-print-quality-plan.md`, P8.
 
 ---
 
+## Scope and messaging
+
+### Say what we actually serve, to visitors who are not in the UK
+
+A third of last week's active users were outside the UK, and the site does not
+say we post to UK addresses until it refuses a postcode — by which point the
+visitor has signed up and chosen a card. Separately, and more seriously, the one
+shared definition of a mailable address does not check the country, so a contact
+with a complete overseas address counts as ready everywhere and is refused at
+send.
+
+Planned in `docs/uk-scope-messaging-plan.md` (S1–S5). S3, the postable
+definition, is a correctness fix worth doing whether or not the traffic turns
+out to be people.
+
 ## Catalog data quality
 
 Both surfaced by the catalog sync itself, neither blocking, both worth doing
