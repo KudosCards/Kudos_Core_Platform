@@ -321,6 +321,26 @@ the summary's `cropped` list is empty, then switch on
 `catalog_reject_cropped_artwork`. Ops re-sync any unprinted orders that reference
 the old artwork. **Requires P1**, per D10.
 
+**Handed over**: `docs/ops/catalog-re-export.md`.
+
+**Not started.** The 18 September refresh reported 217 fetched, 217 updated and
+**207 still being cropped at 6% of their height** — that run refreshed the
+catalog, it did not change any artwork, because nothing in Airtable had changed
+yet. Ten designs are already the right shape.
+
+It also surfaced the thing that has to happen first: **eight cards share four
+product codes**. Nothing is keyed on the code, so no card is broken — but every
+list the page prints reads `Title (SKU)`, and the re-export list is handed to
+somebody else to work through, so two cards on one code cannot be worked from.
+Fix those before the list goes out.
+
+One wrinkle the runbook has to carry: the ops page says to re-export at
+**1240 × 1748** and D9 says **1748 × 2480**. Both pass the shape check (0.06%
+and 0.70% of height against the card, against a 2% floor), and the page's figure
+is the exact A6 one, so neither is wrong. But A5 is a supported card size and
+1240 × 1748 is only 213 dpi on it, so D9's number is the one that gets this done
+once. Two numbers for one job is how a 217-design re-export happens twice.
+
 ### P7 — Measurement hygiene — **two of three done**
 
 - **Done.** EXIF through `orientedPixelSize` in the catalog sync, so stored
