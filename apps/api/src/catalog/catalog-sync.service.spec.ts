@@ -328,7 +328,7 @@ describe("CatalogSyncService — refusing cropped artwork", () => {
 
     expect(summary.artworkFailed).toHaveLength(1);
     expect(summary.artworkFailed[0]?.reason).toContain("6% of its height");
-    expect(summary.artworkFailed[0]?.reason).toContain("1240 × 1748");
+    expect(summary.artworkFailed[0]?.reason).toContain("1748 × 2480");
   });
 
   it("does not store artwork it has refused", async () => {

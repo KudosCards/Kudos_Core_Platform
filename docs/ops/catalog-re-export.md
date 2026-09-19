@@ -74,11 +74,11 @@ is exactly right for A6 and only 213 dpi on A5, so the day an A5 card is sold
 every design would need exporting a second time. 1748 × 2480 is 300 dpi at
 either size.
 
-> **Note the catalog page says 1240 × 1748.** That is not a contradiction — it
-> is the exact A6 figure, and both sizes pass the shape check (1240 × 1748 loses
-> 0.06% of its height against the card, 1748 × 2480 loses 0.70%, and anything
-> under 2% is not worth mentioning). Export at **1748 × 2480** anyway, so this
-> is done once.
+The catalog page and the gate's own refusal message both name this same number,
+so there is one figure in front of whoever does the work. (The exact A6 figure
+is 1240 × 1748, and it also passes the shape check — 0.06% of its height against
+this one's 0.70%, where anything under 2% is not worth mentioning. It is simply
+the wrong number to hand a designer, because it is 213 dpi on A5.)
 
 Re-export all 217. Working from a list of 207 exceptions is slower and more
 error-prone than doing the lot, and the ten that are already correct lose

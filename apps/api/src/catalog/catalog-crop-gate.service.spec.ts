@@ -66,11 +66,24 @@ describe("CatalogCropGateService — what it refuses", () => {
     expect(reason).toContain("6% of its height");
     // Named in full, so an operator can act without opening the file.
     expect(reason).toContain("1000 × 1500");
-    expect(reason).toContain("1240 × 1748");
+    // The MASTER size, not this card's exact one. Whoever reads this refusal is
+    // about to re-export, and a library exported to the A6 figure needs doing
+    // again the day an A5 card is sold.
+    expect(reason).toContain("1748 × 2480");
   });
 
   it("admits artwork at the size it asks for", () => {
     // Or the gate could never be satisfied, and closing it would be a trap.
+    // Read out of the refusal rather than written down again, so the number the
+    // message gives an operator is provably one the gate accepts.
+    const asked = gate.refusalReason(TWO_THREE, true)!.match(/Re-export at (\d+) × (\d+)/);
+    expect(asked).not.toBeNull();
+    const [width, height] = [Number(asked![1]), Number(asked![2])];
+    expect(gate.refusalReason({ width, height }, true)).toBeNull();
+  });
+
+  it("still admits the exact A6 size, which is also right", () => {
+    // The master is one number for one job, not the only shape that passes.
     expect(gate.refusalReason({ width: 1240, height: 1748 }, true)).toBeNull();
   });
 

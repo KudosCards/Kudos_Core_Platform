@@ -19,7 +19,7 @@
  * See docs/card-artwork-crop-plan.md.
  */
 
-import { CARD_SIZE_DIMENSIONS_MM, type CardSize } from "./card-format";
+import { CARD_SIZE_DIMENSIONS_MM, CARD_SIZES, type CardSize } from "./card-format";
 import { CARD_HEIGHT, CARD_WIDTH, coverCrop } from "./design-layout";
 
 // The same "an image's natural size" the resolution pre-flight uses. One
@@ -213,6 +213,37 @@ export function idealArtworkPixels(size: CardSize): PixelSize {
   // 1240 x 1748 is A6 at 300dpi exactly; against our canvas it loses 0.06% of
   // its height, which the floor forgives (see the true-A6 case above).
   return { width: px(widthMm), height: px(heightMm) };
+}
+
+/** The largest size we stock, by area. Derived rather than named, so adding a
+ *  size to CARD_SIZES is the whole change. */
+function largestCardSize(): CardSize {
+  const area = (size: CardSize): number => {
+    const { widthMm, heightMm } = CARD_SIZE_DIMENSIONS_MM[size];
+    return widthMm * heightMm;
+  };
+  return CARD_SIZES.reduce((largest, size) => (area(size) > area(largest) ? size : largest));
+}
+
+/**
+ * The size to author a **catalog master** at: one export that serves every size
+ * we print. Pure.
+ *
+ * `idealArtworkPixels` answers a different question — what is exactly right for
+ * *this* card. A catalog design is not authored per size; it is exported once
+ * and printed at whichever size the run chooses. So the number to hand whoever
+ * produces the artwork is the one that is 300 dpi on the **largest** size we
+ * stock. A6's ideal is 1240 x 1748, which is only 213 dpi on A5 — a library
+ * exported to it needs doing again the day an A5 card is sold. A5's is
+ * 1748 x 2480, which is 300 dpi on both.
+ *
+ * It is not the exact shape of an A6 card: 0.70% of its height is cropped,
+ * against 0.06% for the A6 figure. Both sit well inside `CROP_OK_BELOW`, so
+ * either clears the gate — which is why this can be one number rather than a
+ * choice. See docs/ops/catalog-re-export.md.
+ */
+export function masterArtworkPixels(): PixelSize {
+  return idealArtworkPixels(largestCardSize());
 }
 
 /**

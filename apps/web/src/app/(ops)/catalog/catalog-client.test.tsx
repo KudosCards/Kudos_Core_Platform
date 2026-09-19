@@ -79,11 +79,11 @@ describe("CatalogClient — designs whose artwork is being cut up", () => {
     expect(screen.getByText(/Panorama/)).toBeInTheDocument();
     expect(screen.getByText(/1 design loses 5% of its width/)).toBeInTheDocument();
     expect(screen.getByText("Artwork being cropped: 2")).toBeInTheDocument();
-    // Say what to do about it, or the list is just bad news. 1240 x 1748 is A6
+    // Say what to do about it, or the list is just bad news. 1748 x 2480 is A5
     // at 300dpi — the one export that clears the crop and the resolution check
     // together. Scoped to the cropped section: the crop-gate panel names the
     // same size, so a bare matcher finds two.
-    expect(screen.getByText(/re-attach in Airtable/)).toHaveTextContent(/1240 × 1748/);
+    expect(screen.getByText(/re-attach in Airtable/)).toHaveTextContent(/1748 × 2480/);
   });
 
   it("collapses a whole catalog losing the same amount into one line", async () => {
