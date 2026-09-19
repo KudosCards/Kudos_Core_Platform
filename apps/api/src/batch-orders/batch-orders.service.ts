@@ -46,6 +46,7 @@ import {
   type OccasionRedateSummary,
   type PreflightIssue,
   OPEN_OCCASION_STATUSES,
+  isUkCountry,
 } from "@kudos/shared-types";
 import { MessagesService } from "../messages/messages.service";
 import { RecipientsService } from "../recipients/recipients.service";
@@ -672,7 +673,7 @@ export class BatchOrdersService {
         flag("missingAddress", { recipientId: r.id, name, detail: "No postal address" });
         clean = false;
         addressOk = false;
-      } else if ((r.addressCountry ?? "GB") !== "GB") {
+      } else if (!isUkCountry(r.addressCountry)) {
         flag("invalidPostcode", {
           recipientId: r.id,
           name,

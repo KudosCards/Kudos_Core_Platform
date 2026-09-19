@@ -153,7 +153,7 @@ Two supporting reads, both free and both today:
 
 Nothing ships to users. Everything after S5 depends on what it says.
 
-### S1 — Turn the refusal into a signpost
+### S1 — Turn the refusal into a signpost — **done**
 
 The single highest-value change, and the smallest.
 
@@ -170,7 +170,18 @@ here; changing them is a wire-contract change for no gain.
 **Test:** the refusal names the delivery scope, and does not tell the person
 they mistyped.
 
-### S2 — `areaServed` in the structured data
+### S2 — `areaServed` in the structured data — **done**
+
+Narrower than planned, because the `Offer` already carried it: a
+`shippingDestination` of `DefinedRegion / GB`, correct and exact. Only the
+**Organization** was silent, and now says `areaServed: United Kingdom`. Both
+read one constant so they cannot disagree — a file whose rule is "never assert
+anything checkout would contradict" cannot hold that line while contradicting
+itself.
+
+The registered office's `addressCountry` is deliberately left alone: where the
+company is incorporated and where it delivers are different facts that happen to
+share a value, and only one of them changes if the company moves.
 
 Add `areaServed: { "@type": "Country", name: "United Kingdom" }` to the
 Organization node, and to the `Offer` nodes where a delivery area is what the
@@ -180,7 +191,7 @@ enforces — which is the file's existing rule.
 **Test:** the audit already run against `structured-data.ts` extends to the new
 claim; nothing asserts a territory the send path does not enforce.
 
-### S3 — One definition of postable, and a count of who it turns away
+### S3 — One definition of postable — **done**, and bigger than it looked
 
 Add the country to `MISSING_ADDRESS_WHERE` so the dashboard count, the contacts
 filter, the smart-list rule and the CRM readiness panel all agree with what the
@@ -200,6 +211,25 @@ Care needed, and this is why it is its own phase rather than a line in S1:
 **Test:** an account whose contacts are all GB or null sees identical counts
 before and after. A contact with a complete US address is excluded from
 readiness, and the send-time refusal and the readiness panel agree.
+
+**What building it found.** The country check the send path had been running
+was `(addressCountry ?? "GB") !== "GB"` — an exact, case-sensitive match. The CRM
+mappers store the provider's own value, and HubSpot's standard `country`
+property reads **"United Kingdom"**. So this was not a dormant inconsistency
+waiting for an international customer: contacts synced from HubSpot with a
+perfectly deliverable UK address were already being refused as
+`Non-UK address (United Kingdom)`.
+
+Fixing the readiness count by copying that comparison would have spread the
+defect into four more places. So both now read `isUkCountry` /
+`UK_COUNTRY_VALUES` in `@kudos/shared-types`, which accepts the spellings a
+country field actually holds — including the four nations, because a field
+saying "Scotland" describes a UK address.
+
+Jersey, Guernsey and the Isle of Man are deliberately **not** on that list.
+Their postcodes pass `ukPostcodeRegex`, so a contact there is mailable today via
+the unset-country path and this changes nothing either way. Whether we post
+there is a fulfilment question, and listing them would answer it by implication.
 
 **And while we are here, count the refusals.** S1 changes what the postcode
 refusal says; this adds a consent-gated GA event recording that one happened and

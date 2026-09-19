@@ -2,6 +2,7 @@
 
 import type { Recipient } from "@kudos/shared-types";
 import { ukPostcodeRegex } from "@kudos/shared-types";
+import { NOT_A_UK_POSTCODE } from "@/lib/delivery-scope";
 import { useState, type FormEvent } from "react";
 import { Modal } from "@/components/modal";
 import { ApiError } from "@/lib/api";
@@ -47,7 +48,7 @@ export function AddressModal({
       return;
     }
     if (!ukPostcodeRegex.test(addressPostcode)) {
-      setError("That doesn't look like a valid UK postcode.");
+      setError(NOT_A_UK_POSTCODE);
       return;
     }
 
