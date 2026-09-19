@@ -6,6 +6,7 @@ export * from "./london-time";
 export * from "./wallet-campaign";
 export * from "./account";
 export * from "./recipient";
+export * from "./delivery-scope";
 export * from "./recipient-list";
 export * from "./csv-import";
 export * from "./occasion";

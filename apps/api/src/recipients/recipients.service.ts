@@ -38,6 +38,7 @@ import {
   keyDateTypeSchema,
   OPEN_OCCASION_STATUSES,
   ROLLING_OCCASION_SOURCES,
+  UK_COUNTRY_VALUES,
 } from "@kudos/shared-types";
 
 /**
@@ -66,9 +67,33 @@ export type { Paginated };
 
 /**
  * A contact is "unmailable" (needs an address) when any of address line 1, city,
- * or postcode is missing or blank — the minimum to post a card via Royal Mail.
- * Shared by the recipients list filter and the dashboard "needs address" count
- * so both agree on exactly one definition. See docs/adr/0067-mandatory-addresses.md.
+ * or postcode is missing or blank — the minimum to post a card via Royal Mail —
+ * **or when the address is not in the United Kingdom**, which is the only place
+ * we post to.
+ *
+ * Shared by the recipients list filter, the dashboard "needs address" count, the
+ * smart-list `hasMailableAddress` rule and the CRM sync readiness panel, so all
+ * four agree on exactly one definition. See docs/adr/0067-mandatory-addresses.md.
+ *
+ * **The country clause was missing for a long time, and it mattered more than it
+ * looked.** `bulkSend` has always refused a recipient whose `addressCountry` is
+ * not GB — correctly, with a named reason — while every count that told the
+ * customer how many contacts were ready looked only at the three address parts.
+ * So a contact with a complete US address was counted as ready in four places
+ * and refused in the fifth.
+ *
+ * That was nearly invisible while every contact was British: `AddressFields` is
+ * a UK-only block and cannot produce anything else. A CRM sync can, and carries
+ * the provider's own country value — so the first customer to sync an
+ * international address book would have been told 497 contacts were ready and
+ * then watched all 497 be refused, at the moment they were deciding whether to
+ * trust us. See docs/uk-scope-messaging-plan.md.
+ *
+ * **`null` counts as GB, and that is load-bearing.** `addressCountry` is
+ * `String? @default("GB")`, so every contact added by hand or imported from CSV
+ * before the column existed holds null. Treating null as foreign would empty
+ * every customer's mailable list overnight — the single worst thing this change
+ * could do, and the thing its test is pointed at.
  */
 export const MISSING_ADDRESS_WHERE: Prisma.RecipientWhereInput = {
   OR: [
@@ -78,6 +103,13 @@ export const MISSING_ADDRESS_WHERE: Prisma.RecipientWhereInput = {
     { addressCity: "" },
     { addressPostcode: null },
     { addressPostcode: "" },
+    // `notIn` and not `not`, so every spelling the send path accepts is
+    // accepted here — they read the same list, which is the whole point.
+    //
+    // A null country does not match `notIn` (SQL: `NULL NOT IN (...)` is NULL,
+    // never true), so it is not flagged — which is exactly right, and is what
+    // the "unset country is a UK address" test pins down.
+    { addressCountry: { notIn: [...UK_COUNTRY_VALUES], mode: "insensitive" } },
   ],
 };
 

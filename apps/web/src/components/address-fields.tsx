@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { ukPostcodeRegex } from "@kudos/shared-types";
 import { lookupAddresses, lookupPostcode, type AddressSuggestion } from "@/lib/address-lookup";
+import { NOT_A_UK_POSTCODE } from "@/lib/delivery-scope";
 
 /**
  * A reusable UK address block: postcode + "Find address" (validates via the free
@@ -73,9 +75,17 @@ export function AddressFields({
     const result = await lookupPostcode(trimmed);
     setLooking(false);
     if (!result) {
+      // Two different failures wearing one message until now. A mistyped UK
+      // postcode is a typo, and "type it in manually" is good advice. Something
+      // that is not a UK postcode at all is somebody outside our delivery area,
+      // and telling them to type the address in manually walks them further
+      // into a wall they hit later anyway — at checkout, after paying attention
+      // for ten minutes.
       setMessage({
         tone: "warn",
-        text: "We couldn't find that postcode — check it, or type the address in manually.",
+        text: ukPostcodeRegex.test(trimmed)
+          ? "We couldn't find that postcode — check it, or type the address in manually."
+          : NOT_A_UK_POSTCODE,
       });
       return;
     }

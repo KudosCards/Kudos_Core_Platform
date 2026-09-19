@@ -3,6 +3,7 @@ import type { CardDesign } from "@kudos/shared-types";
 import { FAQ_ENTRIES } from "./faq";
 import type { Guide } from "./guides";
 import { cardPath } from "./card-urls";
+import { DELIVERY_COUNTRY_CODE, DELIVERY_COUNTRY_NAME } from "./delivery-scope";
 import { SITE_URL, absoluteUrl } from "./site";
 
 /**
@@ -45,7 +46,28 @@ export function organisationSchema() {
       "@type": "PostalAddress",
       addressLocality: "Darlington",
       postalCode: "DL1 1GB",
+      // Where the company is registered. NOT the service area — the two happen
+      // to be the same country and mean different things, so `areaServed` says
+      // that separately rather than leaving it to be inferred from here.
       addressCountry: "GB",
+    },
+    /*
+     * Who we serve, which nothing in this file said before.
+     *
+     * `inLanguage: "en-GB"` below is a language signal and a registered office
+     * is an address; neither states a delivery area, and a search engine should
+     * not have to guess one from them. This is exact, machine-readable, and
+     * enforced — `batch-orders.service.ts` refuses a non-GB recipient — which is
+     * this file's standing rule: never assert anything checkout would
+     * contradict. See docs/uk-scope-messaging-plan.md.
+     *
+     * It says where the card goes, not where the buyer may live. Stripe
+     * Checkout carries no `allowed_countries` and sign-up asks for no country,
+     * so a claim about the customer's location would be the false one.
+     */
+    areaServed: {
+      "@type": "Country",
+      name: DELIVERY_COUNTRY_NAME,
     },
     // Companies House number. `identifier` rather than `taxID`/`vatID` — it's a
     // registration number, not a tax reference, and we shouldn't imply one.
@@ -119,9 +141,11 @@ export function cardProductSchema(card: CardDesign, description: string) {
           value: (POSTAGE_MINOR.second_class / 100).toFixed(2),
           currency: "GBP",
         },
+        // The product-level half of the same fact, and it was already right.
+        // Reads from the shared constant so the two cannot drift.
         shippingDestination: {
           "@type": "DefinedRegion",
-          addressCountry: "GB",
+          addressCountry: DELIVERY_COUNTRY_CODE,
         },
       },
     },
