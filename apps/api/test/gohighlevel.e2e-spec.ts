@@ -56,6 +56,10 @@ let refreshCalls = 0;
 let lastFetchLocationId: string | null = null;
 
 const ghlMock: GoHighLevelClient = {
+  verifyToken: (accessToken, locationId) =>
+    accessToken.includes("bad") || locationId !== LOCATION_ID
+      ? Promise.reject(new UnauthorizedException("LeadConnector rejected the access token"))
+      : Promise.resolve(),
   exchangeCode: (code) => {
     exchangeCalls += 1;
     if (code === "bad-code") {
@@ -536,5 +540,194 @@ describe("CRM connections — GoHighLevel OAuth (e2e)", () => {
       .set("Authorization", `Bearer ${b.token}`)
       .expect(200);
     expect(list.body).toEqual([]);
+  });
+});
+
+/**
+ * The private-token lane.
+ *
+ * The OAuth lane above needs our HighLevel Marketplace app, and a private app
+ * may be installed in at most five agencies before new installs are blocked —
+ * a ceiling no code change can lift. A Private Integration Token is created by
+ * the customer inside their own sub-account with no Marketplace app involved.
+ * See ADR 0253.
+ */
+describe("CRM connections — LeadConnector private token (e2e)", () => {
+  let app: INestApplication<App>;
+  let prisma: PrismaService;
+
+  beforeAll(async () => {
+    app = await createTestApp([{ provide: GOHIGHLEVEL_CLIENT, useValue: ghlMock }]);
+    prisma = app.get(PrismaService);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    ghlContacts = defaultGoHighLevelContacts();
+    ghlTruncated = false;
+    lastFetchLocationId = null;
+  });
+
+  async function signUp(): Promise<{ token: string; accountId: string }> {
+    const jwt = await mintToken(randomUUID());
+    const response = await request(app.getHttpServer())
+      .post("/accounts")
+      .set("Authorization", `Bearer ${jwt}`)
+      .send({ type: "organisation", name: `Test Agency ${randomUUID()}` })
+      .expect(201);
+    return { token: jwt, accountId: accountSchema.parse(response.body).id };
+  }
+
+  function connect(token: string, body: Record<string, unknown>) {
+    return request(app.getHttpServer())
+      .post("/integrations/connections")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ provider: "gohighlevel", ...body });
+  }
+
+  const goodBody = { apiKey: "pit-good-token-1", externalAccountId: LOCATION_ID };
+
+  it("connects with a pasted token and sub-account, storing the token encrypted", async () => {
+    const { token, accountId } = await signUp();
+
+    await connect(token, goodBody).expect(201);
+
+    const stored = await prisma.crmConnection.findFirstOrThrow({ where: { accountId } });
+    expect(stored.authType).toBe("api_key");
+    expect(stored.externalAccountId).toBe(LOCATION_ID);
+    expect(stored.encryptedApiKey).not.toContain("pit-good-token-1");
+    expect(stored.encryptedApiKey!.split(":")).toHaveLength(3); // iv:tag:ciphertext
+    // No OAuth credentials were involved, so none are left lying around.
+    expect(stored.encryptedAccessToken).toBeNull();
+    expect(stored.encryptedRefreshToken).toBeNull();
+  });
+
+  it("takes the sub-account out of a pasted dashboard address", async () => {
+    // Where the customer is told to find it. Asking for "the bit after
+    // /location/" and then refusing the address it came from is a support
+    // thread waiting to happen.
+    const { token, accountId } = await signUp();
+
+    await connect(token, {
+      apiKey: "pit-good-token-1",
+      externalAccountId: `https://app.gohighlevel.com/v2/location/${LOCATION_ID}/dashboard`,
+    }).expect(201);
+
+    const stored = await prisma.crmConnection.findFirstOrThrow({ where: { accountId } });
+    expect(stored.externalAccountId).toBe(LOCATION_ID);
+  });
+
+  it("refuses a good token against the wrong sub-account, storing nothing", async () => {
+    // The likely mistake: two values copied from two different places. Caught
+    // at connect, where it is one sentence, rather than at 5am tomorrow.
+    const { token, accountId } = await signUp();
+
+    await connect(token, {
+      apiKey: "pit-good-token-1",
+      externalAccountId: "some-other-location",
+    }).expect(401);
+
+    expect(await prisma.crmConnection.findFirst({ where: { accountId } })).toBeNull();
+  });
+
+  it("refuses a bad token, storing nothing", async () => {
+    const { token, accountId } = await signUp();
+
+    await connect(token, { apiKey: "pit-bad-token", externalAccountId: LOCATION_ID }).expect(401);
+
+    expect(await prisma.crmConnection.findFirst({ where: { accountId } })).toBeNull();
+  });
+
+  it("refuses a connection with no sub-account at all, naming where to find one", async () => {
+    const { token } = await signUp();
+
+    const res = await connect(token, { apiKey: "pit-good-token-1" }).expect(400);
+
+    expect(JSON.stringify(res.body)).toMatch(/sub-account/i);
+  });
+
+  it("syncs contacts, scoped to the sub-account that was pasted", async () => {
+    const { token } = await signUp();
+    await connect(token, goodBody).expect(201);
+
+    const sync = await request(app.getHttpServer())
+      .post("/integrations/connections/gohighlevel/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect(syncResultSchema.parse(sync.body).created).toBeGreaterThan(0);
+    expect(lastFetchLocationId).toBe(LOCATION_ID);
+
+    const list = paginatedRecipientsSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .get("/recipients?perPage=100")
+          .set("Authorization", `Bearer ${token}`)
+          .expect(200)
+      ).body,
+    );
+    for (const item of list.items) {
+      expect(item.source).toBe("gohighlevel");
+    }
+  });
+
+  it("never refreshes: a private token is long-lived and has nothing to trade", async () => {
+    // The OAuth path would reject this connection outright for having no
+    // refresh token. The credential branch is what keeps it off that path.
+    const { token } = await signUp();
+    await connect(token, goodBody).expect(201);
+    const before = refreshCalls;
+
+    await request(app.getHttpServer())
+      .post("/integrations/connections/gohighlevel/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect(refreshCalls).toBe(before);
+  });
+
+  it("shows the sub-account on the connection, and never the token", async () => {
+    const { token } = await signUp();
+    await connect(token, goodBody).expect(201);
+
+    const list = await request(app.getHttpServer())
+      .get("/integrations/connections")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(JSON.stringify(list.body)).not.toContain("pit-good-token-1");
+    expect(list.body).toEqual([
+      expect.objectContaining({ provider: "gohighlevel", externalAccountId: LOCATION_ID }),
+    ]);
+  });
+
+  it("replaces an OAuth connection rather than sitting beside it", async () => {
+    // One row per (account, provider). A customer moving to a token must not
+    // leave a dead access token behind that a later change could pick up.
+    const { token, accountId } = await signUp();
+    await prisma.crmConnection.create({
+      data: {
+        accountId,
+        provider: "gohighlevel",
+        authType: "oauth",
+        encryptedApiKey: null,
+        encryptedAccessToken: "a:b:c",
+        encryptedRefreshToken: "d:e:f",
+        tokenExpiresAt: new Date(Date.now() + 3_600_000),
+        externalAccountId: LOCATION_ID,
+      },
+    });
+
+    await connect(token, goodBody).expect(201);
+
+    const rows = await prisma.crmConnection.findMany({ where: { accountId } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.authType).toBe("api_key");
+    expect(rows[0]?.encryptedAccessToken).toBeNull();
+    expect(rows[0]?.encryptedRefreshToken).toBeNull();
+    expect(rows[0]?.tokenExpiresAt).toBeNull();
   });
 });

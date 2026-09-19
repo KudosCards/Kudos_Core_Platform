@@ -14,6 +14,21 @@ export class ConnectCrmDto {
   @Length(1, 300)
   apiKey!: string;
 
+  /**
+   * The sub-account to read from, for a provider that scopes contacts to one.
+   *
+   * Accepts the bare id or the whole dashboard address it was copied from —
+   * see `parseLocationId`, which is also where a bad value is refused, so the
+   * message can say which page to look at rather than "invalid".
+   */
+  @ApiPropertyOptional({
+    description: "Sub-account ID, or the address of its dashboard. Required for LeadConnector.",
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 300)
+  externalAccountId?: string;
+
   @ApiPropertyOptional({ type: BrevoFieldMappingDto })
   @IsOptional()
   @ValidateNested()

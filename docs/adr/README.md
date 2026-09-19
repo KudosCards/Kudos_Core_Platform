@@ -261,5 +261,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0250 — Credits one at a time, lookups all at once](./0250-credits-one-at-a-time.md)
 - [0251 — The paper is not where the driver thinks](./0251-the-paper-is-not-where-the-driver-thinks.md)
 - [0252 — A birthday with no year](./0252-a-birthday-with-no-year.md)
+- [0253 — A second way into LeadConnector](./0253-a-second-way-into-leadconnector.md)
 
 <!-- adr-index:end -->
