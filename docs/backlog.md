@@ -114,9 +114,11 @@ shared definition of a mailable address does not check the country, so a contact
 with a complete overseas address counts as ready everywhere and is refused at
 send.
 
-Planned in `docs/uk-scope-messaging-plan.md` (S1–S5). S3, the postable
+Planned in `docs/uk-scope-messaging-plan.md` (S0–S7). S3, the postable
 definition, is a correctness fix worth doing whether or not the traffic turns
-out to be people.
+out to be people. S0 is the prerequisite for the rest and is an hour of ops with
+no code: Search Console was never verified, so six shipped phases of SEO work
+are currently unmeasured.
 
 ## Catalog data quality
 

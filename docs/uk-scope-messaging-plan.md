@@ -10,6 +10,18 @@ not change whether the work is right, because everything below is either true
 today and unsaid, or wrong today and quietly waiting for the first international
 customer.
 
+**But we cannot currently answer that question, and the reason is worth its own
+sentence.** `docs/seo-plan.md` shipped six phases of SEO work and its status line
+still reads: _"What's left is ops, not code: Phase 0's DNS and Search Console
+setup … and watching Search Console coverage once the sitemap is submitted."_
+Phase 0 is the **measurement** phase, and it never happened. We built the
+robots.txt, the sitemap, the canonicals, the structured data and the content
+layer, and then judged the result by Google Analytics sessions — which cannot
+tell us which queries earn impressions, from which countries, on which pages.
+
+That is S0 below, it is an hour of nobody's code, and it decides everything
+after S5.
+
 ## The thing to get right
 
 **We post to UK addresses. We do not only serve UK customers.**
@@ -117,6 +129,30 @@ would be the bait-and-switch `structured-data.ts` already refuses to commit.
 
 ## Phases
 
+### S0 — Connect the instrument (ops, ~1 hour, no code)
+
+Finish `docs/seo-plan.md` Phase 0: verify the Search Console property for the
+canonical host, submit the sitemap, and screenshot the baseline.
+
+**This is the decisive answer to "are those 40 US users people?"** Search Console
+records impressions and clicks from real searches. Crawlers do not search, so
+they do not appear in it at all. GA can be fooled by bot traffic and referral
+spam; Search Console cannot be fooled in the same way. If there are US
+impressions against real queries, there is a real audience. If GA shows 40 US
+users and Search Console shows no US impressions, we have our answer and S6
+should not be built.
+
+Two supporting reads, both free and both today:
+
+- **GA4** — engagement rate and average engagement time for the US segment, and
+  whether those sessions land on a spread of pages or all on one. Near-zero
+  engagement across one landing page is the signature of a bot.
+- **Search Console → Performance → Countries**, filtered to the pages that are
+  actually ranking. "Student Birthday Cards" is the number two page at 261 views
+  and is the one to look at first.
+
+Nothing ships to users. Everything after S5 depends on what it says.
+
 ### S1 — Turn the refusal into a signpost
 
 The single highest-value change, and the smallest.
@@ -144,7 +180,7 @@ enforces — which is the file's existing rule.
 **Test:** the audit already run against `structured-data.ts` extends to the new
 claim; nothing asserts a territory the send path does not enforce.
 
-### S3 — One definition of postable
+### S3 — One definition of postable, and a count of who it turns away
 
 Add the country to `MISSING_ADDRESS_WHERE` so the dashboard count, the contacts
 filter, the smart-list rule and the CRM readiness panel all agree with what the
@@ -165,6 +201,18 @@ Care needed, and this is why it is its own phase rather than a line in S1:
 before and after. A contact with a complete US address is excluded from
 readiness, and the send-time refusal and the readiness panel agree.
 
+**And while we are here, count the refusals.** S1 changes what the postcode
+refusal says; this adds a consent-gated GA event recording that one happened and
+nothing else — no postcode, no address, no email. Somebody who reached the
+address field and could not finish is a person who tried to buy from us and was
+turned away, which is a far better demand signal than a session count: it cannot
+be a crawler, because a crawler never gets that far.
+
+It is the instrument that tells us **which** country to build S7's second page
+for, instead of reading it off a GA tail. Consent-gated means it undercounts;
+that is the honest trade and it is recorded here so nobody later reports the
+number as complete.
+
 ### S4 — Say it where they arrive
 
 Hero copy, meta description and OpenGraph description. One clause, not a banner:
@@ -184,6 +232,73 @@ to a UK address, prices are in pounds. The FAQ is already marked up as
 `FAQPage` (seo-plan Phase 5), so this is also the answer Google can surface
 directly.
 
+### S6 — One country page, built so it is not a doorway page
+
+Only if S0 shows a real audience.
+
+`docs/seo-plan.md` already rules out **"keyword-stuffed doorway pages per town or
+per school name — the obvious next idea after Phase 5, and the one that gets a
+site penalised."** A country page is the same idea wearing a different hat, and
+the difference between the legitimate version and the penalised version is not a
+matter of degree. `lib/audiences.ts` already writes the test down, in the rule
+the `/for/` pages are held to:
+
+> A doorway page is the homepage with one noun swapped, and search engines are
+> explicitly looking for exactly that. … If two audiences would genuinely say the
+> same thing, they don't both need a page.
+
+So the page earns its place only if it answers questions a UK visitor never asks.
+For the United States, it does, and all of these are true and currently unsaid:
+
+- **Can I even use this?** Yes — your card, your billing address, any country.
+  Verified: no `allowed_countries` on checkout, no country at sign-up.
+- **Where does the card go?** A UK address. We do not post to US addresses, and
+  the page says so plainly rather than burying it.
+- **What will I be charged?** Pounds. Your bank converts; we quote one currency
+  and charge it (D6).
+- **When does it arrive?** UK working days, UK bank holidays, and a same-day
+  cut-off in UK time — which is the middle of the American night, and is the
+  single most useful thing the page can tell somebody in California.
+- **Who is it for?** A US company with UK staff or clients; somebody with family
+  in the UK. That is a different job from the homepage's.
+
+None of that survives a find-and-replace into another country, which is the test.
+
+**URL shape: `/from/united-states`,** not `/us` and not `/united-states`. The
+preposition is the proposition — it says _sending from_, and it cannot be
+misread as "Kudos delivers in the US", which is exactly the misreading a bare
+country slug invites. It also sits cleanly beside the existing `/for/[audience]`
+pages: one is who you are, the other is where you are.
+
+Built to the "Rules for a new public page" checklist in `docs/seo-plan.md` —
+`isPublicPath`, `sitemap.ts`, one `<h1>`, `alternates.canonical`,
+`openGraphFor`, a meta description, alt text, constants not hand-typed numbers,
+and then loaded logged out and read as HTML. Every one of those has been got
+wrong in this repo at least once.
+
+**The homepage does not change.** It stays the UK page and the core of the
+platform, exactly as it is.
+
+### S7 — The rule for the second country page
+
+Written now, while nobody wants one, because the pressure to stamp out six more
+arrives the moment the first works.
+
+A second country page is justified when **both** are true:
+
+1. **Evidence, from S0's instrument** — Search Console impressions against real
+   queries from that country, or non-UK postcode refusals from it in S3's
+   counter, at a volume that is not noise.
+2. **Something genuinely different to say** — at least two of S6's five questions
+   answered differently than on the US page. Currency and timezone differ for
+   every country and are not enough on their own; "same page, different flag" is
+   the doorway pattern.
+
+Last week's tail — India 4, Afghanistan 2, Singapore 2, UAE 1, Armenia 1 — meets
+neither. Generating seven country pages from that data is precisely the thing
+`docs/seo-plan.md` warns about, and it would put the pages that currently work at
+risk to serve nine sessions.
+
 ## Explicitly not doing
 
 - **Shipping outside the UK.** Not a messaging change; a fulfilment, postage-
@@ -191,16 +306,20 @@ directly.
 - **A country selector on the address form.** It would imply we post there.
 - **Localised or translated pages.** See D5.
 - **Anything conditional on the visitor's location.** See D4.
+- **A country page per country in the analytics tail.** See S7.
+- **hreflang, still.** S6's pages are not translations of one page; they are
+  different pages answering different questions, all in en-GB. `hreflang`
+  describes the former and would be wrong for the latter. `docs/seo-plan.md`
+  ruled it out for a different reason that still holds.
 
 ## Open questions
 
-1. **Is the US traffic people or crawlers?** It does not change whether this work
-   is right — S3 is a correctness fix regardless — but it changes how much S4 and
-   S5 are worth, and whether the next step after them is content aimed at that
-   audience. In GA: engagement time above zero, and whether those sessions land
-   on a spread of pages or all on one. "Student Birthday Cards" is the number two
-   page at 261 views and worth checking first.
-2. **Do we want that market deliberately?** A US company sending to UK staff is a
-   different proposition from a UK company, and if it is one we want, it earns
-   its own page rather than a clause in the hero. That is a business decision,
-   not a code one, and this plan does not assume the answer.
+1. **Do we want the US market deliberately?** S6 assumes yes, conditional on S0.
+   A US company sending to UK staff is a real proposition and a different one
+   from the homepage's — but serving it well may eventually mean things this plan
+   does not cover, such as a US-hours support expectation. Worth deciding rather
+   than drifting into.
+2. **Which canonical host is Search Console verified against?** `seo-plan.md`
+   Phase 0 recommends the apex, `https://kudos-cards.co.uk`, since `netlify.toml`
+   and `WEB_APP_URL` already use it. Verifying the wrong one measures a site
+   nobody visits. Settle it before submitting the sitemap, not after.
