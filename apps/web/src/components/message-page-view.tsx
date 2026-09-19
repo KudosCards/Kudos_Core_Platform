@@ -56,6 +56,28 @@ export function MessagePageView({
             title="Message video"
             className="h-full w-full"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            /*
+             * Without this the video does not play at all: YouTube's embedded
+             * player refuses to configure itself when it cannot see a referrer
+             * and shows "Error 153 — Video player configuration error".
+             *
+             * The message page sends `Referrer-Policy: no-referrer` (proxy.ts),
+             * which is right for a page addressed to one named person and wrong
+             * for this one request. An element-level `referrerpolicy` overrides
+             * the document's for that element's fetch, so the override is
+             * exactly as narrow as the problem.
+             *
+             * `strict-origin-when-cross-origin` and not something looser:
+             * cross-origin it sends the ORIGIN only. The path is `/r/<slug>`,
+             * and that slug is the page's whole secret — anyone holding it can
+             * read a message meant for somebody else. A policy that sent the
+             * full URL would file that secret in YouTube's logs.
+             *
+             * This is why it shipped: the builder renders this same component
+             * at /message-pages, which has no such header, so the preview plays
+             * and the real page does not.
+             */
+            referrerPolicy="strict-origin-when-cross-origin"
             allowFullScreen
           />
         </div>

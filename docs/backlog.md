@@ -1,0 +1,125 @@
+# Backlog
+
+Work that is known, understood well enough to start, and deliberately not being
+done yet. Each entry says what would unblock it, so nothing here needs
+rediscovering.
+
+Not a wish list. Something belongs here once somebody has looked at it properly
+and decided _not now_; ideas nobody has examined belong in a plan doc first.
+
+**Phased plans live in their own documents** and are not duplicated here:
+`docs/card-print-quality-plan.md`, `docs/cleancloud-integration-plan.md`,
+`docs/leadconnector-private-token-plan.md`, `docs/performance-backlog.md`.
+
+---
+
+## Integrations
+
+### Is `GET /contacts` deprecated? — LeadConnector
+
+**The question.** Search results state that the endpoint our LeadConnector client
+pages through has been deprecated in favour of `POST /contacts/search`, which
+pages on a `searchAfter` cursor rather than `meta.nextPageUrl`.
+
+**Why it matters.** If true, this is a countdown on the whole LeadConnector
+integration — both the OAuth lane and the token lane, since they share one
+client. It is currently working in production, so there is no urgency, only a
+deadline nobody has read.
+
+**Evidence: reported, not confirmed.** One clear statement, uncorroborated, and
+reported page sizes differ between sources (20 in one, 100 in another) — which is
+itself a reason to read the page before writing a loop against it. Every
+HighLevel documentation host (`marketplace.gohighlevel.com`,
+`help.gohighlevel.com`, `highlevel.stoplight.io`) is blocked by the development
+environment's egress proxy, including through WebFetch, so this cannot be settled
+from a session. Search results reach those pages; we cannot.
+
+**What unblocks it.** One person opening
+`marketplace.gohighlevel.com/docs/ghl/contacts/get-contacts/` in a browser and
+saying whether it carries a deprecation notice, and if so what
+`POST /contacts/search` takes and returns.
+
+**Then the work is focused**: the same paging loop with a POST body instead of
+query parameters, and `searchAfter` instead of `nextPageUrl`. See ADR 0253.
+
+### Pace LeadConnector against its published rate limit
+
+**The gap.** HighLevel publishes 100 requests per 10 seconds and 200,000 per day,
+per app per location, and returns `X-RateLimit-Remaining` and `X-RateLimit-Max`
+on every response. We read neither. `GOHIGHLEVEL_MAX_PAGES = 100` at 100 contacts
+a page means a large sub-account can fire up to 100 requests as fast as the
+network allows, straight through the burst limit.
+
+**Why it is not urgent.** It works: `httpRequest` honours `Retry-After` on a 429,
+so a sync that trips the limit recovers rather than failing. But that is the
+retry doing pacing's job, and the budget it burns is shared with whatever else
+the customer has connected to that sub-account.
+
+**Evidence: confirmed** (the limits and the headers are consistent across
+several sources).
+
+**Worth pairing with the item above** — both touch the same loop, and doing them
+together is one review rather than two.
+
+### CleanCloud: occasions from lapsed customers (N6)
+
+`getOrders` would let a dry cleaner send to customers they have not seen in six
+months, which is a different and possibly better occasion than a birthday for
+this kind of business. Deliberately out of scope until the nightly contact sync
+has run against a real account and the address-parse quality is known. See
+`docs/cleancloud-integration-plan.md`.
+
+---
+
+## Print and artwork
+
+### Distortion as a pre-send finding (P7, item 3)
+
+**Blocked on data, not on code.** It needs each image's natural size server-side.
+The only cheap source is `DesignAsset.width/height`, which is trustworthy for
+uploads made since that measurement moved server-side — but the legacy designs
+this check exists to catch reference legacy assets, whose stored dimensions are
+the browser's or null.
+
+So it needs either a backfill of `DesignAsset` dimensions (ops work against
+production) or a per-image fetch inside a preflight that runs on every send
+review, which is a network round trip per image on a path a customer waits on.
+
+**Shipping it before a backfill would leave it silent on exactly the designs it
+targets**, which is worse than not having it.
+
+Note also that stretching is a _supported_ choice — the editor's
+`lockImageAspect` is on by default and turned off deliberately — so this can only
+ever be a warning with a known false-positive class. See
+`docs/card-print-quality-plan.md`, P7.
+
+### Retire the browser print path outright (P8)
+
+Already gated: browser print is refused whenever the profile says
+`folded-sheet`, so nothing can print the wrong shape today. Removing it
+altogether is cheaper now than it was, and is not the same job as making the
+content preview show imposed sheets — which is a separate piece of work nobody
+has asked for. See `docs/card-print-quality-plan.md`, P8.
+
+---
+
+## Catalog data quality
+
+Both surfaced by the catalog sync itself, neither blocking, both worth doing
+while the catalog is open for the re-export (`docs/ops/catalog-re-export.md`).
+
+### Two cards, one address
+
+`/thank-you-red` and `/well-done-flowers` each have a second card claiming the
+same URL, which keeps a `-2` on the end of its address for ever, even if
+renamed. A card's URL is assigned once and never recalculated, because changing
+it would break indexed links and the QR codes on cards already posted. Worth
+fixing before those cards are published.
+
+### 93 cards with no landing page
+
+seasonal (54), inspirational (22), fitness themed (10) and good luck (7) sit
+under `/cards/other`, which is deliberately not indexed. They sync, they browse,
+and their own pages are indexable — there is simply no category page for anyone
+to find them through. Either name the categories properly or correct the value
+upstream.
