@@ -32,13 +32,13 @@ import { SocialLinks } from "@/components/social-links";
 export const metadata: Metadata = {
   title: { absolute: "Personalised cards, printed and posted — Kudos Cards" },
   description:
-    "Send one card or automate thousands. We print and post real, personalised cards for birthdays, thank-yous and milestones — so you never miss another date.",
+    "Send one card or automate thousands. Real, personalised cards printed and posted to UK addresses — so you never miss another birthday, thank-you or milestone.",
   alternates: { canonical: "/" },
   openGraph: openGraphFor({
     url: "/",
     title: "Personalised cards, printed and posted — Kudos Cards",
     description:
-      "Send one card or automate thousands. We print and post real, personalised cards for birthdays, thank-yous and milestones.",
+      "Send one card or automate thousands. Real, personalised cards printed and posted to UK addresses.",
   }),
 };
 
@@ -261,9 +261,17 @@ export default async function HomePage() {
             <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
               Send one card, or automate thousands
             </h1>
+            {/* "anywhere in the UK" is the whole of S4, and it is one clause on
+                purpose. A third of last week's visitors were outside the UK and
+                the site told none of them where we post until it refused a
+                postcode — at the address field, after they had signed up and
+                chosen a card. Saying it here costs nothing: anyone it turns
+                away was going to be turned away anyway, just later and with
+                more of their time spent. The FAQ carries the other half, that
+                the sender can be anywhere. See docs/uk-scope-messaging-plan.md. */}
             <p className="text-xl font-semibold text-slate-700">
-              Real, personalised cards, printed and posted for you. So you never miss another
-              birthday, thank-you or big moment.
+              Real, personalised cards, printed and posted for you, anywhere in the UK. So you never
+              miss another birthday, thank-you or big moment.
             </p>
             <p className="max-w-lg text-slate-600">
               Whether it’s a single birthday card or a thank-you to your whole customer list, we

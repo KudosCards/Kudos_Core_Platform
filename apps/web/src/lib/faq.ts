@@ -123,6 +123,14 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
         ],
       },
       {
+        question: "Can I send a card from outside the UK?",
+        answer: [
+          "Yes. Kudos is open to anyone, anywhere — you can hold an account and pay from any country. It's the card's destination that has to be in the UK, because we print and post from here.",
+          "So if you're abroad and sending to family, a colleague or a client in the UK, you're in the right place. Prices are in pounds, and your bank handles the conversion.",
+          "One thing worth knowing if you're a long way from the UK: our send-by cut-off is in UK time, so a card you order late in the American evening is already the next day here. The dates we show you account for that.",
+        ],
+      },
+      {
         question: "Can birthdays send themselves?",
         answer: [
           `On ${pro.name} and above, yes — approved birthdays send automatically without you doing anything on the day.`,
