@@ -183,6 +183,9 @@ exist for one account. ADR recording why two lanes rather than a replacement.
 
 ## Two existing problems this sits on top of
 
+**Both are now in `docs/backlog.md`.** They are kept here because this is where
+the reasoning is; the backlog is where they get looked at again.
+
 Both affect the OAuth lane that is live today, not just the new one. Both are
 worth doing and **neither is in scope for P1–P5** unless you say so.
 
