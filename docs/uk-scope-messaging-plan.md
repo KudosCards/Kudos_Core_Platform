@@ -243,7 +243,7 @@ for, instead of reading it off a GA tail. Consent-gated means it undercounts;
 that is the honest trade and it is recorded here so nobody later reports the
 number as complete.
 
-### S4 — Say it where they arrive
+### S4 — Say it where they arrive — **done**
 
 Hero copy, meta description and OpenGraph description. One clause, not a banner:
 posted to UK addresses.
@@ -254,13 +254,30 @@ homepage advertises a promise the app then breaks in three places.
 The `docs/seo-plan.md` "Rules for a new public page" checklist applies unchanged;
 this adds no pages.
 
-### S5 — A destination for the question
+**Landed as one clause**, in the hero's lead line and in the meta and OpenGraph
+descriptions — "printed and posted to UK addresses". The `<h1>` is untouched:
+it carries the proposition, and a delivery detail in it would weaken that for
+the UK audience the homepage is still for.
+
+### S5 — A destination for the question — **done**
 
 An FAQ entry — "Can I send a card from outside the UK?" — answering the thing a
 US visitor actually wants to know: yes, you can be anywhere, the card is posted
 to a UK address, prices are in pounds. The FAQ is already marked up as
 `FAQPage` (seo-plan Phase 5), so this is also the answer Google can surface
 directly.
+
+**It carries a third thing, which turned out to be the most useful.** Our
+same-day cut-off is a UK local hour (`sameDayCutoffHour`) against
+`PLATFORM_TIME_ZONE` `"Europe/London"` — so a card ordered late in the American
+evening is already tomorrow here, and the dates we quote account for it. That
+is the one fact a sender in California needs and a sender in Leeds never thinks
+about, and it is checked rather than asserted: the FAQ's own rule is that every
+answer is something the product actually does.
+
+It is also the clearest demonstration of S6's test. Currency and destination
+would survive a find-and-replace into any country; a timezone sentence written
+for the Pacific coast would not.
 
 ### S6 — One country page, built so it is not a doorway page
 
