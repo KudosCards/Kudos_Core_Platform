@@ -23,6 +23,7 @@ import {
 import type { OAuthCrmClient } from "./oauth-crm-client";
 import { BREVO_CLIENT, type BrevoClient } from "./brevo/brevo-client";
 import { CLEANCLOUD_CLIENT, type CleanCloudClient } from "./cleancloud/cleancloud-client";
+import { parseLocationId } from "./gohighlevel/parse-location-id";
 import { mapCleanCloudCustomer } from "./cleancloud/cleancloud.mapper";
 import {
   DEFAULT_BREVO_MAPPING,
@@ -55,7 +56,20 @@ import {
 type AuthType = "api_key" | "oauth";
 
 interface ProviderTraits {
-  authType: AuthType;
+  /**
+   * Every way this provider can be connected.
+   *
+   * A list rather than one value, because LeadConnector has two and they are
+   * not alternatives on a whim: OAuth needs a HighLevel Marketplace app, and
+   * a private app may be installed in at most five agencies before new
+   * installs are blocked. A Private Integration Token is created by the
+   * customer inside their own sub-account with no Marketplace app involved, so
+   * it is the route that scales. See ADR 0253.
+   *
+   * A connection records which way it was actually made in its own `authType`
+   * column; `@@unique([accountId, provider])` keeps it to one at a time.
+   */
+  authTypes: readonly AuthType[];
   needsExternalAccount: boolean;
   /**
    * Whether the customer chooses which of the provider's fields feed ours.
@@ -72,20 +86,37 @@ interface ProviderTraits {
 /** The CRMs we support and how each authenticates. Adding a provider is an entry
  * here plus its client + mapper — the ingest funnel is shared. */
 export const CRM_PROVIDERS = {
-  brevo: { authType: "api_key", needsExternalAccount: false, configurableFields: true },
-  hubspot: { authType: "oauth", needsExternalAccount: false, configurableFields: true },
+  brevo: { authTypes: ["api_key"], needsExternalAccount: false, configurableFields: true },
+  hubspot: { authTypes: ["oauth"], needsExternalAccount: false, configurableFields: true },
   // GoHighLevel scopes contacts to one location, so a grant without a locationId
   // can never sync. Its consent screen offers the agency as well as the
   // sub-accounts, and picking the agency yields exactly that. See ADR 0213.
-  gohighlevel: { authType: "oauth", needsExternalAccount: true, configurableFields: true },
+  gohighlevel: {
+    authTypes: ["oauth", "api_key"],
+    needsExternalAccount: true,
+    configurableFields: true,
+  },
   // The point-of-sale a dry cleaner runs on. Its customer record has fixed
   // fields, so nothing here is configurable — and it is the only source we read
   // that holds a real postal address and a birthday as a matter of course.
   // See ADR 0252.
-  cleancloud: { authType: "api_key", needsExternalAccount: false, configurableFields: false },
+  cleancloud: { authTypes: ["api_key"], needsExternalAccount: false, configurableFields: false },
 } as const satisfies Record<string, ProviderTraits>;
 
 export type CrmProvider = keyof typeof CRM_PROVIDERS;
+
+/**
+ * Whether a provider can be connected this way.
+ *
+ * A function rather than `.authTypes.includes(...)` at each call site: the
+ * registry is `as const`, so each entry's `authTypes` is a tuple of literals
+ * and `includes` narrows its own argument to those literals — asking a
+ * single-lane provider about the other lane stops compiling, which is the
+ * opposite of what a capability check is for.
+ */
+export function supportsAuthType(provider: CrmProvider, authType: AuthType): boolean {
+  return (CRM_PROVIDERS[provider].authTypes as readonly AuthType[]).includes(authType);
+}
 export const SUPPORTED_PROVIDERS = Object.keys(CRM_PROVIDERS) as CrmProvider[];
 
 /**
@@ -309,10 +340,13 @@ export class CrmConnectionsService {
     provider: string,
     apiKey: string,
     fieldMapping?: Partial<BrevoFieldMapping>,
+    externalAccountId?: string,
   ): Promise<CrmConnectionView> {
     this.assertProvider(provider);
-    if (CRM_PROVIDERS[provider].authType !== "api_key") {
-      throw new BadRequestException(`${provider} connects via OAuth, not an API key`);
+    if (!supportsAuthType(provider, "api_key")) {
+      throw new BadRequestException(
+        `${crmProviderLabel(provider)} connects via OAuth, not an API key`,
+      );
     }
     this.assertCryptoConfigured();
     if (fieldMapping && !CRM_PROVIDERS[provider].configurableFields) {
@@ -323,7 +357,15 @@ export class CrmConnectionsService {
       );
     }
 
-    await this.verifyApiKey(provider, apiKey);
+    // Where contacts are scoped to a sub-account, the credential alone cannot
+    // say which one — an OAuth exchange returns it, a pasted token does not —
+    // so the customer supplies it and it is checked against the token below,
+    // before either is stored.
+    const subAccountId = CRM_PROVIDERS[provider].needsExternalAccount
+      ? parseLocationId(externalAccountId)
+      : null;
+
+    await this.verifyApiKey(provider, apiKey, subAccountId);
 
     const encryptedApiKey = this.crypto.encrypt(apiKey);
     const mapping = (fieldMapping ?? null) as Prisma.InputJsonValue | null;
@@ -334,12 +376,24 @@ export class CrmConnectionsService {
         provider,
         authType: "api_key",
         encryptedApiKey,
+        ...(subAccountId !== null && { externalAccountId: subAccountId }),
         ...(mapping !== null && { fieldMapping: mapping }),
       },
       update: {
         authType: "api_key",
         encryptedApiKey,
         syncEnabled: true,
+        // Cleared for a provider with no sub-account, so a connection that was
+        // OAuth yesterday cannot keep a stale location alongside a pasted
+        // token — and re-set when there is one, because reconnecting is how
+        // somebody moves the connection to a different sub-account.
+        externalAccountId: subAccountId,
+        // A fresh credential has no expiry and no refresh token of its own; the
+        // OAuth ones left over from a previous connection are dead the moment
+        // this row stops being an OAuth connection.
+        encryptedAccessToken: null,
+        encryptedRefreshToken: null,
+        tokenExpiresAt: null,
         ...(mapping !== null && { fieldMapping: mapping }),
       },
     });
@@ -363,8 +417,8 @@ export class CrmConnectionsService {
    * signed `state` that ties the callback back to this account (CSRF defence). */
   startOAuth(accountId: string, actorUserId: string, provider: string): { url: string } {
     this.assertProvider(provider);
-    if (CRM_PROVIDERS[provider].authType !== "oauth") {
-      throw new BadRequestException(`${provider} doesn't connect via OAuth`);
+    if (!supportsAuthType(provider, "oauth")) {
+      throw new BadRequestException(`${crmProviderLabel(provider)} doesn't connect via OAuth`);
     }
     this.assertCryptoConfigured();
     this.assertOAuthConfigured(provider);
@@ -396,8 +450,8 @@ export class CrmConnectionsService {
     rawState: string,
   ): Promise<{ accountId: string }> {
     this.assertProvider(provider);
-    if (CRM_PROVIDERS[provider].authType !== "oauth") {
-      throw new BadRequestException(`${provider} doesn't connect via OAuth`);
+    if (!supportsAuthType(provider, "oauth")) {
+      throw new BadRequestException(`${crmProviderLabel(provider)} doesn't connect via OAuth`);
     }
     this.assertCryptoConfigured();
     this.assertOAuthConfigured(provider);
@@ -557,14 +611,26 @@ export class CrmConnectionsService {
    * Brevo was the only one and would have silently rejected every valid
    * CleanCloud token the moment it was not.
    */
-  private async verifyApiKey(provider: CrmProvider, apiKey: string): Promise<void> {
+  private async verifyApiKey(
+    provider: CrmProvider,
+    apiKey: string,
+    externalAccountId: string | null,
+  ): Promise<void> {
     switch (provider) {
       case "brevo":
         return this.brevo.verifyKey(apiKey);
       case "cleancloud":
         return this.cleancloud.verifyKey(apiKey);
+      case "gohighlevel":
+        // Both halves together, on purpose. The customer pastes two things
+        // found in two different places, so a good token with the wrong
+        // sub-account is the likely mistake — and it is indistinguishable from
+        // a working connection until the first nightly sync fails.
+        return this.ghl.verifyToken(apiKey, externalAccountId ?? "");
       default:
-        throw new BadRequestException(`${provider} connects via OAuth, not an API key`);
+        throw new BadRequestException(
+          `${crmProviderLabel(provider)} connects via OAuth, not an API key`,
+        );
     }
   }
 
@@ -629,9 +695,9 @@ export class CrmConnectionsService {
   }
 
   private async fetchGoHighLevelContacts(connection: CrmConnection): Promise<ProviderFetch> {
-    this.assertOAuthConfigured("gohighlevel");
-    // GoHighLevel scopes contacts to the location the token was granted for; we
-    // persisted that locationId as externalAccountId at connect time.
+    // LeadConnector scopes contacts to the sub-account, and we hold that id
+    // whichever lane the connection came in on: the OAuth token exchange
+    // returns it, and the token lane asks for it at connect time.
     const locationId = connection.externalAccountId;
     if (!locationId) {
       // Connections stored before the callback started refusing these. The old
@@ -642,13 +708,34 @@ export class CrmConnectionsService {
           "Disconnect, connect again, and choose the sub-account you want contacts from.",
       );
     }
-    const accessToken = await this.validAccessToken("gohighlevel", connection);
+    const accessToken = await this.goHighLevelCredential(connection);
     const mapping = this.resolveMapping(connection.fieldMapping, DEFAULT_GOHIGHLEVEL_MAPPING);
     const { contacts: raw, truncated } = await this.ghl.fetchContacts(accessToken, locationId);
     const contacts = raw
       .map((contact) => mapGoHighLevelContact(contact, mapping))
       .filter((c): c is NormalizedContact => c !== null);
     return { contacts, fetched: raw.length, truncated };
+  }
+
+  /**
+   * The credential to read LeadConnector contacts with.
+   *
+   * A Private Integration Token is used exactly as an OAuth access token is —
+   * same header, same version, same endpoint — so only the getting of it
+   * differs. It is long-lived and does not refresh, so the OAuth path's whole
+   * expiry-and-refresh dance is not merely unnecessary here but wrong: there is
+   * no refresh token to trade, and `validAccessToken` would reject the
+   * connection for not having one.
+   */
+  private async goHighLevelCredential(connection: CrmConnection): Promise<string> {
+    if (connection.authType === "api_key") {
+      if (!connection.encryptedApiKey) {
+        throw new BadRequestException("LeadConnector connection is missing its API token");
+      }
+      return this.crypto.decrypt(connection.encryptedApiKey);
+    }
+    this.assertOAuthConfigured("gohighlevel");
+    return this.validAccessToken("gohighlevel", connection);
   }
 
   /** Returns a usable access token for an OAuth provider, refreshing (and

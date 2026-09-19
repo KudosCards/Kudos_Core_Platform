@@ -369,6 +369,65 @@ describe("IntegrationsClient — CleanCloud", () => {
     expect(within(card("CleanCloud")).queryByText(/Sub-account/)).toBeNull();
   });
 
+  it("asks LeadConnector for a token and a sub-account, and sends both", async () => {
+    // The credential does not say which sub-account it reads, so the customer
+    // supplies it. Sending only the token would store a connection that cannot
+    // fetch anything.
+    fetchMock.mockResolvedValue({
+      provider: "gohighlevel",
+      syncEnabled: true,
+      lastSyncedAt: null,
+      lastSyncStatus: null,
+      externalAccountId: "ve9EPM428h8vShlRW1KT",
+      createdAt: new Date(),
+    });
+    renderClient();
+
+    await userEvent.click(within(card("LeadConnector")).getByRole("button", { name: "Connect" }));
+    await userEvent.type(
+      screen.getByLabelText("LeadConnector private integration token"),
+      "pit-token",
+    );
+    await userEvent.type(screen.getByLabelText("Sub-account ID"), "ve9EPM428h8vShlRW1KT");
+    await userEvent.click(screen.getByRole("button", { name: "Connect LeadConnector" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+    expect(url).toBe("/integrations/connections");
+    expect(JSON.parse(init.body)).toEqual({
+      provider: "gohighlevel",
+      apiKey: "pit-token",
+      externalAccountId: "ve9EPM428h8vShlRW1KT",
+    });
+  });
+
+  it("will not submit LeadConnector without the sub-account", async () => {
+    renderClient();
+
+    await userEvent.click(within(card("LeadConnector")).getByRole("button", { name: "Connect" }));
+    await userEvent.type(
+      screen.getByLabelText("LeadConnector private integration token"),
+      "pit-token",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Connect LeadConnector" }));
+
+    expect(await screen.findByText(/Enter your LeadConnector sub-account id/i)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("still offers the consent flow as the other way in", async () => {
+    // Kept, not replaced: an existing OAuth connection keeps working, and some
+    // customers will prefer it. It is the second choice because it depends on
+    // a Marketplace app install and the token does not.
+    renderClient();
+
+    await userEvent.click(within(card("LeadConnector")).getByRole("button", { name: "Connect" }));
+
+    expect(
+      within(card("LeadConnector")).getByRole("button", { name: "Connect through LeadConnector" }),
+    ).toBeInTheDocument();
+  });
+
   it("syncs and disconnects against its own endpoints", async () => {
     const connection: CrmConnection = {
       provider: "cleancloud",

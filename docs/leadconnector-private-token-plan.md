@@ -1,6 +1,6 @@
 # LeadConnector: connecting with the customer's own token
 
-**Status:** plan only — nothing implemented.
+**Status:** P1–P5 built and merged — see ADR 0253. The two problems in [Two existing problems](#two-existing-problems-this-sits-on-top-of) are still open, and so is the live failure the decisive test below settles.
 
 A LeadConnector (HighLevel / GoHighLevel) customer should be able to paste a
 token they generated themselves and have their contacts sync nightly, exactly as

@@ -173,6 +173,7 @@ export class IntegrationsController {
       dto.provider,
       dto.apiKey,
       dto.fieldMapping,
+      dto.externalAccountId,
     );
   }
 

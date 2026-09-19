@@ -32,6 +32,16 @@ export const GOHIGHLEVEL_SCOPES = ["contacts.readonly"] as const;
 export type GoHighLevelContact = { id: string } & Record<string, unknown>;
 
 export interface GoHighLevelClient {
+  /**
+   * Cheap check that a Private Integration Token works **and is scoped to this
+   * sub-account** — one contact, not the whole location.
+   *
+   * Both halves matter. The customer pastes two things they found in two
+   * different places, so a good token with the wrong sub-account is the likely
+   * mistake, and it is indistinguishable from a working connection until the
+   * first nightly sync fails. Throws Unauthorized when either is wrong.
+   */
+  verifyToken(accessToken: string, locationId: string): Promise<void>;
   /** Exchanges an OAuth authorization code for tokens; `externalAccountId` on the
    * result is the granted locationId. */
   exchangeCode(code: string): Promise<OAuthTokens>;

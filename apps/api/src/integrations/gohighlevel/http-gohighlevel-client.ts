@@ -109,6 +109,27 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
     };
   }
 
+  async verifyToken(accessToken: string, locationId: string): Promise<void> {
+    const params = new URLSearchParams({ locationId, limit: "1" });
+    const response = await httpRequest(
+      `${GOHIGHLEVEL_CONTACTS_URL}?${params.toString()}`,
+      {
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          Version: GOHIGHLEVEL_API_VERSION,
+          accept: "application/json",
+        },
+      },
+      { maxAttempts: CONTACTS_ATTEMPTS, label: "LeadConnector token check" },
+    );
+    if (!response.ok) {
+      await this.throwForContactsFailure(response, accessToken);
+    }
+    // A location with no contacts yet is a pass: the question asked here is
+    // whether the token can read this sub-account, not whether anyone is in it.
+    await response.body?.cancel().catch(() => undefined);
+  }
+
   async fetchContacts(
     accessToken: string,
     locationId: string,
@@ -133,15 +154,7 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
       );
 
       if (!response.ok) {
-        const detail = await upstreamDetail(response, { secrets: [accessToken] });
-        if (response.status === 401) {
-          throw new UnauthorizedException(
-            withUpstreamDetail("LeadConnector rejected the access token", detail),
-          );
-        }
-        throw new BadGatewayException(
-          withUpstreamDetail(`LeadConnector contacts request failed (${response.status})`, detail),
-        );
+        await this.throwForContactsFailure(response, accessToken);
       }
 
       const body = (await response.json()) as GoHighLevelContactsPage;
@@ -154,5 +167,25 @@ export class HttpGoHighLevelClient implements GoHighLevelClient {
     }
     // A cursor still outstanding means the cap, not the location, ended the run.
     return { contacts, truncated: nextUrl !== null };
+  }
+
+  /**
+   * One place to turn a failed contacts response into an exception, so the
+   * token check and the paging loop cannot drift on what a 401 means or on
+   * whether the token is redacted out of what gets stored.
+   *
+   * Always throws; the return type says so, so callers need no `return` after
+   * it for TypeScript to see the branch as terminal.
+   */
+  private async throwForContactsFailure(response: Response, accessToken: string): Promise<never> {
+    const detail = await upstreamDetail(response, { secrets: [accessToken] });
+    if (response.status === 401 || response.status === 403) {
+      throw new UnauthorizedException(
+        withUpstreamDetail("LeadConnector rejected the access token", detail),
+      );
+    }
+    throw new BadGatewayException(
+      withUpstreamDetail(`LeadConnector contacts request failed (${response.status})`, detail),
+    );
   }
 }

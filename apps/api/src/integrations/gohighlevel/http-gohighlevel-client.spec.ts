@@ -178,3 +178,89 @@ describe("HttpGoHighLevelClient.fetchContacts", () => {
     expect(result.contacts).toHaveLength(2);
   });
 });
+
+/**
+ * The private-token check. Its job is to separate three outcomes the customer
+ * cannot tell apart from a stored connection: the token is wrong, the
+ * sub-account is wrong, or LeadConnector is down.
+ */
+describe("HttpGoHighLevelClient.verifyToken", () => {
+  const client = new HttpGoHighLevelClient("id", "secret", "https://redirect.test");
+  const TOKEN = "pit-live-token-0123456789";
+  let fetchSpy: jest.SpyInstance;
+
+  afterEach(() => fetchSpy?.mockRestore());
+
+  function errorResponse(status: number, body: string): Response {
+    return {
+      ok: false,
+      status,
+      headers: { get: () => null },
+      json: () => Promise.reject(new SyntaxError("not json")),
+      text: () => Promise.resolve(body),
+    } as unknown as Response;
+  }
+
+  it("asks for one contact in the named sub-account, with both headers", async () => {
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(contactsPage(1, null));
+
+    await client.verifyToken(TOKEN, "loc-abc-123");
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("locationId=loc-abc-123");
+    expect(url).toContain("limit=1");
+    const headers = init.headers as Record<string, string>;
+    expect(headers.authorization).toBe(`Bearer ${TOKEN}`);
+    // Every v2 call carries the dated version header; without it the API 4xxs.
+    expect(headers.Version).toBe("2021-07-28");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("passes a sub-account that has no contacts in it yet", async () => {
+    // The question is whether the token can read this sub-account, not whether
+    // anyone is in it. A new sub-account would otherwise be unconnectable.
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(contactsPage(0, null));
+
+    await expect(client.verifyToken(TOKEN, "loc-abc-123")).resolves.toBeUndefined();
+  });
+
+  it.each([401, 403])("reports %i as a rejected token", async (status) => {
+    fetchSpy = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(errorResponse(status, '{"message":"Location is not active"}'));
+
+    await expect(client.verifyToken(TOKEN, "loc-abc-123")).rejects.toThrow(
+      /rejected the access token/,
+    );
+  });
+
+  it("carries LeadConnector's own words through, so the reason is actionable", async () => {
+    // "Location is not active" is a statement about the sub-account, not the
+    // credential — and it is the difference between reconnecting for ever and
+    // fixing the sub-account. See ADR 0212.
+    fetchSpy = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(errorResponse(401, '{"message":"Location is not active"}'));
+
+    await expect(client.verifyToken(TOKEN, "loc-abc-123")).rejects.toThrow(
+      /Location is not active/,
+    );
+  });
+
+  it("never lets the token into the message it stores", async () => {
+    fetchSpy = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(errorResponse(401, `{"message":"bad token ${TOKEN}"}`));
+
+    await expect(client.verifyToken(TOKEN, "loc")).rejects.toThrow(/\[redacted\]/);
+    await expect(client.verifyToken(TOKEN, "loc")).rejects.not.toThrow(new RegExp(TOKEN));
+  });
+
+  it("reports an upstream failure as a bad gateway, not a bad token", async () => {
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(errorResponse(400, "nope"));
+
+    await expect(client.verifyToken(TOKEN, "loc")).rejects.toThrow(
+      /contacts request failed \(400\)/,
+    );
+  });
+});

@@ -231,11 +231,23 @@ interface MappingField {
   placeholder: string;
 }
 
+/** A second required field, for a provider that scopes contacts to one
+ * sub-account and whose credential does not say which. Sent as
+ * `externalAccountId`; the API parses and verifies it against the token. */
+interface AccountField {
+  label: string;
+  placeholder: string;
+  help: ReactNode;
+}
+
 interface ApiKeyConnectorProps {
   provider: string;
   name: string;
   connection: CrmConnection | undefined;
   onChange: (next: CrmConnection | null) => void;
+  accountField?: AccountField;
+  /** Rendered under the form — the other way in, where a provider has one. */
+  altAction?: ReactNode;
   /** What the credential is called on the provider's own screen — "API key"
    * for Brevo, "API token" for CleanCloud. Getting this wrong sends people
    * hunting for a setting that is not there. */
@@ -262,11 +274,14 @@ function ApiKeyConnector({
   keyLabel,
   keyPlaceholder,
   description,
+  accountField,
+  altAction,
   mappingFields = [],
   mappingHint,
 }: ApiKeyConnectorProps) {
   const [open, setOpen] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  const [accountId, setAccountId] = useState("");
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<null | "connect" | "sync" | "disconnect">(null);
   const [error, setError] = useState<string | null>(null);
@@ -276,6 +291,10 @@ function ApiKeyConnector({
     event.preventDefault();
     if (!apiKey.trim()) {
       setError(`Paste your ${name} ${keyLabel}`);
+      return;
+    }
+    if (accountField && !accountId.trim()) {
+      setError(`Enter your ${name} ${accountField.label.toLowerCase()}`);
       return;
     }
     setError(null);
@@ -291,11 +310,13 @@ function ApiKeyConnector({
         body: JSON.stringify({
           provider,
           apiKey: apiKey.trim(),
+          ...(accountField && { externalAccountId: accountId.trim() }),
           ...(Object.keys(fieldMapping).length > 0 && { fieldMapping }),
         }),
       });
       onChange(created);
       setApiKey("");
+      setAccountId("");
       setOpen(false);
     } catch (connectError) {
       setError(
@@ -402,6 +423,24 @@ function ApiKeyConnector({
               autoComplete="off"
             />
           </label>
+          {accountField && (
+            <div className="flex flex-col gap-1">
+              <label className="flex flex-col gap-1 text-sm">
+                {accountField.label}
+                <input
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  placeholder={accountField.placeholder}
+                  className={inputClass}
+                  autoComplete="off"
+                />
+              </label>
+              {/* Outside the label: inside it this becomes part of the field's
+                  accessible name, and a screen reader announces the whole
+                  explanation instead of the label. */}
+              <p className="text-xs text-muted">{accountField.help}</p>
+            </div>
+          )}
           {mappingFields.length > 0 && (
             <details className="text-sm">
               <summary className="cursor-pointer text-muted">Field mapping (optional)</summary>
@@ -439,9 +478,56 @@ function ApiKeyConnector({
               Cancel
             </button>
           </div>
+          {altAction}
         </form>
       )}
     </ConnectorShell>
+  );
+}
+
+/**
+ * The other way in, offered under a token form.
+ *
+ * Same consent flow as `OAuthConnector` — the API builds the URL with a signed
+ * state and we redirect — but presented as the second choice, because it
+ * depends on a Marketplace app install and the token route does not.
+ */
+function OAuthAlternative({ provider, name }: { provider: string; name: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function begin() {
+    setError(null);
+    setBusy(true);
+    try {
+      const { url } = await clientApiFetch<{ url: string }>(
+        `/integrations/oauth/${provider}/start`,
+      );
+      window.location.href = url;
+    } catch (startError) {
+      setError(
+        startError instanceof ApiError ? startError.message : `Could not start ${name} connect`,
+      );
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1 border-t border-border pt-3">
+      <p className="text-xs text-muted">
+        Or approve access through {name} instead — you’ll be sent there to choose a sub-account.
+        This needs our app to be installed on your agency.
+      </p>
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void begin()}
+        className="self-start text-xs font-medium underline"
+      >
+        {busy ? "Redirecting…" : `Connect through ${name}`}
+      </button>
+    </div>
   );
 }
 
@@ -747,12 +833,27 @@ export function IntegrationsClient({
               start importing contacts.
             </p>
           </ConnectorShell>
-          <OAuthConnector
+          {/* The token route is the primary one, not the polite alternative.
+              The OAuth route needs our Marketplace app, and a private app may
+              be installed in at most five agencies before new installs are
+              blocked — a ceiling no code change can lift. A private token is
+              made by the customer inside their own sub-account with no
+              Marketplace app involved. See ADR 0253. */}
+          <ApiKeyConnector
             provider="gohighlevel"
             name={crmProviderLabel("gohighlevel")}
+            keyLabel="private integration token"
             connection={gohighlevel}
             onChange={(next) => updateConnection("gohighlevel", next)}
-            description="Connect your CRM sub-account to import contacts. You'll be sent to your CRM to choose a location and approve read-only access to its contacts — no password is shared with us."
+            description="Import contacts from one CRM sub-account. In that sub-account, open Settings → Private Integrations, create one with the “View Contacts” permission, and paste the token below. We only ever read; nothing is written back."
+            accountField={{
+              label: "Sub-account ID",
+              placeholder: "ve9EPM428h8vShlRW1KT",
+              help: "You can paste the whole address of your sub-account's dashboard instead — the ID is the part after /location/.",
+            }}
+            altAction={
+              <OAuthAlternative provider="gohighlevel" name={crmProviderLabel("gohighlevel")} />
+            }
           />
         </div>
       </section>
