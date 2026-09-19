@@ -5,7 +5,7 @@ import {
   cropLossPercent,
   cropVerdict,
   croppedAxis,
-  idealArtworkPixels,
+  masterArtworkPixels,
   printedCropLoss,
   type PixelSize,
 } from "@kudos/shared-types";
@@ -77,7 +77,11 @@ export class CatalogCropGateService {
     });
     const axis = croppedAxis(loss);
     if (axis === null || cropVerdict(loss) === "ok") return null;
-    const ideal = idealArtworkPixels(DEFAULT_CARD_SIZE);
+    // The master size, not this card's exact one: whoever reads this refusal is
+    // about to re-export, and a library exported to the A6 figure needs doing
+    // again the day an A5 card is sold. The ops catalog page says the same
+    // number, because two numbers for one job is how it gets done twice.
+    const ideal = masterArtworkPixels();
     return (
       `Artwork is ${natural.width} × ${natural.height}, so ${cropLossPercent(loss)}% of its ` +
       `${axis} would be cropped off to fit the card. Re-export at ${ideal.width} × ${ideal.height} ` +

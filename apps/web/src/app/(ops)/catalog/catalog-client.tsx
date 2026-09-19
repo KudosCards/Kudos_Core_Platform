@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { DEFAULT_CARD_SIZE, cardSizeDimensions, idealArtworkPixels } from "@kudos/shared-types";
+import { DEFAULT_CARD_SIZE, cardSizeDimensions, masterArtworkPixels } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { SuperAdminEditable } from "../ops-role";
@@ -185,9 +185,8 @@ export function CatalogClient({
         <p className="text-xs text-foreground/60">
           When this is on, a card whose artwork is not the card’s shape is not imported: it keeps
           the artwork it already had and the sync says so. Leave it off until every design has been
-          re-exported at {idealArtworkPixels(DEFAULT_CARD_SIZE).width} ×{" "}
-          {idealArtworkPixels(DEFAULT_CARD_SIZE).height} — switching it on before then would turn
-          away almost the whole catalog.
+          re-exported at {masterArtworkPixels().width} × {masterArtworkPixels().height} — switching
+          it on before then would turn away almost the whole catalog.
         </p>
         <SuperAdminEditable>
           <label className="flex items-center gap-2 text-sm">
@@ -306,11 +305,11 @@ export function CatalogClient({
                 edge, centred and cropped — so artwork of any other shape loses its sides or its top
                 and bottom. Re-export at{" "}
                 <span className="font-medium">
-                  {idealArtworkPixels(DEFAULT_CARD_SIZE).width} ×{" "}
-                  {idealArtworkPixels(DEFAULT_CARD_SIZE).height}
+                  {masterArtworkPixels().width} × {masterArtworkPixels().height}
                 </span>{" "}
-                and re-attach in Airtable: that is the card’s own proportion at 300dpi, so it clears
-                this check and the resolution check together.
+                and re-attach in Airtable. That is 300dpi on the largest size we print and the right
+                shape for this one, so it clears this check and the resolution check on either — one
+                export, done once. See docs/ops/catalog-re-export.md.
               </p>
               {groupCropped(summary.cropped).map((group) => (
                 <div key={group.key} className="flex flex-col gap-0.5">

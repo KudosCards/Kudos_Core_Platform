@@ -8,6 +8,10 @@ import {
   revealedCrop,
   cropLossPerEdgeMm,
   idealArtworkPixels,
+  masterArtworkPixels,
+  CARD_SIZES,
+  CARD_SIZE_DIMENSIONS_MM,
+  CROP_OK_BELOW,
   printedCropLoss,
   PRINT_RUN_BLEED_MM,
   CARD_HEIGHT,
@@ -308,6 +312,53 @@ describe("idealArtworkPixels", () => {
     for (const size of ["A6", "A5"] as const) {
       expect(cropVerdict(backgroundCropLoss(idealArtworkPixels(size)))).toBe("ok");
     }
+  });
+});
+
+/**
+ * The number handed to whoever re-exports the catalog — a different question
+ * from `idealArtworkPixels`, which answers "what is exactly right for THIS
+ * card". A catalog design is exported once and printed at whichever size the
+ * run chooses, so one export has to serve every size we stock.
+ */
+describe("masterArtworkPixels", () => {
+  it("is the largest stocked size at the print target", () => {
+    expect(masterArtworkPixels()).toEqual({ width: 1748, height: 2480 });
+    expect(masterArtworkPixels()).toEqual(idealArtworkPixels("A5"));
+  });
+
+  it("reaches the print target on every size we stock, where the A6 figure does not", () => {
+    // The whole reason it is not the A6 figure. `toBeCloseTo` rather than a
+    // floor because the rounding to a whole pixel costs A5 0.005 of a dot —
+    // same allowance the idealArtworkPixels test above makes.
+    const dpiOn = (px: number, widthMm: number) => px / (widthMm / 25.4);
+    for (const size of CARD_SIZES) {
+      const { widthMm } = CARD_SIZE_DIMENSIONS_MM[size];
+      expect(dpiOn(masterArtworkPixels().width, widthMm)).toBeGreaterThanOrEqual(300 - 0.5);
+    }
+    // And the number it replaces falls well short on the larger size: 213dpi,
+    // which is a soft card, not a rounding allowance.
+    expect(dpiOn(idealArtworkPixels("A6").width, CARD_SIZE_DIMENSIONS_MM.A5.widthMm)).toBeLessThan(
+      250,
+    );
+  });
+
+  it("clears the crop gate on the card we actually print", () => {
+    // It is NOT the exact shape of an A6 card — 0.7% of its height goes — which
+    // is precisely why this needs a test rather than an argument. Inside the
+    // floor, so the gate can be closed against artwork exported to it.
+    const loss = backgroundCropLoss(masterArtworkPixels());
+    expect(cropVerdict(loss)).toBe("ok");
+    expect(Math.max(loss.widthLost, loss.heightLost)).toBeLessThan(CROP_OK_BELOW);
+  });
+
+  it("beats the A6 figure on the larger size and loses to it on the smaller", () => {
+    // Stating the trade rather than implying there isn't one.
+    const a6 = idealArtworkPixels("A6");
+    expect(backgroundCropLoss(masterArtworkPixels()).heightLost).toBeGreaterThan(
+      backgroundCropLoss(a6).heightLost,
+    );
+    expect(masterArtworkPixels().width).toBeGreaterThan(a6.width);
   });
 });
 
