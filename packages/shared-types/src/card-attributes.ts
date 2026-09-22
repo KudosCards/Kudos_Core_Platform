@@ -115,3 +115,50 @@ export function parseCardTone(value: string | null | undefined): CardTone | null
  * telling them what we accepted when they typed something else. */
 export const CARD_AGE_BAND_VALUES = cardAgeBandSchema.options;
 export const CARD_TONE_VALUES = cardToneSchema.options;
+
+/**
+ * The age each band starts at, and the one place those numbers live.
+ *
+ * They are printed in the ops runbook (`docs/ops/catalog-describe-designs.md`)
+ * as 0-12, 13-17 and 18+, so an operator deciding what a card is for and the
+ * code deciding who gets it have to agree. Two copies of a boundary is how a
+ * twelve-year-old gets an adult card.
+ */
+export const CARD_AGE_BAND_FROM = { teen: 13, adult: 18 } as const;
+
+/**
+ * Which band a recipient falls in on a given day, or null when we cannot say.
+ *
+ * Null is the common case and not an error: a recipient's age is unknowable
+ * whenever `birthYearKnown` is false, which is every CleanCloud contact by
+ * design (ADR 0252) and any CRM whose birthday field carries no year. A caller
+ * must treat null as "no preference", never as a band.
+ */
+export function recipientAgeBand(
+  dateOfBirth: Date | null | undefined,
+  birthYearKnown: boolean,
+  on: Date,
+): Exclude<CardAgeBand, "any"> | null {
+  if (!dateOfBirth || !birthYearKnown) {
+    return null;
+  }
+  const years = wholeYearsBetween(dateOfBirth, on);
+  if (years < 0) {
+    // A birth date in the future is a data error, not a baby. Saying nothing
+    // is safer than calling them a child.
+    return null;
+  }
+  if (years < CARD_AGE_BAND_FROM.teen) return "child";
+  if (years < CARD_AGE_BAND_FROM.adult) return "teen";
+  return "adult";
+}
+
+/** Completed years between two dates, in UTC — the birthday has to have been. */
+function wholeYearsBetween(from: Date, to: Date): number {
+  let years = to.getUTCFullYear() - from.getUTCFullYear();
+  const monthDiff = to.getUTCMonth() - from.getUTCMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && to.getUTCDate() < from.getUTCDate())) {
+    years -= 1;
+  }
+  return years;
+}

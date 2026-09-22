@@ -139,6 +139,11 @@ export function ClickAndForgetClient({
   }
 
   const pointedAtSmartList = order.audience.kind === "segment";
+  // Named rather than counted: "two of your cards" is not actionable, and the
+  // subscriber is the only person who can decide what to do about each one.
+  const cannotTakeMessage = order.designs.filter(
+    (design) => !design.takesMessage && !design.archived,
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -283,11 +288,19 @@ export function ClickAndForgetClient({
             we fill in the name.
           </p>
         </div>
-        <p className="notice notice-info">
-          <strong>Not printed yet.</strong> Your messages are saved, and right now each card still
-          carries the message already on the design you chose. We will tell you when these start
-          going out.
-        </p>
+        {cannotTakeMessage.length > 0 && (
+          <p className="notice notice-warning">
+            <strong>
+              {cannotTakeMessage.length === 1
+                ? "One of your cards will not use these."
+                : `${cannotTakeMessage.length} of your cards will not use these.`}
+            </strong>{" "}
+            {cannotTakeMessage.map((design) => design.name).join(", ")} already{" "}
+            {cannotTakeMessage.length === 1 ? "has" : "have"} more than one block of text inside, so
+            we cannot tell which one is the message. Those cards go out with the words already on
+            them.
+          </p>
+        )}
         <div className="flex flex-col gap-2">
           {messages.map((text, index) => (
             <div key={index} className="flex items-start gap-2">

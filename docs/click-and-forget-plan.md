@@ -1,322 +1,195 @@
-# Click and forget
+# Backlog
 
-Scoping only — nothing built. The five questions this started with are
-answered; three still-open ones are at the end.
+Work that is known, understood well enough to start, and deliberately not being
+done yet. Each entry says what would unblock it, so nothing here needs
+rediscovering.
 
-## What the feedback is asking for
+Not a wish list. Something belongs here once somebody has looked at it properly
+and decided _not now_; ideas nobody has examined belong in a plan doc first.
 
-> "We love the idea, the concept, however I may not have the time to keep on top
-> of this. It would be great to just simply create the account, click / add the
-> list of contacts and then forget about it — knowing Kudos will fulfil the
-> orders."
+**Phased plans live in their own documents** and are not duplicated here:
+`docs/card-print-quality-plan.md`, `docs/cleancloud-integration-plan.md`,
+`docs/leadconnector-private-token-plan.md`, `docs/performance-backlog.md`.
 
-You are right that this is essentially what Kudos does. The interesting part of
-scoping it is therefore not "how would we build this" but **exactly where the
-product stops and waits for a human today**, because that is the whole distance
-between what we have and what that customer is asking for.
+---
 
-There are five such places. One of them is dangerous.
+## Integrations
 
-## What already exists
+### Is `GET /contacts` deprecated? — LeadConnector
 
-Most of the machinery, and it is good machinery:
+**The question.** Search results state that the endpoint our LeadConnector client
+pages through has been deprecated in favour of `POST /contacts/search`, which
+pages on a `searchAfter` cursor rather than `meta.nextPageUrl`.
 
-|                       |                                                                                                                                    |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| The automation itself | `AutoSendService.runDue`, a 7am cron: finds due occasions, creates the order, debits the wallet, queues fulfilment. No human step. |
-| Money                 | The wallet and its ledger (ADR 0012), already the payment path auto-send uses.                                                     |
-| The contacts          | `RecipientList` (manual membership) and `Segment` (smart lists — rule-based, so membership is dynamic).                            |
-| The dates             | Birthday occasions are scheduled nightly from each contact's date of birth.                                                        |
-| The plan gate         | `PlanEntitlement.autoSendEnabled` — false on Free, true on Pro, Centre and Enterprise.                                             |
-| Telling people things | `NotificationInboxService`, plus the reminder emails in `RemindersService`.                                                        |
+**Why it matters.** If true, this is a countdown on the whole LeadConnector
+integration — both the OAuth lane and the token lane, since they share one
+client. It is currently working in production, so there is no urgency, only a
+deadline nobody has read.
 
-## Where it stops and waits
+**Evidence: reported, not confirmed.** One clear statement, uncorroborated, and
+reported page sizes differ between sources (20 in one, 100 in another) — which is
+itself a reason to read the page before writing a loop against it. Every
+HighLevel documentation host (`marketplace.gohighlevel.com`,
+`help.gohighlevel.com`, `highlevel.stoplight.io`) is blocked by the development
+environment's egress proxy, including through WebFetch, so this cannot be settled
+from a session. Search results reach those pages; we cannot.
 
-### 1. A human approves every single card — **closed (ADR 0256 + 0257)**
+**What unblocks it.** One person opening
+`marketplace.gohighlevel.com/docs/ghl/contacts/get-contacts/` in a browser and
+saying whether it carries a deprecation notice, and if so what
+`POST /contacts/search` takes and returns.
 
-This is the gap. `auto-send.service.ts` describes itself as "the hands-off half
-of _approve once, we handle the rest_" — and that is accurate, but the **once is
-per occasion**. `runDue` only ever looks at occasions that are already
-`status: "approved"`, and nothing in the codebase sets that status without a
-person: every path runs through `OccasionsService.approve` or `approveMany`,
-both behind an authenticated controller.
+**Then the work is focused**: the same paging loop with a POST body instead of
+query parameters, and `searchAfter` instead of `nextPageUrl`. See ADR 0253.
+
+### Pace LeadConnector against its published rate limit
+
+**The gap.** HighLevel publishes 100 requests per 10 seconds and 200,000 per day,
+per app per location, and returns `X-RateLimit-Remaining` and `X-RateLimit-Max`
+on every response. We read neither. `GOHIGHLEVEL_MAX_PAGES = 100` at 100 contacts
+a page means a large sub-account can fire up to 100 requests as fast as the
+network allows, straight through the burst limit.
+
+**Why it is not urgent.** It works: `httpRequest` honours `Retry-After` on a 429,
+so a sync that trips the limit recovers rather than failing. But that is the
+retry doing pacing's job, and the budget it burns is shared with whatever else
+the customer has connected to that sub-account.
+
+**Evidence: confirmed** (the limits and the headers are consistent across
+several sources).
+
+**Worth pairing with the item above** — both touch the same loop, and doing them
+together is one review rather than two.
 
-So today's honest promise is "approve each card in one click and we do the rest
-of that card". The customer in that quote is asking for "approve once, ever".
+### CleanCloud: occasions from lapsed customers (N6)
 
-### 2. There is no standing design
+`getOrders` would let a dry cleaner send to customers they have not seen in six
+months, which is a different and possibly better occasion than a birthday for
+this kind of business. Deliberately out of scope until the nightly contact sync
+has run against a real account and the address-parse quality is known. See
+`docs/cleancloud-integration-plan.md`.
+
+---
+
+## Print and artwork
+
+### Distortion as a pre-send finding (P7, item 3)
+
+**Blocked on data, not on code.** It needs each image's natural size server-side.
+The only cheap source is `DesignAsset.width/height`, which is trustworthy for
+uploads made since that measurement moved server-side — but the legacy designs
+this check exists to catch reference legacy assets, whose stored dimensions are
+the browser's or null.
 
-Approval requires a `savedDesignId`, and refuses without one — `autoSendOne`
-throws "Occasion has no approved design". There is no default, per-account or
-per-contact: I searched for one and there is nothing.
-
-So even with standing approval, the system cannot answer the question _which
-card do we send?_ without a human. **This is the first real design decision of
-the feature, and it is not a technical one** — see the questions below.
-
-### 3. A card that does not go out says nothing to anybody — **fixed, ADR 0254**
-
-`runDue` called `notifyAccount` in exactly one place: `notifyAutoSent`, on
-success. Every failure path wrote an audit row and a server log line, and told
-the customer nothing. C1 closed this; the rest of this section is why it was
-first in the queue.
-
-For today's product that is survivable, because a customer who approved a card
-last week is still broadly watching. **For "click and forget" it is fatal**: the
-entire premise is that they are not watching, and the one moment they need to
-hear from us is the one moment nothing reaches them. A birthday that silently
-did not happen is the worst outcome this product has.
-
-### 4. Nothing watches the wallet — **fixed, ADR 0255**
-
-The model rests on "the subscriber tops the wallet up with enough annual funds".
-There was no low-balance threshold, no warning, and no auto top-up anywhere in
-the codebase. The first a customer learned that the money had run out was that
-cards stopped, and per gap 3, they were not told that either. C2 closed both
-halves: the wallet now says what it will not cover, and refills itself.
-
-### 5. Six ways one card can stop, each silent
-
-From `autoSendOne`, in order: no recipient; the contact's address needs
-re-verification after a returned card (ADR 0039); no approved design; a missing
-postal address; the plan no longer permits auto-send; and insufficient wallet
-funds. Each throws, each is audited, none is surfaced.
-
-Note the second one is _correct behaviour we must keep_ — it exists so we do not
-fire another card at an address a card has already come back from. Click and
-forget must not quietly switch that off. It has to surface it instead.
-
-## The naming problem
-
-"Campaign" is already taken twice, and both are visible:
-
-- **`WalletCampaign`** — the admin-run sign-up credit scheme. Customers see its
-  effect in the wallet ledger, labelled "Free credit".
-- **`bespoke_campaign`** — an occasion type. The bulk-send screen renders it to
-  customers as "occasion".
-
-A third meaning on the dashboard would be the third, and the first two are
-already close enough to confuse. **"Click and forget" is a good customer-facing
-name** — it is the customer's own words, which is usually the right sign. For
-the code and the data model I would suggest **standing order**: British, instantly
-understood by a business user, and it is literally what this is — an instruction
-set once and funded from a balance. It collides with nothing.
-
-## The answers, and what they cost
-
-All five questions are answered. Three of the answers are cheaper than they
-look, one is dearer, and one of them cannot be built at all today for a reason
-that is nobody's fault.
-
-### 1. A chosen set of cards, picked per recipient — **blocked on the catalog, not the code**
-
-> They select all the cards they like, and the automation selects one based on
-> the receiver's profile.
-
-The matching needs two things: signals about the recipient, and attributes on
-the cards to match them against. **We have some of the first and none of the
-second.**
-
-A recipient carries: first and last name, date of birth (with
-`birthYearKnown`), email, address, `tags`, and `customFields`. There is **no
-gender, no relationship, no interests** — and none of those should be invented,
-because a customer who never told us cannot be asked to live with our guess.
-
-A card design carries: `category`, `name`, `slug`, `sku`, `thumbnailUrl` and its
-`document`. **Nothing describes who it suits.** There is no age band, no tone,
-no "for a child" or "for a 60th". So "pick a card that fits this person" has
-nothing to pick on, and the honest version of that sentence today is "pick one
-of their chosen cards at random".
-
-Two consequences worth naming plainly:
-
-- **The catalog has to be described before any matching is possible.** An age
-  band and a tone on each birthday design is a modest, one-time piece of ops
-  work — and it lands on the same 217 designs that are about to be re-exported
-  for `docs/ops/catalog-re-export.md`. Doing both in one pass is the difference
-  between one trip through the catalog and two.
-- **Age is unknown for exactly the contacts a CRM sync brings in.** `birthYearKnown`
-  is false whenever the source gave a day and month and no year — which is every
-  CleanCloud contact by design (ADR 0252), and any CRM whose birthday field has
-  no year. For those contacts, age-based selection is not degraded, it is
-  impossible. The rule has to have a defensible answer for "we do not know how
-  old this person is", and that answer will be common.
-
-**The strongest signal we actually have is the one the subscriber gives us:
-`tags`.** "Staff", "under-12s", "VIP clients" are the subscriber's own words
-about their own people, they already exist, and they are more reliable than
-anything we could infer. I would build the rule on tags first, and treat age as
-an optional refinement for contacts where we know it.
-
-### 2. Birthdays only — **agreed, and it is already scheduled**
-
-Birthday occasions are created nightly from each contact's date of birth, so
-this phase needs nothing new for the "when". `RecipientKeyDate` stays out.
-
-### 3. Auto top-up from a stored card, pause and email when there is none — **and we are further along than expected**
-
-`Account.stripeCustomerId` exists, `StripeCustomerService.getOrCreate` manages
-it, and subscriptions are created against that customer. So **a Pro subscriber
-already has a card on file** — it is the card paying for Pro. We do not have to
-ask them for one.
-
-What is missing is the guarantee: nothing in the codebase sets or records a
-`default_payment_method` for off-session use. So the build is a
-`SetupIntent`-or-read-the-subscription step to establish a usable method, then
-off-session charges. The codebase already knows this territory —
-`subscriptions.service.ts` handles a customer who "abandoned an SCA/3DS
-challenge" — and that is exactly the failure that must be handled here, because
-a 3DS challenge on an automatic top-up arrives when nobody is looking.
-
-The pause-and-email path is therefore not an edge case. It is the normal
-outcome of a card expiring, and it will happen to every long-lived account
-eventually.
-
-### 4. What is the best outcome — **your answer to 3 settles this**
-
-Question 4 asked what "permission to bill" means. Answer 3 decides it: we need a
-stored card, so the off-session machinery is being built regardless.
-
-Given that, the best outcome for the platform is **not** to add a second money
-path. Keep the wallet as the single ledger every order is paid from — it already
-is, for auto-send — and make auto top-up the thing that keeps it funded. One
-concept for the customer ("your balance, and it refills itself"), one payment
-path in the code, and every existing guarantee about wallet debits still holds.
-
-Billing a card per order instead would mean two ways an order can be paid,
-reconciled separately, failing differently. That is the version that looks
-simpler in a diagram and is worse everywhere else.
-
-### 5. Pro and above, visible on Free — **agreed, and the gate already exists**
-
-`PlanEntitlement.autoSendEnabled` is false on Free and true on Pro, Centre and
-Enterprise, and both `AutoSendService` and `OccasionsService` already check it.
-Showing the feature on Free with an upgrade prompt is a UI decision with no new
-plumbing.
-
-## The AI messages, and the one distinction that matters
-
-> Add AI into creating the personalised messages — allowing the subscriber to
-> create multiple personalised messages that can be automated.
-
-There is **no AI dependency in the codebase today**, so this is a new vendor, a
-new cost and a new failure mode. All of that is manageable. One design decision
-is not, and it is the difference between a good feature and an unrecoverable
-one.
-
-**AI helps the subscriber write a pool of messages, which they read and approve.
-The automation then picks from that approved pool.** It does not generate a
-message at send time.
-
-A card is printed and posted. It cannot be recalled, edited or apologised for
-before it arrives. A message generated at 7am by a model nobody read, printed at
-9am and in the post by noon, is a class of mistake this platform has no way to
-undo — and the whole point of the product is a card somebody is pleased to
-receive. Generation at authoring time is reviewable; generation at send time is
-not.
-
-There is a second reason, and it is the one that makes this easy rather than a
-compromise. **The messages do not need to contain anybody's personal data.**
-They contain merge tokens — `{firstName}`, `{name}`, and any custom-field key —
-which the existing machinery substitutes at print time (ADR 0031, ADR 0033). So
-the prompt is "write me five warm birthday messages for my customers" and the
-output is `"Happy birthday {firstName} — hope it is a good one."`
-
-**No recipient's name, birthday or address ever leaves the platform.** For a
-product whose B2B customers are the data controller for their own contacts, and
-whose privacy policy already commits to sub-processor diligence, that turns a
-difficult data-protection conversation into a short one.
-
-## Reducing the barrier, since it is both
-
-You said to assume the barrier is both the approving and the choosing. The two
-have different answers:
-
-- **The approving** is solved by the standing instruction (C3/C4 below) and by
-  telling people when something stops (C1). That is the mechanical half.
-- **The choosing** is solved by making the set-up have good defaults rather than
-  an empty form. A subscriber who picks nothing should still end up with
-  something sensible: every active birthday design in their chosen tags, and a
-  starter set of messages they can accept or rewrite. **An empty state that
-  demands twelve decisions is the barrier**, and it is the one we would be
-  adding if we are not careful.
-
-## Phases
-
-Ordered so the promise is never bigger than the product.
-
-- **C1 — Tell people when a card does not go. Built (ADR 0254).** Every skip a
-  customer can act on now reaches them twice — the inbox and an email — naming
-  the card, the reason and the fix. The reasons became codes rather than thrown
-  message strings, the inbox dedupe doubles as the ledger so a daily retry is
-  not a daily email, and a failure nobody can explain also raises a super-admin
-  alert. This was the thing that had to ship before anything else: until it did,
-  standing approval was a promise we could not keep.
-- **C2 — Watch the wallet, then refill it. Built (ADR 0255).** A 9am cron that
-  prices the cards already approved and says which one the balance will not
-  reach, then tops the wallet up off-session from the card already on file, then
-  pauses and emails when that card will not work. The projection replaced the
-  threshold the plan asked for: "your balance covers the next 6 of 9 cards" is
-  something to act on, where a number is something to interpret. The top-up runs
-  first so a shortfall it clears is never warned about, and the warning is
-  computed afterwards so a top-up that is not enough still gets one.
-- **C3 — Describe the catalog. Columns built (ADR 0259); the pass itself is
-  ops work.** `CardDesign` gained a nullable age band and tone, authored in
-  Airtable beside the artwork and carried by the existing sync. Null is
-  deliberately not `any`: null is nobody having looked, `any` is somebody
-  saying it suits everybody, and a selection rule has to tell those apart. The
-  sync now reports how many designs are still undescribed, and names any value
-  typed that it could not place — so the pass has a progress bar and cannot
-  quietly not-count work somebody did. Runbook:
-  `docs/ops/catalog-describe-designs.md`.
-- **C4 — The standing instruction. Built (ADR 0256).** One per account: an
-  audience, a pool of designs, a pool of messages, postage, on/off — plus the
-  consent, recorded as who agreed, when, and to which _version of the wording_.
-  Switched on and actually running are reported separately, because a customer
-  told "on" while nothing happens has been lied to. Nothing reads it yet; it is
-  inert until C5 and C6.
-- **C5 — Selection and messages.** The rule that picks a design and a message
-  per card, and the AI-assisted authoring that fills the pool. Deliberately
-  after C3, because before it there is nothing to select on.
-- **C6 — Automatic approval, bounded. Built (ADR 0257).** A 06:30 cron, between
-  the scheduler that fills the approvals queue and the auto-send that empties
-  it. Bounded four ways: birthdays only, rolling per-recipient occasions only
-  (a shared event's cohort card is somebody else's to approve), cards already in
-  the approvals window only, and inside the audience only. A smart-list audience
-  is refused rather than half-handled — its membership moves on its own. Nothing
-  about auto-send changed, so every stop condition it has still stops the card
-  and, since C1, says so.
-- **C7 — The dashboard, and the Free-tier prompt. Built (ADR 0258).** One page
-  at `/click-and-forget`, in the sidebar under Send cards. It says out loud what
-  is not built yet: the message editor carries a notice that nothing prints the
-  pool, "on" and "running" are two different words on the screen, and a
-  smart-list audience is refused in the two places it matters. Free sees the
-  whole thing laid out with only the switch disabled, so the upgrade prompt
-  reaches somebody who has already chosen their cards.
-- **C8 — The messaging.** Only once C1–C7 are true.
-
-## What I would still not do
-
-- **Generate a message at send time.** See above.
-- **Infer anything about a recipient we were not told.** Gender from a first
-  name is the obvious temptation and it is wrong often enough to be memorable
-  for the wrong reasons.
-- **Send a card when a stop condition is live.** The returned-address hold
-  especially — it exists so we do not fire a second card at an address the first
-  one came back from.
-- **Turn it on for existing accounts by default.** Standing permission to spend
-  is given, not inherited.
-- **Let the empty state be a wall of choices.** See the barrier note above.
-
-## Still open
-
-1. **What does the selection rule do when it knows nothing?** A contact with no
-   tags and no birth year, which is the CleanCloud default. Random from the
-   chosen set is defensible and should be stated rather than discovered.
-2. **How many messages is a pool?** One is not personalisation; twenty is a
-   chore. A starter set of five, editable, is a guess I would like to test
-   rather than assume.
-3. **Which AI vendor, and on what terms?** A data-processing agreement and a
-   UK/EU processing region are the two things that matter, and they are a
-   procurement question rather than an engineering one — made much easier by the
-   fact that no personal data is in the prompt.
+So it needs either a backfill of `DesignAsset` dimensions (ops work against
+production) or a per-image fetch inside a preflight that runs on every send
+review, which is a network round trip per image on a path a customer waits on.
+
+**Shipping it before a backfill would leave it silent on exactly the designs it
+targets**, which is worse than not having it.
+
+Note also that stretching is a _supported_ choice — the editor's
+`lockImageAspect` is on by default and turned off deliberately — so this can only
+ever be a warning with a known false-positive class. See
+`docs/card-print-quality-plan.md`, P7.
+
+### Retire the browser print path outright (P8)
+
+Already gated: browser print is refused whenever the profile says
+`folded-sheet`, so nothing can print the wrong shape today. Removing it
+altogether is cheaper now than it was, and is not the same job as making the
+content preview show imposed sheets — which is a separate piece of work nobody
+has asked for. See `docs/card-print-quality-plan.md`, P8.
+
+---
+
+## Product
+
+### "Click and forget" — standing approval for a list of contacts
+
+Business customers keep saying a version of the same thing: they love the idea
+and do not have time to keep on top of it, and would like to add contacts once
+and trust us to fulfil. That is close to what the platform already does, and
+the useful part of the scoping was finding the five places it stops and waits
+for a human.
+
+The first of them is done and was worth doing whatever happens to the rest: a
+card that did **not** go out told the customer nothing. `AutoSendService`
+notified only on success and audited every failure to a log nobody reads —
+survivable while customers are still watching, fatal the moment we tell them
+they need not. C1 (ADR 0254) closed it.
+
+Scoped in `docs/click-and-forget-plan.md`, now with the shape settled: card
+pool plus AI-drafted message pool, birthdays only, auto top-up from a stored
+card, Pro and above with the Free tier seeing it locked. Phases C1 to C8. Everything but C8 is built: C1 (ADR 0254), C2 (ADR 0255),
+C3's columns (ADR 0259), C4 (ADR 0256), C5 (ADR 0260), C6 (ADR 0257) and
+C7 (ADR 0258). Two things remain — the ops pass that fills in the catalog
+descriptions, and C8, the messaging, which should wait until the first real
+standing order has posted a card — so "approve once, ever" is true for an account that
+sets one up, and there is now a page to set it up on. The message pool is still
+unused: applying a chosen message is C5, which waits on the catalog work above,
+and the page says so where a customer writes them.
+
+Two things surfaced by the scoping belong here rather than there, because they
+are ops work and they gate the build:
+
+- **The catalog cannot describe itself.** `CardDesign` carries a category, a
+  name, a slug, a SKU and a thumbnail, and nothing that says who a design
+  suits. Picking a card from a pool "to fit the recipient" has nothing to read.
+  Describing the 217 designs is the same pass over the catalog as the A4
+  re-export, so it should ride along with it.
+- **Recipients carry no attribute to match against** beyond name, birthday and
+  the subscriber's own tags — and age is unknowable wherever `birthYearKnown`
+  is false, which is every CleanCloud contact by design (ADR 0252). Tags are
+  the only honest signal we have today.
+
+### `engine-resilience` times out when the suites run together
+
+`decodeImage orientation › turns an oversized photo's pixels upright` re-encodes
+a large image with sharp and carries Jest's default 5-second timeout. Running
+the API and web unit suites concurrently, it has now timed out twice on
+different changes, neither of which touched `print-pdf`. In isolation it takes
+2.3 seconds, and it has not failed on CI.
+
+So it is a real intermittent test rather than a broken one, and the fix is to
+give that test an explicit timeout that matches what it actually does — not to
+skip it, and not to keep re-running until it passes. Worth doing before it
+costs somebody an afternoon believing their change broke the print engine.
+
+## Scope and messaging
+
+### Say what we actually serve, to visitors who are not in the UK
+
+A third of last week's active users were outside the UK, and the site does not
+say we post to UK addresses until it refuses a postcode — by which point the
+visitor has signed up and chosen a card. Separately, and more seriously, the one
+shared definition of a mailable address does not check the country, so a contact
+with a complete overseas address counts as ready everywhere and is refused at
+send.
+
+Planned in `docs/uk-scope-messaging-plan.md` (S0–S7). S3, the postable
+definition, is a correctness fix worth doing whether or not the traffic turns
+out to be people. S0 is the prerequisite for the rest and is an hour of ops with
+no code: Search Console was never verified, so six shipped phases of SEO work
+are currently unmeasured.
+
+## Catalog data quality
+
+Both surfaced by the catalog sync itself, neither blocking, both worth doing
+while the catalog is open for the re-export (`docs/ops/catalog-re-export.md`).
+
+### Two cards, one address
+
+`/thank-you-red` and `/well-done-flowers` each have a second card claiming the
+same URL, which keeps a `-2` on the end of its address for ever, even if
+renamed. A card's URL is assigned once and never recalculated, because changing
+it would break indexed links and the QR codes on cards already posted. Worth
+fixing before those cards are published.
+
+### 93 cards with no landing page
+
+seasonal (54), inspirational (22), fitness themed (10) and good luck (7) sit
+under `/cards/other`, which is deliberately not indexed. They sync, they browse,
+and their own pages are indexable — there is simply no category page for anyone
+to find them through. Either name the categories properly or correct the value
+upstream.

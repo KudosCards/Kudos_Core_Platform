@@ -465,6 +465,44 @@ describe("Auto-send (e2e)", () => {
     expect(orders).toHaveLength(0);
   });
 
+  it("prints the message a standing order chose, without touching the saved design", async () => {
+    const { token, accountId } = await signUp();
+    await enableAutoSend(accountId);
+    await creditWallet(accountId, 1000);
+    const savedDesignId = await createSavedDesign(token);
+    const recipientId = await createRecipient(token);
+    const occasionId = await createOccasion(token, recipientId);
+    await approve(token, occasionId, { savedDesignId, dispatchOption: "auto_send" }).expect(201);
+
+    // The standing order the approval run would have written.
+    const order = await prisma.standingOrder.create({
+      data: { accountId, enabled: true, audienceKind: "all" },
+    });
+    const message = await prisma.standingOrderMessage.create({
+      data: { standingOrderId: order.id, text: "Happy birthday {firstName}, from all of us." },
+    });
+    await prisma.occasion.update({
+      where: { id: occasionId },
+      data: { standingOrderMessageId: message.id },
+    });
+
+    await runAutoSend(await opsToken()).expect(201);
+
+    const card = await prisma.orderRecipient.findFirstOrThrow({ where: { occasionId } });
+    const inside = (
+      card.documentSnapshot as { pages: { name: string; elements: { text?: string }[] }[] }
+    ).pages.find((page) => page.name === "inside-right");
+    expect(inside!.elements[0]!.text).toBe("Happy birthday {firstName}, from all of us.");
+
+    // The saved design is the customer's and is shared by every card made from
+    // it — only this card's own copy carries the chosen message.
+    const saved = await prisma.savedDesign.findUniqueOrThrow({ where: { id: savedDesignId } });
+    const savedInside = (
+      saved.document as { pages: { name: string; elements: { text?: string }[] }[] }
+    ).pages.find((page) => page.name === "inside-right");
+    expect(savedInside!.elements[0]?.text).not.toBe("Happy birthday {firstName}, from all of us.");
+  });
+
   it("attaches the design's linked message page to an auto-sent card (ADR 0137)", async () => {
     // Auto-send has no composer to carry a page choice, so it resolves the
     // design's linked page itself — the one path that legitimately falls back to

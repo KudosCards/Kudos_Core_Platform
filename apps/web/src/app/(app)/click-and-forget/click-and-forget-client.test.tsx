@@ -49,15 +49,24 @@ function renderPage(
 }
 
 describe("Click and forget", () => {
-  it("says plainly that the messages are not printed yet", () => {
-    // The pool is saved by the API and nothing reads it: a card still carries
-    // the design's own text. A message editor with no such note would be a
-    // promise the product does not keep.
-    renderPage();
-    expect(screen.getByText(/Not printed yet/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/each card still\s+carries the message already on the design/i),
-    ).toBeInTheDocument();
+  it("names the cards that will not use the messages", () => {
+    // A subscriber who wrote five messages deserves to know which of their
+    // cards will not use them, by name — "two of your cards" is not actionable.
+    renderPage({
+      designs: [
+        { savedDesignId: "d1", name: "Balloons", archived: false, takesMessage: true },
+        { savedDesignId: "d2", name: "Hand-built card", archived: false, takesMessage: false },
+      ],
+    });
+    expect(screen.getByText(/One of your cards will not use these/i)).toBeInTheDocument();
+    expect(screen.getByText(/Hand-built card/)).toBeInTheDocument();
+  });
+
+  it("says nothing about it when every card takes a message", () => {
+    renderPage({
+      designs: [{ savedDesignId: "d1", name: "Balloons", archived: false, takesMessage: true }],
+    });
+    expect(screen.queryByText(/will not use these/i)).not.toBeInTheDocument();
   });
 
   it("does not claim to be running when something is stopping it", () => {
