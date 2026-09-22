@@ -113,11 +113,11 @@ and trust us to fulfil. That is close to what the platform already does, and
 the useful part of the scoping was finding the five places it stops and waits
 for a human.
 
-One of them is worth pulling forward whatever happens to the rest: a card that
-does **not** go out tells the customer nothing today. `AutoSendService` notifies
-only on success, and audits every failure to a log nobody reads. That is
-survivable while customers are still watching and fatal the moment we tell them
-they need not.
+The first of them is done and was worth doing whatever happens to the rest: a
+card that did **not** go out told the customer nothing. `AutoSendService`
+notified only on success and audited every failure to a log nobody reads —
+survivable while customers are still watching, fatal the moment we tell them
+they need not. C1 (ADR 0254) closed it.
 
 Scoped in `docs/click-and-forget-plan.md`, now with the shape settled: card
 pool plus AI-drafted message pool, birthdays only, auto top-up from a stored

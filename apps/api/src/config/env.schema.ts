@@ -366,6 +366,13 @@ export const envSchema = z.object({
   BREVO_ARRIVAL_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
   // Returned-to-Sender "please update the address" email (see ADR 0039).
   BREVO_RTS_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  // "A card did not go out" — the auto-send skip digest (see ADR 0254).
+  BREVO_AUTO_SEND_SKIPPED_TEMPLATE_ID: z.coerce
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .catch(undefined),
   // Support ticketing (see ADR 0066). Optional Brevo templates for the two
   // notification emails — a support reply (to the customer) and a new/updated
   // ticket (to the support inbox); unset ⇒ the built-in HTML fallback.

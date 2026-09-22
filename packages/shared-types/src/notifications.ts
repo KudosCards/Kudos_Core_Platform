@@ -45,6 +45,10 @@ export type NotificationFeed = z.infer<typeof notificationFeedSchema>;
 export const inboxNotificationKindSchema = z.enum([
   "order_paid",
   "auto_send",
+  /** A card the account had already approved did not go out. Separate from
+   * `auto_send` on purpose: the success story and the failure story are read
+   * in different moods, and the badge colour has to say which one this is. */
+  "auto_send_failed",
   "invite_accepted",
   "card_returned",
   "support_reply",

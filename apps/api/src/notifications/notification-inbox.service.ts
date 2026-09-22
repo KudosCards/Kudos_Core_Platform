@@ -7,6 +7,7 @@ import { parsePage, parsePerPage } from "../common/pagination";
 export type InboxNotificationKind =
   | "order_paid"
   | "auto_send"
+  | "auto_send_failed"
   | "invite_accepted"
   | "card_returned"
   | "support_reply"
@@ -45,19 +46,25 @@ export class NotificationInboxService {
    * (kind, entity), it's a no-op, so a redelivered webhook or a re-run cron can't
    * double-notify. Accepts an optional transaction client so it can enlist in a
    * producer's existing transaction (e.g. the Stripe webhook handler).
+   *
+   * Returns whether it actually created rows, so a caller can hang a
+   * once-per-event side effect off the same dedupe rather than inventing a
+   * second one — auto-send emails about a skipped card only on the run that
+   * first recorded it, which is what keeps a daily retry from sending a daily
+   * email. `notifyAllAdmins` returns the same signal for the same reason.
    */
   async notifyAccount(
     accountId: string,
     payload: NotifyPayload,
     client: Prisma.TransactionClient | PrismaService = this.prisma,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (payload.entityId) {
       const existing = await client.notification.findFirst({
         where: { accountId, kind: payload.kind, entityId: payload.entityId },
         select: { id: true },
       });
       if (existing) {
-        return;
+        return false;
       }
     }
 
@@ -66,7 +73,7 @@ export class NotificationInboxService {
       select: { userId: true },
     });
     if (members.length === 0) {
-      return;
+      return false;
     }
 
     await client.notification.createMany({
@@ -81,6 +88,7 @@ export class NotificationInboxService {
         entityId: payload.entityId ?? null,
       })),
     });
+    return true;
   }
 
   async list(

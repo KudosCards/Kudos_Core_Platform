@@ -16,6 +16,7 @@ import {
   type SupportTicketStatus,
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { resolveAccountEmail } from "../common/account-email";
 import { StorageService, SUPPORT_ATTACHMENTS_BUCKET } from "../storage/storage.service";
 import { AuditService } from "../audit/audit.service";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
@@ -772,22 +773,8 @@ export class SupportService {
     }
   }
 
-  /** The customer's email: the account contact email if set, else the owner's
-   * membership email, else any member's — mirrors ReturnsService. */
-  private async resolveAccountEmail(accountId: string): Promise<string | null> {
-    const account = await this.prisma.account.findUnique({
-      where: { id: accountId },
-      select: { contactEmail: true },
-    });
-    if (account?.contactEmail) {
-      return account.contactEmail;
-    }
-    const members = await this.prisma.membership.findMany({
-      where: { accountId, email: { not: null } },
-      select: { email: true, role: true },
-    });
-    const owner = members.find((m) => m.role === "owner");
-    return owner?.email ?? members[0]?.email ?? null;
+  private resolveAccountEmail(accountId: string): Promise<string | null> {
+    return resolveAccountEmail(this.prisma, accountId);
   }
 
   /** The human ticket reference, rendered TKT-1000. */

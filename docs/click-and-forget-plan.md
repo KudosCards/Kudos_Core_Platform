@@ -54,11 +54,12 @@ So even with standing approval, the system cannot answer the question _which
 card do we send?_ without a human. **This is the first real design decision of
 the feature, and it is not a technical one** — see the questions below.
 
-### 3. A card that does not go out says nothing to anybody
+### 3. A card that does not go out says nothing to anybody — **fixed, ADR 0254**
 
-`runDue` calls `notifyAccount` in exactly one place: `notifyAutoSent`, on
-success. Every failure path writes an audit row and a server log line, and tells
-the customer nothing.
+`runDue` called `notifyAccount` in exactly one place: `notifyAutoSent`, on
+success. Every failure path wrote an audit row and a server log line, and told
+the customer nothing. C1 closed this; the rest of this section is why it was
+first in the queue.
 
 For today's product that is survivable, because a customer who approved a card
 last week is still broadly watching. **For "click and forget" it is fatal**: the
@@ -243,10 +244,13 @@ have different answers:
 
 Ordered so the promise is never bigger than the product.
 
-- **C1 — Tell people when a card does not go.** Unchanged from the first draft,
-  and still the thing that ships before anything else. Today a skip is audited
-  to a log nobody reads. Until that is fixed, standing approval is a promise we
-  cannot keep.
+- **C1 — Tell people when a card does not go. Built (ADR 0254).** Every skip a
+  customer can act on now reaches them twice — the inbox and an email — naming
+  the card, the reason and the fix. The reasons became codes rather than thrown
+  message strings, the inbox dedupe doubles as the ledger so a daily retry is
+  not a daily email, and a failure nobody can explain also raises a super-admin
+  alert. This was the thing that had to ship before anything else: until it did,
+  standing approval was a promise we could not keep.
 - **C2 — Watch the wallet, then refill it.** The low-balance threshold and
   projection, then auto top-up off-session, then the pause-and-email path when
   there is no usable card. The order matters: the warning is useful on its own

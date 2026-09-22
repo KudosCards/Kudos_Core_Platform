@@ -4,6 +4,7 @@ import { MessagePageVideoProvider, MessagePageVideoType, Prisma } from "@prisma/
 import { randomUUID } from "node:crypto";
 import { parseVideoEmbed } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
+import { resolveAccountEmail } from "../common/account-email";
 import { NotificationInboxService } from "../notifications/notification-inbox.service";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { renderBrandedEmail, escapeHtml } from "../email/email-layout";
@@ -504,21 +505,8 @@ export class MessagesService {
     }
   }
 
-  /** The account's contact email, else the owner's, else any member's — mirrors
-   * SupportService / ReturnsService. */
-  private async resolveAccountEmail(accountId: string): Promise<string | null> {
-    const account = await this.prisma.account.findUnique({
-      where: { id: accountId },
-      select: { contactEmail: true },
-    });
-    if (account?.contactEmail) {
-      return account.contactEmail;
-    }
-    const members = await this.prisma.membership.findMany({
-      where: { accountId, email: { not: null } },
-      select: { email: true, role: true },
-    });
-    return members.find((m) => m.role === "owner")?.email ?? members[0]?.email ?? null;
+  private resolveAccountEmail(accountId: string): Promise<string | null> {
+    return resolveAccountEmail(this.prisma, accountId);
   }
 
   /**

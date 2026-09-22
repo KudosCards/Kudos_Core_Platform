@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { Prisma, type ReturnCaseStatus } from "@prisma/client";
 import { OPEN_FULFILLMENT_STATUSES } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
+import { resolveAccountEmail } from "../common/account-email";
 import { isReturnedAddress } from "../fulfillment/returned-address.util";
 import { ClickAndDropService } from "../shipping/click-and-drop.service";
 import { AuditService } from "../audit/audit.service";
@@ -984,20 +985,8 @@ export class ReturnsService {
     }
   }
 
-  /** The customer's email: the guest contact email if set, else the account
-   * owner's membership email, else any member's. */
-  private async resolveAccountEmail(accountId: string): Promise<string | null> {
-    const account = await this.prisma.account.findUnique({
-      where: { id: accountId },
-      select: { contactEmail: true },
-    });
-    if (account?.contactEmail) return account.contactEmail;
-    const members = await this.prisma.membership.findMany({
-      where: { accountId, email: { not: null } },
-      select: { email: true, role: true },
-    });
-    const owner = members.find((m) => m.role === "owner");
-    return owner?.email ?? members[0]?.email ?? null;
+  private resolveAccountEmail(accountId: string): Promise<string | null> {
+    return resolveAccountEmail(this.prisma, accountId);
   }
 
   private reason(error: unknown): string {

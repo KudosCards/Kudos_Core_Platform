@@ -281,4 +281,47 @@ export class OpsActivityService {
       this.logger.error(`Ops new-signup notification for ${accountId} failed: ${reason}`);
     }
   }
+
+  /**
+   * An automatic send failed for a reason the code does not recognise.
+   *
+   * Every *recognised* skip — no funds, no address, a returned-card hold — is
+   * the customer's to act on, and they are told directly; raising those here
+   * would bury the real ones. This is the other kind: a card that did not go
+   * out and nobody can say why. The customer is told "we are looking into it",
+   * which is only honest if somebody is, so it lands in the operator bell.
+   *
+   * Keyed on the occasion so a daily retry that keeps failing the same way is
+   * one alert rather than one a day, and super-admin only — an unexplained
+   * failure in the unattended path is an escalation, not routine traffic.
+   */
+  async autoSendFailedUnexpectedly(
+    accountId: string,
+    occasionId: string,
+    detail: string,
+  ): Promise<void> {
+    try {
+      const account = await this.prisma.account.findUnique({
+        where: { id: accountId },
+        select: { name: true },
+      });
+      await this.platformNotifications.notifyAllAdmins(
+        {
+          kind: "auto_send_failed",
+          title: `An automatic send failed unexpectedly — ${account?.name ?? accountId}`,
+          body:
+            `Occasion ${occasionId} could not be sent and the reason was not one auto-send ` +
+            `knows how to explain: ${detail}. The card is still approved and will be retried ` +
+            `on the next run, so this repeats daily until it is fixed.`,
+          href: `/admin/subscribers/${accountId}`,
+          entityType: "Occasion",
+          entityId: occasionId,
+        },
+        { role: "super_admin" },
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Ops auto-send failure alert for ${occasionId} failed: ${reason}`);
+    }
+  }
 }
