@@ -50,6 +50,10 @@ export const inboxNotificationKindSchema = z.enum([
    * in different moods, and the badge colour has to say which one this is. */
   "auto_send_failed",
   "invite_accepted",
+  /** The balance will not cover cards that are already approved to go. */
+  "wallet_low_balance",
+  /** A charge failed and the standing top-up instruction has been switched off. */
+  "auto_top_up_paused",
   "card_returned",
   "support_reply",
   "message_reply",

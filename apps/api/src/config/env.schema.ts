@@ -373,6 +373,15 @@ export const envSchema = z.object({
     .positive()
     .optional()
     .catch(undefined),
+  // The wallet watch's two emails (see ADR 0255): the balance will not cover
+  // what is already approved, and automatic top-up has stopped.
+  BREVO_WALLET_LOW_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  BREVO_AUTO_TOP_UP_PAUSED_TEMPLATE_ID: z.coerce
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .catch(undefined),
   // Support ticketing (see ADR 0066). Optional Brevo templates for the two
   // notification emails — a support reply (to the customer) and a new/updated
   // ticket (to the support inbox); unset ⇒ the built-in HTML fallback.

@@ -19,6 +19,8 @@ const KIND_DOT: Record<string, string> = {
   order_paid: "bg-success",
   auto_send: "bg-info",
   auto_send_failed: "bg-warning",
+  wallet_low_balance: "bg-warning",
+  auto_top_up_paused: "bg-accent",
   invite_accepted: "bg-info",
   card_returned: "bg-warning",
   support_reply: "bg-accent",

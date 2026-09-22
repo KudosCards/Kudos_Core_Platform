@@ -263,5 +263,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0252 — A birthday with no year](./0252-a-birthday-with-no-year.md)
 - [0253 — A second way into LeadConnector](./0253-a-second-way-into-leadconnector.md)
 - [0254 — A card that did not go out](./0254-a-card-that-did-not-go-out.md)
+- [0255 — A wallet that watches itself](./0255-a-wallet-that-watches-itself.md)
 
 <!-- adr-index:end -->

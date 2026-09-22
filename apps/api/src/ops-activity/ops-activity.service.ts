@@ -324,4 +324,78 @@ export class OpsActivityService {
       this.logger.error(`Ops auto-send failure alert for ${occasionId} failed: ${reason}`);
     }
   }
+
+  /**
+   * An automatic top-up took the customer's money and the wallet did not get
+   * it. The rarest and most serious thing in this file: retrying would charge
+   * them twice, so nothing automatic can fix it and an operator has to credit
+   * the wallet by hand against the named invoice.
+   *
+   * Super admins only, and keyed on the invoice so a redelivery is one alert
+   * while two genuinely separate incidents are two.
+   */
+  async walletTopUpNotCredited(
+    accountId: string,
+    stripeInvoiceId: string,
+    amountMinor: number,
+    detail: string,
+  ): Promise<void> {
+    try {
+      const account = await this.prisma.account.findUnique({
+        where: { id: accountId },
+        select: { name: true },
+      });
+      await this.platformNotifications.notifyAllAdmins(
+        {
+          kind: "wallet_topup_not_credited",
+          title: `Charged ${formatMinor(amountMinor)} and did not credit the wallet — ${account?.name ?? accountId}`,
+          body:
+            `Stripe invoice ${stripeInvoiceId} was paid, then writing the ledger entry failed: ` +
+            `${detail}. Do NOT re-run the top-up — that would charge them twice. Credit the ` +
+            `wallet by hand against that invoice.`,
+          href: `/admin/subscribers/${accountId}`,
+          entityType: "Wallet",
+          entityId: stripeInvoiceId,
+        },
+        { role: "super_admin" },
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Ops uncredited-top-up alert for ${stripeInvoiceId} failed: ${reason}`);
+    }
+  }
+
+  /**
+   * An automatic top-up failed for a reason that is not a card decline.
+   *
+   * A declined card is the customer's to fix and they are told directly; this
+   * is the other kind — a failure nobody can explain, on the path that keeps
+   * an unattended account funded. Keyed on the account, because the pause it
+   * accompanies means there will not be a second attempt to alert about.
+   */
+  async autoTopUpFailedUnexpectedly(accountId: string, detail: string): Promise<void> {
+    try {
+      const account = await this.prisma.account.findUnique({
+        where: { id: accountId },
+        select: { name: true },
+      });
+      await this.platformNotifications.notifyAllAdmins(
+        {
+          kind: "auto_top_up_failed",
+          title: `Automatic top-up failed unexpectedly — ${account?.name ?? accountId}`,
+          body:
+            `The charge did not go through and the reason was not a card decline: ${detail}. ` +
+            `Automatic top-up is now paused for this account, so their cards stop once the ` +
+            `balance runs out.`,
+          href: `/admin/subscribers/${accountId}`,
+          entityType: "Account",
+          entityId: accountId,
+        },
+        { role: "super_admin" },
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Ops auto-top-up failure alert for ${accountId} failed: ${reason}`);
+    }
+  }
 }

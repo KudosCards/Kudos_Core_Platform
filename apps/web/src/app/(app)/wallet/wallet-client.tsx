@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { WalletEntryType, WalletSummary } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
+import { AutoTopUpCard } from "./auto-top-up-card";
 
 /** Preset top-up amounts in pence, plus a custom field. */
 const PRESETS_MINOR = [1000, 2500, 5000];
@@ -197,6 +198,8 @@ export function WalletClient({
           </button>
         </div>
       </div>
+
+      <AutoTopUpCard settings={summary.autoTopUp} onSaved={setSummary} />
 
       <div className="flex flex-col gap-3">
         <h2 className="font-semibold">Recent activity</h2>

@@ -8,6 +8,8 @@ export type InboxNotificationKind =
   | "order_paid"
   | "auto_send"
   | "auto_send_failed"
+  | "wallet_low_balance"
+  | "auto_top_up_paused"
   | "invite_accepted"
   | "card_returned"
   | "support_reply"

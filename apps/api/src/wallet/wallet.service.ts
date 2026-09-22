@@ -18,9 +18,14 @@ import type { CheckoutResult } from "../common/checkout-result";
 import { runSerializable } from "../common/run-serializable";
 import { OpsActivityService } from "../ops-activity/ops-activity.service";
 import type { TopUpDto } from "./dto/top-up.dto";
+import type { AutoTopUpDto } from "./dto/auto-top-up.dto";
+import { type AutoTopUpPauseReason, pauseReasonOfStripeError } from "./auto-top-up";
 
 /** No human is behind a Stripe webhook — see webhooks.service.ts. */
 const SYSTEM_ACTOR = "system:stripe-webhook";
+/** Nor behind an automatic top-up: the customer authorised the standing
+ * instruction, not this particular charge. */
+const SYSTEM_ACTOR_AUTO_TOP_UP = "system:wallet-auto-top-up";
 /** Campaign credits are granted by the platform, not by the operator who
  *  happened to create the campaign — the campaign id in the metadata is what
  *  ties a credit back to a person's decision. */
@@ -56,11 +61,38 @@ export function campaignReference(campaignId: string): string {
   return `${CAMPAIGN_REFERENCE_PREFIX}${campaignId}`;
 }
 
+/** The standing top-up instruction as the customer sees it. `pausedReason` is
+ * the code, not a sentence — the web app owns the wording, the same way the
+ * inbox copy does. */
+export interface AutoTopUpSettings {
+  enabled: boolean;
+  thresholdMinor: number;
+  amountMinor: number;
+  pausedAt: Date | null;
+  pausedReason: string | null;
+}
+
 export interface WalletSummary {
   balanceMinor: number;
   currency: string;
   entries: WalletLedgerEntry[];
+  autoTopUp: AutoTopUpSettings;
 }
+
+/**
+ * What one attempt at an automatic top-up did. A result rather than an
+ * exception, for the same reason `CampaignCreditOutcome` is one: the caller is
+ * a sweep over many accounts, and "switched off" and "already funded" are
+ * ordinary outcomes rather than failures at all.
+ */
+export type AutoTopUpOutcome =
+  | { status: "topped_up"; amountMinor: number; balanceAfterMinor: number }
+  /** Above the threshold — nothing to do. */
+  | { status: "not_needed"; balanceMinor: number }
+  | { status: "disabled" }
+  /** Already paused by an earlier failure; waiting on the customer. */
+  | { status: "paused" }
+  | { status: "failed"; reason: AutoTopUpPauseReason; detail: string };
 
 /**
  * The account wallet: a top-up-and-spend balance, backed by an append-only
@@ -83,15 +115,69 @@ export class WalletService {
   ) {}
 
   async getSummary(accountId: string): Promise<WalletSummary> {
-    const [balanceMinor, entries] = await Promise.all([
+    const [balanceMinor, entries, account] = await Promise.all([
       this.balanceOf(this.prisma, accountId),
       this.prisma.walletLedgerEntry.findMany({
         where: { accountId },
         orderBy: { createdAt: "desc" },
         take: 20,
       }),
+      this.prisma.account.findUniqueOrThrow({
+        where: { id: accountId },
+        select: {
+          autoTopUpEnabled: true,
+          autoTopUpThresholdMinor: true,
+          autoTopUpAmountMinor: true,
+          autoTopUpPausedAt: true,
+          autoTopUpPausedReason: true,
+        },
+      }),
     ]);
-    return { balanceMinor, currency: "GBP", entries };
+    return {
+      balanceMinor,
+      currency: "GBP",
+      entries,
+      autoTopUp: {
+        enabled: account.autoTopUpEnabled,
+        thresholdMinor: account.autoTopUpThresholdMinor,
+        amountMinor: account.autoTopUpAmountMinor,
+        pausedAt: account.autoTopUpPausedAt,
+        pausedReason: account.autoTopUpPausedReason,
+      },
+    };
+  }
+
+  /**
+   * Set the standing instruction.
+   *
+   * Always clears the pause. A customer arriving here has either just fixed
+   * their card or is switching the whole thing off, and both mean the old
+   * failure is no longer the reason to refuse to try.
+   */
+  async updateAutoTopUp(
+    accountId: string,
+    actorUserId: string,
+    dto: AutoTopUpDto,
+  ): Promise<WalletSummary> {
+    await this.prisma.account.update({
+      where: { id: accountId },
+      data: {
+        autoTopUpEnabled: dto.enabled,
+        autoTopUpThresholdMinor: dto.thresholdMinor,
+        autoTopUpAmountMinor: dto.amountMinor,
+        autoTopUpPausedAt: null,
+        autoTopUpPausedReason: null,
+      },
+    });
+    await this.audit.record({
+      accountId,
+      actorUserId,
+      action: dto.enabled ? "wallet_auto_topup_enabled" : "wallet_auto_topup_disabled",
+      targetType: "Wallet",
+      targetId: accountId,
+      metadata: { thresholdMinor: dto.thresholdMinor, amountMinor: dto.amountMinor },
+    });
+    return this.getSummary(accountId);
   }
 
   /** Starts a Stripe Checkout Session to add funds; the wallet is credited only
@@ -219,6 +305,203 @@ export class WalletService {
       this.logger.error(`Top-up invoice lookup for session ${session.id} failed: ${reason}`);
       return {};
     }
+  }
+
+  /** The account's current balance. The ledger's sum, same as everywhere else —
+   * exposed because the wallet watch needs it without the recent entries. */
+  async getBalance(accountId: string): Promise<number> {
+    return this.balanceOf(this.prisma, accountId);
+  }
+
+  /**
+   * One attempt at the standing instruction: if the balance has fallen below
+   * the account's threshold, charge the stored card for the account's amount
+   * and credit the wallet.
+   *
+   * Self-contained on purpose. The caller has already filtered in SQL, but the
+   * guards that matter — switched on, not paused, actually below the threshold
+   * — are re-checked here so they cannot be forgotten at a second call site.
+   *
+   * Billed through a Stripe **invoice** rather than a bare PaymentIntent, so an
+   * automatic top-up produces the same VAT receipt a manual one does. ADR 0103
+   * promised a receipt for the money a wallet customer actually pays, and this
+   * is the same taxable purchase arriving by a different door.
+   */
+  async autoTopUp(accountId: string): Promise<AutoTopUpOutcome> {
+    const account = await this.prisma.account.findUniqueOrThrow({
+      where: { id: accountId },
+      select: {
+        name: true,
+        stripeCustomerId: true,
+        autoTopUpEnabled: true,
+        autoTopUpPausedAt: true,
+        autoTopUpThresholdMinor: true,
+        autoTopUpAmountMinor: true,
+      },
+    });
+    if (!account.autoTopUpEnabled) return { status: "disabled" };
+    if (account.autoTopUpPausedAt) return { status: "paused" };
+
+    const balanceMinor = await this.balanceOf(this.prisma, accountId);
+    if (balanceMinor >= account.autoTopUpThresholdMinor) {
+      return { status: "not_needed", balanceMinor };
+    }
+
+    // No Stripe customer means no card, and creating one here would only
+    // manufacture an empty customer to fail against a moment later.
+    if (!account.stripeCustomerId) {
+      return { status: "failed", reason: "no_payment_method", detail: "No Stripe customer" };
+    }
+    const paymentMethodId = await this.resolveCardPaymentMethod(account.stripeCustomerId);
+    if (!paymentMethodId) {
+      return { status: "failed", reason: "no_payment_method", detail: "No usable card on file" };
+    }
+
+    const amountMinor = account.autoTopUpAmountMinor;
+    let invoice: Stripe.Invoice;
+    try {
+      invoice = await this.chargeAutoTopUp(
+        account.stripeCustomerId,
+        paymentMethodId,
+        accountId,
+        amountMinor,
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return { status: "failed", reason: pauseReasonOfStripeError(error), detail };
+    }
+
+    // Past this line the money has moved. A credit that does not land is not a
+    // failure to retry — retrying would charge them twice — so it is raised
+    // with Kudos HQ naming the invoice, for an operator to credit by hand.
+    try {
+      const balanceAfterMinor = await this.creditAutoTopUp(accountId, amountMinor, invoice);
+      await this.audit.record({
+        accountId,
+        actorUserId: SYSTEM_ACTOR_AUTO_TOP_UP,
+        action: "wallet_auto_topup_succeeded",
+        targetType: "Wallet",
+        targetId: accountId,
+        metadata: { amountMinor, stripeInvoiceId: invoice.id },
+      });
+      return { status: "topped_up", amountMinor, balanceAfterMinor };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Auto top-up for account ${accountId} charged invoice ${invoice.id} but did not credit: ${detail}`,
+      );
+      await this.opsActivity.walletTopUpNotCredited(accountId, invoice.id, amountMinor, detail);
+      throw error;
+    }
+  }
+
+  /** Create, finalise and pay a one-line invoice for the top-up. Split out so
+   * the "money has moved" boundary above is a single, obvious line. */
+  private async chargeAutoTopUp(
+    customerId: string,
+    paymentMethodId: string,
+    accountId: string,
+    amountMinor: number,
+  ): Promise<Stripe.Invoice> {
+    const draft = await this.stripe.invoices.create({
+      customer: customerId,
+      collection_method: "charge_automatically",
+      // We finalise and pay it ourselves below, in this one run, so we know the
+      // outcome in time to decide whether to pause.
+      auto_advance: false,
+      // Only the line we are about to add. Without this, any unrelated pending
+      // invoice item on the customer would be swept onto this invoice and
+      // charged as part of a "top-up" the customer never asked for.
+      pending_invoice_items_behavior: "exclude",
+      description: "Kudos Cards wallet top-up (automatic)",
+      metadata: { type: "wallet_auto_topup", accountId, amountMinor: String(amountMinor) },
+    });
+    await this.stripe.invoiceItems.create({
+      customer: customerId,
+      invoice: draft.id,
+      amount: amountMinor,
+      currency: "gbp",
+      description: "Kudos Cards wallet top-up",
+    });
+    const finalized = await this.stripe.invoices.finalizeInvoice(draft.id);
+    return this.stripe.invoices.pay(finalized.id, {
+      payment_method: paymentMethodId,
+      off_session: true,
+    });
+  }
+
+  /** Credit the wallet for a paid auto top-up, idempotent on the invoice id,
+   * capturing the VAT receipt in the same create (ADR 0103). Returns the
+   * balance the account now has. */
+  private async creditAutoTopUp(
+    accountId: string,
+    amountMinor: number,
+    invoice: Stripe.Invoice,
+  ): Promise<number> {
+    const reference = `topup:${invoice.id}`;
+    return runSerializable(this.prisma, async (tx) => {
+      const existing = await tx.walletLedgerEntry.findFirst({ where: { accountId, reference } });
+      if (existing) {
+        return existing.balanceAfterMinor;
+      }
+      const balance = await this.balanceOf(tx, accountId);
+      const balanceAfterMinor = balance + amountMinor;
+      await tx.walletLedgerEntry.create({
+        data: {
+          accountId,
+          type: "topup",
+          amountMinor,
+          balanceAfterMinor,
+          reference,
+          stripeInvoiceId: invoice.id,
+          receiptUrl: invoice.hosted_invoice_url ?? null,
+          receiptPdfUrl: invoice.invoice_pdf ?? null,
+        },
+      });
+      return balanceAfterMinor;
+    });
+  }
+
+  /**
+   * A card of the customer's we can charge unattended, or null.
+   *
+   * Prefers whatever Stripe already treats as their default — for a Pro
+   * subscriber that is the card paying for Pro — and otherwise takes the most
+   * recently attached. Expired cards are dropped before we try: "a stored card
+   * that is active" was the requirement, and charging a card that cannot work
+   * only turns a clear "add a card" into a confusing decline.
+   */
+  private async resolveCardPaymentMethod(customerId: string): Promise<string | null> {
+    const methods = await this.stripe.paymentMethods.list({
+      customer: customerId,
+      type: "card",
+      limit: 20,
+    });
+    const usable = methods.data.filter((method) => !this.cardHasExpired(method.card));
+    if (usable.length === 0) {
+      return null;
+    }
+
+    const customer = await this.stripe.customers.retrieve(customerId);
+    if (customer.deleted) {
+      return null;
+    }
+    const preferred = customer.invoice_settings?.default_payment_method;
+    const preferredId = typeof preferred === "string" ? preferred : (preferred?.id ?? null);
+    if (preferredId && usable.some((method) => method.id === preferredId)) {
+      return preferredId;
+    }
+    // `paymentMethods.list` returns newest first.
+    return usable[0]?.id ?? null;
+  }
+
+  /** A card is good until the end of its expiry month. */
+  private cardHasExpired(card: Stripe.PaymentMethod.Card | undefined): boolean {
+    if (!card) return true;
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth() + 1;
+    return card.exp_year < year || (card.exp_year === year && card.exp_month < month);
   }
 
   /**
