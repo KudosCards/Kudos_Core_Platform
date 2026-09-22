@@ -5,11 +5,8 @@ import {
   STANDING_ORDER_CONSENT_VERSION,
   consentIsCurrent,
 } from "./standing-order.consent";
-import type {
-  StandingOrder,
-  StandingOrderAudience,
-  StandingOrderBlocker,
-} from "@kudos/shared-types";
+import { standingOrderBlockers, type StandingOrderState } from "./standing-order-state";
+import type { StandingOrder, StandingOrderAudience } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
@@ -26,6 +23,28 @@ const STANDING_ORDER_INCLUDE = {
 } satisfies Prisma.StandingOrderInclude;
 
 type StandingOrderRow = Prisma.StandingOrderGetPayload<{ include: typeof STANDING_ORDER_INCLUDE }>;
+
+/** The row, reduced to what decides whether it runs — the one shape the shared
+ * rule is written against, so the view and the cron cannot feed it differently. */
+export function standingOrderStateOf(row: {
+  enabled: boolean;
+  consentVersion: number | null;
+  audienceKind: StandingOrderAudienceKind;
+  recipientListId: string | null;
+  segmentId: string | null;
+  designs: { savedDesign: { archivedAt: Date | null } }[];
+  messages: unknown[];
+}): StandingOrderState {
+  return {
+    enabled: row.enabled,
+    consentVersion: row.consentVersion,
+    audienceKind: row.audienceKind,
+    recipientListId: row.recipientListId,
+    segmentId: row.segmentId,
+    designs: row.designs.map((design) => ({ archived: design.savedDesign.archivedAt !== null })),
+    messageCount: row.messages.length,
+  };
+}
 
 /**
  * "Click and forget": the standing instruction, and the permission behind it.
@@ -312,24 +331,10 @@ export class StandingOrdersService {
       };
     }
 
-    const blockers: StandingOrderBlocker[] = [];
-    if (!planAllows) blockers.push("plan");
-    if (!consentIsCurrent(row.consentVersion)) blockers.push("consent");
-    if (row.designs.length === 0 || row.messages.length === 0) blockers.push("empty_pool");
-    // Removing a design from the library archives it (ADR 0158) rather than
-    // deleting the row, so the foreign key's cascade never fires and the pool
-    // entry survives. Left alone, the pool would look full while holding a card
-    // we could not send.
-    if (row.designs.some((design) => design.savedDesign.archivedAt !== null)) {
-      blockers.push("design_archived");
-    }
-
-    // The foreign keys are SET NULL, so a deleted list leaves the ids empty
-    // while `audienceKind` still remembers what was meant. That gap is the one
-    // thing here worth catching: without it the instruction would quietly widen
-    // from one class of thirty children to every contact on the account, and
-    // widening who gets a card is never ours to do on somebody's behalf.
-    if (this.audienceGone(row)) blockers.push("audience_gone");
+    // One rule, shared with the approval cron — two definitions of "running"
+    // would drift, and the drift would show up as a card that went when the
+    // dashboard said it would not, or did not go when it said it would.
+    const blockers = standingOrderBlockers(standingOrderStateOf(row), planAllows);
 
     return {
       ...base,
@@ -364,13 +369,5 @@ export class StandingOrdersService {
     if (row.recipientListId) return { kind: "list", listId: row.recipientListId };
     if (row.segmentId) return { kind: "segment", segmentId: row.segmentId };
     return { kind: "all" };
-  }
-
-  /** The instruction named a list or a segment, and that thing no longer
-   * exists. Reported as `all` by `audienceOf` — which is exactly the danger. */
-  private audienceGone(row: StandingOrderRow): boolean {
-    if (row.audienceKind === "list") return row.recipientListId === null;
-    if (row.audienceKind === "segment") return row.segmentId === null;
-    return false;
   }
 }

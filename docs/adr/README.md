@@ -265,5 +265,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0254 — A card that did not go out](./0254-a-card-that-did-not-go-out.md)
 - [0255 — A wallet that watches itself](./0255-a-wallet-that-watches-itself.md)
 - [0256 — A standing order, and the permission behind it](./0256-a-standing-order-and-the-permission-behind-it.md)
+- [0257 — Approving without being asked](./0257-approving-without-being-asked.md)
 
 <!-- adr-index:end -->
