@@ -67,12 +67,13 @@ entire premise is that they are not watching, and the one moment they need to
 hear from us is the one moment nothing reaches them. A birthday that silently
 did not happen is the worst outcome this product has.
 
-### 4. Nothing watches the wallet
+### 4. Nothing watches the wallet — **fixed, ADR 0255**
 
 The model rests on "the subscriber tops the wallet up with enough annual funds".
-There is no low-balance threshold, no warning, and no auto top-up anywhere in
-the codebase — I searched. The first a customer learns that the money ran out is
-that cards stopped, and per gap 3, they are not told that either.
+There was no low-balance threshold, no warning, and no auto top-up anywhere in
+the codebase. The first a customer learned that the money had run out was that
+cards stopped, and per gap 3, they were not told that either. C2 closed both
+halves: the wallet now says what it will not cover, and refills itself.
 
 ### 5. Six ways one card can stop, each silent
 
@@ -251,10 +252,14 @@ Ordered so the promise is never bigger than the product.
   not a daily email, and a failure nobody can explain also raises a super-admin
   alert. This was the thing that had to ship before anything else: until it did,
   standing approval was a promise we could not keep.
-- **C2 — Watch the wallet, then refill it.** The low-balance threshold and
-  projection, then auto top-up off-session, then the pause-and-email path when
-  there is no usable card. The order matters: the warning is useful on its own
-  and must work even when top-up fails.
+- **C2 — Watch the wallet, then refill it. Built (ADR 0255).** A 9am cron that
+  prices the cards already approved and says which one the balance will not
+  reach, then tops the wallet up off-session from the card already on file, then
+  pauses and emails when that card will not work. The projection replaced the
+  threshold the plan asked for: "your balance covers the next 6 of 9 cards" is
+  something to act on, where a number is something to interpret. The top-up runs
+  first so a shortfall it clears is never warned about, and the warning is
+  computed afterwards so a top-up that is not enough still gets one.
 - **C3 — Describe the catalog.** Age band and tone on each birthday design,
   done in the same pass as the re-export. Ops work, not code, and it unblocks
   any selection rule better than random.

@@ -184,7 +184,20 @@ describe("Wallet (e2e)", () => {
       .get("/wallet")
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
-    expect(response.body).toEqual({ balanceMinor: 0, currency: "GBP", entries: [] });
+    expect(response.body).toEqual({
+      balanceMinor: 0,
+      currency: "GBP",
+      entries: [],
+      // A new account never carries standing permission to charge a card. The
+      // numbers are only the defaults the form starts from (ADR 0255).
+      autoTopUp: {
+        enabled: false,
+        thresholdMinor: 1000,
+        amountMinor: 5000,
+        pausedAt: null,
+        pausedReason: null,
+      },
+    });
   });
 
   it("creates a Stripe Checkout Session for a top-up, tagged wallet_topup", async () => {

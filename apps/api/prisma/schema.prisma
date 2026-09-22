@@ -70,8 +70,25 @@ model Account {
   /// it is hard-blocked until a seat is added. Kept in sync with the Stripe
   /// subscription's per-seat item quantity. See docs/adr/0035-seat-based-billing.md.
   extraSeats            Int           @default(0) @map("extra_seats")
-  createdAt             DateTime      @default(now()) @map("created_at")
-  updatedAt             DateTime      @updatedAt @map("updated_at")
+
+  /// Automatic wallet top-up (ADR 0255). OFF by default and never inherited:
+  /// standing permission to charge a stored card while nobody is watching is
+  /// given deliberately or not at all.
+  autoTopUpEnabled        Boolean   @default(false) @map("auto_top_up_enabled")
+  /// Charge when the balance falls below this, in pence.
+  autoTopUpThresholdMinor Int       @default(1000) @map("auto_top_up_threshold_minor")
+  /// How much to add each time, in pence. A floor, not a promise to cover
+  /// everything due — the projection warning is what covers that.
+  autoTopUpAmountMinor    Int       @default(5000) @map("auto_top_up_amount_minor")
+  /// When a charge last failed hard enough to stop trying. While set, the watch
+  /// cron never charges this account again; the customer resumes it themselves.
+  autoTopUpPausedAt       DateTime? @map("auto_top_up_paused_at")
+  /// Why it is paused, as a stable code (see wallet/auto-top-up.ts). Set
+  /// together with autoTopUpPausedAt; both cleared when the customer resumes.
+  autoTopUpPausedReason   String?   @map("auto_top_up_paused_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   memberships          Membership[]
   invites              Invite[]

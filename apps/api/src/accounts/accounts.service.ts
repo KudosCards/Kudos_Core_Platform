@@ -35,6 +35,14 @@ export const SAFE_ACCOUNT_SELECT = {
   contactEmail: true,
   reminderEmailsEnabled: true,
   extraSeats: true,
+  // The standing top-up instruction (ADR 0255). Listed because SafeAccount is
+  // Account-minus-the-claim-token: a column left out here stops compiling
+  // rather than quietly disappearing from every account response.
+  autoTopUpEnabled: true,
+  autoTopUpThresholdMinor: true,
+  autoTopUpAmountMinor: true,
+  autoTopUpPausedAt: true,
+  autoTopUpPausedReason: true,
   createdAt: true,
   updatedAt: true,
 } as const;
