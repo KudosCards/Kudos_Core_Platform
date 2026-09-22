@@ -32,7 +32,7 @@ Most of the machinery, and it is good machinery:
 
 ## Where it stops and waits
 
-### 1. A human approves every single card — **model built (ADR 0256), not yet closed**
+### 1. A human approves every single card — **closed (ADR 0256 + 0257)**
 
 This is the gap. `auto-send.service.ts` describes itself as "the hands-off half
 of _approve once, we handle the rest_" — and that is accurate, but the **once is
@@ -272,8 +272,14 @@ Ordered so the promise is never bigger than the product.
 - **C5 — Selection and messages.** The rule that picks a design and a message
   per card, and the AI-assisted authoring that fills the pool. Deliberately
   after C3, because before it there is nothing to select on.
-- **C6 — Automatic approval, bounded.** Occasions in scope skip the approvals
-  queue. Every existing stop condition still stops the card, now visibly.
+- **C6 — Automatic approval, bounded. Built (ADR 0257).** A 06:30 cron, between
+  the scheduler that fills the approvals queue and the auto-send that empties
+  it. Bounded four ways: birthdays only, rolling per-recipient occasions only
+  (a shared event's cohort card is somebody else's to approve), cards already in
+  the approvals window only, and inside the audience only. A smart-list audience
+  is refused rather than half-handled — its membership moves on its own. Nothing
+  about auto-send changed, so every stop condition it has still stops the card
+  and, since C1, says so.
 - **C7 — The dashboard, and the Free-tier prompt.**
 - **C8 — The messaging.** Only once C1–C7 are true.
 

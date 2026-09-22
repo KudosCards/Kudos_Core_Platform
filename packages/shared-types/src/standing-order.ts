@@ -91,6 +91,15 @@ export const standingOrderBlockerSchema = z.enum([
   "design_archived",
   /** The list or segment it pointed at has been deleted. */
   "audience_gone",
+  /**
+   * The audience is a smart list, which automatic approval does not act on.
+   *
+   * A smart list is a rule, and an occasion-mode one ("Birthdays this month")
+   * carries a rolling date window — so its membership moves on its own, and
+   * approving cards for whoever it happened to match this morning is not a
+   * decision anybody made. Reported rather than silently half-handled.
+   */
+  "audience_unsupported",
 ]);
 export type StandingOrderBlocker = z.infer<typeof standingOrderBlockerSchema>;
 
