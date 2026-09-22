@@ -103,6 +103,39 @@ has asked for. See `docs/card-print-quality-plan.md`, P8.
 
 ---
 
+## Product
+
+### "Click and forget" — standing approval for a list of contacts
+
+Business customers keep saying a version of the same thing: they love the idea
+and do not have time to keep on top of it, and would like to add contacts once
+and trust us to fulfil. That is close to what the platform already does, and
+the useful part of the scoping was finding the five places it stops and waits
+for a human.
+
+The first of them is done and was worth doing whatever happens to the rest: a
+card that did **not** go out told the customer nothing. `AutoSendService`
+notified only on success and audited every failure to a log nobody reads —
+survivable while customers are still watching, fatal the moment we tell them
+they need not. C1 (ADR 0254) closed it.
+
+Scoped in `docs/click-and-forget-plan.md`, now with the shape settled: card
+pool plus AI-drafted message pool, birthdays only, auto top-up from a stored
+card, Pro and above with the Free tier seeing it locked. Phases C1 to C8.
+
+Two things surfaced by the scoping belong here rather than there, because they
+are ops work and they gate the build:
+
+- **The catalog cannot describe itself.** `CardDesign` carries a category, a
+  name, a slug, a SKU and a thumbnail, and nothing that says who a design
+  suits. Picking a card from a pool "to fit the recipient" has nothing to read.
+  Describing the 217 designs is the same pass over the catalog as the A4
+  re-export, so it should ride along with it.
+- **Recipients carry no attribute to match against** beyond name, birthday and
+  the subscriber's own tags — and age is unknowable wherever `birthYearKnown`
+  is false, which is every CleanCloud contact by design (ADR 0252). Tags are
+  the only honest signal we have today.
+
 ## Scope and messaging
 
 ### Say what we actually serve, to visitors who are not in the UK

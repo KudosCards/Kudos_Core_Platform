@@ -18,6 +18,7 @@ const KIND_DOT: Record<string, string> = {
   upcoming_occasion: "bg-success",
   order_paid: "bg-success",
   auto_send: "bg-info",
+  auto_send_failed: "bg-warning",
   invite_accepted: "bg-info",
   card_returned: "bg-warning",
   support_reply: "bg-accent",

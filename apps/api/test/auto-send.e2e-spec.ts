@@ -7,6 +7,7 @@ import request from "supertest";
 import Stripe from "stripe";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { STRIPE_CLIENT } from "../src/billing/stripe-client.provider";
+import { EMAIL_CLIENT, type SendEmailInput } from "../src/email/email.client";
 import type { AutoSendResult } from "../src/auto-send/auto-send.service";
 import type { EnvConfig } from "../src/config/env.schema";
 import { createTestApp } from "./util/create-test-app";
@@ -23,13 +24,17 @@ describe("Auto-send (e2e)", () => {
   let prisma: PrismaService;
   const cryptoStripe = new Stripe("sk_test_autosend_crypto_only");
   let webhookSecret: string;
+  const sendTransactional = jest.fn<Promise<void>, [SendEmailInput]>();
 
   beforeAll(async () => {
     const mockStripe = {
       checkout: { sessions: { create: jest.fn() } },
       webhooks: cryptoStripe.webhooks,
     } as unknown as Stripe;
-    app = await createTestApp([{ provide: STRIPE_CLIENT, useValue: mockStripe }]);
+    app = await createTestApp([
+      { provide: STRIPE_CLIENT, useValue: mockStripe },
+      { provide: EMAIL_CLIENT, useValue: { sendTransactional } },
+    ]);
     prisma = app.get(PrismaService);
     const config = app.get(ConfigService<EnvConfig, true>);
     webhookSecret = config.get("STRIPE_WEBHOOK_SECRET", { infer: true });
@@ -39,14 +44,31 @@ describe("Auto-send (e2e)", () => {
     await app.close();
   });
 
-  async function signUp(): Promise<{ token: string; accountId: string }> {
-    const token = await mintToken(randomUUID());
+  /** A fresh account. `email` is what its contact address becomes, so a test
+   * that reads the outbox can pick out its own mail: the auto-send run is
+   * global, and other tests leave skipped occasions behind on purpose. */
+  async function signUp(email = "test@example.com"): Promise<{ token: string; accountId: string }> {
+    const token = await mintToken(randomUUID(), email);
     const response = await request(app.getHttpServer())
       .post("/accounts")
       .set("Authorization", `Bearer ${token}`)
       .send({ type: "organisation", name: `Centre ${randomUUID()}` })
       .expect(201);
     return { token, accountId: accountSchema.parse(response.body).id };
+  }
+
+  /** Every skip email this run sent to one address. */
+  function mailTo(address: string): SendEmailInput[] {
+    return sendTransactional.mock.calls
+      .map(([input]) => input)
+      .filter((input) => input.to === address);
+  }
+
+  async function skipNotices(accountId: string) {
+    return prisma.notification.findMany({
+      where: { accountId, kind: "auto_send_failed" },
+      orderBy: { createdAt: "asc" },
+    });
   }
 
   /** Puts the account on a plan whose entitlement enables auto-send. */
@@ -271,6 +293,7 @@ describe("Auto-send (e2e)", () => {
     expect(result.skipped).toContainEqual({
       occasionId,
       reason: "Insufficient wallet balance",
+      reasonCode: "insufficient_funds",
     });
 
     // Untouched: occasion still approved, no order, balance intact.
@@ -283,6 +306,121 @@ describe("Auto-send (e2e)", () => {
     // This occasion stays due-and-unfundable forever; remove it so it can't
     // pollute the global runs in later tests.
     await prisma.occasion.delete({ where: { id: occasionId } });
+  });
+
+  it("tells the account a card did not go out, and what fixes it", async () => {
+    const address = `skip-funds-${randomUUID()}@example.com`;
+    const { token, accountId } = await signUp(address);
+    await enableAutoSend(accountId);
+    await creditWallet(accountId, 100); // far short of the ~£4 total
+    const recipientId = await createRecipient(token);
+    const savedDesignId = await createSavedDesign(token);
+    const occasionId = await createOccasion(token, recipientId);
+    await approve(token, occasionId, { savedDesignId, dispatchOption: "auto_send" }).expect(201);
+
+    sendTransactional.mockClear();
+    await runAutoSend(await opsToken()).expect(201);
+
+    // In the bell: named, reasoned, and pointed at the one page that fixes it.
+    const notices = await skipNotices(accountId);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.title).toBe("A card to Sam Recipient did not go out");
+    expect(notices[0]!.body).toContain("did not cover");
+    expect(notices[0]!.body).toContain("Top up your wallet");
+    expect(notices[0]!.href).toBe("/wallet");
+    // Never the thrown message — that sentence is for the log, not the customer.
+    expect(notices[0]!.body).not.toContain("Insufficient wallet balance");
+
+    // And in their inbox, because the whole point is that nobody is watching.
+    const mail = mailTo(address);
+    expect(mail).toHaveLength(1);
+    expect(mail[0]!.subject).toBe("A card did not go out today");
+    expect(mail[0]!.html).toContain("Sam Recipient");
+    expect(mail[0]!.html).toContain("Top up your wallet");
+    expect(mail[0]!.params).toMatchObject({ count: 1 });
+
+    await prisma.occasion.delete({ where: { id: occasionId } });
+  });
+
+  it("does not repeat itself while the same card keeps failing the same way", async () => {
+    const address = `skip-repeat-${randomUUID()}@example.com`;
+    const { token, accountId } = await signUp(address);
+    await enableAutoSend(accountId);
+    await creditWallet(accountId, 100);
+    const recipientId = await createRecipient(token);
+    const savedDesignId = await createSavedDesign(token);
+    const occasionId = await createOccasion(token, recipientId);
+    await approve(token, occasionId, { savedDesignId, dispatchOption: "auto_send" }).expect(201);
+
+    const ops = await opsToken();
+    sendTransactional.mockClear();
+    await runAutoSend(ops).expect(201);
+    await runAutoSend(ops).expect(201);
+    await runAutoSend(ops).expect(201);
+
+    // The card is retried every run and stays unfundable every run. Told once.
+    expect(await skipNotices(accountId)).toHaveLength(1);
+    expect(mailTo(address)).toHaveLength(1);
+
+    await prisma.occasion.delete({ where: { id: occasionId } });
+  });
+
+  it("tells them again when the same card stops for a different reason", async () => {
+    const address = `skip-second-${randomUUID()}@example.com`;
+    const { token, accountId } = await signUp(address);
+    await enableAutoSend(accountId);
+    await creditWallet(accountId, 5000);
+    const recipientId = await createRecipient(token);
+    const savedDesignId = await createSavedDesign(token);
+    const occasionId = await createOccasion(token, recipientId);
+    await approve(token, occasionId, { savedDesignId, dispatchOption: "auto_send" }).expect(201);
+
+    // A card to this contact came back undelivered (ADR 0039).
+    await prisma.recipient.update({
+      where: { id: recipientId },
+      data: { addressVerificationRequired: true },
+    });
+    const ops = await opsToken();
+    sendTransactional.mockClear();
+    await runAutoSend(ops).expect(201);
+
+    const first = await skipNotices(accountId);
+    expect(first).toHaveLength(1);
+    expect(first[0]!.body).toContain("came back to us undelivered");
+    expect(first[0]!.href).toBe(`/recipients/${recipientId}`);
+
+    // They clear the return case but the address they saved is incomplete.
+    await prisma.recipient.update({
+      where: { id: recipientId },
+      data: { addressVerificationRequired: false, addressPostcode: null },
+    });
+    await runAutoSend(ops).expect(201);
+
+    const second = await skipNotices(accountId);
+    expect(second).toHaveLength(2);
+    expect(second[1]!.body).toContain("do not hold a full postal address");
+    expect(mailTo(address)).toHaveLength(2);
+
+    await prisma.occasion.delete({ where: { id: occasionId } });
+  });
+
+  it("says nothing about a card that went out", async () => {
+    const address = `skip-none-${randomUUID()}@example.com`;
+    const { token, accountId } = await signUp(address);
+    await enableAutoSend(accountId);
+    await creditWallet(accountId, 5000);
+    const recipientId = await createRecipient(token);
+    const savedDesignId = await createSavedDesign(token);
+    const occasionId = await createOccasion(token, recipientId);
+    await approve(token, occasionId, { savedDesignId, dispatchOption: "auto_send" }).expect(201);
+
+    sendTransactional.mockClear();
+    await runAutoSend(await opsToken()).expect(201);
+
+    const occasion = await prisma.occasion.findUniqueOrThrow({ where: { id: occasionId } });
+    expect(occasion.status).toBe("queued");
+    expect(await skipNotices(accountId)).toHaveLength(0);
+    expect(mailTo(address)).toHaveLength(0);
   });
 
   it("is idempotent — a second run does not re-send an already-sent occasion", async () => {
