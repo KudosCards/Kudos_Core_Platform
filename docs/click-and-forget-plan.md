@@ -32,7 +32,7 @@ Most of the machinery, and it is good machinery:
 
 ## Where it stops and waits
 
-### 1. A human approves every single card
+### 1. A human approves every single card — **model built (ADR 0256), not yet closed**
 
 This is the gap. `auto-send.service.ts` describes itself as "the hands-off half
 of _approve once, we handle the rest_" — and that is accurate, but the **once is
@@ -263,9 +263,12 @@ Ordered so the promise is never bigger than the product.
 - **C3 — Describe the catalog.** Age band and tone on each birthday design,
   done in the same pass as the re-export. Ops work, not code, and it unblocks
   any selection rule better than random.
-- **C4 — The standing instruction.** The model — a list, a chosen set of
-  designs, a message pool, birthdays, on/off — plus the consent it represents,
-  recorded explicitly with who turned it on and when.
+- **C4 — The standing instruction. Built (ADR 0256).** One per account: an
+  audience, a pool of designs, a pool of messages, postage, on/off — plus the
+  consent, recorded as who agreed, when, and to which _version of the wording_.
+  Switched on and actually running are reported separately, because a customer
+  told "on" while nothing happens has been lied to. Nothing reads it yet; it is
+  inert until C5 and C6.
 - **C5 — Selection and messages.** The rule that picks a design and a message
   per card, and the AI-assisted authoring that fills the pool. Deliberately
   after C3, because before it there is nothing to select on.

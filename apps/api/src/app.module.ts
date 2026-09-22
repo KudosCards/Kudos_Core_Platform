@@ -31,6 +31,7 @@ import { CatalogModule } from "./catalog/catalog.module";
 import { WalletModule } from "./wallet/wallet.module";
 import { WalletCampaignsModule } from "./wallet/wallet-campaigns.module";
 import { AutoSendModule } from "./auto-send/auto-send.module";
+import { StandingOrdersModule } from "./standing-orders/standing-orders.module";
 import { OpsActivityModule } from "./ops-activity/ops-activity.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
 import { GuestModule } from "./guest/guest.module";
@@ -93,6 +94,7 @@ import { PlatformNotificationsModule } from "./platform-notifications/platform-n
     WalletModule,
     WalletCampaignsModule,
     AutoSendModule,
+    StandingOrdersModule,
     OpsActivityModule,
     IntegrationsModule,
     GuestModule,
