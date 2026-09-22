@@ -121,11 +121,11 @@ they need not. C1 (ADR 0254) closed it.
 
 Scoped in `docs/click-and-forget-plan.md`, now with the shape settled: card
 pool plus AI-drafted message pool, birthdays only, auto top-up from a stored
-card, Pro and above with the Free tier seeing it locked. Phases C1 to C8; C1
-(ADR 0254), C2 (ADR 0255), C4 (ADR 0256) and C6 (ADR 0257) are built — so
-"approve once, ever" is true for an account that sets one up. The message pool
-is still unused: applying a chosen message is C5, which waits on the catalog
-work above.
+card, Pro and above with the Free tier seeing it locked. Phases C1 to C8; C1 (ADR 0254), C2 (ADR 0255), C4 (ADR 0256), C6 (ADR 0257) and
+C7 (ADR 0258) are built — so "approve once, ever" is true for an account that
+sets one up, and there is now a page to set it up on. The message pool is still
+unused: applying a chosen message is C5, which waits on the catalog work above,
+and the page says so where a customer writes them.
 
 Two things surfaced by the scoping belong here rather than there, because they
 are ops work and they gate the build:

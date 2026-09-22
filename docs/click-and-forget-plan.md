@@ -280,7 +280,13 @@ Ordered so the promise is never bigger than the product.
   is refused rather than half-handled — its membership moves on its own. Nothing
   about auto-send changed, so every stop condition it has still stops the card
   and, since C1, says so.
-- **C7 — The dashboard, and the Free-tier prompt.**
+- **C7 — The dashboard, and the Free-tier prompt. Built (ADR 0258).** One page
+  at `/click-and-forget`, in the sidebar under Send cards. It says out loud what
+  is not built yet: the message editor carries a notice that nothing prints the
+  pool, "on" and "running" are two different words on the screen, and a
+  smart-list audience is refused in the two places it matters. Free sees the
+  whole thing laid out with only the switch disabled, so the upgrade prompt
+  reaches somebody who has already chosen their cards.
 - **C8 — The messaging.** Only once C1–C7 are true.
 
 ## What I would still not do

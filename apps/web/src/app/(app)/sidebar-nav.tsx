@@ -25,6 +25,9 @@ const GROUPS: NavGroup[] = [
       { label: "Send a card", href: "/send", icon: "send" },
       { label: "Calendar", href: "/calendar", icon: "calendar" },
       { label: "Approvals", href: "/approvals", icon: "approvals" },
+      // Sits with the things that send cards, not under Settings: it is not a
+      // preference, it is the other way of sending. See docs/adr/0258.
+      { label: "Click & forget", href: "/click-and-forget", icon: "send" },
       { label: "Orders", href: "/orders", icon: "orders" },
     ],
   },
