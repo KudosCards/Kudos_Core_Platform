@@ -260,9 +260,15 @@ Ordered so the promise is never bigger than the product.
   something to act on, where a number is something to interpret. The top-up runs
   first so a shortfall it clears is never warned about, and the warning is
   computed afterwards so a top-up that is not enough still gets one.
-- **C3 — Describe the catalog.** Age band and tone on each birthday design,
-  done in the same pass as the re-export. Ops work, not code, and it unblocks
-  any selection rule better than random.
+- **C3 — Describe the catalog. Columns built (ADR 0259); the pass itself is
+  ops work.** `CardDesign` gained a nullable age band and tone, authored in
+  Airtable beside the artwork and carried by the existing sync. Null is
+  deliberately not `any`: null is nobody having looked, `any` is somebody
+  saying it suits everybody, and a selection rule has to tell those apart. The
+  sync now reports how many designs are still undescribed, and names any value
+  typed that it could not place — so the pass has a progress bar and cannot
+  quietly not-count work somebody did. Runbook:
+  `docs/ops/catalog-describe-designs.md`.
 - **C4 — The standing instruction. Built (ADR 0256).** One per account: an
   audience, a pool of designs, a pool of messages, postage, on/off — plus the
   consent, recorded as who agreed, when, and to which _version of the wording_.

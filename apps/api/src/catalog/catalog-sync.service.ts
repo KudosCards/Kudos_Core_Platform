@@ -111,6 +111,24 @@ export interface CatalogSyncSummary {
    * `/cards/christmas` for anyone to find. See ADR 0163.
    */
   unpublishedCategories: UnpublishedCategory[];
+  /**
+   * How much of the catalog still has nothing to say about who it suits, and
+   * every value somebody typed that we could not place.
+   *
+   * Both halves matter and they fail differently. `undescribed` is the ops
+   * pass's own progress bar — the number that has to reach zero before a
+   * selection rule can read anything better than a hash. `unknownValues` is
+   * the quieter one: "Middle-aged" typed into the Age Band column stores null
+   * exactly like an empty cell, and without this nobody would ever learn that
+   * the work they did was not recorded. See ADR 0259.
+   */
+  attributes: {
+    /** Active cards with no age band — the pass's remaining work. */
+    undescribed: number;
+    /** Active cards fetched this run. */
+    total: number;
+    unknownValues: { externalId: string; title: string; field: string; value: string }[];
+  };
   cropped: {
     externalId: string;
     sku: string | null;
@@ -254,6 +272,18 @@ export class CatalogSyncService {
       duplicateSkus: duplicateSkus(records),
       duplicateNames: duplicateNames(records),
       unpublishedCategories: unpublishedCategories(records),
+      attributes: {
+        undescribed: records.filter((candidate) => candidate.ageBand === null).length,
+        total: records.length,
+        unknownValues: records.flatMap((candidate) =>
+          candidate.unknownAttributes.map((unknown) => ({
+            externalId: candidate.externalId,
+            title: candidate.title,
+            field: unknown.field,
+            value: unknown.value,
+          })),
+        ),
+      },
     };
 
     const existing = await this.prisma.cardDesign.findMany({
@@ -339,6 +369,11 @@ export class CatalogSyncService {
           category: record.category,
           name: record.title,
           sku: record.sku,
+          // Airtable is the only author of these (ADR 0259), so a cleared cell
+          // clearing the column is the correct behaviour rather than data loss
+          // — there is nowhere else they could have been set from.
+          ageBand: record.ageBand,
+          tone: record.tone,
           thumbnailUrl,
           document: buildCardDocument(thumbnailUrl, record.insideMessage) as Prisma.InputJsonValue,
           isActive: true,
@@ -435,7 +470,11 @@ export class CatalogSyncService {
         `updated ${summary.updated}, deactivated ${summary.deactivated}, ` +
         `skipped-no-image ${summary.skippedNoImage.length}, ` +
         `images copied ${summary.imagesCopied}, artwork-failed ${summary.artworkFailed.length}, ` +
-        `errors ${summary.errors.length}, published ${summary.published.outcome}`,
+        `errors ${summary.errors.length}, published ${summary.published.outcome}, ` +
+        `undescribed ${summary.attributes.undescribed}/${summary.attributes.total}` +
+        (summary.attributes.unknownValues.length > 0
+          ? `, unrecognised attribute values ${summary.attributes.unknownValues.length}`
+          : ""),
     );
     return summary;
   }

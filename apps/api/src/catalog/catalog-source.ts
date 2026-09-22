@@ -1,3 +1,5 @@
+import type { CardAgeBand, CardTone } from "@kudos/shared-types";
+
 /**
  * The catalog's upstream source of card products. Kept behind an interface (and
  * an injectable token) so the Airtable implementation can be swapped for a mock
@@ -28,6 +30,14 @@ export interface CatalogCardRecord {
   category: string;
   frontImage: CatalogImage | null;
   insideMessage: string | null;
+  /** Who the design suits by age, or null when the column is empty or holds
+   * something we do not recognise. See ADR 0259. */
+  ageBand: CardAgeBand | null;
+  /** How the design reads, same rule. */
+  tone: CardTone | null;
+  /** Values an operator typed that we could not map onto the vocabulary, so a
+   * sync can say "we ignored Middle-aged" rather than silently storing null. */
+  unknownAttributes: { field: "ageBand" | "tone"; value: string }[];
 }
 
 /** Which upstream column one logical field actually came from. */

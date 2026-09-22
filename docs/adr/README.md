@@ -267,5 +267,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0256 — A standing order, and the permission behind it](./0256-a-standing-order-and-the-permission-behind-it.md)
 - [0257 — Approving without being asked](./0257-approving-without-being-asked.md)
 - [0258 — The page that switches it on](./0258-the-page-that-switches-it-on.md)
+- [0259 — Letting the catalog describe itself](./0259-letting-the-catalog-describe-itself.md)
 
 <!-- adr-index:end -->

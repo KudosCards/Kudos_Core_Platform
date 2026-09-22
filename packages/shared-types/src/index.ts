@@ -24,6 +24,7 @@ export * from "./preflight";
 export * from "./plans";
 export * from "./enterprise";
 export * from "./card";
+export * from "./card-attributes";
 export * from "./card-category";
 export * from "./video";
 export * from "./message-page";
