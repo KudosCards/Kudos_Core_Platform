@@ -34,6 +34,7 @@ export * from "./print-quality";
 export * from "./order";
 export * from "./billing";
 export * from "./fulfillment";
+export * from "./standing-order";
 export * from "./wallet";
 export * from "./dashboard";
 export * from "./integrations";

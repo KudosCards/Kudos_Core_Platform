@@ -122,7 +122,8 @@ they need not. C1 (ADR 0254) closed it.
 Scoped in `docs/click-and-forget-plan.md`, now with the shape settled: card
 pool plus AI-drafted message pool, birthdays only, auto top-up from a stored
 card, Pro and above with the Free tier seeing it locked. Phases C1 to C8; C1
-(ADR 0254) and C2 (ADR 0255) are built.
+(ADR 0254), C2 (ADR 0255) and C4 (ADR 0256) are built. C4 is inert on purpose —
+the instruction and the consent exist, and nothing reads them until C5 and C6.
 
 Two things surfaced by the scoping belong here rather than there, because they
 are ops work and they gate the build:

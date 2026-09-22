@@ -104,6 +104,7 @@ model Account {
   recipientLists       RecipientList[]
   segments             Segment[]
   notifications        Notification[]
+  standingOrder        StandingOrder?
   returnCases          ReturnCase[]
   events               Event[]
   supportTickets       SupportTicket[]
@@ -389,7 +390,8 @@ model Segment {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  standingOrders StandingOrder[]
 
   @@unique([accountId, name], name: "segment_name_key")
   @@index([accountId, createdAt])
@@ -407,8 +409,9 @@ model RecipientList {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  account Account                   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  members RecipientListMembership[]
+  account        Account                   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  members        RecipientListMembership[]
+  standingOrders StandingOrder[]
 
   // A list name is unique within an account so "Year 4 class" can't be created twice.
   @@unique([accountId, name], name: "recipient_list_name_key")
@@ -642,7 +645,7 @@ model SavedDesign {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account         Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
   // SetNull (Prisma's default for an optional relation, now explicit): a saved
   // design carries its own full `document`, so it survives fine if the origin
   // catalog template is removed — the link just clears. Deliberately unlike the
@@ -650,9 +653,10 @@ model SavedDesign {
   // its design is a broken state. This makes explicit what the schema always
   // implied; the init migration created the FK as RESTRICT, so a migration
   // reconciles the DB. See docs/adr/0048-saved-designs-fk.md.
-  cardDesign      CardDesign?      @relation(fields: [cardDesignId], references: [id], onDelete: SetNull)
+  cardDesign      CardDesign?           @relation(fields: [cardDesignId], references: [id], onDelete: SetNull)
   orderRecipients OrderRecipient[]
   occasions       Occasion[]
+  standingOrders  StandingOrderDesign[]
 
   @@index([accountId])
   @@map("saved_designs")
@@ -1117,6 +1121,118 @@ model WalletLedgerEntry {
 /// Per-plan limits and feature gates, enforced centrally in the API rather
 /// than scattered ad-hoc checks (e.g. the legacy "you can add 12 more
 /// contacts" banner and the Pro-only auto-send gate).
+/// What a standing order was pointed at. Recorded separately from the ids
+/// because the ids are SET NULL on delete: without this, a deleted list is
+/// indistinguishable from a deliberate "everyone", and the instruction would
+/// silently widen from one class of thirty children to every contact on the
+/// account. With it, the widening is detectable and refused.
+enum StandingOrderAudienceKind {
+  all
+  list
+  segment
+}
+
+/// Where a standing order's messages came from. `written` is the subscriber's
+/// own words; `assisted` is a draft a model produced that they then read and
+/// kept. Recorded because the two are not the same promise, and because a
+/// subscriber deserves to see which of their messages they wrote.
+enum StandingOrderMessageSource {
+  written
+  assisted
+}
+
+/// "Click and forget": one standing instruction per account, saying which
+/// contacts, which cards and which messages — so the product stops asking a
+/// person to approve each card. One per account on purpose: the whole value is
+/// that it is a single decision, and a second instruction would immediately
+/// raise "which one wins for a contact in both". Additive to loosen later.
+///
+/// Nothing here sends anything. It is the model and the permission; the rule
+/// that picks a card and a message is C5, and automatic approval is C6.
+/// See docs/adr/0256.
+model StandingOrder {
+  id        String  @id @default(uuid())
+  accountId String  @unique @map("account_id")
+  /// Off until a person turns it on, and off again the moment they say so.
+  /// Never the whole story: see `consentVersion`.
+  enabled   Boolean @default(false)
+
+  /// Which contacts. `all` means every contact with a birthday — the
+  /// lowest-barrier setting, and the one a subscriber who chooses nothing gets.
+  /// At most one id may be set (enforced by a CHECK constraint), and the kind
+  /// says which was meant even after the thing it named is deleted.
+  audienceKind    StandingOrderAudienceKind @default(all) @map("audience_kind")
+  recipientListId String?                   @map("recipient_list_id")
+  segmentId       String?                   @map("segment_id")
+
+  /// Postage for every card this sends. Chosen once here rather than per card,
+  /// because per card is the question this feature exists to stop asking.
+  postageClass PostageClass @default(second_class) @map("postage_class")
+
+  /// The permission, recorded rather than implied. A standing order spends a
+  /// customer's money without asking again, so who agreed, when, and to what
+  /// wording are all kept. `consentVersion` is the statement they actually
+  /// read: if we change what we promise to do, an old consent no longer covers
+  /// it and the instruction stops being active until somebody agrees again.
+  consentedByUserId String?   @map("consented_by_user_id")
+  consentedAt       DateTime? @map("consented_at")
+  consentVersion    Int?      @map("consent_version")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  account  Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// SetNull, not Cascade: deleting the list a standing order points at must not
+  /// silently delete the instruction and the consent behind it. The target falls
+  /// back to "everyone", which the API then refuses to leave enabled without the
+  /// customer looking at it again.
+  list     RecipientList?         @relation(fields: [recipientListId], references: [id], onDelete: SetNull)
+  segment  Segment?               @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  designs  StandingOrderDesign[]
+  messages StandingOrderMessage[]
+
+  @@map("standing_orders")
+}
+
+/// One card the subscriber is happy for us to send. The pool, not the choice —
+/// picking one per recipient is C5's job.
+model StandingOrderDesign {
+  standingOrderId String   @map("standing_order_id")
+  savedDesignId   String   @map("saved_design_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  standingOrder StandingOrder @relation(fields: [standingOrderId], references: [id], onDelete: Cascade)
+  /// Restrict, not Cascade. `SavedDesignsService.remove` hard-deletes a design
+  /// when nothing references it and archives it when something does — deciding
+  /// which by whether Postgres raises a foreign-key violation. Cascading here
+  /// would answer "nothing references it" and quietly narrow a pool somebody
+  /// chose; restricting makes the pool count as the reference it is, so the
+  /// design is archived instead and the API can say which card went.
+  savedDesign   SavedDesign   @relation(fields: [savedDesignId], references: [id], onDelete: Restrict)
+
+  @@id([standingOrderId, savedDesignId])
+  @@index([savedDesignId])
+  @@map("standing_order_designs")
+}
+
+/// One message the subscriber is happy for us to print. Plain text with merge
+/// tokens (ADR 0031/0033), so it carries no recipient's personal data — which
+/// is what lets a model help write these without anybody's contacts leaving the
+/// platform.
+model StandingOrderMessage {
+  id              String                     @id @default(uuid())
+  standingOrderId String                     @map("standing_order_id")
+  text            String
+  source          StandingOrderMessageSource @default(written)
+  createdAt       DateTime                   @default(now()) @map("created_at")
+  updatedAt       DateTime                   @updatedAt @map("updated_at")
+
+  standingOrder StandingOrder @relation(fields: [standingOrderId], references: [id], onDelete: Cascade)
+
+  @@index([standingOrderId])
+  @@map("standing_order_messages")
+}
+
 model PlanEntitlement {
   planId               String  @id @map("plan_id")
   recipientCap         Int?    @map("recipient_cap") // null = unlimited

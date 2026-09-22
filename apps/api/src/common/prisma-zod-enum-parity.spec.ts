@@ -108,6 +108,9 @@ describe("the Prisma enums and their zod twins agree", () => {
       "notificationKindSchema",
       // PlatformAdmin.role is a String column, defaulted in the schema.
       "platformAdminRoleSchema",
+      // Derived on read from the plan, the consent and the pool — the reasons a
+      // switched-on standing order is not running. Nothing stores it.
+      "standingOrderBlockerSchema",
     ]);
   });
 
