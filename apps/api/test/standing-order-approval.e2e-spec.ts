@@ -53,12 +53,21 @@ describe("Standing order approval (e2e)", () => {
       .set("Authorization", `Bearer ${bearer}`);
   }
 
-  async function createSavedDesign(token: string, name: string): Promise<string> {
+  /**
+   * A saved design from its own catalog template.
+   *
+   * `template` matters whenever a test describes designs: the age band lives on
+   * the CardDesign, so two saved designs sharing one template share one
+   * description, and the second `describeDesign` silently overwrites the first.
+   */
+  async function createSavedDesign(token: string, name: string, template = 0): Promise<string> {
     const templates = await request(app.getHttpServer())
       .get("/card-designs")
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
-    const cardDesignId = (templates.body as { id: string }[])[0]!.id;
+    const catalog = templates.body as { id: string }[];
+    expect(catalog.length).toBeGreaterThan(template);
+    const cardDesignId = catalog[template]!.id;
     const response = await request(app.getHttpServer())
       .post("/saved-designs")
       .set("Authorization", `Bearer ${token}`)
@@ -73,11 +82,16 @@ describe("Standing order approval (e2e)", () => {
     token: string,
     accountId: string,
     firstName: string,
-    options: { address?: boolean } = {},
+    options: { address?: boolean; age?: number } = {},
   ): Promise<{ recipientId: string; occasionId: string }> {
     const birthday = new Date();
     birthday.setUTCDate(birthday.getUTCDate() + BIRTHDAY_DAYS_AHEAD);
-    const dateOfBirth = new Date(Date.UTC(1990, birthday.getUTCMonth(), birthday.getUTCDate()));
+    // Their age on the birthday itself, so a test can ask for a seven-year-old
+    // without doing the arithmetic at the call site.
+    const birthYear = birthday.getUTCFullYear() - (options.age ?? 36);
+    const dateOfBirth = new Date(
+      Date.UTC(birthYear, birthday.getUTCMonth(), birthday.getUTCDate()),
+    );
 
     const recipient = await prisma.recipient.create({
       data: {
@@ -110,6 +124,19 @@ describe("Standing order approval (e2e)", () => {
     });
     void token;
     return { recipientId: recipient.id, occasionId: occasion.id };
+  }
+
+  /** Set the catalog attributes on the CardDesign a saved design came from —
+   * what the ops pass fills in via Airtable (ADR 0259). */
+  async function describeDesign(savedDesignId: string, ageBand: "any" | "child" | "adult") {
+    const saved = await prisma.savedDesign.findUniqueOrThrow({
+      where: { id: savedDesignId },
+      select: { cardDesignId: true },
+    });
+    await prisma.cardDesign.update({
+      where: { id: saved.cardDesignId! },
+      data: { ageBand },
+    });
   }
 
   async function createList(token: string, name: string): Promise<string> {
@@ -166,6 +193,60 @@ describe("Standing order approval (e2e)", () => {
     // Re-timed to the postage class, exactly as the interactive approval does.
     expect(after.dispatchDate).not.toBeNull();
     expect(after.dispatchDate!.getTime()).toBeLessThan(after.occasionDate.getTime());
+  });
+
+  it("chooses a message from the pool and keeps it with the card", async () => {
+    const { token, accountId } = await proAccount();
+    const designId = await createSavedDesign(token, "Messaged");
+    const { occasionId } = await contactWithBirthday(token, accountId, "Ada");
+    await liveOrder(token, [designId], {
+      messages: [{ text: "Happy birthday {firstName}, from all of us." }],
+    });
+
+    await runApproval(await opsToken()).expect(201);
+
+    const after = await prisma.occasion.findUniqueOrThrow({
+      where: { id: occasionId },
+      include: { standingOrderMessage: true },
+    });
+    // Chosen at approval, not at send: it can be seen before it is printed, and
+    // a pool edited tomorrow cannot silently rewrite a card going out today.
+    expect(after.standingOrderMessage?.text).toBe("Happy birthday {firstName}, from all of us.");
+  });
+
+  it("prefers a card the catalog says suits the recipient's age", async () => {
+    const { token, accountId } = await proAccount();
+    const childDesign = await createSavedDesign(token, "For a child", 0);
+    const adultDesign = await createSavedDesign(token, "For a grown-up", 1);
+    await describeDesign(childDesign, "child");
+    await describeDesign(adultDesign, "adult");
+
+    const { occasionId } = await contactWithBirthday(token, accountId, "Small", { age: 7 });
+    await liveOrder(token, [childDesign, adultDesign]);
+
+    await runApproval(await opsToken()).expect(201);
+
+    expect((await occasion(occasionId)).savedDesignId).toBe(childDesign);
+  });
+
+  it("does not guess an age it was never told", async () => {
+    const { token, accountId } = await proAccount();
+    const childDesign = await createSavedDesign(token, "For a child", 0);
+    const anyDesign = await createSavedDesign(token, "For anybody", 1);
+    await describeDesign(childDesign, "child");
+    await describeDesign(anyDesign, "any");
+
+    // A birthday with no year — every CleanCloud contact, by design.
+    const { recipientId, occasionId } = await contactWithBirthday(token, accountId, "Unknown");
+    await prisma.recipient.update({
+      where: { id: recipientId },
+      data: { birthYearKnown: false },
+    });
+    await liveOrder(token, [childDesign, anyDesign]);
+
+    await runApproval(await opsToken()).expect(201);
+
+    expect((await occasion(occasionId)).savedDesignId).toBe(anyDesign);
   });
 
   it("records the approval as the system's, not a person's", async () => {

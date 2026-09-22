@@ -1,6 +1,7 @@
 import { Logger } from "@nestjs/common";
 import { httpRequest } from "../common/http-request";
 import { CATALOG_FETCH_BUDGET_MS, startFetchBudget } from "../common/fetch-budget";
+import { parseCardAgeBand, parseCardTone } from "@kudos/shared-types";
 import type {
   CatalogCardRecord,
   CatalogFieldMapping,
@@ -53,6 +54,12 @@ const FIELD_ALIASES = {
   frontImage: ["Front Image", "Image", "Artwork", "Front", "Front Artwork"],
   insideMessage: ["Inside Message", "Message", "Inside", "Inside Text"],
   status: ["Status", "State"],
+  // Who the design suits, authored beside the artwork (ADR 0259). Aliased as
+  // tolerantly as everything else here: these columns are being added to a
+  // live table by hand, and a sync that broke on "Age" rather than "Age Band"
+  // would be a worse feature than no sync at all.
+  ageBand: ["Age Band", "Age", "Age Group", "Suits", "Audience"],
+  tone: ["Tone", "Style", "Mood", "Feel"],
 } as const;
 
 /**
@@ -198,6 +205,21 @@ export class AirtableCatalogSource implements CatalogSource {
       }
 
       const category = asString(pickField(record.fields, FIELD_ALIASES.category));
+      const rawAgeBand = asString(pickField(record.fields, FIELD_ALIASES.ageBand));
+      const rawTone = asString(pickField(record.fields, FIELD_ALIASES.tone));
+      const ageBand = parseCardAgeBand(rawAgeBand);
+      const tone = parseCardTone(rawTone);
+      // A value somebody typed that we could not place. Reported rather than
+      // swallowed: "Middle-aged" in the Age Band column stores null either way,
+      // and the difference between the two is whether anybody ever finds out.
+      const unknownAttributes: CatalogCardRecord["unknownAttributes"] = [];
+      if (rawAgeBand && !ageBand) {
+        unknownAttributes.push({ field: "ageBand", value: rawAgeBand });
+      }
+      if (rawTone && !tone) {
+        unknownAttributes.push({ field: "tone", value: rawTone });
+      }
+
       cards.push({
         externalId: record.id,
         sku: asString(pickField(record.fields, FIELD_ALIASES.sku)),
@@ -207,6 +229,9 @@ export class AirtableCatalogSource implements CatalogSource {
         insideMessage: normaliseInsideMessage(
           asString(pickField(record.fields, FIELD_ALIASES.insideMessage)),
         ),
+        ageBand,
+        tone,
+        unknownAttributes,
       });
     }
 

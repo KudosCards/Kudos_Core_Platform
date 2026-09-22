@@ -121,8 +121,8 @@ they need not. C1 (ADR 0254) closed it.
 
 Scoped in `docs/click-and-forget-plan.md`, now with the shape settled: card
 pool plus AI-drafted message pool, birthdays only, auto top-up from a stored
-card, Pro and above with the Free tier seeing it locked. Phases C1 to C8; C1 (ADR 0254), C2 (ADR 0255), C4 (ADR 0256), C6 (ADR 0257) and
-C7 (ADR 0258) are built — so "approve once, ever" is true for an account that
+card, Pro and above with the Free tier seeing it locked. Phases C1 to C8; C1 (ADR 0254), C2 (ADR 0255), C4 (ADR 0256), C6 (ADR 0257),
+C7 (ADR 0258) and C3's columns (ADR 0259) are built — so "approve once, ever" is true for an account that
 sets one up, and there is now a page to set it up on. The message pool is still
 unused: applying a chosen message is C5, which waits on the catalog work above,
 and the page says so where a customer writes them.
@@ -139,6 +139,19 @@ are ops work and they gate the build:
   the subscriber's own tags — and age is unknowable wherever `birthYearKnown`
   is false, which is every CleanCloud contact by design (ADR 0252). Tags are
   the only honest signal we have today.
+
+### `engine-resilience` times out when the suites run together
+
+`decodeImage orientation › turns an oversized photo's pixels upright` re-encodes
+a large image with sharp and carries Jest's default 5-second timeout. Running
+the API and web unit suites concurrently, it has now timed out twice on
+different changes, neither of which touched `print-pdf`. In isolation it takes
+2.3 seconds, and it has not failed on CI.
+
+So it is a real intermittent test rather than a broken one, and the fix is to
+give that test an explicit timeout that matches what it actually does — not to
+skip it, and not to keep re-running until it passes. Worth doing before it
+costs somebody an afternoon believing their change broke the print engine.
 
 ## Scope and messaging
 

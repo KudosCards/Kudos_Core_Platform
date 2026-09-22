@@ -44,6 +44,11 @@ function record(externalId: string, title: string, sku?: string | null): Catalog
     sku: sku === undefined ? `KC-${externalId}` : sku,
     title,
     category: "birthday",
+    // Undescribed by default: most of the catalog is, and a fixture that
+    // quietly described everything would hide the case the sync has to handle.
+    ageBand: null,
+    tone: null,
+    unknownAttributes: [],
     frontImage: {
       url: `https://airtable.test/${externalId}.png`,
       filename: null,

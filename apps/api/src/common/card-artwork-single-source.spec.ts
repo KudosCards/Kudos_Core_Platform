@@ -38,6 +38,8 @@ const ALLOWED: Record<string, string> = {
   "auto-send/auto-send.service.ts": "copies it onto the card it is creating",
   "storage-maintenance/storage-reaper.service.ts":
     "walks every design to decide which stored objects are still referenced — about the assets, not about any card",
+  "standing-orders/standing-orders.service.ts":
+    "asks whether a chosen message would land on this design, by running the real placement over it — reads the document, never copies or changes it",
 };
 
 /** A Prisma read of the SavedDesign model. */

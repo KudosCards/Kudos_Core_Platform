@@ -6,7 +6,12 @@ import {
   consentIsCurrent,
 } from "./standing-order.consent";
 import { standingOrderBlockers, type StandingOrderState } from "./standing-order-state";
-import type { StandingOrder, StandingOrderAudience } from "@kudos/shared-types";
+import {
+  applyCardMessage,
+  type DesignDocument,
+  type StandingOrder,
+  type StandingOrderAudience,
+} from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
@@ -16,13 +21,29 @@ import type { SaveStandingOrderDto, StandingOrderAudienceDto } from "./dto/save-
 /** Everything a view of the instruction needs, in one read. */
 const STANDING_ORDER_INCLUDE = {
   designs: {
-    include: { savedDesign: { select: { id: true, name: true, archivedAt: true } } },
+    include: {
+      savedDesign: { select: { id: true, name: true, archivedAt: true, document: true } },
+    },
     orderBy: { createdAt: "asc" },
   },
   messages: { orderBy: { createdAt: "asc" } },
 } satisfies Prisma.StandingOrderInclude;
 
 type StandingOrderRow = Prisma.StandingOrderGetPayload<{ include: typeof STANDING_ORDER_INCLUDE }>;
+
+/**
+ * Whether a chosen message would actually be printed on this design.
+ *
+ * Asked by running the real thing rather than reimplementing its rule: a second
+ * copy of "where does a message go" would drift from the one that prints, and
+ * the drift would show as a page promising a message that never appears.
+ */
+function takesMessage(document: unknown): boolean {
+  const design = document as DesignDocument | null;
+  if (!design?.pages) return false;
+  const probe = "\u0000kudos-probe\u0000";
+  return JSON.stringify(applyCardMessage(design, probe)).includes(probe);
+}
 
 /** The row, reduced to what decides whether it runs — the one shape the shared
  * rule is written against, so the view and the cron cannot feed it differently. */
@@ -346,6 +367,7 @@ export class StandingOrdersService {
         savedDesignId: design.savedDesignId,
         name: design.savedDesign.name,
         archived: design.savedDesign.archivedAt !== null,
+        takesMessage: takesMessage(design.savedDesign.document),
       })),
       messages: row.messages.map((message) => ({
         id: message.id,

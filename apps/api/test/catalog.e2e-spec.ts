@@ -55,6 +55,9 @@ function card(overrides: Partial<CatalogCardRecord> & { externalId: string }): C
     sku: null,
     title: "Untitled",
     category: "birthday",
+    ageBand: null,
+    tone: null,
+    unknownAttributes: [],
     // Default to having artwork: a card with no image is deliberately not
     // imported (see the "skips a card with no image" test), so most tests here
     // need a real attachment to exercise the create/update/deactivate paths.
@@ -191,6 +194,108 @@ describe("Catalog sync (e2e)", () => {
       design!.document as { pages: { name: string; elements: unknown[] }[] }
     ).pages.find((p) => p.name === "inside-right");
     expect(insideRight!.elements[0]).toMatchObject({ kind: "text", text: "Well done!" });
+  });
+
+  it("stores what a design says about who it suits", async () => {
+    const externalId = `rec${randomUUID().slice(0, 14)}`;
+    activeCards = [card({ externalId, title: "For a child", ageBand: "child", tone: "funny" })];
+
+    const token = await opsToken();
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const design = await prisma.cardDesign.findUnique({ where: { externalId } });
+    expect(design).toMatchObject({ ageBand: "child", tone: "funny" });
+    // Described, so it is not part of the remaining ops pass.
+    expect(response.body).toMatchObject({ attributes: { undescribed: 0, total: 1 } });
+  });
+
+  it("leaves an undescribed design saying nothing, rather than claiming it suits everybody", async () => {
+    const externalId = `rec${randomUUID().slice(0, 14)}`;
+    activeCards = [card({ externalId, title: "Nobody has looked at this one" })];
+
+    const token = await opsToken();
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const design = await prisma.cardDesign.findUnique({ where: { externalId } });
+    // Null, not "any". Null is nobody having looked; "any" is somebody saying
+    // it suits everybody, and a selection rule has to tell those apart.
+    expect(design!.ageBand).toBeNull();
+    expect(design!.tone).toBeNull();
+    expect(response.body).toMatchObject({ attributes: { undescribed: 1, total: 1 } });
+  });
+
+  it("counts the designs still to describe, so the pass has a progress bar", async () => {
+    const described = `rec${randomUUID().slice(0, 14)}`;
+    const notYet = `rec${randomUUID().slice(0, 14)}`;
+    activeCards = [
+      card({ externalId: described, title: "Described", ageBand: "any", tone: "warm" }),
+      card({ externalId: notYet, title: "Not yet" }),
+    ];
+
+    const token = await opsToken();
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect(response.body).toMatchObject({ attributes: { undescribed: 1, total: 2 } });
+  });
+
+  it("names a value somebody typed that we could not place", async () => {
+    const externalId = `rec${randomUUID().slice(0, 14)}`;
+    activeCards = [
+      card({
+        externalId,
+        title: "Mystery",
+        ageBand: null,
+        unknownAttributes: [{ field: "ageBand", value: "Middle-aged" }],
+      }),
+    ];
+
+    const token = await opsToken();
+    const response = await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    // "Middle-aged" stores null exactly like an empty cell. Without this the
+    // operator would never learn that the work they did was not recorded.
+    const summary = response.body as {
+      attributes: { unknownValues: { externalId: string; field: string; value: string }[] };
+    };
+    expect(summary.attributes.unknownValues).toEqual([
+      { externalId, title: "Mystery", field: "ageBand", value: "Middle-aged" },
+    ]);
+  });
+
+  it("clears a description the operator removed upstream", async () => {
+    const externalId = `rec${randomUUID().slice(0, 14)}`;
+    activeCards = [card({ externalId, title: "Rethought", ageBand: "child", tone: "funny" })];
+    const token = await opsToken();
+    await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    // They looked again and decided it was not a child's card after all.
+    activeCards = [card({ externalId, title: "Rethought" })];
+    await request(app.getHttpServer())
+      .post("/catalog/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    // Airtable is the only author of these, so a cleared cell clearing the
+    // column is correct rather than data loss — there is nowhere else it could
+    // have been set from.
+    const design = await prisma.cardDesign.findUnique({ where: { externalId } });
+    expect(design!.ageBand).toBeNull();
+    expect(design!.tone).toBeNull();
   });
 
   it("updates an existing design in place on re-sync (no duplicate)", async () => {

@@ -514,6 +514,11 @@ model Occasion {
   /// into OrderRecipient.savedDesignId by Phase 3's checkout flow — the design choice
   /// travels with the occasion instead of being re-selected at checkout.
   savedDesignId          String?        @map("saved_design_id")
+  /// The pooled message a standing order chose for this card, picked at
+  /// approval rather than at send so it can be seen before it is printed and
+  /// cannot change under the customer between the two. Null for every card a
+  /// person approved themselves. See docs/adr/0260.
+  standingOrderMessageId String?        @map("standing_order_message_id")
   /// When a birthday-reminder email covering this occasion was sent, so the
   /// daily reminder cron never emails the same upcoming occasion twice. Null
   /// until reminded. See docs/adr/0025.
@@ -532,18 +537,22 @@ model Occasion {
   createdAt              DateTime       @default(now()) @map("created_at")
   updatedAt              DateTime       @updatedAt @map("updated_at")
 
-  recipient       Recipient?       @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  recipient            Recipient?            @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   // Restrict, not the nullable-relation default of SetNull — an approved occasion
   // silently losing its design would be a worse state than blocking the delete.
-  savedDesign     SavedDesign?     @relation(fields: [savedDesignId], references: [id], onDelete: Restrict)
+  savedDesign          SavedDesign?          @relation(fields: [savedDesignId], references: [id], onDelete: Restrict)
+  // SetNull, unlike the design above: rewriting a message pool is an ordinary
+  // thing to do, and it must not be blocked by a card already approved. The
+  // card then falls back to the design's own words rather than vanishing.
+  standingOrderMessage StandingOrderMessage? @relation(fields: [standingOrderMessageId], references: [id], onDelete: SetNull)
   // Deleting the parent Event removes its still-scheduled member occasions.
-  event           Event?           @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  orderRecipients OrderRecipient[]
+  event                Event?                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  orderRecipients      OrderRecipient[]
   // Self-relation: a campaign occasion supersedes the natural occasion it replaces.
   // SetNull, not Cascade — deleting the campaign occasion must never delete the
   // real birthday/renewal it stood in for.
-  supersedes      Occasion?        @relation("OccasionSupersedes", fields: [supersedesOccasionId], references: [id], onDelete: SetNull)
-  supersededBy    Occasion[]       @relation("OccasionSupersedes")
+  supersedes           Occasion?             @relation("OccasionSupersedes", fields: [supersedesOccasionId], references: [id], onDelete: SetNull)
+  supersededBy         Occasion[]            @relation("OccasionSupersedes")
 
   // Prevents the scheduler from double-creating the same occasion instance on retry.
   @@unique([recipientId, type, occasionDate], name: "occasion_idempotency_key")
@@ -589,26 +598,47 @@ model Event {
 // Card designer
 // ---------------------------------------------------------------------------
 
+/// Who a card design suits by age. `any` is the default and most of the
+/// catalog; the useful fact is "this one is specifically for a child". It
+/// degrades safely, which is the point: a recipient's age is unknowable
+/// whenever birthYearKnown is false — every CleanCloud contact by design — so
+/// an `any` card is the only safe thing to send that cohort. See ADR 0259.
+enum CardAgeBand {
+  any
+  child
+  teen
+  adult
+}
+
+/// How a design reads. Matches nothing on a recipient today (nothing says
+/// "likes funny cards"); its near-term value is browsing the public catalog.
+enum CardTone {
+  funny
+  warm
+  elegant
+  simple
+}
+
 model CardDesign {
-  id            String   @id @default(uuid())
+  id            String       @id @default(uuid())
   category      String
   name          String
   /// URL slug for the public catalog — `/cards/<category>/<slug>`. Assigned once
   /// (from the name) and never recomputed: a slug that tracked the name would
   /// break indexed URLs and the QR codes on cards already posted the moment a
   /// title was corrected. See docs/adr/0163-catalog-urls-and-category-pages.md.
-  slug          String   @unique
-  thumbnailUrl  String   @map("thumbnail_url")
+  slug          String       @unique
+  thumbnailUrl  String       @map("thumbnail_url")
   /// DesignDocument JSON — see packages/shared-types/src/card.ts for the shape.
   document      Json
-  isActive      Boolean  @default(true) @map("is_active")
+  isActive      Boolean      @default(true) @map("is_active")
   /// The Airtable record id this design was synced from (null for seeded
   /// templates). Unique so the catalog sync can upsert in place — see
   /// docs/adr/0011-airtable-catalog-sync.md.
-  externalId    String?  @unique @map("external_id")
+  externalId    String?      @unique @map("external_id")
   /// Human-facing product code from Airtable (e.g. "KC-BDAY-GEN-001"), shown
   /// to the ops team. Null for seeded templates.
-  sku           String?  @map("sku")
+  sku           String?      @map("sku")
   /// The artwork's own pixel size, as measured at sync time. Null when the
   /// design predates the measurement or its image could not be read.
   ///
@@ -617,10 +647,16 @@ model CardDesign {
   /// square one. Nothing used to measure that, so "which of our designs are
   /// being cut up" had no answer. These two columns are the answer.
   /// See docs/card-artwork-crop-plan.md.
-  artworkWidth  Int?     @map("artwork_width")
-  artworkHeight Int?     @map("artwork_height")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  artworkWidth  Int?         @map("artwork_width")
+  artworkHeight Int?         @map("artwork_height")
+  /// What this design says about who it suits, authored in Airtable beside the
+  /// artwork. Null means nobody has described it yet — deliberately distinct
+  /// from `any`, which is somebody saying it suits everybody. A selection rule
+  /// must not read silence as a claim. See ADR 0259.
+  ageBand       CardAgeBand? @map("age_band")
+  tone          CardTone?
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
 
   savedDesigns SavedDesign[]
 
@@ -1228,6 +1264,10 @@ model StandingOrderMessage {
   updatedAt       DateTime                   @updatedAt @map("updated_at")
 
   standingOrder StandingOrder @relation(fields: [standingOrderId], references: [id], onDelete: Cascade)
+  /// Cards this message was chosen for. SetNull on the occasion side, so
+  /// rewriting the pool cannot delete a card already approved — it falls back
+  /// to the design's own words rather than vanishing.
+  occasions     Occasion[]
 
   @@index([standingOrderId])
   @@map("standing_order_messages")

@@ -6,9 +6,10 @@ import { AuditService } from "../audit/audit.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { PLATFORM_TIME_ZONE } from "../common/scheduling";
 import { POSTAGE_LEAD_DAYS, computeDispatchDate } from "../occasions/occasion-scheduling.constants";
+import { recipientAgeBand } from "@kudos/shared-types";
 import { standingOrderBlockers } from "./standing-order-state";
 import { standingOrderStateOf } from "./standing-orders.service";
-import { pickStandingOrderDesign } from "./standing-order-design-pick";
+import { pickStandingOrderDesign, pickStandingOrderMessage } from "./standing-order-pick";
 
 /** Nobody triggers this — it is a cron, like auto-send's own actor. */
 const SYSTEM_ACTOR = "system:standing-order";
@@ -25,7 +26,18 @@ export interface StandingOrderApprovalResult {
 /** Everything the run needs about one instruction, in one read. */
 const ORDER_INCLUDE = {
   designs: {
-    include: { savedDesign: { select: { id: true, archivedAt: true } } },
+    include: {
+      savedDesign: {
+        select: {
+          id: true,
+          archivedAt: true,
+          // What the catalog says about the design this was saved from, so the
+          // pick can prefer a card that suits the recipient (ADR 0259). Null
+          // for a member's own uploaded artwork, which has no catalog record.
+          cardDesign: { select: { ageBand: true } },
+        },
+      },
+    },
     orderBy: { createdAt: "asc" },
   },
   messages: { select: { id: true } },
@@ -135,20 +147,34 @@ export class StandingOrderApprovalService {
         recipientId: true,
         occasionDate: true,
         dispatchDateOverridden: true,
+        // Age decides which cards suit this person, and is unknowable whenever
+        // birthYearKnown is false — every CleanCloud contact by design.
+        recipient: { select: { dateOfBirth: true, birthYearKnown: true } },
       },
       orderBy: { occasionDate: "asc" },
     });
     if (due.length === 0) return 0;
 
-    const poolIds = order.designs.map((design) => design.savedDesignId);
+    const pool = order.designs.map((design) => ({
+      savedDesignId: design.savedDesignId,
+      ageBand: design.savedDesign.cardDesign?.ageBand ?? null,
+    }));
+    const messageIds = order.messages.map((message) => message.id);
     let approved = 0;
 
     for (const occasion of due) {
-      const savedDesignId = pickStandingOrderDesign(
-        poolIds,
-        // `recipientId: { not: null }` is in the query above, so this is never
-        // the fallback — it keeps the type honest rather than asserting.
-        occasion.recipientId ?? occasion.id,
+      // `recipientId: { not: null }` is in the query above, so the fallback is
+      // never reached — it keeps the type honest rather than asserting.
+      const recipientId = occasion.recipientId ?? occasion.id;
+      const band = recipientAgeBand(
+        occasion.recipient?.dateOfBirth ?? null,
+        occasion.recipient?.birthYearKnown ?? false,
+        occasion.occasionDate,
+      );
+      const savedDesignId = pickStandingOrderDesign(pool, recipientId, occasion.occasionDate, band);
+      const standingOrderMessageId = pickStandingOrderMessage(
+        messageIds,
+        recipientId,
         occasion.occasionDate,
       );
 
@@ -156,6 +182,7 @@ export class StandingOrderApprovalService {
         status: "approved",
         dispatchOption: "auto_send",
         savedDesignId,
+        standingOrderMessageId,
         postageClass: order.postageClass,
       };
       // Re-timed to the chosen postage class, exactly as the interactive
@@ -190,6 +217,8 @@ export class StandingOrderApprovalService {
         targetId: occasion.id,
         metadata: {
           savedDesignId,
+          standingOrderMessageId,
+          ageBand: band,
           postageClass: order.postageClass,
           standingOrderId: order.id,
         },

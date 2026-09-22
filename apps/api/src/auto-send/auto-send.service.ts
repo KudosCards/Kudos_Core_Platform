@@ -1,8 +1,8 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
-import { Prisma, type Occasion, type Recipient } from "@prisma/client";
-import { type DesignDocument, linkedMessagePageId } from "@kudos/shared-types";
+import type { Occasion, Recipient } from "@prisma/client";
+import { type DesignDocument, applyCardMessage, linkedMessagePageId } from "@kudos/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { OpsActivityService } from "../ops-activity/ops-activity.service";
@@ -52,7 +52,12 @@ export interface AutoSendResult {
   skipped: AutoSendSkip[];
 }
 
-type OccasionWithRecipient = Occasion & { recipient: Recipient | null };
+type OccasionWithRecipient = Occasion & {
+  recipient: Recipient | null;
+  /** The message a standing order chose for this card, picked at approval
+   * (ADR 0260). Null for every card a person approved themselves. */
+  standingOrderMessage?: { text: string } | null;
+};
 
 /** Who the card was for, as a customer would name them. Falls back to the
  * occasion's own title for the one skip where the contact is gone. */
@@ -99,7 +104,7 @@ export class AutoSendService {
         dispatchOption: "auto_send",
         dispatchDate: { lte: today },
       },
-      include: { recipient: true },
+      include: { recipient: true, standingOrderMessage: { select: { text: true } } },
     });
 
     const result: AutoSendResult = { due: due.length, sent: 0, skipped: [] };
@@ -398,6 +403,15 @@ export class AutoSendService {
         // loud rather than sending a card with no artwork in it.
         throw new ConflictException(`Design ${savedDesignId} is missing`);
       }
+      // The chosen message goes into the card's own copy, never into the saved
+      // design: the design is the customer's and is shared by every card made
+      // from it. A design with no message slot is left exactly as it is and
+      // carries its own words — see ADR 0260 for why that is preferred to
+      // refusing to send.
+      const document = occasion.standingOrderMessage
+        ? applyCardMessage(design.document as DesignDocument, occasion.standingOrderMessage.text)
+        : (design.document as DesignDocument);
+
       const linkedPageId = linkedMessagePageId(design.document as DesignDocument | null);
       let messagePageId: string | null = null;
       if (linkedPageId) {
@@ -427,7 +441,7 @@ export class AutoSendService {
           savedDesignId,
           // The card's own copy, taken in the same transaction that reads the
           // design — see docs/order-artwork-plan.md.
-          documentSnapshot: design.document as Prisma.InputJsonValue,
+          documentSnapshot: document,
           messagePageId,
           shippingAddressLine1: addressLine1,
           shippingAddressLine2: recipient.addressLine2,

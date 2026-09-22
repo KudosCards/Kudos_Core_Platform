@@ -70,6 +70,16 @@ export const standingOrderDesignSchema = z.object({
   savedDesignId: z.string().uuid(),
   name: z.string(),
   archived: z.boolean(),
+  /**
+   * False when this design has text on its inside page that we cannot tell
+   * apart from a message, so a chosen message is not printed on it and the
+   * card carries the design's own words (ADR 0260).
+   *
+   * Reported rather than refused: a birthday with no card at all is the larger
+   * failure. But a subscriber who wrote five messages deserves to know which
+   * of their cards will not use them, at the point they choose them.
+   */
+  takesMessage: z.boolean(),
 });
 export type StandingOrderDesign = z.infer<typeof standingOrderDesignSchema>;
 

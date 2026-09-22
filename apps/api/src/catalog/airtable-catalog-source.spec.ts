@@ -90,6 +90,11 @@ describe("AirtableCatalogSource", () => {
       {
         externalId: "rec1",
         sku: "KC-BDAY-GEN-002",
+        // Undescribed: this fixture's table has no Age Band or Tone column at
+        // all, which is the state every catalog starts in.
+        ageBand: null,
+        tone: null,
+        unknownAttributes: [],
         title: "Happy Birthday - Balloons",
         category: "birthday",
         frontImage: {
