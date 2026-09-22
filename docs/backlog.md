@@ -103,6 +103,25 @@ has asked for. See `docs/card-print-quality-plan.md`, P8.
 
 ---
 
+## Product
+
+### "Click and forget" — standing approval for a list of contacts
+
+Business customers keep saying a version of the same thing: they love the idea
+and do not have time to keep on top of it, and would like to add contacts once
+and trust us to fulfil. That is close to what the platform already does, and
+the useful part of the scoping was finding the five places it stops and waits
+for a human.
+
+One of them is worth pulling forward whatever happens to the rest: a card that
+does **not** go out tells the customer nothing today. `AutoSendService` notifies
+only on success, and audits every failure to a log nobody reads. That is
+survivable while customers are still watching and fatal the moment we tell them
+they need not.
+
+Scoped in `docs/click-and-forget-plan.md`, with five questions that change the
+build and one worth asking the customers themselves.
+
 ## Scope and messaging
 
 ### Say what we actually serve, to visitors who are not in the UK
