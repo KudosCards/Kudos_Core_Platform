@@ -1,7 +1,7 @@
 # Click and forget
 
-Scoping only — nothing built, and there are five questions at the end that
-change the shape of it.
+Scoping only — nothing built. The five questions this started with are
+answered; three still-open ones are at the end.
 
 ## What the feedback is asking for
 
@@ -100,96 +100,193 @@ the code and the data model I would suggest **standing order**: British, instant
 understood by a business user, and it is literally what this is — an instruction
 set once and funded from a balance. It collides with nothing.
 
-## Questions, and why each one changes the build
+## The answers, and what they cost
 
-**1. Which card goes out?**
+All five questions are answered. Three of the answers are cheaper than they
+look, one is dearer, and one of them cannot be built at all today for a reason
+that is nobody's fault.
 
-The crux. Options, roughly in ascending order of effort and of quality:
+### 1. A chosen set of cards, picked per recipient — **blocked on the catalog, not the code**
 
-- One standing design per list, used for every card.
-- One per occasion type — a birthday design, a thank-you design.
-- A small rotation, so the same contact does not get an identical card each year.
+> They select all the cards they like, and the automation selects one based on
+> the receiver's profile.
 
-This is a product decision about what a "forget about it" customer would be
-embarrassed to have sent. A six-year-old and a sixty-year-old receiving the same
-design is the obvious risk; so is the same person receiving the same card three
-years running.
+The matching needs two things: signals about the recipient, and attributes on
+the cards to match them against. **We have some of the first and none of the
+second.**
 
-**2. Which occasions are in scope — birthdays only, or key dates too?**
+A recipient carries: first and last name, date of birth (with
+`birthYearKnown`), email, address, `tags`, and `customFields`. There is **no
+gender, no relationship, no interests** — and none of those should be invented,
+because a customer who never told us cannot be asked to live with our guess.
 
-Birthdays are scheduled automatically from the contact's date of birth, so they
-need nothing new. `RecipientKeyDate` (work anniversaries, renewals) is a
-different and larger surface. Starting with birthdays only is defensible and
-much smaller.
+A card design carries: `category`, `name`, `slug`, `sku`, `thumbnailUrl` and its
+`document`. **Nothing describes who it suits.** There is no age band, no tone,
+no "for a child" or "for a 60th". So "pick a card that fits this person" has
+nothing to pick on, and the honest version of that sentence today is "pick one
+of their chosen cards at random".
 
-**3. When the wallet is empty, what should happen?**
+Two consequences worth naming plainly:
 
-Three genuinely different products:
+- **The catalog has to be described before any matching is possible.** An age
+  band and a tone on each birthday design is a modest, one-time piece of ops
+  work — and it lands on the same 217 designs that are about to be re-exported
+  for `docs/ops/catalog-re-export.md`. Doing both in one pass is the difference
+  between one trip through the catalog and two.
+- **Age is unknown for exactly the contacts a CRM sync brings in.** `birthYearKnown`
+  is false whenever the source gave a day and month and no year — which is every
+  CleanCloud contact by design (ADR 0252), and any CRM whose birthday field has
+  no year. For those contacts, age-based selection is not degraded, it is
+  impossible. The rule has to have a defensible answer for "we do not know how
+  old this person is", and that answer will be common.
 
-- **Skip and tell them loudly.** Safest; the card is missed.
-- **Send anyway and let the balance go negative.** We are now extending credit,
-  which is a commercial and legal decision, not an engineering one.
-- **Auto top-up from a stored card.** The best experience by far and the largest
-  build: off-session payments, SCA/3DS exemptions and failure handling.
+**The strongest signal we actually have is the one the subscriber gives us:
+`tags`.** "Staff", "under-12s", "VIP clients" are the subscriber's own words
+about their own people, they already exist, and they are more reliable than
+anything we could infer. I would build the rule on tags first, and treat age as
+an optional refinement for contacts where we know it.
 
-**4. What does "permission to bill before each order goes out" mean, exactly?**
+### 2. Birthdays only — **agreed, and it is already scheduled**
 
-Reading your description, I believe you mean _permission to debit the wallet
-without approving each card_ — which is a consent and UI change, and small.
+Birthday occasions are created nightly from each contact's date of birth, so
+this phase needs nothing new for the "when". `RecipientKeyDate` stays out.
 
-The other reading is _permission to charge their card each time_, which is
-Stripe off-session payments, 3DS challenges that arrive when nobody is looking,
-and a dunning flow. Materially different build, materially different promise. I
-have assumed the first and would like that confirmed before anything is written.
+### 3. Auto top-up from a stored card, pause and email when there is none — **and we are further along than expected**
 
-**5. Is this a Pro feature, or a new tier?**
+`Account.stripeCustomerId` exists, `StripeCustomerService.getOrCreate` manages
+it, and subscriptions are created against that customer. So **a Pro subscriber
+already has a card on file** — it is the card paying for Pro. We do not have to
+ask them for one.
 
-`autoSendEnabled` is already false on Free and true on Pro and above, so the
-plumbing exists either way. Whether click-and-forget is simply _how Pro feels_,
-or something sold separately, is a pricing decision that changes what the
-dashboard should say.
+What is missing is the guarantee: nothing in the codebase sets or records a
+`default_payment_method` for off-session use. So the build is a
+`SetupIntent`-or-read-the-subscription step to establish a usable method, then
+off-session charges. The codebase already knows this territory —
+`subscriptions.service.ts` handles a customer who "abandoned an SCA/3DS
+challenge" — and that is exactly the failure that must be handled here, because
+a 3DS challenge on an automatic top-up arrives when nobody is looking.
 
-## The shape it would take
+The pause-and-email path is therefore not an edge case. It is the normal
+outcome of a card expiring, and it will happen to every long-lived account
+eventually.
 
-Conditional on the answers above, and deliberately ordered so the promise is
-never bigger than the product — the same sequencing rule the UK scope work
-followed, and for the same reason.
+### 4. What is the best outcome — **your answer to 3 settles this**
 
-- **C1 — Tell people when a card does not go.** Gap 3 and gap 5. Independently
-  worth doing: it makes today's auto-send honest, and it is the thing that makes
-  standing approval safe to offer at all. **Nothing else should ship first.**
-- **C2 — Watch the wallet.** A balance threshold, a warning with enough notice
-  to act, and a projection: "at your current rate this funds cards until March".
-  A customer who is not watching needs the warning to arrive early, not on the
-  day.
-- **C3 — The standing instruction.** The data model: a list, a design rule, an
-  occasion scope, on/off, and a record of who turned it on and when. Plus the
-  consent it represents, captured explicitly rather than implied by a toggle.
-- **C4 — Automatic approval, bounded.** Occasions in scope for an active
-  standing order skip the approvals queue. Everything in gap 5 still stops the
-  card — it just gets surfaced now rather than swallowed.
-- **C5 — The dashboard.** The click, and the honest status afterwards: what is
-  covered, what is funded, what needs attention. The screen a customer opens
-  once a quarter to confirm they were right to stop worrying.
-- **C6 — The messaging.** Only once C1–C5 are true.
+Question 4 asked what "permission to bill" means. Answer 3 decides it: we need a
+stored card, so the off-session machinery is being built regardless.
 
-## What I would not do
+Given that, the best outcome for the platform is **not** to add a second money
+path. Keep the wallet as the single ledger every order is paid from — it already
+is, for auto-send — and make auto top-up the thing that keeps it funded. One
+concept for the customer ("your balance, and it refills itself"), one payment
+path in the code, and every existing guarantee about wallet debits still holds.
 
-- **Silently send a card when something is wrong.** Every stop condition in gap
-  5 exists for a reason; the returned-address hold especially.
+Billing a card per order instead would mean two ways an order can be paid,
+reconciled separately, failing differently. That is the version that looks
+simpler in a diagram and is worse everywhere else.
+
+### 5. Pro and above, visible on Free — **agreed, and the gate already exists**
+
+`PlanEntitlement.autoSendEnabled` is false on Free and true on Pro, Centre and
+Enterprise, and both `AutoSendService` and `OccasionsService` already check it.
+Showing the feature on Free with an upgrade prompt is a UI decision with no new
+plumbing.
+
+## The AI messages, and the one distinction that matters
+
+> Add AI into creating the personalised messages — allowing the subscriber to
+> create multiple personalised messages that can be automated.
+
+There is **no AI dependency in the codebase today**, so this is a new vendor, a
+new cost and a new failure mode. All of that is manageable. One design decision
+is not, and it is the difference between a good feature and an unrecoverable
+one.
+
+**AI helps the subscriber write a pool of messages, which they read and approve.
+The automation then picks from that approved pool.** It does not generate a
+message at send time.
+
+A card is printed and posted. It cannot be recalled, edited or apologised for
+before it arrives. A message generated at 7am by a model nobody read, printed at
+9am and in the post by noon, is a class of mistake this platform has no way to
+undo — and the whole point of the product is a card somebody is pleased to
+receive. Generation at authoring time is reviewable; generation at send time is
+not.
+
+There is a second reason, and it is the one that makes this easy rather than a
+compromise. **The messages do not need to contain anybody's personal data.**
+They contain merge tokens — `{firstName}`, `{name}`, and any custom-field key —
+which the existing machinery substitutes at print time (ADR 0031, ADR 0033). So
+the prompt is "write me five warm birthday messages for my customers" and the
+output is `"Happy birthday {firstName} — hope it is a good one."`
+
+**No recipient's name, birthday or address ever leaves the platform.** For a
+product whose B2B customers are the data controller for their own contacts, and
+whose privacy policy already commits to sub-processor diligence, that turns a
+difficult data-protection conversation into a short one.
+
+## Reducing the barrier, since it is both
+
+You said to assume the barrier is both the approving and the choosing. The two
+have different answers:
+
+- **The approving** is solved by the standing instruction (C3/C4 below) and by
+  telling people when something stops (C1). That is the mechanical half.
+- **The choosing** is solved by making the set-up have good defaults rather than
+  an empty form. A subscriber who picks nothing should still end up with
+  something sensible: every active birthday design in their chosen tags, and a
+  starter set of messages they can accept or rewrite. **An empty state that
+  demands twelve decisions is the barrier**, and it is the one we would be
+  adding if we are not careful.
+
+## Phases
+
+Ordered so the promise is never bigger than the product.
+
+- **C1 — Tell people when a card does not go.** Unchanged from the first draft,
+  and still the thing that ships before anything else. Today a skip is audited
+  to a log nobody reads. Until that is fixed, standing approval is a promise we
+  cannot keep.
+- **C2 — Watch the wallet, then refill it.** The low-balance threshold and
+  projection, then auto top-up off-session, then the pause-and-email path when
+  there is no usable card. The order matters: the warning is useful on its own
+  and must work even when top-up fails.
+- **C3 — Describe the catalog.** Age band and tone on each birthday design,
+  done in the same pass as the re-export. Ops work, not code, and it unblocks
+  any selection rule better than random.
+- **C4 — The standing instruction.** The model — a list, a chosen set of
+  designs, a message pool, birthdays, on/off — plus the consent it represents,
+  recorded explicitly with who turned it on and when.
+- **C5 — Selection and messages.** The rule that picks a design and a message
+  per card, and the AI-assisted authoring that fills the pool. Deliberately
+  after C3, because before it there is nothing to select on.
+- **C6 — Automatic approval, bounded.** Occasions in scope skip the approvals
+  queue. Every existing stop condition still stops the card, now visibly.
+- **C7 — The dashboard, and the Free-tier prompt.**
+- **C8 — The messaging.** Only once C1–C7 are true.
+
+## What I would still not do
+
+- **Generate a message at send time.** See above.
+- **Infer anything about a recipient we were not told.** Gender from a first
+  name is the obvious temptation and it is wrong often enough to be memorable
+  for the wrong reasons.
+- **Send a card when a stop condition is live.** The returned-address hold
+  especially — it exists so we do not fire a second card at an address the first
+  one came back from.
 - **Turn it on for existing accounts by default.** Standing permission to spend
-  has to be given, not inherited.
-- **Build it on the approvals queue.** A customer who never opens the dashboard
-  gets no value from a queue, however good it is.
+  is given, not inherited.
+- **Let the empty state be a wall of choices.** See the barrier note above.
 
-## What I need to find out before building
+## Still open
 
-Beyond the five questions, one thing about the customers in that feedback: **is
-the barrier the approving, or the choosing?** "I don't have time to keep on top
-of this" could mean either, and the answer changes question 1 completely. If it
-is the approving, one standing design is plenty. If it is the choosing, they
-want us to pick well on their behalf, which is a different and more interesting
-product.
-
-That is worth asking two or three of them directly before we design around a
-guess.
+1. **What does the selection rule do when it knows nothing?** A contact with no
+   tags and no birth year, which is the CleanCloud default. Random from the
+   chosen set is defensible and should be stated rather than discovered.
+2. **How many messages is a pool?** One is not personalisation; twenty is a
+   chore. A starter set of five, editable, is a guess I would like to test
+   rather than assume.
+3. **Which AI vendor, and on what terms?** A data-processing agreement and a
+   UK/EU processing region are the two things that matter, and they are a
+   procurement question rather than an engineering one — made much easier by the
+   fact that no personal data is in the prompt.

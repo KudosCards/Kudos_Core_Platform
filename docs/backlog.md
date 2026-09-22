@@ -119,8 +119,22 @@ only on success, and audits every failure to a log nobody reads. That is
 survivable while customers are still watching and fatal the moment we tell them
 they need not.
 
-Scoped in `docs/click-and-forget-plan.md`, with five questions that change the
-build and one worth asking the customers themselves.
+Scoped in `docs/click-and-forget-plan.md`, now with the shape settled: card
+pool plus AI-drafted message pool, birthdays only, auto top-up from a stored
+card, Pro and above with the Free tier seeing it locked. Phases C1 to C8.
+
+Two things surfaced by the scoping belong here rather than there, because they
+are ops work and they gate the build:
+
+- **The catalog cannot describe itself.** `CardDesign` carries a category, a
+  name, a slug, a SKU and a thumbnail, and nothing that says who a design
+  suits. Picking a card from a pool "to fit the recipient" has nothing to read.
+  Describing the 217 designs is the same pass over the catalog as the A4
+  re-export, so it should ride along with it.
+- **Recipients carry no attribute to match against** beyond name, birthday and
+  the subscriber's own tags — and age is unknowable wherever `birthYearKnown`
+  is false, which is every CleanCloud contact by design (ADR 0252). Tags are
+  the only honest signal we have today.
 
 ## Scope and messaging
 
