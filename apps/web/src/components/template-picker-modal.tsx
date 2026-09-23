@@ -28,12 +28,19 @@ export function TemplatePickerModal({
   onClose,
   onPick,
   busyTemplateId,
+  title = "Start a new design",
+  description = "Pick a template to open in the editor — we’ll bring you back here with it ready to send.",
 }: {
   templates: CardDesign[];
   open: boolean;
   onClose: () => void;
   onPick: (template: CardDesign) => void;
   busyTemplateId?: string | null;
+  /** What this chooser is for, in the caller's terms. Two screens open it and
+   *  they are doing different things — one starts a design to send now, the
+   *  other adds a card to a standing pool — and the heading should say which. */
+  title?: string;
+  description?: string;
 }) {
   const [category, setCategory] = useState<string>(ALL);
   const categories = useMemo(
@@ -46,14 +53,12 @@ export function TemplatePickerModal({
   );
 
   return (
-    <Modal open={open} onClose={onClose} title="Start a new design">
+    <Modal open={open} onClose={onClose} title={title}>
       {templates.length === 0 ? (
         <p className="text-sm text-muted">No templates are available yet.</p>
       ) : (
         <div className="flex flex-col gap-3">
-          <p className="text-sm text-muted">
-            Pick a template to open in the editor — we’ll bring you back here with it ready to send.
-          </p>
+          <p className="text-sm text-muted">{description}</p>
           {categories.length > 1 && (
             <div className="flex flex-wrap gap-1.5">
               {[ALL, ...categories].map((c) => (

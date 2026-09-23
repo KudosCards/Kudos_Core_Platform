@@ -2,6 +2,7 @@ import {
   SEEDED_MESSAGE_ELEMENT_ID,
   applyCardMessage,
   buildCardDocument,
+  designTakesMessage,
   findCardMessageSlot,
   type DesignDocument,
 } from "@kudos/shared-types";
@@ -196,5 +197,67 @@ describe("putting a message on a card", () => {
     const next = applyCardMessage(document, "Happy birthday {firstName}!");
     const inside = next.pages.find((page) => page.name === "inside-right")!;
     expect(inside.elements[0]).toMatchObject({ text: "Happy birthday {firstName}!" });
+  });
+});
+
+describe("designTakesMessage", () => {
+  /**
+   * Whether a chosen message would actually be printed — which the page says
+   * out loud, by name, for every card it thinks cannot carry one.
+   *
+   * It is asked by running the real placement over the design and looking for
+   * what came back. The first version looked for NUL characters that
+   * `JSON.stringify` had already escaped, so the answer was always "no" and
+   * every design was reported as unable to take a message. These are the cases
+   * that would have said so.
+   */
+
+  it("says yes to a card with a message block inside", () => {
+    expect(designTakesMessage(buildCardDocument("https://art.test/a.png", "Happy Birthday!"))).toBe(
+      true,
+    );
+  });
+
+  it("says yes to a blank inside page, because one gets written", () => {
+    // A member's own artwork starts from a blank document, and a catalog card
+    // with no Airtable inside message has no block either. Refusing those was
+    // the mistake the e2e caught in C5.
+    expect(designTakesMessage(buildCardDocument("https://art.test/a.png", null))).toBe(true);
+  });
+
+  it("says no when two blocks of text make the message ambiguous", () => {
+    const document: DesignDocument = {
+      version: 1,
+      pages: [
+        { name: "front", elements: [] },
+        {
+          name: "inside-right",
+          elements: [text("a", "Happy Birthday!"), text("b", "From all of us")],
+        },
+      ],
+    };
+    expect(designTakesMessage(document)).toBe(false);
+  });
+
+  it("says no when there is no inside page at all", () => {
+    expect(designTakesMessage({ version: 1, pages: [{ name: "front", elements: [] }] })).toBe(
+      false,
+    );
+  });
+
+  it("says no to something that is not a document", () => {
+    expect(designTakesMessage(null)).toBe(false);
+    expect(designTakesMessage(undefined)).toBe(false);
+    expect(designTakesMessage({})).toBe(false);
+  });
+
+  it("does not mistake a subscriber's own words for the probe", () => {
+    // The probe is plain text now, so the only thing keeping it from colliding
+    // with real writing is that nobody writes this. Pinned so a future
+    // shortening of it has to argue with a test.
+    const document = buildCardDocument(null, "kudos-message-probe");
+    expect(designTakesMessage({ ...document, pages: [{ name: "front", elements: [] }] })).toBe(
+      false,
+    );
   });
 });

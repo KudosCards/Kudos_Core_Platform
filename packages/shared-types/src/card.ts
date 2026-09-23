@@ -239,6 +239,24 @@ export const savedDesignSchema = z.object({
 });
 export type SavedDesign = z.infer<typeof savedDesignSchema>;
 
+/**
+ * `GET /saved-designs` — a saved design plus the occasion its catalog template
+ * was filed under.
+ *
+ * A separate schema rather than an optional field on `savedDesignSchema`,
+ * because "the category is missing" and "this design has no category" are
+ * different facts and an optional field cannot tell a reader which it is
+ * holding. Here `category` is always present and `null` means the design has no
+ * catalog row behind it — a member's own uploaded artwork.
+ *
+ * Carried so the standing-order pool can say that a good-luck card is about to
+ * be posted for somebody's birthday. See `catalogSaysBirthday`.
+ */
+export const savedDesignListItemSchema = savedDesignSchema.extend({
+  category: z.string().nullable(),
+});
+export type SavedDesignListItem = z.infer<typeof savedDesignListItemSchema>;
+
 /** Result of DELETE /saved-designs/:id — whether the design was fully removed or
  * archived (kept for the order/occasion history that still references it). */
 export const deleteSavedDesignResultSchema = z.object({

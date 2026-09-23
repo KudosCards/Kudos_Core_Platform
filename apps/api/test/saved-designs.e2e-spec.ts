@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
-import { accountSchema } from "@kudos/shared-types";
+// The published contract, not a local restatement of it: this test exists to
+// prove the wire shape the web app parses is the one the API sends.
+import { accountSchema, savedDesignListItemSchema } from "@kudos/shared-types";
 import type { App } from "supertest/types";
 import request from "supertest";
 import { z } from "zod";
@@ -297,6 +299,63 @@ describe("Saved designs (e2e)", () => {
       .expect(200);
     const designs = z.array(savedDesignSchema).parse(listResponse.body);
     expect(designs.some((d) => d.id === created.id && d.cardDesignId === null)).toBe(true);
+  });
+
+  it("says which occasion each library design is for, and stays silent where nothing does", async () => {
+    // Click and forget sends birthdays and only birthdays, and its pool accepts
+    // any saved design. The library is where a caller learns that one of them
+    // is a good-luck card — so the occasion has to survive the copy from the
+    // catalog into the account's own library.
+    const { token, accountId } = await signUp();
+    await prisma.account.update({ where: { id: accountId }, data: { planId: "pro" } });
+
+    const templates = z
+      .array(cardDesignSchema)
+      .parse(
+        (
+          await request(app.getHttpServer())
+            .get("/card-designs")
+            .set("Authorization", `Bearer ${token}`)
+            .expect(200)
+        ).body,
+      );
+    const birthday = templates.find((template) => template.category === "birthday");
+    expect(birthday).toBeDefined();
+
+    const fromTemplate = savedDesignSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/saved-designs")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ cardDesignId: birthday?.id, name: "Birthday copy" })
+          .expect(201)
+      ).body,
+    );
+    const ownArtwork = savedDesignSchema.parse(
+      (
+        await request(app.getHttpServer())
+          .post("/saved-designs")
+          .set("Authorization", `Bearer ${token}`)
+          .send({ name: "My own artwork", document: artworkDocument })
+          .expect(201)
+      ).body,
+    );
+
+    const designs = z
+      .array(savedDesignListItemSchema)
+      .parse(
+        (
+          await request(app.getHttpServer())
+            .get("/saved-designs")
+            .set("Authorization", `Bearer ${token}`)
+            .expect(200)
+        ).body,
+      );
+
+    expect(designs.find((design) => design.id === fromTemplate.id)?.category).toBe("birthday");
+    // Null, not absent and not "uncategorised": nobody filed this under an
+    // occasion, and that is a different fact from a template that has none.
+    expect(designs.find((design) => design.id === ownArtwork.id)?.category).toBeNull();
   });
 
   /**

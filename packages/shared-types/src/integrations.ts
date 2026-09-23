@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { contactReadinessSchema, type ContactReadiness } from "./recipient";
 
 /**
  * The normalized contact shape the inbound integrations endpoint accepts —
@@ -39,14 +40,8 @@ export type IngestContactsInput = z.infer<typeof ingestContactsInputSchema>;
  * five hundred new contacts and leave the customer with a dozen they can
  * actually send anything to. See ADR 0214.
  */
-export const ingestReadinessSchema = z.object({
-  total: z.number().int().nonnegative(),
-  withDateOfBirth: z.number().int().nonnegative(),
-  withPostalAddress: z.number().int().nonnegative(),
-  /** Both — the only ones a birthday card can reach. */
-  sendable: z.number().int().nonnegative(),
-});
-export type IngestReadiness = z.infer<typeof ingestReadinessSchema>;
+export const ingestReadinessSchema = contactReadinessSchema;
+export type IngestReadiness = ContactReadiness;
 
 /**
  * The result summary the ingest endpoint returns.

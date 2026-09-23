@@ -119,6 +119,37 @@ export function cardCategoryLabel(rawCategory: string): string {
   return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }
 
+/**
+ * The value the Airtable sync writes when a design's "Occasion" cell is empty
+ * (`airtable-catalog-source.ts`). Nobody said what this card is for — which is
+ * not the same as saying it suits everything.
+ */
+export const UNCATEGORISED_CARD_CATEGORY = "uncategorised";
+
+/**
+ * Does the catalog say this is a birthday card?
+ *
+ * Three answers, and the third is the point:
+ *
+ * - `true` — it resolves to the birthday category.
+ * - `false` — the catalog said something, and it was not birthday. A good-luck
+ *   card whose category never made it onto the published vocabulary still
+ *   answers `false`: an unrecognised word is not a birthday either.
+ * - `null` — nobody said. No category at all (a member's own artwork has no
+ *   catalog row behind it) or the sync's `uncategorised` fallback.
+ *
+ * Callers must not collapse `null` into `false`. The difference is whether we
+ * may tell a subscriber their card is for the wrong occasion, and a warning we
+ * cannot stand behind is worse than no warning at all — the same distinction
+ * ADR 0259 draws between a null attribute and a deliberate "any".
+ */
+export function catalogSaysBirthday(rawCategory: string | null | undefined): boolean | null {
+  if (rawCategory == null) return null;
+  const normalised = normaliseCategoryKey(rawCategory);
+  if (normalised === "" || normalised === UNCATEGORISED_CARD_CATEGORY) return null;
+  return resolveCardCategory(rawCategory)?.slug === "birthday";
+}
+
 /** `"Thank_You "` → `"thank you"`. Internal to the matching above. */
 function normaliseCategoryKey(value: string): string {
   return value.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();

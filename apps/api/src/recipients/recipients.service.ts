@@ -1071,8 +1071,29 @@ export class RecipientsService {
    * agrees with the contacts list filter and the dashboard "needs address" count
    * — one definition of postable, in one place (ADR 0067).
    */
-  private async readinessFor(accountId: string, source: string): Promise<IngestReadiness> {
-    const from = { accountId, source, status: "active" as const };
+  private readinessFor(accountId: string, source: string): Promise<IngestReadiness> {
+    return this.readinessOf({ accountId, source, status: "active" });
+  }
+
+  /**
+   * The same four counts, for the contacts a standing order would cover.
+   *
+   * `null` is everybody; a list id is that list's hand-picked membership. Both
+   * go through `readinessOf`, so "postable" here is the same postable the
+   * contacts page, the dashboard and a CRM import mean — which is the only
+   * reason this number is worth putting under somebody's audience. See
+   * ADR 0264.
+   */
+  readinessForAudience(accountId: string, listId: string | null): Promise<IngestReadiness> {
+    return this.readinessOf({
+      accountId,
+      status: "active",
+      ...(listId ? { listMemberships: { some: { listId } } } : {}),
+    });
+  }
+
+  /** One definition of "can we send to these", counted four ways. */
+  private async readinessOf(from: Prisma.RecipientWhereInput): Promise<IngestReadiness> {
     const postable = { NOT: MISSING_ADDRESS_WHERE };
     const hasDob = { dateOfBirth: { not: null } };
 

@@ -7,8 +7,7 @@ import {
 } from "./standing-order.consent";
 import { standingOrderBlockers, type StandingOrderState } from "./standing-order-state";
 import {
-  applyCardMessage,
-  type DesignDocument,
+  designTakesMessage,
   type StandingOrder,
   type StandingOrderAudience,
 } from "@kudos/shared-types";
@@ -16,6 +15,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { runSerializable } from "../common/run-serializable";
+import { MessageDraftingService } from "./message-drafting.service";
 import type { SaveStandingOrderDto, StandingOrderAudienceDto } from "./dto/save-standing-order.dto";
 
 /** Everything a view of the instruction needs, in one read. */
@@ -30,20 +30,6 @@ const STANDING_ORDER_INCLUDE = {
 } satisfies Prisma.StandingOrderInclude;
 
 type StandingOrderRow = Prisma.StandingOrderGetPayload<{ include: typeof STANDING_ORDER_INCLUDE }>;
-
-/**
- * Whether a chosen message would actually be printed on this design.
- *
- * Asked by running the real thing rather than reimplementing its rule: a second
- * copy of "where does a message go" would drift from the one that prints, and
- * the drift would show as a page promising a message that never appears.
- */
-function takesMessage(document: unknown): boolean {
-  const design = document as DesignDocument | null;
-  if (!design?.pages) return false;
-  const probe = "\u0000kudos-probe\u0000";
-  return JSON.stringify(applyCardMessage(design, probe)).includes(probe);
-}
 
 /** The row, reduced to what decides whether it runs — the one shape the shared
  * rule is written against, so the view and the cron cannot feed it differently. */
@@ -84,6 +70,7 @@ export class StandingOrdersService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
+    private readonly drafting: MessageDraftingService,
   ) {}
 
   /** The account's instruction, or the empty one they would start from. Reading
@@ -336,6 +323,10 @@ export class StandingOrdersService {
       consentStatement: [...STANDING_ORDER_CONSENT_STATEMENT],
       consentVersion: STANDING_ORDER_CONSENT_VERSION,
       planAllows,
+      // A fact about this deployment, not about the instruction — but this page
+      // is the only thing that asks, and a button that apologises is worse than
+      // no button (ADR 0263).
+      messageDraftingAvailable: this.drafting.available(),
     };
     if (!row) {
       return {
@@ -367,7 +358,7 @@ export class StandingOrdersService {
         savedDesignId: design.savedDesignId,
         name: design.savedDesign.name,
         archived: design.savedDesign.archivedAt !== null,
-        takesMessage: takesMessage(design.savedDesign.document),
+        takesMessage: designTakesMessage(design.savedDesign.document),
       })),
       messages: row.messages.map((message) => ({
         id: message.id,

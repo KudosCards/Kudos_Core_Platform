@@ -141,3 +141,23 @@ export const importRecipientRowSchema = z.object({
   email: z.string().email().optional(),
 });
 export type ImportRecipientRow = z.infer<typeof importRecipientRowSchema>;
+
+/**
+ * How many of a set of contacts a birthday card can actually reach.
+ *
+ * A card needs a date of birth to know when and a postal address to know
+ * where, and both are optional everywhere they come from. Asked in two places
+ * now — after a CRM import (ADR 0214), and by click and forget about the
+ * audience somebody is handing over (ADR 0264) — which is why it is one shape
+ * rather than two counts that could disagree.
+ */
+export const contactReadinessSchema = z.object({
+  total: z.number().int().nonnegative(),
+  withDateOfBirth: z.number().int().nonnegative(),
+  /** Enough of an address to post to — the same definition the contacts list
+   *  and the dashboard's "needs address" count use. */
+  withPostalAddress: z.number().int().nonnegative(),
+  /** Both — the only ones a birthday card can reach. */
+  sendable: z.number().int().nonnegative(),
+});
+export type ContactReadiness = z.infer<typeof contactReadinessSchema>;

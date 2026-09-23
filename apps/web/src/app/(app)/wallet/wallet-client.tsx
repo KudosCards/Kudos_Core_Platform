@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { WalletEntryType, WalletSummary } from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
-import { AutoTopUpCard } from "./auto-top-up-card";
+import { AutoTopUpCard } from "@/components/auto-top-up-card";
 
 /** Preset top-up amounts in pence, plus a custom field. */
 const PRESETS_MINOR = [1000, 2500, 5000];
