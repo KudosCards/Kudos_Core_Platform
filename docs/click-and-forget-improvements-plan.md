@@ -37,12 +37,12 @@ behind them. They are not equally serious.
    can arrive as a good-luck card, silently, every year. Every saved design
    knows where it came from (`SavedDesign.cardDesignId` → `CardDesign.category`),
    so this is visible to us and we simply never look.
-5. **The page never says what it will do.** "Everybody — every contact with a
+5. **The page never says what it will do.** _(Fixed, ADR 0264.)_ "Everybody — every contact with a
    birthday on record" does not say that this is 26 people, or that 8 of them
    have no postal address and will produce a skip notice rather than a card.
    `RecipientsService.readinessFor` already computes precisely this quartet —
    total, with a birthday, with an address, sendable — for CRM imports.
-6. **The money and the birthdays are never shown together.** The consent
+6. **The money and the birthdays are never shown together.** _(Fixed, ADR 0264.)_ The consent
    statement says cards are paid from the wallet and that we will tell you when
    the balance will not cover one. The page then shows no balance, no
    projection, and no way to switch on the automatic top-up that exists to
@@ -125,7 +125,7 @@ comes from the catalog row behind the saved design, so a design uploaded as
 custom artwork has no category and is never warned about, which is correct:
 silence is not a claim.
 
-### D4 — Say what it will do, before it does it
+### D4 — Say what it will do, before it does it — **built (ADR 0264)**
 
 Under the audience, the facts: **26 contacts · 24 with a birthday · 22 with an
 address**. Computed by reusing `readinessFor`'s definition rather than counting
@@ -136,7 +136,7 @@ This is the sentence that turns "set it up once" into something a person can
 believe, and it is also the moment to say that the two contacts without an
 address will produce a notice rather than a card.
 
-### D5 — The money, at the point the promise is made
+### D5 — The money, at the point the promise is made — **built (ADR 0264)**
 
 Directly beneath the consent statement, not on another page:
 
@@ -201,7 +201,7 @@ review is still outstanding and is not a code question — the feature is live
 behind the key, so it can be switched off by clearing the variable if that
 review says to.
 
-### D7 — Verification and the record
+### D7 — Verification and the record — **done alongside each phase**
 
 Unit tests for every new claim on the page, an e2e for the projection route and
 the drafting route (with the upstream mocked), mutation-testing each guard as in

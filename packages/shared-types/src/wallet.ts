@@ -59,3 +59,33 @@ export const walletTopUpInputSchema = z.object({
   amountMinor: z.number().int().min(TOP_UP_MIN_MINOR).max(TOP_UP_MAX_MINOR),
 });
 export type WalletTopUpInput = z.infer<typeof walletTopUpInputSchema>;
+
+/**
+ * What the account has committed to, and how far the balance reaches.
+ *
+ * The same projection the 9am wallet watch emails about (ADR 0255), served to
+ * the page where somebody is deciding whether to hand their birthdays over. A
+ * threshold answers a question nobody asked; this answers the one they have —
+ * "will my money reach my birthdays?" — by walking the committed cards in the
+ * order they go out.
+ *
+ * Only cards that are already approved and set to send themselves count. One
+ * still waiting for a human is not a commitment, and counting it would cry
+ * wolf about money that may never be spent.
+ */
+export const walletProjectionSchema = z.object({
+  balanceMinor: z.number().int(),
+  /** Every committed card in the next 30 days, priced. */
+  committedMinor: z.number().int(),
+  cardsTotal: z.number().int().nonnegative(),
+  /** How many of them the balance covers, in dispatch order. */
+  cardsCovered: z.number().int().nonnegative(),
+  /** The first card the balance will not reach, if there is one. */
+  firstShortfall: z
+    .object({
+      dispatchDate: z.coerce.date(),
+      recipientName: z.string(),
+    })
+    .nullable(),
+});
+export type WalletProjection = z.infer<typeof walletProjectionSchema>;

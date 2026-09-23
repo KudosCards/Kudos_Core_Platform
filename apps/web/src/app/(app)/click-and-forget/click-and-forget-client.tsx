@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -13,13 +13,17 @@ import {
   catalogSaysBirthday,
   designTakesMessage,
   type CardDesign,
+  type ContactReadiness,
   type DesignDocument,
   type MessageDrafts,
   type StandingOrderMessageSource,
   type SavedDesign,
   type StandingOrder,
   type StandingOrderBlocker,
+  type WalletProjection,
+  type WalletSummary,
 } from "@kudos/shared-types";
+import { AutoTopUpCard } from "@/components/auto-top-up-card";
 import { SavedDesignThumb } from "@/components/saved-design-thumb";
 import { TemplatePickerModal } from "@/components/template-picker-modal";
 import { ApiError } from "@/lib/api";
@@ -97,11 +101,17 @@ export function ClickAndForgetClient({
   designs,
   lists,
   templates,
+  wallet,
+  projection,
+  initialReadiness,
 }: {
   initialOrder: StandingOrder | null;
   designs: DesignOption[];
   lists: ListOption[];
   templates: CardDesign[];
+  wallet: WalletSummary | null;
+  projection: WalletProjection | null;
+  initialReadiness: ContactReadiness | null;
 }) {
   const router = useRouter();
   const [order, setOrder] = useState<StandingOrder>(initialOrder ?? EMPTY);
@@ -127,7 +137,45 @@ export function ClickAndForgetClient({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [walletSummary, setWalletSummary] = useState(wallet);
+  const [readiness, setReadiness] = useState(initialReadiness);
+  const [countingAudience, setCountingAudience] = useState(false);
   const [creatingFrom, setCreatingFrom] = useState<string | null>(null);
+
+  /**
+   * What the chosen audience actually covers, kept in step with the choice.
+   *
+   * The number has to follow the radio buttons: somebody switching from
+   * everybody to one list and still reading "26 contacts" has been told
+   * something false about what they are about to switch on.
+   */
+  const audienceListId = audienceKind === "list" ? listId : null;
+  const loadReadiness = useCallback(async (forList: string | null) => {
+    setCountingAudience(true);
+    try {
+      setReadiness(
+        await clientApiFetch<ContactReadiness>(
+          forList ? `/recipients/readiness?listId=${forList}` : "/recipients/readiness",
+        ),
+      );
+    } catch {
+      // A count we could not fetch says nothing rather than something wrong.
+      setReadiness(null);
+    } finally {
+      setCountingAudience(false);
+    }
+  }, []);
+
+  const firstRender = useRef(true);
+  useEffect(() => {
+    // The server already counted the saved audience, so the arrival render is
+    // not a reason to ask again.
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    void loadReadiness(audienceListId);
+  }, [audienceListId, loadReadiness]);
 
   const chosenDesigns = useMemo(
     () =>
@@ -415,6 +463,7 @@ export function ClickAndForgetClient({
               ))}
             </select>
           )}
+          <Coverage readiness={readiness} counting={countingAudience} />
         </div>
       </Step>
 
@@ -589,6 +638,8 @@ export function ClickAndForgetClient({
 
       <Step n={3} title="How it is paid for, and switching it on">
         <div className="flex flex-col gap-8">
+          <Money summary={walletSummary} projection={projection} onSaved={setWalletSummary} />
+
           <section className="flex flex-col gap-3">
             <h3 className="font-semibold">Postage</h3>
             <div className="flex flex-wrap gap-4 text-sm">
@@ -697,6 +748,138 @@ export function ClickAndForgetClient({
         </p>
       )}
     </div>
+  );
+}
+
+/** £12.34, and £12 when the pennies are zero — the wallet page's own shape. */
+function pounds(minor: number): string {
+  return `£${(minor / 100).toFixed(2).replace(/\.00$/, "")}`;
+}
+
+/**
+ * What this instruction actually covers, in contacts.
+ *
+ * Three numbers rather than one, because the gap between them is the useful
+ * part: a hundred contacts of whom sixty have a birthday on file and fifty have
+ * somewhere to post to is a very different thing from a hundred cards a year,
+ * and the difference is what somebody would otherwise discover one skip notice
+ * at a time.
+ *
+ * The same definition of "postable" the contacts page and the dashboard use —
+ * `readinessForAudience` shares it rather than counting again (ADR 0264).
+ */
+function Coverage({
+  readiness,
+  counting,
+}: {
+  readiness: ContactReadiness | null;
+  counting: boolean;
+}) {
+  if (counting) {
+    return <p className="text-sm text-muted">Counting…</p>;
+  }
+  if (!readiness) {
+    // Better to say nothing than to say a number we could not fetch.
+    return null;
+  }
+  if (readiness.total === 0) {
+    return (
+      <p className="notice notice-info text-sm">
+        There are no contacts here yet.{" "}
+        <Link href="/recipients" className="font-medium text-accent hover:underline">
+          Add some
+        </Link>{" "}
+        and this will start covering them.
+      </p>
+    );
+  }
+
+  const noBirthday = readiness.total - readiness.withDateOfBirth;
+  const noAddress = readiness.withDateOfBirth - readiness.sendable;
+
+  return (
+    <div className="flex flex-col gap-1 rounded-lg bg-foreground/[0.03] p-3 text-sm">
+      <p>
+        <strong>
+          {readiness.sendable} of {readiness.total}
+        </strong>{" "}
+        {readiness.total === 1 ? "contact" : "contacts"} will get a card.
+      </p>
+      {(noBirthday > 0 || noAddress > 0) && (
+        <p className="text-muted">
+          {noBirthday > 0 && (
+            <>
+              {noBirthday} {noBirthday === 1 ? "has" : "have"} no birthday on file
+              {noAddress > 0 ? ", and " : "."}
+            </>
+          )}
+          {noAddress > 0 && (
+            <>
+              {noAddress} {noAddress === 1 ? "has" : "have"} no postal address
+              {noBirthday > 0 ? "." : "."}
+            </>
+          )}{" "}
+          <Link href="/recipients" className="font-medium text-accent hover:underline">
+            Fill those in
+          </Link>
+          .
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The balance, how far it reaches, and the way to keep it topped up.
+ *
+ * Here rather than behind a link to the wallet, because the sentence that
+ * creates the worry is three inches below this one: "if your balance will not
+ * cover a card, we tell you rather than send it". A link is a second page and a
+ * lost thought.
+ *
+ * The projection is the 9am watch's own (ADR 0255) — "covers the next 6 of 9"
+ * rather than a threshold, because a threshold answers a question nobody asked.
+ */
+function Money({
+  summary,
+  projection,
+  onSaved,
+}: {
+  summary: WalletSummary | null;
+  projection: WalletProjection | null;
+  onSaved: (next: WalletSummary) => void;
+}) {
+  if (!summary) return null;
+
+  const shortfall = projection?.firstShortfall ?? null;
+
+  return (
+    <section className="flex flex-col gap-3">
+      <h3 className="font-semibold">Paying for the cards</h3>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+        <span>
+          Your wallet holds <strong>{pounds(summary.balanceMinor)}</strong>.
+        </span>
+        {projection && projection.cardsTotal > 0 && (
+          <span className={shortfall ? "text-warning" : "text-muted"}>
+            {shortfall
+              ? `That covers the next ${projection.cardsCovered} of ${projection.cardsTotal} cards — ${shortfall.recipientName}'s, on ${shortfall.dispatchDate.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}, is the first it will not reach.`
+              : `That covers all ${projection.cardsTotal} ${projection.cardsTotal === 1 ? "card" : "cards"} already approved for the next month.`}
+          </span>
+        )}
+        {projection && projection.cardsTotal === 0 && (
+          <span className="text-muted">Nothing is approved to go out yet.</span>
+        )}
+        <Link href="/wallet" className="font-medium text-accent hover:underline">
+          Top up
+        </Link>
+      </div>
+      <AutoTopUpCard
+        settings={summary.autoTopUp}
+        onSaved={onSaved}
+        saveLabel="Save top-up settings"
+      />
+    </section>
   );
 }
 

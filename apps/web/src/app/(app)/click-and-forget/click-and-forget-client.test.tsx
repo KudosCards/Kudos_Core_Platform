@@ -1,4 +1,11 @@
-import { buildCardDocument, type DesignDocument, type StandingOrder } from "@kudos/shared-types";
+import {
+  buildCardDocument,
+  type ContactReadiness,
+  type DesignDocument,
+  type StandingOrder,
+  type WalletProjection,
+  type WalletSummary,
+} from "@kudos/shared-types";
 import { ApiError } from "@/lib/api";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -112,16 +119,38 @@ function order(over: Partial<StandingOrder> = {}): StandingOrder {
 
 /** Everything in the library is offered; `chosen` names what the saved order
  *  already picked, which is what the warnings are computed from. */
+function wallet(over: Partial<WalletSummary> = {}): WalletSummary {
+  return {
+    balanceMinor: 5000,
+    currency: "gbp",
+    entries: [],
+    autoTopUp: {
+      enabled: false,
+      thresholdMinor: 1000,
+      amountMinor: 5000,
+      pausedAt: null,
+      pausedReason: null,
+    },
+    ...over,
+  };
+}
+
 function renderPage({
   over = {},
   lists = [],
   designs = [design()],
   chosen = [],
+  summary = wallet(),
+  projection = null,
+  readiness = null,
 }: {
   over?: Partial<StandingOrder>;
   lists?: { id: string; name: string; memberCount: number }[];
   designs?: DesignOption[];
   chosen?: string[];
+  summary?: WalletSummary | null;
+  projection?: WalletProjection | null;
+  readiness?: ContactReadiness | null;
 } = {}) {
   render(
     <ClickAndForgetClient
@@ -137,6 +166,9 @@ function renderPage({
       designs={designs}
       lists={lists}
       templates={[]}
+      wallet={summary}
+      projection={projection}
+      initialReadiness={readiness}
     />,
   );
 }
@@ -280,6 +312,123 @@ describe("Click and forget", () => {
       });
       expect(screen.getByRole("radio", { name: /One of my lists/i })).not.toBeDisabled();
       expect(screen.getByRole("option", { name: "Year 4 class (28)" })).toBeInTheDocument();
+    });
+  });
+
+  describe("what it covers", () => {
+    /**
+     * The gap between "contacts" and "contacts a card can reach" is the thing
+     * somebody would otherwise learn one skip notice at a time.
+     */
+
+    const readiness = (over: Partial<ContactReadiness> = {}): ContactReadiness => ({
+      total: 26,
+      withDateOfBirth: 24,
+      withPostalAddress: 22,
+      sendable: 22,
+      ...over,
+    });
+
+    it("says how many will actually get a card, and why the others will not", () => {
+      renderPage({ readiness: readiness() });
+      expect(screen.getByText(/22 of 26/)).toBeInTheDocument();
+      expect(screen.getByText(/2 have no birthday on file/)).toBeInTheDocument();
+      expect(screen.getByText(/2 have no postal address/)).toBeInTheDocument();
+    });
+
+    it("says nothing about gaps when there are none", () => {
+      renderPage({
+        readiness: readiness({
+          total: 10,
+          withDateOfBirth: 10,
+          withPostalAddress: 10,
+          sendable: 10,
+        }),
+      });
+      expect(screen.getByText(/10 of 10/)).toBeInTheDocument();
+      expect(screen.queryByText(/no birthday on file/)).not.toBeInTheDocument();
+    });
+
+    it("points an empty address book at adding some", () => {
+      renderPage({
+        readiness: readiness({ total: 0, withDateOfBirth: 0, withPostalAddress: 0, sendable: 0 }),
+      });
+      expect(screen.getByText(/no contacts here yet/i)).toBeInTheDocument();
+    });
+
+    it("says nothing at all rather than a number it could not fetch", () => {
+      renderPage({ readiness: null });
+      expect(screen.queryByText(/will get a card/i)).not.toBeInTheDocument();
+      // And emphatically not this: a count that failed is not the same as an
+      // empty address book, and telling somebody they have no contacts when
+      // they have four hundred is worse than telling them nothing.
+      expect(screen.queryByText(/no contacts here yet/i)).not.toBeInTheDocument();
+    });
+
+    it("counts the list again when the audience changes", async () => {
+      // A page still reading "26 contacts" after somebody picked a list of four
+      // has told them something false about what they are switching on.
+      const user = userEvent.setup();
+      apiMock.mockResolvedValue({
+        total: 4,
+        withDateOfBirth: 4,
+        withPostalAddress: 4,
+        sendable: 4,
+      });
+      renderPage({
+        readiness: readiness(),
+        lists: [{ id: "l1", name: "Year 4 class", memberCount: 4 }],
+      });
+
+      await user.click(screen.getByRole("radio", { name: /One of my lists/i }));
+
+      expect(await screen.findByText(/4 of 4/)).toBeInTheDocument();
+      expect(apiMock).toHaveBeenCalledWith("/recipients/readiness?listId=l1");
+    });
+  });
+
+  describe("the money", () => {
+    const projection = (over: Partial<WalletProjection> = {}): WalletProjection => ({
+      balanceMinor: 5000,
+      committedMinor: 9000,
+      cardsTotal: 9,
+      cardsCovered: 6,
+      firstShortfall: { dispatchDate: new Date("2026-10-14"), recipientName: "Grace Bell" },
+      ...over,
+    });
+
+    it("shows the balance beside the promise that spends it", () => {
+      renderPage({ summary: wallet({ balanceMinor: 5000 }) });
+      expect(screen.getByText(/£50/)).toBeInTheDocument();
+    });
+
+    it("names the first card the balance will not reach", () => {
+      renderPage({ projection: projection() });
+      expect(screen.getByText(/covers the next 6 of 9 cards/i)).toBeInTheDocument();
+      expect(screen.getByText(/Grace Bell/)).toBeInTheDocument();
+      expect(screen.getByText(/14 October/)).toBeInTheDocument();
+    });
+
+    it("says so plainly when the balance covers everything", () => {
+      renderPage({ projection: projection({ cardsCovered: 9, firstShortfall: null }) });
+      expect(screen.getByText(/covers all 9 cards/i)).toBeInTheDocument();
+      expect(screen.queryByText(/will not reach/i)).not.toBeInTheDocument();
+    });
+
+    it("offers the automatic top-up here, with its own name on its own button", () => {
+      renderPage();
+      // Two buttons reading "Save" would be a page that cannot tell you which
+      // of your changes it kept.
+      expect(screen.getByRole("button", { name: "Save top-up settings" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+    });
+
+    it("shows none of it when the wallet could not be read", () => {
+      renderPage({ summary: null });
+      expect(screen.queryByText(/Your wallet holds/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Save top-up settings" }),
+      ).not.toBeInTheDocument();
     });
   });
 

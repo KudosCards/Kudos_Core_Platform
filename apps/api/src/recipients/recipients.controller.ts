@@ -18,6 +18,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import type { Recipient, RecipientKeyDate } from "@prisma/client";
+import type { ContactReadiness } from "@kudos/shared-types";
 import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { CurrentMembership } from "../auth/current-membership.decorator";
@@ -56,6 +57,23 @@ export class RecipientsController {
     @Query() query: ListRecipientsQueryDto,
   ): Promise<Paginated<Recipient>> {
     return this.recipientsService.list(membership.accountId, user.id, query);
+  }
+
+  /**
+   * How many of a set of contacts a birthday card can actually reach.
+   *
+   * Declared above `:id` on purpose — Nest matches in order, and "readiness"
+   * would otherwise be parsed as a contact id and refused by the UUID pipe.
+   *
+   * `listId` scopes it to one hand-picked list; without it, everybody. Read
+   * only, and cheap: four counts against an index. See ADR 0264.
+   */
+  @Get("readiness")
+  readiness(
+    @CurrentMembership() membership: CurrentMembershipContext,
+    @Query("listId", new ParseUUIDPipe({ optional: true })) listId?: string,
+  ): Promise<ContactReadiness> {
+    return this.recipientsService.readinessForAudience(membership.accountId, listId ?? null);
   }
 
   @Get(":id")

@@ -272,5 +272,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0261 — Saying it out loud](./0261-saying-it-out-loud.md)
 - [0262 — Three steps, and a pool that checks itself](./0262-three-steps-and-a-pool-that-checks-itself.md)
 - [0263 — Asking a model for words](./0263-asking-a-model-for-words.md)
+- [0264 — What it covers, and what it costs](./0264-what-it-covers-and-what-it-costs.md)
 
 <!-- adr-index:end -->

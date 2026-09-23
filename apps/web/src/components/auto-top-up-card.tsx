@@ -44,6 +44,11 @@ function minorOf(pounds: string): number | null {
 /**
  * The standing instruction to keep the wallet funded.
  *
+ * Shared by the wallet page and by click and forget, where it sits directly
+ * under the sentence that creates the worry — "if your balance will not cover
+ * a card, we tell you rather than send it". That is the moment to offer the
+ * fix; a link to another page is a second page and a lost thought (ADR 0264).
+ *
  * Set whole — the switch and both numbers save together — because turning it on
  * without saying what it will charge is not a decision anybody made. Saving
  * also resumes a paused instruction, which is exactly what somebody is here to
@@ -52,9 +57,17 @@ function minorOf(pounds: string): number | null {
 export function AutoTopUpCard({
   settings,
   onSaved,
+  saveLabel = "Save",
 }: {
   settings: AutoTopUpSettings;
   onSaved: (summary: WalletSummary) => void;
+  /**
+   * What its own button says. On the wallet page this is the only Save there
+   * is; on click and forget the page has one of its own, and two buttons
+   * reading "Save" is a page that cannot tell you which of your changes it
+   * kept.
+   */
+  saveLabel?: string;
 }) {
   const [enabled, setEnabled] = useState(settings.enabled);
   const [threshold, setThreshold] = useState(poundsOf(settings.thresholdMinor));
@@ -112,8 +125,8 @@ export function AutoTopUpCard({
       {settings.pausedAt && (
         <p className="notice notice-warning">
           <strong>Automatic top-up has stopped.</strong>{" "}
-          {PAUSE_REASONS[settings.pausedReason ?? "unknown"] ?? UNKNOWN_PAUSE} Save below to switch
-          it back on once that is sorted.
+          {PAUSE_REASONS[settings.pausedReason ?? "unknown"] ?? UNKNOWN_PAUSE} {saveLabel} below to
+          switch it back on once that is sorted.
         </p>
       )}
 
@@ -161,7 +174,7 @@ export function AutoTopUpCard({
           </div>
         </label>
         <button type="button" onClick={() => void save()} disabled={saving} className="btn-accent">
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving…" : saveLabel}
         </button>
       </div>
 
