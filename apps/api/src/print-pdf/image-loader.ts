@@ -8,7 +8,7 @@
  *
  *  - PNG / JPEG pass through untouched (pdfkit embeds them natively, lossless).
  *  - WebP / GIF / other raster formats are transcoded to PNG via sharp.
- *  - SVG stickers are rasterised to a crisp 1024px PNG (well above 300 dpi at any
+ *  - SVG stickers and clip art are rasterised to a crisp 1024px PNG (well above 300 dpi at any
  *    card size) — robust across arbitrary SVGs, and a single raster draw path in
  *    the renderer.
  *
@@ -22,10 +22,14 @@ import sharp from "sharp";
 import { MAX_ARTWORK_PIXELS, MAX_DECODE_PIXELS, orientedPixelSize } from "@kudos/shared-types";
 import type { ImageResolver, ResolvedImage } from "./render";
 
-/** How SVGs are rasterised: a generous longest-edge size + a high nominal density
- * so small viewBoxes still produce a sharp bitmap. */
+/** The longest edge, in pixels, every SVG is rasterised to — well above 300 dpi
+ * at any card size. */
 const SVG_RASTER_SIZE = 1024;
-const SVG_RASTER_DENSITY = 384;
+/** The density librsvg sizes an SVG at by default: one user unit to one pixel. */
+const SVG_BASE_DENSITY = 72;
+/** The range sharp accepts for `density`. */
+const SVG_MIN_DENSITY = 1;
+const SVG_MAX_DENSITY = 100_000;
 
 export interface ImageResolverOptions {
   /** Base URL used to resolve root-relative asset paths (e.g. bundled stickers).
@@ -211,7 +215,7 @@ export async function decodeImage(
   try {
     if (isSvg(buffer, contentType, url)) {
       const png = await sharp(buffer, {
-        density: SVG_RASTER_DENSITY,
+        density: await svgRasterDensity(buffer),
         limitInputPixels: MAX_DECODE_PIXELS,
       })
         .resize({ width: SVG_RASTER_SIZE, height: SVG_RASTER_SIZE, fit: "inside" })
@@ -322,6 +326,33 @@ export async function decodeImage(
     options.onWarn?.(`print image undecodable (${url}): ${String(error)}`);
     return null;
   }
+}
+
+/**
+ * The density at which this SVG's nominal size is {@link SVG_RASTER_SIZE} on its
+ * longest edge.
+ *
+ * It has to come from the SVG's own size, because `limitInputPixels` is checked
+ * against the nominal size at the requested density — before sharp scales the
+ * vector to the resize target. A fixed density scales every file by the same
+ * factor, and the clip-art library runs from a 48-unit viewBox to a 5094-unit
+ * one: at the 384 this used to be, `happy_birthday_woods_color.svg` declared
+ * 27168x15061, 409 megapixels and five times the decode limit, so sharp refused
+ * it and the card printed without its artwork. Six of the library's SVGs failed
+ * that way. The raster itself does not change: sharp renders vectors at the
+ * resize target either way.
+ *
+ * Reading the size parses the document without rendering a pixel, so the probe
+ * is not held to the decode limit — the render that follows is, and at this
+ * density it is about one megapixel. An SVG with no measurable size keeps
+ * librsvg's default.
+ */
+async function svgRasterDensity(buffer: Buffer): Promise<number> {
+  const meta = await sharp(buffer, { limitInputPixels: false }).metadata();
+  const longest = Math.max(meta.width ?? 0, meta.height ?? 0);
+  if (longest <= 0) return SVG_BASE_DENSITY;
+  const density = (SVG_BASE_DENSITY * SVG_RASTER_SIZE) / longest;
+  return Math.min(SVG_MAX_DENSITY, Math.max(SVG_MIN_DENSITY, density));
 }
 
 async function withDimensions(data: Buffer): Promise<ResolvedImage | null> {
