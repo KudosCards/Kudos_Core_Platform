@@ -203,6 +203,23 @@ describe("decodeImage", () => {
     expect(Math.max(resolved!.width, resolved!.height)).toBe(1024);
   });
 
+  it("rasterises an SVG with a huge viewBox instead of refusing it", async () => {
+    // The shape of `happy_birthday_woods_color.svg`: a 5094x2824 viewBox and no
+    // width or height. At a fixed density of 384 that asked for 409 megapixels,
+    // over the decode limit, and the clip art was left off the printed card.
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5094 2824">' +
+      '<rect width="5094" height="2824" fill="#f00"/></svg>';
+    const warnings: string[] = [];
+    const resolved = await decodeImage(Buffer.from(svg), "image/svg+xml", "https://x/big.svg", {
+      onWarn: (message) => warnings.push(message),
+    });
+    expect(warnings).toEqual([]);
+    expect(resolved).not.toBeNull();
+    expect(resolved!.width).toBe(1024);
+    expect(resolved!.height).toBe(Math.round((1024 * 2824) / 5094));
+  });
+
   it("returns null for undecodable bytes", async () => {
     const resolved = await decodeImage(
       Buffer.from("not an image"),
