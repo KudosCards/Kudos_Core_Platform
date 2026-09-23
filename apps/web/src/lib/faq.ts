@@ -138,6 +138,23 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
         ],
       },
       {
+        question: "Can I set it up once and stop thinking about it?",
+        answer: [
+          `Yes, on ${pro.name} and above. It's called click and forget: you choose which contacts it covers, pick the card designs you're happy for us to use and write a few messages, and we send a card for every birthday after that without asking you again.`,
+          "You choose the cards and write the messages yourself, so nothing goes out in your name that you haven't seen. We vary which card and which message each person gets, so nobody receives the same one two years running.",
+          "Each card is paid for from your wallet balance when it's sent, at your plan's usual card and postage price. You can have the wallet top itself up from your card on file, so it doesn't run dry.",
+          "You can switch it off at any time, and turning it off doesn't affect cards already on their way.",
+        ],
+      },
+      {
+        question: "If you're sending on my behalf, how do I know it worked?",
+        answer: [
+          "You hear from us whenever a card doesn't go. If a contact has no postal address, if an earlier card came back undelivered, or if your balance won't cover what's coming, we tell you — in the app and by email — and say what to do about it.",
+          "We'd rather tell you about a card that didn't go than let a birthday pass in silence. That's the whole point of handing it over.",
+          "Nothing is hidden: every card that goes out appears in your orders, and your calendar shows what's coming.",
+        ],
+      },
+      {
         question: "How many cards can I send at once?",
         answer: [
           `A single bulk send covers up to ${free.batchOrderMaxSize} cards on ${free.name}, ${pro.batchOrderMaxSize} on ${pro.name} and ${centre.batchOrderMaxSize} on ${centre.name}.`,
