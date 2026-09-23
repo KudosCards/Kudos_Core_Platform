@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   MERGE_FIELDS,
+  MESSAGE_DRAFT_BRIEF_MAX_LENGTH,
   STANDING_ORDER_MAX_DESIGNS,
   STANDING_ORDER_MAX_MESSAGES,
   STANDING_ORDER_MESSAGE_MAX_LENGTH,
@@ -13,6 +14,8 @@ import {
   designTakesMessage,
   type CardDesign,
   type DesignDocument,
+  type MessageDrafts,
+  type StandingOrderMessageSource,
   type SavedDesign,
   type StandingOrder,
   type StandingOrderBlocker,
@@ -29,6 +32,12 @@ export interface DesignOption {
   document: DesignDocument;
   /** The catalog occasion behind it; null for the member's own artwork. */
   category: string | null;
+}
+
+/** A message in the pool, and whether the subscriber wrote it or kept a draft. */
+interface PoolMessage {
+  text: string;
+  source: StandingOrderMessageSource;
 }
 
 interface ListOption {
@@ -71,6 +80,7 @@ const EMPTY: StandingOrder = {
   consentStatement: [],
   consentVersion: 0,
   planAllows: false,
+  messageDraftingAvailable: false,
 };
 
 /**
@@ -103,9 +113,15 @@ export function ClickAndForgetClient({
   );
   const [postageClass, setPostageClass] = useState(order.postageClass);
   const [chosen, setChosen] = useState<string[]>(order.designs.map((d) => d.savedDesignId));
-  const [messages, setMessages] = useState<string[]>(
-    order.messages.length > 0 ? order.messages.map((m) => m.text) : [""],
+  const [messages, setMessages] = useState<PoolMessage[]>(
+    order.messages.length > 0
+      ? order.messages.map((m) => ({ text: m.text, source: m.source }))
+      : [{ text: "", source: "written" }],
   );
+  const [brief, setBrief] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [drafts, setDrafts] = useState<string[] | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(order.consent?.current ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,7 +166,9 @@ export function ClickAndForgetClient({
    *  order still knows its name; the library no longer holds it. */
   const archived = order.designs.filter((design) => design.archived);
 
-  const written = messages.map((text) => text.trim()).filter((text) => text.length > 0);
+  const written = messages
+    .map((message) => ({ ...message, text: message.text.trim() }))
+    .filter((message) => message.text.length > 0);
   const pointedAtSmartList = order.audience.kind === "segment";
 
   /** Whether anything on screen differs from what is saved — so the save bar can
@@ -163,7 +181,7 @@ export function ClickAndForgetClient({
     (audienceKind === "list" &&
       listId !== (order.audience.kind === "list" ? order.audience.listId : "")) ||
     chosen.join("|") !== order.designs.map((d) => d.savedDesignId).join("|") ||
-    written.join("|") !== order.messages.map((m) => m.text).join("|");
+    written.map((m) => m.text).join("|") !== order.messages.map((m) => m.text).join("|");
 
   function toggleDesign(id: string) {
     setChosen((current) =>
@@ -176,7 +194,51 @@ export function ClickAndForgetClient({
   }
 
   function setMessage(index: number, text: string) {
-    setMessages((current) => current.map((value, at) => (at === index ? text : value)));
+    setMessages((current) =>
+      current.map((message, at) => (at === index ? { ...message, text } : message)),
+    );
+  }
+
+  /**
+   * Ask for suggestions.
+   *
+   * Nothing here is saved, and nothing replaces what is already written: the
+   * drafts land in a list beside the pool and the subscriber decides one at a
+   * time. A message they keep is recorded as `assisted`, which is not the same
+   * promise as their own words (ADR 0263).
+   */
+  async function suggest() {
+    setDraftError(null);
+    setDrafting(true);
+    try {
+      const result = await clientApiFetch<MessageDrafts>("/standing-order/message-drafts", {
+        method: "POST",
+        body: JSON.stringify(brief.trim() ? { brief: brief.trim() } : {}),
+      });
+      const already = new Set(messages.map((message) => message.text.trim().toLowerCase()));
+      setDrafts(result.drafts.filter((draft) => !already.has(draft.trim().toLowerCase())));
+    } catch (error) {
+      setDraftError(
+        error instanceof ApiError ? error.message : "Could not write any suggestions just now",
+      );
+    } finally {
+      setDrafting(false);
+    }
+  }
+
+  function keepDraft(draft: string) {
+    setMessages((current) => {
+      const room = current.length < STANDING_ORDER_MAX_MESSAGES;
+      if (!room) return current;
+      // An empty first box is where somebody was about to type. Use it rather
+      // than leaving a blank line above the message they just accepted.
+      const blank = current.findIndex((message) => message.text.trim().length === 0);
+      const kept: PoolMessage = { text: draft, source: "assisted" };
+      return blank === -1
+        ? [...current, kept]
+        : current.map((message, at) => (at === blank ? kept : message));
+    });
+    setDrafts((current) => current?.filter((entry) => entry !== draft) ?? null);
   }
 
   /**
@@ -242,12 +304,16 @@ export function ClickAndForgetClient({
           audience: audienceKind === "list" ? { kind: "list", listId } : { kind: "all" },
           postageClass,
           savedDesignIds: chosen,
-          messages: written.map((text) => ({ text, source: "written" })),
+          messages: written.map((message) => ({ text: message.text, source: message.source })),
           agreeToConsent: agreed,
         }),
       });
       setOrder(next);
-      setMessages(next.messages.length > 0 ? next.messages.map((m) => m.text) : [""]);
+      setMessages(
+        next.messages.length > 0
+          ? next.messages.map((m) => ({ text: m.text, source: m.source }))
+          : [{ text: "", source: "written" }],
+      );
       setSaved(true);
     } catch (saveError) {
       setError(saveError instanceof ApiError ? saveError.message : "Could not save");
@@ -475,11 +541,11 @@ export function ClickAndForgetClient({
             )}
 
             <div className="flex flex-col gap-3">
-              {messages.map((text, index) => (
+              {messages.map((message, index) => (
                 <MessageField
                   key={index}
                   index={index}
-                  value={text}
+                  value={message.text}
                   onChange={(next) => setMessage(index, next)}
                   onRemove={
                     messages.length > 1
@@ -493,11 +559,29 @@ export function ClickAndForgetClient({
             {messages.length < STANDING_ORDER_MAX_MESSAGES && (
               <button
                 type="button"
-                onClick={() => setMessages((current) => [...current, ""])}
+                onClick={() =>
+                  setMessages((current) => [...current, { text: "", source: "written" }])
+                }
                 className="btn-secondary self-start"
               >
                 Add another message
               </button>
+            )}
+
+            {order.messageDraftingAvailable && (
+              <SuggestMessages
+                brief={brief}
+                onBrief={setBrief}
+                busy={drafting}
+                drafts={drafts}
+                error={draftError}
+                full={messages.length >= STANDING_ORDER_MAX_MESSAGES}
+                onSuggest={() => void suggest()}
+                onKeep={keepDraft}
+                onDismiss={(draft) =>
+                  setDrafts((current) => current?.filter((entry) => entry !== draft) ?? null)
+                }
+              />
             )}
           </section>
         </div>
@@ -611,6 +695,111 @@ export function ClickAndForgetClient({
           </button>
           .
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Suggestions from a model, and the decision to keep one.
+ *
+ * Three things this does not do, each on purpose. It does not write into the
+ * pool — a draft sits beside it until somebody picks it, because a card goes
+ * out in their name and not ours. It does not replace anything they have
+ * already written. And it does not save: the pool is still saved by the same
+ * button as everything else on this page.
+ *
+ * The brief is the only free text that leaves the platform. Nothing about a
+ * contact is sent — a drafted message is a template with {firstName} in it,
+ * filled in at print weeks later. See ADR 0263.
+ */
+function SuggestMessages({
+  brief,
+  onBrief,
+  busy,
+  drafts,
+  error,
+  full,
+  onSuggest,
+  onKeep,
+  onDismiss,
+}: {
+  brief: string;
+  onBrief: (next: string) => void;
+  busy: boolean;
+  drafts: string[] | null;
+  error: string | null;
+  full: boolean;
+  onSuggest: () => void;
+  onKeep: (draft: string) => void;
+  onDismiss: (draft: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border p-4">
+      <div className="flex flex-col gap-1">
+        <h4 className="text-sm font-semibold">Stuck for words?</h4>
+        <p className="text-xs text-muted">
+          We can suggest a few. Nothing is sent about your contacts, and nothing is added until you
+          pick it.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={brief}
+          onChange={(e) => onBrief(e.target.value)}
+          maxLength={MESSAGE_DRAFT_BRIEF_MAX_LENGTH}
+          aria-label="What should they sound like?"
+          placeholder="Warm, a bit funny — we are a tuition centre"
+          className="min-w-0 flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm"
+        />
+        <button
+          type="button"
+          onClick={onSuggest}
+          disabled={busy || full}
+          className="btn-secondary shrink-0"
+        >
+          {busy ? "Writing…" : "Suggest messages"}
+        </button>
+      </div>
+      {full && (
+        <p className="text-xs text-muted">
+          Your pool is full at {STANDING_ORDER_MAX_MESSAGES} — remove one to make room.
+        </p>
+      )}
+      {error && <p className="notice notice-danger text-sm">{error}</p>}
+      {drafts !== null && drafts.length === 0 && !busy && (
+        <p className="text-xs text-muted">Nothing new that time — try again, or change the note.</p>
+      )}
+      {drafts !== null && drafts.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {drafts.map((draft) => (
+            <li
+              key={draft}
+              className="flex flex-wrap items-start justify-between gap-2 rounded-lg bg-foreground/[0.03] p-3"
+            >
+              <span className="min-w-0 flex-1 text-sm">{draft}</span>
+              <span className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onKeep(draft)}
+                  disabled={full}
+                  className="rounded-full border border-accent px-3 py-1 text-xs font-medium text-accent disabled:opacity-40"
+                >
+                  Keep
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDismiss(draft)}
+                  aria-label={`Discard: ${draft}`}
+                  className="rounded-full border border-border px-3 py-1 text-xs text-muted"
+                >
+                  No
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

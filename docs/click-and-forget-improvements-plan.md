@@ -152,7 +152,7 @@ that creates the worry ("if your balance will not cover a card, we tell you
 rather than send it") is the exact moment to offer the fix; a link is a second
 page and a lost thought.
 
-### D6 — The messages block
+### D6 — The messages block — **built (ADR 0263)**
 
 Two things, independent of each other.
 
@@ -196,9 +196,10 @@ How it is built:
   subscriber plainly and leaves their typed messages untouched; a failure
   nobody can explain raises an ops alert, the way the wallet's do.
 
-**Before this can ship:** an API key on the API service, and a review of
-Anthropic's commercial terms and data-processing agreement against how Kudos
-handles subscriber data. Both are yours rather than mine.
+**Shipped.** The key is on the API service. The data-processing agreement
+review is still outstanding and is not a code question — the feature is live
+behind the key, so it can be switched off by clearing the variable if that
+review says to.
 
 ### D7 — Verification and the record
 

@@ -15,6 +15,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { EntitlementsService } from "../entitlements/entitlements.service";
 import { runSerializable } from "../common/run-serializable";
+import { MessageDraftingService } from "./message-drafting.service";
 import type { SaveStandingOrderDto, StandingOrderAudienceDto } from "./dto/save-standing-order.dto";
 
 /** Everything a view of the instruction needs, in one read. */
@@ -69,6 +70,7 @@ export class StandingOrdersService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
+    private readonly drafting: MessageDraftingService,
   ) {}
 
   /** The account's instruction, or the empty one they would start from. Reading
@@ -321,6 +323,10 @@ export class StandingOrdersService {
       consentStatement: [...STANDING_ORDER_CONSENT_STATEMENT],
       consentVersion: STANDING_ORDER_CONSENT_VERSION,
       planAllows,
+      // A fact about this deployment, not about the instruction — but this page
+      // is the only thing that asks, and a button that apologises is worse than
+      // no button (ADR 0263).
+      messageDraftingAvailable: this.drafting.available(),
     };
     if (!row) {
       return {

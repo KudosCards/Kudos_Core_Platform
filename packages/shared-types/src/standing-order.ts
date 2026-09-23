@@ -40,6 +40,36 @@ export const standingOrderMessageSourceSchema = z.enum(["written", "assisted"]);
 export type StandingOrderMessageSource = z.infer<typeof standingOrderMessageSourceSchema>;
 
 /**
+ * How many drafts one press of the button asks for.
+ *
+ * Enough that a pool is worth varying and the subscriber can throw half away;
+ * few enough to read in one go, and to keep a single call small.
+ */
+export const MESSAGE_DRAFT_COUNT = 6;
+
+/**
+ * The longest brief a subscriber may send with a drafting request.
+ *
+ * Short on purpose. This is the one free-text field that leaves the platform,
+ * and a box this size invites "warm, a bit funny, we are a tuition centre"
+ * rather than a paragraph about anybody in particular.
+ */
+export const MESSAGE_DRAFT_BRIEF_MAX_LENGTH = 200;
+
+/** POST /standing-order/message-drafts. The brief is optional: the button has
+ *  to work for somebody who just wants six sensible messages. */
+export const draftMessagesInputSchema = z.object({
+  brief: z.string().trim().max(MESSAGE_DRAFT_BRIEF_MAX_LENGTH).optional(),
+});
+export type DraftMessagesInput = z.infer<typeof draftMessagesInputSchema>;
+
+/** What comes back: suggestions, saved by nobody until the subscriber says so. */
+export const messageDraftsSchema = z.object({
+  drafts: z.array(z.string()),
+});
+export type MessageDrafts = z.infer<typeof messageDraftsSchema>;
+
+/**
  * Which contacts the instruction covers.
  *
  * `all` is the default and the low-barrier answer: a subscriber who picks
@@ -140,6 +170,15 @@ export const standingOrderSchema = z.object({
   /** Whether this account's plan permits automatic sending at all. Free sees
    * the whole feature with this false, and an upgrade prompt. */
   planAllows: z.boolean(),
+  /**
+   * Whether this deployment can draft messages at all.
+   *
+   * A fact about the server rather than about the instruction, and it lives
+   * here because this page is the only thing that asks. False when no model is
+   * configured, and the page then offers no button — better than a button that
+   * apologises. See ADR 0263.
+   */
+  messageDraftingAvailable: z.boolean(),
 });
 export type StandingOrder = z.infer<typeof standingOrderSchema>;
 

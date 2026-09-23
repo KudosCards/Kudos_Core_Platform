@@ -398,4 +398,38 @@ export class OpsActivityService {
       this.logger.error(`Ops auto-top-up failure alert for ${accountId} failed: ${reason}`);
     }
   }
+  /**
+   * Message drafting is failing, and it is not the model saying no.
+   *
+   * The only place in the product that depends on an outside model, so a
+   * timeout, a 500 or an expired key looks like a feature quietly not working
+   * rather than an outage anybody would page about. Nobody loses a card over
+   * it — the subscriber's own messages are untouched and the button is the
+   * only thing that stops — so this is a bell, not a siren.
+   */
+  async messageDraftingFailed(accountId: string, detail: string): Promise<void> {
+    try {
+      const account = await this.prisma.account.findUnique({
+        where: { id: accountId },
+        select: { name: true },
+      });
+      await this.platformNotifications.notifyAllAdmins(
+        {
+          kind: "message_drafting_failed",
+          title: `Message drafting failed — ${account?.name ?? accountId}`,
+          body:
+            `A subscriber asked for suggested messages and the model could not be reached: ` +
+            `${detail}. Their own messages are untouched; the button is the only thing that ` +
+            `stops. Check the API key and the model id if this repeats.`,
+          href: `/admin/subscribers/${accountId}`,
+          entityType: "Account",
+          entityId: accountId,
+        },
+        { role: "super_admin" },
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error(`Ops message-drafting alert for ${accountId} failed: ${reason}`);
+    }
+  }
 }

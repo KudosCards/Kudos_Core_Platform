@@ -392,6 +392,23 @@ export const envSchema = z.object({
   // is still visible in the ops queue). Blank/malformed degrades to unset rather
   // than crashing on boot, matching EMAIL_FROM_ADDRESS.
   SUPPORT_INBOX_EMAIL: z.string().trim().email().optional().catch(undefined),
+
+  // Message drafting for "click and forget" (ADR 0263). Optional, and the
+  // feature is dark without it: no key ⇒ the page does not offer the button at
+  // all, rather than offering one that fails. Treat blank the same as unset,
+  // like every other optional integration here.
+  ANTHROPIC_API_KEY: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  // The model drafting runs on. Defaulted rather than required, so a change of
+  // model is a variable and not a release — and pinned to an exact id rather
+  // than a moving alias, because the thing it writes is printed on paper.
+  ANTHROPIC_MODEL: z.string().min(1).default("claude-haiku-4-5-20251001"),
+  // The API host. A variable only so a test can point at a stub; nothing else
+  // should ever set it.
+  ANTHROPIC_BASE_URL: z.string().url().default("https://api.anthropic.com"),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

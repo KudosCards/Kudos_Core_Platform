@@ -1,4 +1,5 @@
 import { buildCardDocument, type DesignDocument, type StandingOrder } from "@kudos/shared-types";
+import { ApiError } from "@/lib/api";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ClickAndForgetClient, type DesignOption } from "./click-and-forget-client";
@@ -19,6 +20,11 @@ jest.mock("@/components/saved-design-thumb", () => ({
 }));
 
 jest.mock("next/navigation", () => ({ useRouter: () => ({ push: jest.fn() }) }));
+
+const apiMock = jest.fn();
+jest.mock("@/lib/api.client", () => ({
+  clientApiFetch: (...args: unknown[]) => apiMock(...args),
+}));
 
 /**
  * Both wordings, in one matcher.
@@ -99,6 +105,7 @@ function order(over: Partial<StandingOrder> = {}): StandingOrder {
     consentStatement: STATEMENT,
     consentVersion: 1,
     planAllows: true,
+    messageDraftingAvailable: false,
     ...over,
   };
 }
@@ -314,6 +321,132 @@ describe("Click and forget", () => {
       });
       expect(within(fields).getByRole("option", { name: "Last name" })).toBeInTheDocument();
       expect(within(fields).getByRole("option", { name: "Occasion" })).toBeInTheDocument();
+    });
+  });
+
+  describe("suggested messages", () => {
+    /**
+     * The drafts are suggestions and nothing more: they are not written into
+     * the pool, they do not replace anything, and they are not saved until the
+     * subscriber saves the page like anything else.
+     */
+
+    const drafted = ["Many happy returns, {firstName}!", "Have a brilliant day, {firstName}."];
+
+    beforeEach(() => apiMock.mockReset());
+
+    function mockDrafts(drafts: string[] = drafted) {
+      apiMock.mockResolvedValue({ drafts });
+      return apiMock;
+    }
+
+    it("offers nothing at all when the server cannot draft", () => {
+      renderPage({ over: { messageDraftingAvailable: false } });
+      expect(screen.queryByRole("button", { name: /Suggest messages/i })).not.toBeInTheDocument();
+    });
+
+    it("asks for drafts and shows them without touching the pool", async () => {
+      const user = userEvent.setup();
+      mockDrafts();
+      renderPage({ over: { messageDraftingAvailable: true } });
+
+      await user.type(screen.getByRole("textbox", { name: "Message 1" }), "My own words");
+      await user.click(screen.getByRole("button", { name: /Suggest messages/i }));
+
+      expect(await screen.findByText(drafted[0]!)).toBeInTheDocument();
+      // Still theirs, untouched.
+      expect(screen.getByRole("textbox", { name: "Message 1" })).toHaveValue("My own words");
+      expect(apiMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("sends the note, and nothing else", async () => {
+      const user = userEvent.setup();
+      mockDrafts();
+      renderPage({ over: { messageDraftingAvailable: true } });
+
+      await user.type(
+        screen.getByRole("textbox", { name: /What should they sound like/i }),
+        "warm, a bit funny",
+      );
+      await user.click(screen.getByRole("button", { name: /Suggest messages/i }));
+
+      await screen.findByText(drafted[0]!);
+      const [path, init] = apiMock.mock.calls[0] as [string, RequestInit];
+      expect(path).toBe("/standing-order/message-drafts");
+      expect(JSON.parse(String(init.body))).toEqual({ brief: "warm, a bit funny" });
+    });
+
+    it("puts a kept draft in the pool, and only when it is kept", async () => {
+      const user = userEvent.setup();
+      mockDrafts();
+      renderPage({ over: { messageDraftingAvailable: true } });
+
+      await user.click(screen.getByRole("button", { name: /Suggest messages/i }));
+      await screen.findByText(drafted[0]!);
+      expect(screen.getByRole("textbox", { name: "Message 1" })).toHaveValue("");
+
+      await user.click(screen.getAllByRole("button", { name: "Keep" })[0]!);
+      expect(screen.getByRole("textbox", { name: "Message 1" })).toHaveValue(drafted[0]!);
+      // Kept ones leave the suggestion list; the other is still on offer.
+      expect(screen.getByText(drafted[1]!)).toBeInTheDocument();
+    });
+
+    it("records a kept draft as assisted, and a typed one as written", async () => {
+      // The distinction the schema has carried since C4 and nothing ever wrote.
+      // A message somebody kept from a model is not the same promise as one
+      // they wrote, and the pool is the only place that can still tell.
+      const user = userEvent.setup();
+      mockDrafts();
+      renderPage({ over: { messageDraftingAvailable: true } });
+
+      await user.type(screen.getByRole("textbox", { name: "Message 1" }), "My own words");
+      await user.click(screen.getByRole("button", { name: /Suggest messages/i }));
+      await screen.findByText(drafted[0]!);
+      await user.click(screen.getAllByRole("button", { name: "Keep" })[0]!);
+
+      apiMock.mockResolvedValueOnce(order({ messageDraftingAvailable: true }));
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      const save = apiMock.mock.calls.find(
+        ([path, init]) => path === "/standing-order" && (init as RequestInit).method === "PUT",
+      );
+      expect(save).toBeDefined();
+      const body = JSON.parse(String((save![1] as RequestInit).body)) as {
+        messages: { text: string; source: string }[];
+      };
+      expect(body.messages).toEqual([
+        { text: "My own words", source: "written" },
+        { text: drafted[0]!, source: "assisted" },
+      ]);
+    });
+
+    it("throws one away without putting it anywhere", async () => {
+      const user = userEvent.setup();
+      mockDrafts();
+      renderPage({ over: { messageDraftingAvailable: true } });
+
+      await user.click(screen.getByRole("button", { name: /Suggest messages/i }));
+      await screen.findByText(drafted[0]!);
+      await user.click(screen.getByRole("button", { name: `Discard: ${drafted[0]!}` }));
+
+      expect(screen.queryByText(drafted[0]!)).not.toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "Message 1" })).toHaveValue("");
+    });
+
+    it("says so when it cannot, and leaves the written messages alone", async () => {
+      const user = userEvent.setup();
+      // The API's own words, not a generic fallback: the server says whether
+      // this was a limit, a refusal or an outage, and the page passes it on.
+      apiMock.mockRejectedValue(
+        new ApiError("We could not write any suggestions just now.", 503, null),
+      );
+      renderPage({ over: { messageDraftingAvailable: true } });
+
+      await user.type(screen.getByRole("textbox", { name: "Message 1" }), "My own words");
+      await user.click(screen.getByRole("button", { name: /Suggest messages/i }));
+
+      expect(await screen.findByText(/could not write any suggestions/i)).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "Message 1" })).toHaveValue("My own words");
     });
   });
 
