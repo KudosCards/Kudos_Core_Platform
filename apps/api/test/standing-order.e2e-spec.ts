@@ -124,6 +124,23 @@ describe("Standing order (e2e)", () => {
     expect(await prisma.standingOrder.count({ where: { accountId } })).toBe(0);
   });
 
+  it("says a seeded card can carry a message, because it can", async () => {
+    // This shipped answering "no" for every design in existence: the probe that
+    // decides it was written with NUL characters and compared against JSON that
+    // had escaped them, so the page told every subscriber that none of their
+    // cards would use the messages they had just written. Nothing read this
+    // field in a test, which is how it got out.
+    const { token } = await proAccount();
+    const designId = await createSavedDesign(token, "Balloons");
+
+    await save(token, fullBody([designId])).expect(200);
+    const order = standingOrderSchema.parse((await get(token).expect(200)).body);
+
+    expect(order.designs).toHaveLength(1);
+    expect(order.designs[0]?.takesMessage).toBe(true);
+    expect(order.active).toBe(true);
+  });
+
   it("records who agreed, when, and to which wording", async () => {
     const { token, accountId } = await proAccount();
     const designId = await createSavedDesign(token, "Balloons");

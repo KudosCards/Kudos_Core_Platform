@@ -112,6 +112,35 @@ const MESSAGE_BLOCK = {
  * the point they choose them. Pure — the saved design is never modified, only
  * the per-card snapshot the order keeps.
  */
+/**
+ * Would a chosen message actually be printed on this design?
+ *
+ * Asked by running the real thing rather than reimplementing its rule: a second
+ * copy of "where does a message go" would drift from the one that prints, and
+ * the drift would show as a page promising a message that never appears.
+ *
+ * Lives here, beside the rule it probes, because two callers need the same
+ * answer — the API, reporting the pool it has stored, and the page, warning
+ * about a card at the moment somebody picks it.
+ */
+export function designTakesMessage(document: unknown): boolean {
+  const design = document as DesignDocument | null;
+  if (!design?.pages) return false;
+  return JSON.stringify(applyCardMessage(design, MESSAGE_PROBE)).includes(MESSAGE_PROBE);
+}
+
+/**
+ * The text put through the placement to see whether it lands anywhere.
+ *
+ * Deliberately plain ASCII. The first version of this used NUL characters to
+ * guarantee it could not collide with a subscriber's own words — and
+ * `JSON.stringify` escapes those to the six characters `\u0000`, so the needle
+ * and the haystack were never written the same way and the answer was always
+ * "no". Every design reported that it could not carry a message, which the
+ * page then said out loud. A probe is only useful if it survives the search.
+ */
+const MESSAGE_PROBE = "kudos-message-probe-4f2ac1";
+
 export function applyCardMessage(document: DesignDocument, text: string): DesignDocument {
   const result = findCardMessageSlot(document);
   if (!result.found) {

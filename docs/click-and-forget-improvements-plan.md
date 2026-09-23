@@ -29,7 +29,7 @@ behind them. They are not equally serious.
 
 ### Found while reading
 
-4. **The pool accepts cards that are not birthday cards.** `checkDesigns`
+4. **The pool accepts cards that are not birthday cards.** _(Fixed, ADR 0262.)_ `checkDesigns`
    (`standing-orders.service.ts:294`) validates that a design exists and is not
    archived. Nothing else. The live account's pool currently contains "Best of
    Luck Clover", "Best of Luck Clover copy" and "17th Milestone flowers copy",
@@ -49,6 +49,18 @@ behind them. They are not equally serious.
    prevent exactly that. C2's projection ("covers the next 6 of 9; Grace's on
    the 14th is the first it will not reach") is computed daily, emailed, and
    has **no HTTP route** — the page cannot ask for it.
+
+### And one that was not on either list
+
+7. **`takesMessage` answered "no" for every design ever made.** Found while
+   moving that rule so the page could ask it too. It probes the real placement
+   with a sentinel string and searches the result for it — but the sentinel was
+   built from NUL characters and the search ran over `JSON.stringify` output,
+   which escapes them, so the needle and the haystack were never written the
+   same way. Every subscriber was told that none of their cards would use the
+   messages they had just written, while the send path printed them correctly.
+   Fixed, and pinned at three levels; nothing had ever read the field in a test,
+   which is how it shipped.
 
 ---
 
@@ -77,7 +89,7 @@ print time. The page's promise is real today.
 Ordered so that nothing waits on anything it does not have to. D6 is last only
 because it has an external dependency; it is not less important.
 
-### D1 — Three steps, not six cards
+### D1 — Three steps, not six cards — **built (ADR 0262)**
 
 Reorganise into: **Who gets a card** → **What we send** → **How it is paid, and
 the switch**. A numbered step shell already exists on `/get-started` and should
@@ -88,7 +100,7 @@ bar rather than a button below the fold of a long page.
 The test that matters here is not a snapshot: it is that a subscriber can tell,
 without scrolling, whether cards are going out.
 
-### D2 — Cards you can see
+### D2 — Cards you can see — **built (ADR 0262)**
 
 Replace the text chips with a thumbnail grid built on `CardFacePreview`. "Best
 of Luck Clover" and "Best of Luck Clover copy" are indistinguishable as words
@@ -102,7 +114,7 @@ allowlist widened, since it is currently hard-limited to paths starting `/send`
 (`design-editor-client.tsx:246`). That guard exists to stop an open redirect, so
 widening it gets a test of its own.
 
-### D3 — A birthday pool that knows it is one
+### D3 — A birthday pool that knows it is one — **built (ADR 0262)**
 
 Warn, by name, when a chosen design is not a birthday card: _"Best of Luck
 Clover is a good-luck card. It will be sent for birthdays."_

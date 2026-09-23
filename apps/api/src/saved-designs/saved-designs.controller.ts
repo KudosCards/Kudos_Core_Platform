@@ -11,10 +11,11 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { SavedDesign } from "@prisma/client";
+
 import { MembershipGuard } from "../auth/membership.guard";
 import { CurrentMembership } from "../auth/current-membership.decorator";
 import type { CurrentMembershipContext } from "../auth/types";
-import { SavedDesignsService } from "./saved-designs.service";
+import { SavedDesignsService, type SavedDesignWithCategory } from "./saved-designs.service";
 import { CreateSavedDesignDto } from "./dto/create-saved-design.dto";
 import { UpdateSavedDesignDto } from "./dto/update-saved-design.dto";
 
@@ -34,7 +35,9 @@ export class SavedDesignsController {
   }
 
   @Get()
-  list(@CurrentMembership() membership: CurrentMembershipContext): Promise<SavedDesign[]> {
+  list(
+    @CurrentMembership() membership: CurrentMembershipContext,
+  ): Promise<SavedDesignWithCategory[]> {
     return this.savedDesignsService.list(membership.accountId);
   }
 

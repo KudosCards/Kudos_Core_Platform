@@ -20,6 +20,17 @@ import type { UpdateSavedDesignDto } from "./dto/update-saved-design.dto";
 const FOREIGN_KEY_VIOLATION = "P2003";
 
 /**
+ * A library row plus the occasion its catalog template was filed under.
+ *
+ * The row itself, not a re-parsed one: `document` stays Prisma's JSON the way
+ * every other design read does, and the wire shape is described by
+ * `savedDesignListItemSchema` in shared-types. `category` is null when there is
+ * no template behind the design — a member's own artwork — which is a different
+ * fact from a template that has no category, and must not be read as one.
+ */
+export type SavedDesignWithCategory = SavedDesign & { category: string | null };
+
+/**
  * Not audit-logged like RecipientsService — SavedDesign is card-layout
  * content (text/image positions, merge tokens), not recipient personal
  * data, so it isn't in scope for the GDPR audit trail AuditService exists for.
@@ -78,13 +89,21 @@ export class SavedDesignsService {
     });
   }
 
-  list(accountId: string): Promise<SavedDesign[]> {
+  async list(accountId: string): Promise<SavedDesignWithCategory[]> {
     // Archived designs (soft-deleted but still referenced by order/occasion
     // history) never appear in the library.
-    return this.prisma.savedDesign.findMany({
+    const rows = await this.prisma.savedDesign.findMany({
       where: { accountId, archivedAt: null },
       orderBy: { updatedAt: "desc" },
+      // The template's occasion travels with the design so a caller can tell a
+      // birthday card from a good-luck one. A design built from the member's
+      // own artwork has no template, and reports null rather than guessing.
+      include: { cardDesign: { select: { category: true } } },
     });
+    return rows.map(({ cardDesign, ...design }) => ({
+      ...design,
+      category: cardDesign?.category ?? null,
+    }));
   }
 
   async findOne(accountId: string, id: string): Promise<SavedDesign> {

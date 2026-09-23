@@ -1,6 +1,8 @@
 import {
   CARD_CATEGORIES,
+  UNCATEGORISED_CARD_CATEGORY,
   cardCategoryLabel,
+  catalogSaysBirthday,
   getCardCategory,
   resolveCardCategory,
   slugifyCardName,
@@ -104,5 +106,52 @@ describe("uniqueCardSlug", () => {
 
   it("refuses an empty base rather than minting '-2'", () => {
     expect(() => uniqueCardSlug("", new Set())).toThrow();
+  });
+});
+
+describe("catalogSaysBirthday", () => {
+  /**
+   * Click and forget sends birthdays and nothing else, and its design pool
+   * accepts any saved design — so this is what stands between a subscriber and
+   * a good-luck card posted for somebody's birthday, every year, in silence.
+   */
+
+  it("recognises a birthday card, however the upstream spelled it", () => {
+    expect(catalogSaysBirthday("birthday")).toBe(true);
+    expect(catalogSaysBirthday("Birthdays")).toBe(true);
+    expect(catalogSaysBirthday("Happy Birthday")).toBe(true);
+  });
+
+  it("says no to a category that is published and is not birthday", () => {
+    expect(catalogSaysBirthday("thank you")).toBe(false);
+    expect(catalogSaysBirthday("congratulations")).toBe(false);
+  });
+
+  it("says no to a word it does not publish, because that is not a birthday either", () => {
+    // "Best of Luck Clover" is the case this was written for: a real card in a
+    // real pool whose occasion never made it onto the published vocabulary.
+    // Unrecognised is not a reason to stay quiet — it is only a reason not to
+    // name the occasion.
+    expect(catalogSaysBirthday("good luck")).toBe(false);
+    expect(catalogSaysBirthday("get well soon")).toBe(false);
+  });
+
+  it("stays silent when nobody said", () => {
+    // A member's own artwork has no catalog row, and the sync writes
+    // `uncategorised` for an empty Occasion cell. Neither is a claim about the
+    // occasion, and a warning we cannot stand behind is worse than none.
+    expect(catalogSaysBirthday(null)).toBeNull();
+    expect(catalogSaysBirthday(undefined)).toBeNull();
+    expect(catalogSaysBirthday("")).toBeNull();
+    expect(catalogSaysBirthday("   ")).toBeNull();
+    expect(catalogSaysBirthday(UNCATEGORISED_CARD_CATEGORY)).toBeNull();
+    expect(catalogSaysBirthday("Uncategorised")).toBeNull();
+  });
+
+  it("keeps null distinguishable from false at the call site", () => {
+    // The three answers are not two. A caller that writes `!saysBirthday` turns
+    // "nobody said" into "wrong occasion" and warns about every uploaded
+    // photograph in the library.
+    expect(catalogSaysBirthday(null)).not.toBe(false);
   });
 });

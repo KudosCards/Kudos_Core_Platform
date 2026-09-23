@@ -1,51 +1,17 @@
 "use client";
 
 import { backgroundArtworkVerdict, buildCardDocument } from "@kudos/shared-types";
-import type { CardDesign, DesignDocument, SavedDesign } from "@kudos/shared-types";
+import type { CardDesign, SavedDesign } from "@kudos/shared-types";
 import Image from "next/image";
-import dynamic from "next/dynamic";
 import { CARD_BLUR_DATA_URL, isOptimizableThumbnail } from "@/lib/card-image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { SavedDesignThumb } from "@/components/saved-design-thumb";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { readFileNaturalSize } from "@/lib/image-natural-size";
 import { createClient } from "@/lib/supabase/client";
-
-// The read-only Konva renderer that draws a design's front page (artwork + text)
-// from its document — the same one bulk-send and fulfillment use. Client-only
-// (Konva needs the canvas/window), so it's dynamically imported with ssr: false.
-const CardFacePreview = dynamic(
-  () => import("@/components/card-face-preview").then((m) => m.CardFacePreview),
-  { ssr: false },
-);
-
-/**
- * A saved design has no flat thumbnail image (unlike a catalog template) — only
- * its editable document — so its gallery tile must render that document to show
- * the artwork. This measures the tile's width and hands it to CardFacePreview,
- * which scales the 450×634 card to fit crisply (mirrors the editor canvas's own
- * responsive scaling).
- */
-function SavedDesignThumb({ document }: { document: DesignDocument }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => setWidth(el.clientWidth);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-  return (
-    <div ref={ref} className="w-full">
-      {width > 0 && <CardFacePreview document={document} width={width} />}
-    </div>
-  );
-}
 
 const ALL_CATEGORIES = "all";
 
