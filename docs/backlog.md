@@ -125,6 +125,12 @@ card, Pro and above with the Free tier seeing it locked. "Approve once, ever"
 is now true for an account that sets one up, there is a page to set it up on,
 and the homepage says so.
 
+The page it is set up on is getting a second pass — see
+`docs/click-and-forget-improvements-plan.md`, which also records two faults
+found while reading it: the design pool accepts cards that are not birthday
+cards, and the page never says how many contacts the instruction actually
+covers.
+
 Two things are deliberately not built and are not waiting on a decision so much
 as on a purchase and a pass over the catalog:
 
