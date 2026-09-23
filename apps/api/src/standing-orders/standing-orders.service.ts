@@ -24,9 +24,12 @@ const STANDING_ORDER_INCLUDE = {
     include: {
       savedDesign: { select: { id: true, name: true, archivedAt: true, document: true } },
     },
-    orderBy: { createdAt: "asc" },
+    // By position, written on save. `createdAt` used to order these and cannot:
+    // a createMany writes every row on the same timestamp, so the pool came
+    // back in an arbitrary order and the positional pick chose by chance.
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
   },
-  messages: { orderBy: { createdAt: "asc" } },
+  messages: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
 } satisfies Prisma.StandingOrderInclude;
 
 type StandingOrderRow = Prisma.StandingOrderGetPayload<{ include: typeof STANDING_ORDER_INCLUDE }>;
@@ -150,24 +153,69 @@ export class StandingOrdersService {
         },
       });
 
-      // Replace both pools wholesale. Diffing them would buy nothing — these
-      // are tens of rows, written when a person presses save — and would buy it
-      // at the price of a merge nobody can check by reading.
+      // The design pool is replaced wholesale. Nothing points at these rows —
+      // an occasion records the saved design itself — so an id surviving a save
+      // buys nothing, and `position` is written explicitly because the order is
+      // what the pick reads.
       await tx.standingOrderDesign.deleteMany({ where: { standingOrderId: order.id } });
       if (savedDesignIds.length > 0) {
         await tx.standingOrderDesign.createMany({
-          data: savedDesignIds.map((savedDesignId) => ({
+          data: savedDesignIds.map((savedDesignId, position) => ({
             standingOrderId: order.id,
             savedDesignId,
+            position,
           })),
         });
       }
-      await tx.standingOrderMessage.deleteMany({ where: { standingOrderId: order.id } });
-      for (const message of dto.messages) {
-        // Sequential creates rather than createMany: `createdAt` is what orders
-        // the pool, and createMany writes them all on the same timestamp.
-        await tx.standingOrderMessage.create({
-          data: { standingOrderId: order.id, text: message.text, source: message.source },
+
+      // The message pool is **not** replaced wholesale, and this is the whole
+      // point of the block.
+      //
+      // An occasion approved up to three weeks early records which message it
+      // will carry, and that foreign key is SET NULL so that deleting a message
+      // lets an already-approved card fall back to the design's own words
+      // (ADR 0260). Deleting every row on every save turned that deliberate
+      // escape hatch into the normal case: editing one message, or none at all,
+      // silently stripped the chosen words from every card already approved —
+      // while the consent statement on the same page promises that "changing
+      // anything here does not affect cards already on their way".
+      //
+      // So a message that is still in the pool keeps its row. Only one the
+      // subscriber actually removed is deleted, which is exactly the case the
+      // SET NULL was chosen for.
+      const existing = await tx.standingOrderMessage.findMany({
+        where: { standingOrderId: order.id },
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+      });
+      const unclaimed = [...existing];
+
+      for (const [position, message] of dto.messages.entries()) {
+        // Resolved once, here, rather than left to the column default: the
+        // field is optional on the way in, so an omitted source arrives as
+        // undefined while every stored row says "written". Matching one against
+        // the other found nothing, recreated every row, and quietly undid the
+        // whole point of this block — which is what the two tests below caught.
+        const source = message.source ?? "written";
+
+        // Matched on the words and who wrote them: the same text kept by hand
+        // is the same message, and a draft the subscriber accepted is not the
+        // same promise as one they typed (ADR 0263).
+        const at = unclaimed.findIndex((row) => row.text === message.text && row.source === source);
+        if (at === -1) {
+          await tx.standingOrderMessage.create({
+            data: { standingOrderId: order.id, text: message.text, source, position },
+          });
+          continue;
+        }
+        const [row] = unclaimed.splice(at, 1);
+        if (row!.position !== position) {
+          await tx.standingOrderMessage.update({ where: { id: row!.id }, data: { position } });
+        }
+      }
+
+      if (unclaimed.length > 0) {
+        await tx.standingOrderMessage.deleteMany({
+          where: { id: { in: unclaimed.map((row) => row.id) } },
         });
       }
 
@@ -334,6 +382,7 @@ export class StandingOrdersService {
         id: null,
         enabled: false,
         audience: { kind: "all" },
+        audienceGone: false,
         postageClass: "second_class",
         designs: [],
         messages: [],
@@ -353,6 +402,7 @@ export class StandingOrdersService {
       id: row.id,
       enabled: row.enabled,
       audience: this.audienceOf(row),
+      audienceGone: this.audienceGone(row),
       postageClass: row.postageClass,
       designs: row.designs.map((design) => ({
         savedDesignId: design.savedDesignId,
@@ -378,9 +428,34 @@ export class StandingOrdersService {
     };
   }
 
+  /**
+   * The audience, read from the column that records what was chosen.
+   *
+   * `audienceKind` first, not the ids. Both id columns are SET NULL, so a
+   * deleted list leaves `recipientListId: null` on a row whose kind still says
+   * `list` — and reading the ids alone reported that as `{ kind: "all" }`,
+   * which is the exact widening `audienceKind` exists to prevent. The page
+   * ticked "Everybody" for a pool that had been aimed at thirty children, and
+   * the next save would have made it true.
+   *
+   * With the list gone there is no honest audience to return, so this falls
+   * back to `all` **and** `audienceGone` says so — see the view, which is what
+   * the page reads before it decides anything.
+   */
   private audienceOf(row: StandingOrderRow): StandingOrderAudience {
-    if (row.recipientListId) return { kind: "list", listId: row.recipientListId };
-    if (row.segmentId) return { kind: "segment", segmentId: row.segmentId };
+    if (row.audienceKind === "list" && row.recipientListId) {
+      return { kind: "list", listId: row.recipientListId };
+    }
+    if (row.audienceKind === "segment" && row.segmentId) {
+      return { kind: "segment", segmentId: row.segmentId };
+    }
     return { kind: "all" };
+  }
+
+  /** Whether the thing this was aimed at has been deleted out from under it. */
+  private audienceGone(row: StandingOrderRow): boolean {
+    if (row.audienceKind === "list") return row.recipientListId === null;
+    if (row.audienceKind === "segment") return row.segmentId === null;
+    return false;
   }
 }

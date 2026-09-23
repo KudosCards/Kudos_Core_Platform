@@ -85,6 +85,7 @@ const EMPTY: StandingOrder = {
   consentVersion: 0,
   planAllows: false,
   messageDraftingAvailable: false,
+  audienceGone: false,
 };
 
 /**
@@ -114,10 +115,32 @@ export function ClickAndForgetClient({
   initialReadiness: ContactReadiness | null;
 }) {
   const router = useRouter();
+  /**
+   * A failed read is not an empty instruction.
+   *
+   * `GET /standing-order` answers with a real empty one (`id: null`) for an
+   * account that has never set this up, so null here means the read failed —
+   * and rendering that as "nothing configured" put a live Save button over
+   * somebody's real instruction, one press from replacing it with an empty,
+   * switched-off one.
+   */
+  const unavailable = initialOrder === null;
   const [order, setOrder] = useState<StandingOrder>(initialOrder ?? EMPTY);
   const [library, setLibrary] = useState<DesignOption[]>(designs);
   const [enabled, setEnabled] = useState(order.enabled);
-  const [audienceKind, setAudienceKind] = useState(order.audience.kind);
+  /**
+   * Which audience is selected, or `null` for "somebody has to choose".
+   *
+   * Null in exactly two cases, and both are ones where picking on the
+   * subscriber's behalf would widen the instruction: the list it was aimed at
+   * has been deleted, and a smart-list audience we will not act on. The old
+   * default read `order.audience.kind`, which is `all` for both — so a page
+   * showing thirty children yesterday showed "Everybody" ticked today, and one
+   * press of Save made that true.
+   */
+  const [audienceKind, setAudienceKind] = useState<"all" | "list" | null>(
+    order.audience.kind === "segment" || order.audienceGone ? null : order.audience.kind,
+  );
   const [listId, setListId] = useState(
     order.audience.kind === "list" ? order.audience.listId : (lists[0]?.id ?? ""),
   );
@@ -225,7 +248,8 @@ export function ClickAndForgetClient({
     enabled !== order.enabled ||
     postageClass !== order.postageClass ||
     agreed !== (order.consent?.current ?? false) ||
-    audienceKind !== order.audience.kind ||
+    audienceKind !==
+      (order.audience.kind === "segment" || order.audienceGone ? null : order.audience.kind) ||
     (audienceKind === "list" &&
       listId !== (order.audience.kind === "list" ? order.audience.listId : "")) ||
     chosen.join("|") !== order.designs.map((d) => d.savedDesignId).join("|") ||
@@ -330,12 +354,25 @@ export function ClickAndForgetClient({
     setError(null);
     setSaved(false);
 
+    if (unavailable) {
+      setError("We could not load your settings, so there is nothing safe to save over. Refresh.");
+      return;
+    }
+
     if (enabled && chosen.length === 0) {
       setError("Choose at least one card design before switching this on");
       return;
     }
     if (enabled && written.length === 0) {
       setError("Write at least one message before switching this on");
+      return;
+    }
+    if (audienceKind === null) {
+      setError(
+        order.audienceGone
+          ? "The list this was sending to has been deleted — choose who gets a card before saving"
+          : "Choose who gets a card before saving — a smart list is not something we send from",
+      );
       return;
     }
     if (audienceKind === "list" && !listId) {
@@ -406,6 +443,13 @@ export function ClickAndForgetClient({
         </div>
       )}
 
+      {unavailable && (
+        <p className="notice notice-danger">
+          <strong>We could not load your settings.</strong> Nothing here is your saved instruction,
+          and saving is switched off so it cannot be written over. Refresh the page to try again.
+        </p>
+      )}
+
       {error && <p className="notice notice-danger">{error}</p>}
 
       <Step n={1} title="Who gets a card">
@@ -413,6 +457,12 @@ export function ClickAndForgetClient({
           <p className="notice notice-warning">
             This is currently pointed at a smart list. Smart lists change on their own, so we do not
             send from them — choose one of the options below and save.
+          </p>
+        )}
+        {order.audienceGone && (
+          <p className="notice notice-warning">
+            The list this was sending to has been deleted. We have not moved it to everybody on your
+            behalf — choose who gets a card below and save.
           </p>
         )}
         <div className="flex flex-col gap-3">
@@ -717,6 +767,7 @@ export function ClickAndForgetClient({
       </Step>
 
       <SaveBar
+        disabled={unavailable}
         dirty={dirty}
         saving={saving}
         saved={saved && !error}
@@ -749,6 +800,23 @@ export function ClickAndForgetClient({
       )}
     </div>
   );
+}
+
+/**
+ * A dispatch date as "14 October", from whatever the caller actually has.
+ *
+ * `Date | string` on purpose, and not because the type is wrong: `apiFetch`
+ * casts its response rather than parsing it, so every date in a payload is a
+ * string at runtime however it is declared. The page parses the projection at
+ * the boundary now, and this is the belt to that braces — the version without
+ * it threw inside the render, and only for the subscribers whose balance was
+ * short.
+ */
+function dispatchDay(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
 }
 
 /** £12.34, and £12 when the pennies are zero — the wallet page's own shape. */
@@ -863,7 +931,7 @@ function Money({
         {projection && projection.cardsTotal > 0 && (
           <span className={shortfall ? "text-warning" : "text-muted"}>
             {shortfall
-              ? `That covers the next ${projection.cardsCovered} of ${projection.cardsTotal} cards — ${shortfall.recipientName}'s, on ${shortfall.dispatchDate.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}, is the first it will not reach.`
+              ? `That covers the next ${projection.cardsCovered} of ${projection.cardsTotal} cards — ${shortfall.recipientName}'s, on ${dispatchDay(shortfall.dispatchDate)}, is the first it will not reach.`
               : `That covers all ${projection.cardsTotal} ${projection.cardsTotal === 1 ? "card" : "cards"} already approved for the next month.`}
           </span>
         )}
@@ -1100,27 +1168,32 @@ function SaveBar({
   saving,
   saved,
   activeAfterSave,
+  disabled,
   onSave,
 }: {
   dirty: boolean;
   saving: boolean;
   saved: boolean;
   activeAfterSave: boolean;
+  /** The instruction could not be read, so there is nothing safe to save over. */
+  disabled: boolean;
   onSave: () => void;
 }) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/95 backdrop-blur md:left-64">
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-3">
         <span className="text-sm text-muted">
-          {dirty
-            ? "You have unsaved changes."
-            : saved
-              ? activeAfterSave
-                ? "Saved. We will take it from here."
-                : "Saved."
-              : "Everything here is saved."}
+          {disabled
+            ? "Saving is off until your settings load."
+            : dirty
+              ? "You have unsaved changes."
+              : saved
+                ? activeAfterSave
+                  ? "Saved. We will take it from here."
+                  : "Saved."
+                : "Everything here is saved."}
         </span>
-        <button type="button" onClick={onSave} disabled={saving} className="btn-accent">
+        <button type="button" onClick={onSave} disabled={saving || disabled} className="btn-accent">
           {saving ? "Saving…" : "Save"}
         </button>
       </div>

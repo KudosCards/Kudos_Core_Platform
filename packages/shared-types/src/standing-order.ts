@@ -167,6 +167,19 @@ export const standingOrderSchema = z.object({
   /** The wording they must agree to, and the version it carries. */
   consentStatement: z.array(z.string()),
   consentVersion: z.number().int(),
+  /**
+   * The list or segment this points at has been deleted.
+   *
+   * Reported separately because `audience` cannot say it: the foreign keys are
+   * SET NULL, so a deleted list leaves a row that looks exactly like a
+   * deliberate "everybody" — which is the hazard `audienceKind` was added to
+   * close (ADR 0256), and which the read then reopened by ignoring that column.
+   *
+   * A page must not answer this by ticking "Everybody" on somebody's behalf.
+   * Thirty children and every contact on the account are different
+   * instructions, and only the subscriber may turn one into the other.
+   */
+  audienceGone: z.boolean(),
   /** Whether this account's plan permits automatic sending at all. Free sees
    * the whole feature with this false, and an upgrade prompt. */
   planAllows: z.boolean(),

@@ -4,9 +4,9 @@ import type {
   RecipientListSummary,
   SavedDesignListItem,
   StandingOrder,
-  WalletProjection,
   WalletSummary,
 } from "@kudos/shared-types";
+import { walletProjectionSchema } from "@kudos/shared-types";
 import { serverApiFetch } from "@/lib/api.server";
 import { ClickAndForgetClient } from "./click-and-forget-client";
 
@@ -19,7 +19,7 @@ import { ClickAndForgetClient } from "./click-and-forget-client";
  * somebody who has already chosen their cards. See docs/adr/0258 and 0262.
  */
 export default async function ClickAndForgetPage() {
-  const [order, designs, lists, templates, wallet, projection] = await Promise.all([
+  const [order, designs, lists, templates, wallet, rawProjection] = await Promise.all([
     serverApiFetch<StandingOrder>("/standing-order").catch(() => null),
     serverApiFetch<SavedDesignListItem[]>("/saved-designs").catch(() => null),
     serverApiFetch<RecipientListSummary[]>("/recipient-lists").catch(() => null),
@@ -32,8 +32,16 @@ export default async function ClickAndForgetPage() {
     // its own: a page that cannot price the next month is still a page somebody
     // can choose their cards on.
     serverApiFetch<WalletSummary>("/wallet").catch(() => null),
-    serverApiFetch<WalletProjection>("/wallet/projection").catch(() => null),
+    serverApiFetch<unknown>("/wallet/projection").catch(() => null),
   ]);
+
+  // `apiFetch` casts, it does not parse: every date in a response is a string
+  // at runtime however the type reads. The projection is the one payload here
+  // whose date gets formatted, so it is parsed with the schema that declares it
+  // — `z.coerce.date()` turns the string into the Date the component is typed
+  // for, and a response we cannot parse shows no money section rather than
+  // throwing inside the render.
+  const projection = walletProjectionSchema.safeParse(rawProjection);
 
   // Second, because it depends on the first: the coverage shown on arrival is
   // for the audience already saved, not for "everybody". A page that opens
@@ -46,6 +54,10 @@ export default async function ClickAndForgetPage() {
 
   return (
     <ClickAndForgetClient
+      // Null means the read failed. An account that has never set this up gets
+      // a real empty instruction back (id: null), so the two are different
+      // facts — and the page must not offer to overwrite an instruction it
+      // could not read.
       initialOrder={order}
       designs={(designs ?? []).map((design) => ({
         id: design.id,
@@ -60,7 +72,7 @@ export default async function ClickAndForgetPage() {
       }))}
       templates={templates ?? []}
       wallet={wallet}
-      projection={projection}
+      projection={projection.success ? projection.data : null}
       initialReadiness={readiness}
     />
   );
