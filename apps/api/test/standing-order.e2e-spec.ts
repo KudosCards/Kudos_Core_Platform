@@ -313,6 +313,195 @@ describe("Standing order (e2e)", () => {
     expect(standingOrderSchema.parse(fixed.body).active).toBe(true);
   });
 
+  describe("things a review found", () => {
+    /**
+     * Each of these shipped. The tests are written so they fail against the
+     * code as it was.
+     */
+
+    it("keeps a message a card has already been approved for", async () => {
+      // Every save deleted the whole message pool and wrote it again, and the
+      // occasion's foreign key is SET NULL — so editing one message, or none,
+      // stripped the chosen words from every card already approved, while the
+      // consent statement on the same page promised that "changing anything
+      // here does not affect cards already on their way".
+      const { token, accountId } = await proAccount();
+      const designId = await createSavedDesign(token, "Balloons");
+
+      await save(
+        token,
+        fullBody([designId], {
+          messages: [{ text: "Happy birthday {firstName}!" }, { text: "Many happy returns!" }],
+        }),
+      ).expect(200);
+
+      const before = standingOrderSchema.parse((await get(token).expect(200)).body);
+      const chosen = before.messages[0]!;
+
+      const recipient = await prisma.recipient.create({
+        data: {
+          accountId,
+          firstName: "Ada",
+          lastName: "Reed",
+          dateOfBirth: new Date("1990-04-02"),
+          addressLine1: "12 Bell Lane",
+          addressCity: "Leeds",
+          addressPostcode: "LS1 4AB",
+        },
+      });
+      const occasion = await prisma.occasion.create({
+        data: {
+          accountId,
+          recipientId: recipient.id,
+          type: "birthday",
+          source: "recurring_per_recipient",
+          occasionDate: new Date("2026-04-02"),
+          dispatchDate: new Date("2026-03-30"),
+          dispatchOption: "auto_send",
+          status: "approved",
+          savedDesignId: designId,
+          standingOrderMessageId: chosen.id,
+        },
+      });
+
+      // Change something else entirely.
+      await save(
+        token,
+        fullBody([designId], {
+          messages: [
+            { text: "Happy birthday {firstName}!" },
+            { text: "Many happy returns!" },
+            { text: "Have a good one." },
+          ],
+        }),
+      ).expect(200);
+
+      const after = await prisma.occasion.findUniqueOrThrow({ where: { id: occasion.id } });
+      expect(after.standingOrderMessageId).toBe(chosen.id);
+    });
+
+    it("still lets a removed message fall back, which is what SET NULL is for", async () => {
+      // The escape hatch ADR 0260 chose deliberately: a card already approved
+      // must not block a subscriber from rewriting their pool.
+      const { token, accountId } = await proAccount();
+      const designId = await createSavedDesign(token, "Balloons");
+      await save(
+        token,
+        fullBody([designId], { messages: [{ text: "The one they will delete" }] }),
+      ).expect(200);
+
+      const before = standingOrderSchema.parse((await get(token).expect(200)).body);
+      const recipient = await prisma.recipient.create({
+        data: {
+          accountId,
+          firstName: "Ada",
+          lastName: "Reed",
+          dateOfBirth: new Date("1990-04-02"),
+        },
+      });
+      const occasion = await prisma.occasion.create({
+        data: {
+          accountId,
+          recipientId: recipient.id,
+          type: "birthday",
+          source: "recurring_per_recipient",
+          occasionDate: new Date("2026-04-02"),
+          dispatchDate: new Date("2026-03-30"),
+          dispatchOption: "auto_send",
+          status: "approved",
+          savedDesignId: designId,
+          standingOrderMessageId: before.messages[0]!.id,
+        },
+      });
+
+      await save(
+        token,
+        fullBody([designId], { messages: [{ text: "Something else entirely" }] }),
+      ).expect(200);
+
+      const after = await prisma.occasion.findUniqueOrThrow({ where: { id: occasion.id } });
+      expect(after.standingOrderMessageId).toBeNull();
+    });
+
+    it("gives the pools the order they were saved in, every time", async () => {
+      // The designs are written with one createMany and were read back by
+      // `createdAt`, which is identical to the microsecond across the batch —
+      // so the order was arbitrary, and the pick is positional.
+      const { token } = await proAccount();
+      const first = await createSavedDesign(token, "First");
+      const second = await createSavedDesign(token, "Second");
+      const third = await createSavedDesign(token, "Third");
+
+      await save(
+        token,
+        fullBody([third, first, second], {
+          messages: [{ text: "One" }, { text: "Two" }, { text: "Three" }],
+        }),
+      ).expect(200);
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const order = standingOrderSchema.parse((await get(token).expect(200)).body);
+        expect(order.designs.map((design) => design.savedDesignId)).toEqual([third, first, second]);
+        expect(order.messages.map((message) => message.text)).toEqual(["One", "Two", "Three"]);
+      }
+    });
+
+    it("reorders a pool without losing the rows a card points at", async () => {
+      const { token } = await proAccount();
+      const designId = await createSavedDesign(token, "Balloons");
+      await save(
+        token,
+        fullBody([designId], { messages: [{ text: "One" }, { text: "Two" }] }),
+      ).expect(200);
+      const before = standingOrderSchema.parse((await get(token).expect(200)).body);
+
+      await save(
+        token,
+        fullBody([designId], { messages: [{ text: "Two" }, { text: "One" }] }),
+      ).expect(200);
+      const after = standingOrderSchema.parse((await get(token).expect(200)).body);
+
+      expect(after.messages.map((message) => message.text)).toEqual(["Two", "One"]);
+      // The same rows, in the other order — not two new ones.
+      expect(after.messages.map((message) => message.id).sort()).toEqual(
+        before.messages.map((message) => message.id).sort(),
+      );
+    });
+
+    it("does not report a deleted list as 'everybody'", async () => {
+      // Both id columns are SET NULL, so a deleted list leaves a row that looks
+      // exactly like a deliberate "everybody" — which is why `audienceKind`
+      // exists, and the read ignored it.
+      const { token, accountId } = await proAccount();
+      const designId = await createSavedDesign(token, "Balloons");
+      const listId = await createList(token, "Year 4");
+      await save(token, fullBody([designId], { audience: { kind: "list", listId } })).expect(200);
+
+      await prisma.recipientList.delete({ where: { id: listId } });
+
+      const order = standingOrderSchema.parse((await get(token).expect(200)).body);
+      expect(order.audienceGone).toBe(true);
+      expect(order.blockers).toContain("audience_gone");
+      expect(order.active).toBe(false);
+      // It still has to answer with something; what matters is that it says
+      // out loud that this is not a choice anybody made.
+      expect(await prisma.standingOrder.findUniqueOrThrow({ where: { accountId } })).toMatchObject({
+        audienceKind: "list",
+        recipientListId: null,
+      });
+    });
+
+    it("says nothing is gone when nothing is", async () => {
+      const { token } = await proAccount();
+      const designId = await createSavedDesign(token, "Balloons");
+      await save(token, fullBody([designId])).expect(200);
+
+      const order = standingOrderSchema.parse((await get(token).expect(200)).body);
+      expect(order.audienceGone).toBe(false);
+      expect(order.audience).toEqual({ kind: "all" });
+    });
+  });
+
   it("refuses a contact list that is not this account's", async () => {
     const { token } = await proAccount();
     const other = await proAccount();

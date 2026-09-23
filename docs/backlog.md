@@ -13,6 +13,26 @@ and decided _not now_; ideas nobody has examined belong in a plan doc first.
 
 ---
 
+## Billing
+
+### A Supabase outage reads as "nothing owed" — wallet campaigns
+
+**What happens.** `WalletCampaignsService.confirmedEmailFor` returns `null` both
+when Supabase says the address is unconfirmed and when Supabase fails to answer
+at all. The caller cannot tell those apart, so an outage is tallied as `skipped`
+— "nothing is owed here" — rather than `failed`, and the sweep's warning never
+fires for a customer who is owed a credit.
+
+**What would unblock it.** Distinguish the two at the point the error is caught:
+return a failure the caller can count, and let the sweep warn on it. Small, and
+worth doing with a test that stubs the admin client into an error.
+
+**Why not now.** Found by a review of click and forget, in a file that feature
+never touched (ADR 0265). It is a billing change and belongs to its own commit,
+not to a review of somebody else's.
+
+---
+
 ## Integrations
 
 ### Is `GET /contacts` deprecated? — LeadConnector

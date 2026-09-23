@@ -1235,6 +1235,14 @@ model StandingOrder {
 model StandingOrderDesign {
   standingOrderId String   @map("standing_order_id")
   savedDesignId   String   @map("saved_design_id")
+  /// Where this sits in the pool, written explicitly on every save.
+  ///
+  /// Not `createdAt`, which is what this used to order by: the designs are
+  /// written with `createMany` and share a timestamp to the microsecond, so the
+  /// order came back arbitrary and could differ between two reads of the same
+  /// pool. The pick is positional, so that is a card chosen by chance rather
+  /// than by the rule — and a page that looked unsaved the moment it saved.
+  position        Int      @default(0)
   createdAt       DateTime @default(now()) @map("created_at")
 
   standingOrder StandingOrder @relation(fields: [standingOrderId], references: [id], onDelete: Cascade)
@@ -1260,6 +1268,10 @@ model StandingOrderMessage {
   standingOrderId String                     @map("standing_order_id")
   text            String
   source          StandingOrderMessageSource @default(written)
+  /// Where this sits in the pool. Explicit for the same reason the designs'
+  /// is, and because a message row now survives a save — so its `createdAt` is
+  /// when it was first written, not where it belongs.
+  position        Int                        @default(0)
   createdAt       DateTime                   @default(now()) @map("created_at")
   updatedAt       DateTime                   @updatedAt @map("updated_at")
 

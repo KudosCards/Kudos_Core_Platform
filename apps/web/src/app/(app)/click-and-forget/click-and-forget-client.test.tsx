@@ -112,6 +112,7 @@ function order(over: Partial<StandingOrder> = {}): StandingOrder {
     consentStatement: STATEMENT,
     consentVersion: 1,
     planAllows: true,
+    audienceGone: false,
     messageDraftingAvailable: false,
     ...over,
   };
@@ -140,6 +141,7 @@ function renderPage({
   lists = [],
   designs = [design()],
   chosen = [],
+  unavailable = false,
   summary = wallet(),
   projection = null,
   readiness = null,
@@ -151,18 +153,21 @@ function renderPage({
   summary?: WalletSummary | null;
   projection?: WalletProjection | null;
   readiness?: ContactReadiness | null;
+  /** Null stands for a read that failed, which is not an empty instruction. */
+  unavailable?: boolean;
 } = {}) {
+  const loaded = order({
+    designs: chosen.map((id) => ({
+      savedDesignId: id,
+      name: designs.find((d) => d.id === id)?.name ?? id,
+      archived: false,
+      takesMessage: true,
+    })),
+    ...over,
+  });
   render(
     <ClickAndForgetClient
-      initialOrder={order({
-        designs: chosen.map((id) => ({
-          savedDesignId: id,
-          name: designs.find((d) => d.id === id)?.name ?? id,
-          archived: false,
-          takesMessage: true,
-        })),
-        ...over,
-      })}
+      initialOrder={unavailable ? null : loaded}
       designs={designs}
       lists={lists}
       templates={[]}
@@ -174,6 +179,11 @@ function renderPage({
 }
 
 describe("Click and forget", () => {
+  // Reset for every test, not just the drafting ones: a shared mock keeps its
+  // calls, and "was never asked to save" quietly passed on somebody else's
+  // save two tests earlier.
+  beforeEach(() => apiMock.mockReset());
+
   describe("a birthday pool that knows it is one", () => {
     it("names a chosen card the catalog files under another occasion", () => {
       // The case this was written for. The pool accepts any saved design and the
@@ -432,6 +442,95 @@ describe("Click and forget", () => {
     });
   });
 
+  describe("things a review found", () => {
+    /**
+     * Each of these is a bug that shipped, and each test is written so that it
+     * fails against the code as it was.
+     */
+
+    it("renders the shortfall date the API actually sends, which is a string", () => {
+      // `apiFetch` casts its response, it does not parse it — so every date in
+      // a payload is a string at runtime however the type reads. This called
+      // `.toLocaleDateString()` on it, which threw, and only for the
+      // subscribers whose balance was short. The unit test passed a real Date
+      // and never saw it.
+      const fromTheWire = {
+        balanceMinor: 5000,
+        committedMinor: 9000,
+        cardsTotal: 9,
+        cardsCovered: 6,
+        firstShortfall: { dispatchDate: "2026-10-14T00:00:00.000Z", recipientName: "Grace Bell" },
+      } as unknown as WalletProjection;
+
+      renderPage({ projection: fromTheWire });
+      expect(screen.getByText(/14 October/)).toBeInTheDocument();
+    });
+
+    it("does not tick Everybody when the list it was sending to has been deleted", () => {
+      // Both id columns are SET NULL, so a deleted list leaves a row that looks
+      // like a deliberate "everybody". The page ticked it, and one press of
+      // Save would have turned thirty children into every contact on the
+      // account.
+      renderPage({ over: { audienceGone: true } });
+      expect(screen.getByRole("radio", { name: /Everybody/i })).not.toBeChecked();
+      expect(screen.getByRole("radio", { name: /One of my lists/i })).not.toBeChecked();
+      expect(screen.getByText(/has been deleted/i)).toBeInTheDocument();
+    });
+
+    it("refuses to save a deleted-list audience until somebody chooses", async () => {
+      const user = userEvent.setup();
+      renderPage({ over: { audienceGone: true } });
+
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(await screen.findByText(/choose who gets a card before saving/i)).toBeInTheDocument();
+      expect(apiMock).not.toHaveBeenCalledWith("/standing-order", expect.anything());
+    });
+
+    it("refuses to turn a smart-list audience into everybody by itself", async () => {
+      // The page warns about a smart list and then, on Save, quietly sent
+      // `{kind: "all"}` — which is the same widening by a different route.
+      const user = userEvent.setup();
+      renderPage({
+        over: { audience: { kind: "segment", segmentId: "22222222-2222-4222-8222-222222222222" } },
+      });
+
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(await screen.findByText(/choose who gets a card before saving/i)).toBeInTheDocument();
+      expect(apiMock).not.toHaveBeenCalledWith("/standing-order", expect.anything());
+    });
+
+    it("saves a real choice once one is made", async () => {
+      const user = userEvent.setup();
+      renderPage({ over: { audienceGone: true } });
+
+      await user.click(screen.getByRole("radio", { name: /Everybody/i }));
+      apiMock.mockResolvedValueOnce(order());
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      const save = apiMock.mock.calls.find(([path]) => path === "/standing-order");
+      expect(save).toBeDefined();
+      expect(JSON.parse(String((save![1] as RequestInit).body))).toMatchObject({
+        audience: { kind: "all" },
+      });
+    });
+
+    it("will not offer to save over an instruction it could not read", async () => {
+      // A failed read rendered as "nothing configured", with a live Save button
+      // over somebody's real instruction.
+      const user = userEvent.setup();
+      renderPage({ unavailable: true });
+
+      expect(screen.getByText(/could not load your settings/i)).toBeInTheDocument();
+      const save = screen.getByRole("button", { name: "Save" });
+      expect(save).toBeDisabled();
+
+      await user.click(save);
+      expect(apiMock).not.toHaveBeenCalledWith("/standing-order", expect.anything());
+    });
+  });
+
   describe("consent", () => {
     it("shows the wording somebody is agreeing to, rather than a bare tickbox", () => {
       renderPage();
@@ -481,8 +580,6 @@ describe("Click and forget", () => {
      */
 
     const drafted = ["Many happy returns, {firstName}!", "Have a brilliant day, {firstName}."];
-
-    beforeEach(() => apiMock.mockReset());
 
     function mockDrafts(drafts: string[] = drafted) {
       apiMock.mockResolvedValue({ drafts });
