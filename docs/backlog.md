@@ -119,13 +119,20 @@ notified only on success and audited every failure to a log nobody reads —
 survivable while customers are still watching, fatal the moment we tell them
 they need not. C1 (ADR 0254) closed it.
 
-Scoped in `docs/click-and-forget-plan.md`, now with the shape settled: card
-pool plus AI-drafted message pool, birthdays only, auto top-up from a stored
-card, Pro and above with the Free tier seeing it locked. Phases C1 to C8; C1 (ADR 0254), C2 (ADR 0255), C4 (ADR 0256), C6 (ADR 0257),
-C7 (ADR 0258) and C3's columns (ADR 0259) are built — so "approve once, ever" is true for an account that
-sets one up, and there is now a page to set it up on. The message pool is still
-unused: applying a chosen message is C5, which waits on the catalog work above,
-and the page says so where a customer writes them.
+Scoped in `docs/click-and-forget-plan.md` and built, C1 to C8 (ADRs 0254 to
+0261): card pool plus message pool, birthdays only, auto top-up from a stored
+card, Pro and above with the Free tier seeing it locked. "Approve once, ever"
+is now true for an account that sets one up, there is a page to set it up on,
+and the homepage says so.
+
+Two things are deliberately not built and are not waiting on a decision so much
+as on a purchase and a pass over the catalog:
+
+- **AI-drafted messages.** `source: "assisted"` is recorded on a message and
+  nothing writes it. A vendor and a data-processing agreement come first, and
+  the hand-written pool demonstrably works without it.
+- **The catalog description pass** below, which is what turns varying a card
+  into matching one.
 
 Two things surfaced by the scoping belong here rather than there, because they
 are ops work and they gate the build:

@@ -15,6 +15,7 @@ import { organisationSchema, webSiteSchema } from "@/lib/structured-data";
 import { JsonLd } from "@/components/json-ld";
 import { PublicHeader } from "@/components/public-header";
 import { AUDIENCES } from "@/lib/audiences";
+import { CLICK_AND_FORGET_FOOTNOTE, CLICK_AND_FORGET_POINTS } from "@/lib/click-and-forget";
 import { SocialLinks } from "@/components/social-links";
 
 /**
@@ -66,7 +67,7 @@ const steps = [
   {
     step: "2",
     title: "Choose when it goes",
-    body: "Send it now for a one-off, or tell us the birthdays and key dates and we'll post a card every year. We can remind you first, or just get on with it for you.",
+    body: "Send it now for a one-off, or tell us the birthdays and we'll post a card every year. We can remind you first — or set it up once and let us get on with it.",
   },
   {
     step: "3",
@@ -402,6 +403,39 @@ export default async function HomePage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Click and forget */}
+      <section id="click-and-forget" className="scroll-mt-24">
+        <div className="mx-auto max-w-6xl px-6 py-16">
+          <div className="mx-auto max-w-2xl text-center">
+            <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
+              CLICK & FORGET
+            </span>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight">
+              Set it up once. Then stop thinking about it.
+            </h2>
+            <p className="mt-3 text-slate-600">
+              The thing people tell us is that they love the idea and haven’t got time to keep on
+              top of it. So don’t. Add your contacts, pick the cards you like, write a few messages
+              — and we send a card for every birthday after that, without asking you again.
+            </p>
+          </div>
+          <div className="mt-10 grid gap-6 md:grid-cols-3">
+            {CLICK_AND_FORGET_POINTS.map((item) => (
+              <div
+                key={item.title}
+                className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100"
+              >
+                <h3 className="font-semibold">{item.title}</h3>
+                <p className="mt-2 text-sm text-slate-600">{item.body}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mx-auto mt-8 max-w-2xl text-center text-sm text-slate-500">
+            {CLICK_AND_FORGET_FOOTNOTE}
+          </p>
         </div>
       </section>
 
