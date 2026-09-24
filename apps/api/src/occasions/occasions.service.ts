@@ -125,6 +125,29 @@ function attachOrderLink<T extends { orderRecipients: { batchOrder: OccasionOrde
  */
 export const APPROVE_CONCURRENCY = 6;
 
+/**
+ * Occasions an account-wide view may show or count.
+ *
+ * Archiving is the only way to stop sending to somebody — there is no delete —
+ * so an archived contact's occasions are hidden from the calendar and the
+ * approvals queue rather than destroyed, and come straight back if the contact
+ * is restored. The promoter that fills the queue says the same thing in its own
+ * words ("Don't pull an archived recipient's occasion into the approvals
+ * queue").
+ *
+ * Exported because the rule was written three times and implemented once: the
+ * queue obeyed it while the sidebar badge, the dashboard tile and the
+ * notification bell counted the hidden rows too. A customer reading "3" over a
+ * page that says "Nothing waiting for approval" has no way to tell which of the
+ * two is lying. See ADR 0266.
+ *
+ * An occasion with no recipient at all (`recipientId: null`) is nobody's
+ * archived contact, and stays visible.
+ */
+export const VISIBLE_OCCASION_WHERE = {
+  OR: [{ recipientId: null }, { recipient: { status: { not: "archived" as const } } }],
+} satisfies Prisma.OccasionWhereInput;
+
 @Injectable()
 export class OccasionsService {
   private readonly logger = new Logger(OccasionsService.name);
@@ -300,14 +323,10 @@ export class OccasionsService {
       ...(query.dispatchOption && { dispatchOption: query.dispatchOption }),
       ...(query.type && { type: query.type }),
       ...(query.recipientId && { recipientId: query.recipientId }),
-      // Hide occasions for archived recipients from the account-wide views
-      // (calendar, approvals) without deleting them — restoring the recipient
-      // brings their events straight back. When a specific recipient is
-      // requested (their detail page), show everything so the user can still
-      // see and manage an archived recipient's events.
-      ...(!query.recipientId && {
-        OR: [{ recipientId: null }, { recipient: { status: { not: "archived" } } }],
-      }),
+      // When a specific recipient is requested (their detail page) show
+      // everything, so an archived contact's events can still be seen and
+      // managed. Everywhere else, the shared rule.
+      ...(!query.recipientId && VISIBLE_OCCASION_WHERE),
       // Date-range window for the calendar (a visible month/week). Bounds are
       // inclusive; either end may be omitted.
       ...((query.from || query.to) && {

@@ -11,6 +11,9 @@
 
 export const AUTO_SEND_SKIP_REASONS = [
   "no_recipient",
+  /** The contact was archived after this card was approved. Archiving is the
+   *  only way to stop sending to somebody, so it has to stop this too. */
+  "recipient_archived",
   "address_verification_required",
   "no_design",
   "missing_address",
@@ -80,6 +83,13 @@ export function autoSendSkipCopy(
         fix: "Cancel the card, or add the contact back and approve it again.",
         href: "/calendar",
         cta: "Open your calendar",
+      };
+    case "recipient_archived":
+      return {
+        why: "You archived this contact, so we did not send their card.",
+        fix: "Nothing to do, unless archiving them was a mistake — restore them and approve the card again.",
+        href: "/recipients",
+        cta: "Open your contacts",
       };
     case "address_verification_required":
       // ADR 0039: the hold is correct behaviour and must stay. The failure here

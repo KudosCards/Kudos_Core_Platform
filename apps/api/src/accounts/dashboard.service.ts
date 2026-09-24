@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { MISSING_ADDRESS_WHERE } from "../recipients/recipients.service";
+// The badge has to count what the approvals page shows, or one of them is lying.
+import { VISIBLE_OCCASION_WHERE } from "../occasions/occasions.service";
 
 /**
  * The three numbers the app-shell sidebar/header actually render on every page
@@ -50,7 +52,9 @@ export class DashboardService {
    */
   async getNavBadges(accountId: string): Promise<NavBadges> {
     const [pendingApprovals, unfinishedOrders, walletSum] = await Promise.all([
-      this.prisma.occasion.count({ where: { accountId, status: "pending_approval" } }),
+      this.prisma.occasion.count({
+        where: { accountId, status: "pending_approval", ...VISIBLE_OCCASION_WHERE },
+      }),
       this.prisma.batchOrder.count({
         where: { accountId, status: { in: [...UNFINISHED_ORDER_STATUSES] } },
       }),
@@ -94,7 +98,9 @@ export class DashboardService {
         where: { accountId },
         _sum: { amountMinor: true },
       }),
-      this.prisma.occasion.count({ where: { accountId, status: "pending_approval" } }),
+      this.prisma.occasion.count({
+        where: { accountId, status: "pending_approval", ...VISIBLE_OCCASION_WHERE },
+      }),
       this.prisma.occasion.count({
         where: { accountId, occasionDate: { gte: monthStart, lt: nextMonthStart } },
       }),

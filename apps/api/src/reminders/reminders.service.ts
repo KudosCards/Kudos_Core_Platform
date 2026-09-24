@@ -3,6 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { VISIBLE_OCCASION_WHERE } from "../occasions/occasions.service";
 import type { EnvConfig } from "../config/env.schema";
 import { EMAIL_CLIENT, type EmailClient } from "../email/email.client";
 import { BRAND, escapeHtml, renderBrandedEmail } from "../email/email-layout";
@@ -101,6 +102,12 @@ export class RemindersService {
           { dispatchDate: null, occasionDate: { lte: deadlineHorizon } },
         ],
         recipientId: { not: null },
+        // Under AND, not spread: this clause has an OR of its own for the
+        // dispatch-date fallback, and spreading a second one would have
+        // replaced it — quietly widening the reminder window instead of
+        // narrowing the audience. The compiler caught it; the test would not
+        // have.
+        AND: [VISIBLE_OCCASION_WHERE],
         accountId: { in: eligibleAccounts.map((account) => account.id) },
       },
       include: { recipient: true },

@@ -343,6 +343,15 @@ export class AutoSendService {
     if (!occasion.recipient) {
       throw new AutoSendSkipError("no_recipient", "Occasion has no recipient");
     }
+    // Archiving is the only way to stop sending to somebody — there is no
+    // delete — and a card approved before the archive was still being printed,
+    // paid for out of the wallet and posted to them. Checked here rather than
+    // filtered out of the due query on purpose: a card that does not go is
+    // something the customer hears about (ADR 0254), and silence is what that
+    // whole phase exists to prevent.
+    if (occasion.recipient.status === "archived") {
+      throw new AutoSendSkipError("recipient_archived", "Contact is archived");
+    }
     // A card to this contact was returned and the address isn't re-verified yet —
     // hold their automatic sends until the return case is resolved, so we don't
     // fire another card at a known-bad address. See docs/adr/0039-returned-to-sender.md.
