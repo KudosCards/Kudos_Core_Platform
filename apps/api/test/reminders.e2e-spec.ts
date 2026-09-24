@@ -97,6 +97,26 @@ describe("Reminders (e2e)", () => {
     expect(countEmailsTo(email)).toBe(0);
   });
 
+  it("does not nag about a contact the customer archived", async () => {
+    // Archiving is how somebody stops us sending to a contact. Reminding them
+    // about that contact's birthday every morning is the sidebar badge's
+    // mistake, in their inbox. See ADR 0266.
+    const email = `reminders-${randomUUID()}@example.com`;
+    const token = await signUp(email);
+    await addRecipientWithBirthday(token, 3);
+
+    const recipient = await prisma.recipient.findFirstOrThrow({
+      where: { firstName: "Birthday", lastName: "Soon" },
+      orderBy: { createdAt: "desc" },
+    });
+    await request(app.getHttpServer())
+      .delete(`/recipients/${recipient.id}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    await reminders.runDueReminders();
+    expect(countEmailsTo(email)).toBe(0);
+  });
+
   it("skips an account that opted out of reminder emails", async () => {
     const email = `optout-${randomUUID()}@example.com`;
     const token = await signUp(email);

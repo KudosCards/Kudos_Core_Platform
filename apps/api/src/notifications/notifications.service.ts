@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import type { MembershipRole } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { VISIBLE_OCCASION_WHERE } from "../occasions/occasions.service";
 
 export type NotificationKind =
   "pending_approval" | "upcoming_occasion" | "unpaid_order" | "pending_invite";
@@ -47,7 +48,9 @@ export class NotificationsService {
     const canManageTeam = role === "owner" || role === "admin";
 
     const [pendingApprovals, upcoming, draftOrders, pendingInvites] = await Promise.all([
-      this.prisma.occasion.count({ where: { accountId, status: "pending_approval" } }),
+      this.prisma.occasion.count({
+        where: { accountId, status: "pending_approval", ...VISIBLE_OCCASION_WHERE },
+      }),
       // Approved/scheduled occasions coming up — the "quick view of upcoming
       // events" the notification centre is for. Excludes pending_approval (its
       // own bucket) and already-sent statuses.
@@ -56,6 +59,9 @@ export class NotificationsService {
           accountId,
           status: { in: ["scheduled", "approved"] },
           occasionDate: { gte: now, lte: windowEnd },
+          // Same rule as the count above: an archived contact's birthday is not
+          // something to put in front of somebody as "coming up".
+          ...VISIBLE_OCCASION_WHERE,
         },
         orderBy: { occasionDate: "asc" },
         take: UPCOMING_LIMIT,
