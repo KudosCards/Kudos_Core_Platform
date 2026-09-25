@@ -53,9 +53,16 @@ signs its webhooks, so `/webhooks/stripe` can prove a request came from Stripe.
 Brevo signs nothing: its transactional webhooks are plain POSTs with no HMAC and
 no verifiable origin. The only thing available is a secret we choose and hand to
 Brevo, compared in constant time — the same construction the catalog revalidate
-route uses. It is accepted in a header or in the query string, because Brevo's
-dashboard has not always allowed custom headers on a webhook; where the query
-form is used the URL is itself a credential. Unset, the endpoint refuses
+route uses. Brevo's webhook form offers a "Token" method: a single masked value,
+with no way to name the header it travels in. That leaves the wire format
+theirs to choose, so the endpoint reads all three carriers the secret could
+plausibly arrive in — `x-brevo-webhook-secret`, an `Authorization` header with
+or without a `Bearer` prefix, and a `?secret=` query parameter — rather than
+betting on one and learning the answer from an endpoint that silently rejects
+everything. Only the first carrier actually present is checked, since reading
+them in turn until one matched would let a request defeat the header check by
+appending to the URL. The header forms are preferable: a secret in the query
+string sits legible in Brevo's configuration screen and request logs. Unset, the endpoint refuses
 everything rather than letting anyone on the internet decide who we can email.
 
 **Events are matched on letters alone.** Brevo spells the same event two ways
