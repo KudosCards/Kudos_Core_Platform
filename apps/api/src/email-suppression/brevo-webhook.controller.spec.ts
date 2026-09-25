@@ -39,9 +39,44 @@ describe("BrevoWebhookController", () => {
   it("does not fall back to the query secret when a header was sent", async () => {
     const controller = new BrevoWebhookController(configReturning("right"), suppressions);
 
-    await expect(controller.handleBrevoEvent({}, "wrong", "right")).rejects.toBeInstanceOf(
+    await expect(
+      controller.handleBrevoEvent({}, "wrong", undefined, "right"),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  // Brevo's form takes a single masked value and does not say what header it
+  // travels in, so both shapes of Authorization have to be read.
+  it("accepts the secret as a bearer token or a bare Authorization value", async () => {
+    const controller = new BrevoWebhookController(configReturning("right"), suppressions);
+
+    await expect(controller.handleBrevoEvent({ a: 1 }, undefined, "Bearer right")).resolves.toEqual(
+      { received: true },
+    );
+    await expect(controller.handleBrevoEvent({ a: 2 }, undefined, "bearer right")).resolves.toEqual(
+      { received: true },
+    );
+    await expect(controller.handleBrevoEvent({ a: 3 }, undefined, "right")).resolves.toEqual({
+      received: true,
+    });
+    expect(record).toHaveBeenCalledTimes(3);
+  });
+
+  it("refuses a bearer token that is not the secret", async () => {
+    const controller = new BrevoWebhookController(configReturning("right"), suppressions);
+
+    await expect(controller.handleBrevoEvent({}, undefined, "Bearer wrong")).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  // Otherwise the header check could be defeated by appending to the URL.
+  it("does not fall back to the query secret when an Authorization header was sent", async () => {
+    const controller = new BrevoWebhookController(configReturning("right"), suppressions);
+
+    await expect(
+      controller.handleBrevoEvent({}, undefined, "Bearer wrong", "right"),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it("accepts either carrier of the right secret", async () => {
@@ -50,7 +85,9 @@ describe("BrevoWebhookController", () => {
     await expect(controller.handleBrevoEvent({ a: 1 }, "right")).resolves.toEqual({
       received: true,
     });
-    await expect(controller.handleBrevoEvent({ a: 2 }, undefined, "right")).resolves.toEqual({
+    await expect(
+      controller.handleBrevoEvent({ a: 2 }, undefined, undefined, "right"),
+    ).resolves.toEqual({
       received: true,
     });
     expect(record).toHaveBeenCalledTimes(2);

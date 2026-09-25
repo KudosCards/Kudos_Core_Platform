@@ -92,6 +92,39 @@ describe("POST /webhooks/brevo (e2e)", () => {
     expect(await prisma.emailSuppression.count()).toBe(0);
   });
 
+  // Brevo's webhook form offers "Token": one masked value, with no way to name
+  // the header it travels in. So the Authorization header has to be read, in
+  // both the shapes that value could arrive in.
+  it("accepts the secret as a bearer token", async () => {
+    await request(app.getHttpServer())
+      .post("/webhooks/brevo")
+      .set("authorization", `Bearer ${SECRET}`)
+      .send(bounce())
+      .expect(200);
+
+    expect(await prisma.emailSuppression.count()).toBe(1);
+  });
+
+  it("accepts a bare Authorization value too", async () => {
+    await request(app.getHttpServer())
+      .post("/webhooks/brevo")
+      .set("authorization", SECRET)
+      .send(bounce())
+      .expect(200);
+
+    expect(await prisma.emailSuppression.count()).toBe(1);
+  });
+
+  it("refuses a bearer token that is not the secret", async () => {
+    await request(app.getHttpServer())
+      .post("/webhooks/brevo")
+      .set("authorization", "Bearer not-the-secret")
+      .send(bounce())
+      .expect(401);
+
+    expect(await prisma.emailSuppression.count()).toBe(0);
+  });
+
   // Brevo's dashboard has not always allowed custom headers on a webhook, so
   // the secret is accepted in the URL as well.
   it("accepts the secret in the query string", async () => {

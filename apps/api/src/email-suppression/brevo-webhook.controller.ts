@@ -29,11 +29,22 @@ export const BREVO_SECRET_HEADER = "x-brevo-webhook-secret";
  * webhooks arrive as plain POSTs with no HMAC and no verifiable origin. The
  * only thing we can check is a secret we chose ourselves and gave to Brevo.
  *
- * It is accepted in a header *or* a query parameter because Brevo's dashboard
- * has not always allowed custom headers on a webhook. Where it does, the header
- * is the better form; where it doesn't, the URL itself is the credential and
- * must be treated as one — it will sit in Brevo's configuration and in their
- * request logs.
+ * Brevo's webhook form offers "Token" authentication: a single masked value,
+ * with no way to name the header it travels in. That makes the wire format
+ * theirs to choose, so this reads all three carriers a secret could plausibly
+ * arrive in — `x-brevo-webhook-secret`, an `Authorization` header with or
+ * without a `Bearer` prefix, and a `?secret=` query parameter — rather than
+ * betting on one and finding out from an endpoint that silently 401s
+ * everything.
+ *
+ * The header forms are preferable: Brevo masks the Token field, while a secret
+ * in the URL sits legible in the webhook's configuration screen and in Brevo's
+ * request logs, where anyone with dashboard access can read it. The query form
+ * stays supported because it is the one that works whatever the form offers.
+ *
+ * Only the first carrier actually present is checked. Reading them in turn
+ * until one matched would let anyone past the header check by appending to the
+ * URL.
  *
  * Without the secret an attacker could forge suppressions and, once E2 lands,
  * make the product believe it cannot email a customer it can reach perfectly
@@ -62,9 +73,10 @@ export class BrevoWebhookController {
     // design.
     @Body() body: unknown,
     @Headers(BREVO_SECRET_HEADER) headerSecret?: string,
+    @Headers("authorization") authorization?: string,
     @Query("secret") querySecret?: string,
   ): Promise<{ received: true }> {
-    this.assertAuthentic(headerSecret || querySecret);
+    this.assertAuthentic(presentedSecret(headerSecret, authorization, querySecret));
 
     // Brevo sends one event per request today, but has batched in the past and
     // nothing promises it won't again.
@@ -91,6 +103,26 @@ export class BrevoWebhookController {
       throw new UnauthorizedException("Invalid Brevo webhook secret");
     }
   }
+}
+
+/**
+ * The secret this request carries, from the first carrier that holds anything.
+ *
+ * "First present" rather than "first that matches": a wrong value in one
+ * carrier is a rejection, not an invitation to try the next. Falling through
+ * would mean a request could defeat the header check simply by also putting
+ * something in the query string.
+ */
+function presentedSecret(
+  header: string | undefined,
+  authorization: string | undefined,
+  query: string | undefined,
+): string | undefined {
+  if (header) return header;
+  // `Bearer <token>` is the usual shape, but Brevo's form only takes a value
+  // and does not say what it wraps it in, so a bare token is accepted too.
+  if (authorization) return authorization.replace(/^Bearer\s+/i, "");
+  return query || undefined;
 }
 
 /**

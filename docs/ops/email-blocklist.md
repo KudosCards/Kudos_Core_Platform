@@ -23,10 +23,18 @@ Recording only works once both halves exist.
    invalid, spam, unsubscribed** and **delivered**.
    - `delivered` is what lets a suppression clear itself: Brevo will not deliver
      to an address it blocks, so a delivery is proof the block is gone.
-3. Give Brevo the secret. If the webhook form allows custom headers, add
-   `x-brevo-webhook-secret: <the secret>`. If it does not, append
-   `?secret=<the secret>` to the URL instead — and treat that URL as a
-   credential, because that is what it now is.
+3. Give Brevo the secret. On the Endpoint step, set **Authentication method**
+   to **Token** and paste the secret into the Token field. Brevo masks it and
+   sends it as an `Authorization` header, which the endpoint reads with or
+   without a `Bearer` prefix.
+   - **Basic** does not work — the endpoint expects the secret itself, not a
+     username and password pair.
+   - If a future form drops Token, the fallbacks are an
+     `x-brevo-webhook-secret` header, or `?secret=<the secret>` appended to the
+     URL with **No authentication** selected. The query form works anywhere but
+     leaves the secret legible in Brevo's configuration screen and request
+     logs, where anyone with dashboard access can read it — so treat that URL
+     as the credential it becomes.
 
 Until both are done the endpoint refuses every request and bounces go
 unrecorded, which is exactly where we were before. Nothing breaks; we simply
