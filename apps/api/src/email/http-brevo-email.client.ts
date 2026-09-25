@@ -41,13 +41,32 @@ export class HttpBrevoEmailClient implements EmailClient {
 
   async sendTransactional(input: SendEmailInput): Promise<void> {
     // A Brevo template carries its own sender, so ours is optional in that mode
-    // but required for the HTML fallback.
+    // but required for the HTML fallback. Refused here rather than sent and
+    // rejected: without a sender Brevo 400s the whole request, so the caller
+    // learned nothing and the send never reached Brevo's dashboard to be found
+    // later. The password reset, both invites and the RTS notice are all
+    // HTML-only by construction. See ADR 0267.
+    if (!input.templateId && !this.fromAddress) {
+      this.logger.error(
+        `Cannot send "${input.subject}" — EMAIL_FROM_ADDRESS is not a verified Brevo sender, so this email has no from address.`,
+      );
+      throw new BadGatewayException("Email sender is not configured");
+    }
     const sender = this.fromAddress
       ? { sender: { email: this.fromAddress, name: this.fromName } }
       : {};
     const content = input.templateId
       ? { templateId: input.templateId, params: input.params ?? {} }
-      : { subject: input.subject, htmlContent: input.html ?? "" };
+      : {
+          subject: input.subject,
+          htmlContent: input.html ?? "",
+          // A plain-text alternative alongside the HTML. Brevo does not
+          // synthesise one, and a single-part HTML-only message carrying one
+          // remote image and a long tokenised link is exactly the shape spam
+          // filters score down — which matters most for the auth emails people
+          // report as "never arrived".
+          textContent: plainTextFrom(input.html ?? "", input.subject),
+        };
 
     // Deliberately no retry: Brevo may well have accepted and queued a send
     // that then failed to answer us, and a second attempt puts a second copy in
@@ -76,4 +95,45 @@ export class HttpBrevoEmailClient implements EmailClient {
       throw new BadGatewayException(`Brevo email send failed (${response.status})`);
     }
   }
+}
+
+/**
+ * A readable text/plain alternative derived from the HTML we already built.
+ *
+ * Deliberately crude — it is the fallback part, not the message. Links are kept
+ * as "label: url" because a reset email is useless without its URL, the hidden
+ * preheader and any style/script content are dropped, and entities are undone
+ * so the text does not read as markup.
+ */
+export function plainTextFrom(html: string, subject: string): string {
+  const withoutHead = html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ");
+  const withLinks = withoutHead.replace(
+    /<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
+    (_whole, href: string, label: string) => {
+      const text = label
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      return text && !text.includes(href) ? ` ${text}: ${href} ` : ` ${href} `;
+    },
+  );
+  const text = withLinks
+    .replace(/<\/(?:p|div|tr|h[1-6]|li)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .trim();
+  return text.length > 0 ? text : subject;
 }

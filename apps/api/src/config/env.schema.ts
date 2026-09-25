@@ -10,17 +10,32 @@ import { z } from "zod";
  */
 const httpUrl = z
   .string()
-  .url()
-  .refine(
-    (value) => {
-      try {
-        const { protocol } = new URL(value);
-        return protocol === "http:" || protocol === "https:";
-      } catch {
-        return false;
-      }
-    },
-    { message: "must be an http(s) URL (e.g. https://kudos-cards.co.uk)" },
+  .trim()
+  // Trailing slashes are stripped here, not at the call sites.
+  //
+  // Every caller builds a path by interpolation — `${WEB_APP_URL}/reset-password`
+  // — so a trailing slash pasted into the dashboard produces a doubled slash.
+  // Four modules already defended against that one at a time; the auth-email
+  // surface did not, and there it is fatal rather than cosmetic: the doubled
+  // URL is what GoTrue checks against the project's Redirect URLs allow-list,
+  // so `generateLink` fails, the throw is swallowed, and the customer is told
+  // to check an inbox nothing was sent to. See ADR 0267.
+  .transform((value) => value.replace(/\/+$/, ""))
+  .pipe(
+    z
+      .string()
+      .url()
+      .refine(
+        (value) => {
+          try {
+            const { protocol } = new URL(value);
+            return protocol === "http:" || protocol === "https:";
+          } catch {
+            return false;
+          }
+        },
+        { message: "must be an http(s) URL (e.g. https://kudos-cards.co.uk)" },
+      ),
   );
 
 /**
@@ -421,5 +436,34 @@ export function validateEnv(config: Record<string, unknown>): EnvConfig {
       .join("\n");
     throw new Error(`Invalid environment configuration:\n${issues}`);
   }
+  forgetRejectedValues(result.data);
   return result.data;
+}
+
+/**
+ * Make `.catch(undefined)` mean what every comment in this file says it means.
+ *
+ * `ConfigService.get()` reads the validated object **first and `process.env`
+ * second**. So a key the schema deliberately degraded to `undefined` — a
+ * malformed `EMAIL_FROM_ADDRESS`, a `BREVO_*_TEMPLATE_ID` somebody typed
+ * "none" into — is not disabled at all: the raw string is still in the
+ * environment, and that is the value the app reads and sends upstream.
+ *
+ * What that looked like in practice: `EMAIL_FROM_ADDRESS="Kudos Cards
+ * <hello@…>"` (a natural paste) reached Brevo as the sender, Brevo rejected the
+ * whole request with a 400, and **nothing appeared in Brevo's dashboard**
+ * because the send was never accepted. Every HTML-fallback email — password
+ * reset, operator invite, team invite — failed that way, while the email
+ * provider reported itself configured and healthy.
+ *
+ * So a rejected value is removed from the environment too, and "unset" is a
+ * fact rather than a promise. Only keys this schema declares are touched, and
+ * only when the schema rejected them. See ADR 0267.
+ */
+function forgetRejectedValues(validated: EnvConfig): void {
+  for (const key of Object.keys(envSchema.shape)) {
+    if (validated[key as keyof EnvConfig] === undefined) {
+      delete process.env[key];
+    }
+  }
 }

@@ -30,6 +30,12 @@ export async function resolveAccountEmail(
   const members = await prisma.membership.findMany({
     where: { accountId, email: { not: null } },
     select: { email: true, role: true },
+    // Ordered, because the fallback below takes the first row. Without this the
+    // order is whatever Postgres returns, which changes after an update or a
+    // vacuum — so today's "we couldn't deliver your card" and next week's
+    // support reply could go to two different colleagues, and the one who asked
+    // never sees the answer. See ADR 0267.
+    orderBy: { createdAt: "asc" },
   });
   const owner = members.find((member) => member.role === "owner");
   return owner?.email ?? members[0]?.email ?? null;

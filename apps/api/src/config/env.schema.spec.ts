@@ -89,3 +89,73 @@ describe("validateEnv", () => {
     ).toBe(42);
   });
 });
+
+describe("what the environment holds after validation", () => {
+  /**
+   * `ConfigService.get()` reads the validated object first and `process.env`
+   * second, so a value the schema rejected is only really disabled if it is
+   * gone from the environment too. It was not, and the consequence was every
+   * HTML email failing at Brevo with a 400 that never reached Brevo's
+   * dashboard. See ADR 0267.
+   */
+
+  const KEYS = ["EMAIL_FROM_ADDRESS", "SUPPORT_INBOX_EMAIL", "BREVO_REMINDER_TEMPLATE_ID"];
+
+  afterEach(() => {
+    for (const key of KEYS) delete process.env[key];
+  });
+
+  it("removes a malformed sender address from the environment, not just from the result", () => {
+    // The natural paste: a display name around the address.
+    process.env.EMAIL_FROM_ADDRESS = "Kudos Cards <hello@kudos-cards.co.uk>";
+
+    const result = validateEnv({ ...validConfig, ...process.env });
+
+    expect(result.EMAIL_FROM_ADDRESS).toBeUndefined();
+    // The part that was missing: the raw string is what the app would have read.
+    expect(process.env.EMAIL_FROM_ADDRESS).toBeUndefined();
+  });
+
+  it("removes a template id that is not a number", () => {
+    process.env.BREVO_REMINDER_TEMPLATE_ID = "none";
+
+    const result = validateEnv({ ...validConfig, ...process.env });
+
+    expect(result.BREVO_REMINDER_TEMPLATE_ID).toBeUndefined();
+    expect(process.env.BREVO_REMINDER_TEMPLATE_ID).toBeUndefined();
+  });
+
+  it("leaves a good value exactly where it was", () => {
+    process.env.EMAIL_FROM_ADDRESS = "noreply@kudoscards.co.uk";
+
+    const result = validateEnv({ ...validConfig, ...process.env });
+
+    expect(result.EMAIL_FROM_ADDRESS).toBe("noreply@kudoscards.co.uk");
+    expect(process.env.EMAIL_FROM_ADDRESS).toBe("noreply@kudoscards.co.uk");
+  });
+});
+
+describe("URL normalisation", () => {
+  it("strips a trailing slash, because every caller interpolates a path onto it", () => {
+    // `${WEB_APP_URL}/reset-password` with a trailing slash produces a doubled
+    // slash, and that is the URL GoTrue checks against its allow-list.
+    expect(
+      validateEnv({ ...validConfig, WEB_APP_URL: "https://kudos-cards.co.uk/" }).WEB_APP_URL,
+    ).toBe("https://kudos-cards.co.uk");
+    expect(
+      validateEnv({ ...validConfig, WEB_APP_URL: "https://kudos-cards.co.uk///" }).WEB_APP_URL,
+    ).toBe("https://kudos-cards.co.uk");
+  });
+
+  it("leaves a bare origin alone", () => {
+    expect(
+      validateEnv({ ...validConfig, WEB_APP_URL: "https://kudos-cards.co.uk" }).WEB_APP_URL,
+    ).toBe("https://kudos-cards.co.uk");
+  });
+
+  it("still refuses a non-http scheme once the slash is gone", () => {
+    expect(() =>
+      validateEnv({ ...validConfig, WEB_APP_URL: "ftp://kudos-cards.co.uk/" }),
+    ).toThrow();
+  });
+});

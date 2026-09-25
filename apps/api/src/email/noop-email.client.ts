@@ -10,7 +10,10 @@ export class NoopEmailClient implements EmailClient {
   private readonly logger = new Logger(NoopEmailClient.name);
 
   sendTransactional(input: SendEmailInput): Promise<void> {
-    this.logger.log(`Email not configured — skipping "${input.subject}" to ${input.to}`);
+    // Warn, not log. Every send through here is a customer waiting for an
+    // email that will never arrive — a password reset among them — and at info
+    // level that fact was indistinguishable from ordinary request noise.
+    this.logger.warn(`Email not configured — dropping "${input.subject}" to ${input.to}`);
     return Promise.resolve();
   }
 }
