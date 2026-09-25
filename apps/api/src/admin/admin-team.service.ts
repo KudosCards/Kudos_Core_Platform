@@ -276,6 +276,7 @@ export class AdminTeamService {
 
     await this.email.sendTransactional({
       to: email,
+      sender: "account",
       subject: "Set your password for the Kudos Cards operator dashboard",
       html: renderBrandedEmail({
         webAppUrl,

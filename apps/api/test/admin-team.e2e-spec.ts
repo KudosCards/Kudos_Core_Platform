@@ -109,6 +109,9 @@ describe("Admin team / operator auth (e2e)", () => {
     expect(emailMock.sendTransactional).toHaveBeenCalledWith(
       expect.objectContaining({
         to: inviteeEmail,
+        // Its own verified sender — an operator locked out of the dashboard is
+        // the last person whose mail an unsubscribe should suppress. ADR 0269.
+        sender: "account",
         html: expect.stringContaining("/admin-set-password?token_hash=hash-abc&type=invite"),
       }),
     );

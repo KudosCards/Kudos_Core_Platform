@@ -47,6 +47,9 @@ describe("Password reset (e2e)", () => {
     expect(emailMock.sendTransactional).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "known@kudos.test",
+        // Its own verified sender, so an unsubscribe from anything else cannot
+        // suppress the one email somebody is locked out without. See ADR 0269.
+        sender: "account",
         html: expect.stringContaining("/reset-password?token_hash=hash-xyz&type=recovery"),
       }),
     );

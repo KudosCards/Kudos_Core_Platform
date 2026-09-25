@@ -65,15 +65,15 @@ something to keep.
   exactly what that protects. Telling somebody their own address is unreachable,
   once signed in, is reasonable and needs its own design.
 
-### E3 — Stop one unsubscribe taking out a password reset
+### E3 — Stop one unsubscribe taking out a password reset — **done (inert)**
 
-An optional `EMAIL_AUTH_FROM_ADDRESS`, used for password resets and both invite
-flows. Unset ⇒ everything behaves as it does now, so this ships dark and turns
-on when a second sender is verified in Brevo.
+An optional `EMAIL_ACCOUNT_FROM_ADDRESS`, used for password resets and both
+invite flows. Unset ⇒ everything behaves as it does now, so this has shipped
+dark and turns on when a second sender is verified in Brevo.
 
-The matching dashboard steps — verify the sender, then point Supabase's custom
-SMTP at it — are ops work and are documented rather than coded, the way ADR 0142
-documents the SMTP setup.
+The matching dashboard steps — verify the sender, set the variable, then point
+Supabase's custom SMTP at it — are ops work and are written up in
+`docs/ops/email-blocklist.md` rather than coded. See ADR 0269.
 
 ### E4 — The runbook — **done** (`docs/ops/email-blocklist.md`)
 

@@ -117,6 +117,90 @@ describe("an HTML email with no configured sender", () => {
   });
 });
 
+/**
+ * Brevo scopes unsubscribes and spam complaints to a **sender**, while hard
+ * bounces are account-wide. Sending everything from one address therefore lets
+ * an unsubscribe from a newsletter suppress that person's password reset —
+ * which is on our blocklist today. See ADR 0269.
+ */
+describe("the sender for mail somebody is locked out without", () => {
+  let fetchSpy: jest.SpyInstance;
+  afterEach(() => fetchSpy?.mockRestore());
+
+  const reset = { to: "ada@example.com", subject: "Reset", html: "<p>Hi</p>" };
+
+  const sentFrom = (): { email: string; name: string } => {
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(typeof init.body).toBe("string");
+    return (JSON.parse(init.body as string) as { sender: { email: string; name: string } }).sender;
+  };
+
+  const split = new HttpBrevoEmailClient(
+    "key",
+    "hello@kudoscards.test",
+    "Kudos Cards",
+    "account@kudoscards.test",
+    "Kudos Cards Security",
+  );
+
+  it("uses the account sender for an account email", async () => {
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(fakeResponse(200));
+
+    await split.sendTransactional({ ...reset, sender: "account" });
+
+    expect(sentFrom()).toEqual({ email: "account@kudoscards.test", name: "Kudos Cards Security" });
+  });
+
+  it("leaves every other email on the ordinary sender", async () => {
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(fakeResponse(200));
+
+    await split.sendTransactional(reset);
+
+    expect(sentFrom()).toEqual({ email: "hello@kudoscards.test", name: "Kudos Cards" });
+  });
+
+  // Until a second sender is verified in Brevo there is nothing to switch to,
+  // and an unverified address would have Brevo reject the whole request.
+  it("falls back to the ordinary sender when no account sender is configured", async () => {
+    const unsplit = new HttpBrevoEmailClient("key", "hello@kudoscards.test", "Kudos Cards");
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(fakeResponse(200));
+
+    await unsplit.sendTransactional({ ...reset, sender: "account" });
+
+    expect(sentFrom()).toEqual({ email: "hello@kudoscards.test", name: "Kudos Cards" });
+  });
+
+  it("keeps the ordinary name when only an account address is configured", async () => {
+    const namelessAccount = new HttpBrevoEmailClient(
+      "key",
+      "hello@kudoscards.test",
+      "Kudos Cards",
+      "account@kudoscards.test",
+    );
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(fakeResponse(200));
+
+    await namelessAccount.sendTransactional({ ...reset, sender: "account" });
+
+    expect(sentFrom()).toEqual({ email: "account@kudoscards.test", name: "Kudos Cards" });
+  });
+
+  // An account sender alone is still a sender: a non-template send is only
+  // undeliverable when there is no address at all.
+  it("sends an account email when only the account sender is configured", async () => {
+    const accountOnly = new HttpBrevoEmailClient(
+      "key",
+      undefined,
+      "Kudos Cards",
+      "account@kudoscards.test",
+    );
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(fakeResponse(200));
+
+    await accountOnly.sendTransactional({ ...reset, sender: "account" });
+
+    expect(sentFrom()).toEqual({ email: "account@kudoscards.test", name: "Kudos Cards" });
+  });
+});
+
 describe("the plain-text part", () => {
   /**
    * Brevo does not synthesise one. A single-part HTML-only message carrying a

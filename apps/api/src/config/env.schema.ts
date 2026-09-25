@@ -362,6 +362,16 @@ export const envSchema = z.object({
   EMAIL_FROM_ADDRESS: z.string().trim().email().optional().catch(undefined),
   // Falls back to the default on a missing OR blank/invalid value (never throws).
   EMAIL_FROM_NAME: z.string().trim().min(1).catch("Kudos Cards").default("Kudos Cards"),
+  // A SECOND verified Brevo sender, used only for mail somebody is locked out
+  // without: password resets and invitations. Brevo scopes unsubscribes and
+  // spam complaints to a sender, so sharing one address means unsubscribing
+  // from a newsletter silently suppresses that person's password reset.
+  // Optional; unset ⇒ account mail goes out from EMAIL_FROM_ADDRESS exactly as
+  // before, so this is inert until a sender is verified in Brevo. Degrades to
+  // "unset" on a malformed value rather than throwing, matching
+  // EMAIL_FROM_ADDRESS. See docs/adr/0269-one-sender-for-getting-back-in.md.
+  EMAIL_ACCOUNT_FROM_ADDRESS: z.string().trim().email().optional().catch(undefined),
+  EMAIL_ACCOUNT_FROM_NAME: z.string().trim().min(1).optional().catch(undefined),
   // Optional Brevo transactional template IDs. Set one to design that email in
   // the Brevo dashboard instead of using our built-in HTML; unset = HTML
   // fallback. The template receives the params documented in each email's

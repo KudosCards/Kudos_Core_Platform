@@ -49,6 +49,7 @@ export class PasswordResetService {
       const actionLink = `${redirectTo}?token_hash=${encodeURIComponent(hashedToken)}&type=recovery`;
       await this.email.sendTransactional({
         to: email,
+        sender: "account",
         subject: "Reset your Kudos Cards password",
         html: renderBrandedEmail({
           webAppUrl,

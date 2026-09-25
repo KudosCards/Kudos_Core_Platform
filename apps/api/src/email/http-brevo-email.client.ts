@@ -37,7 +37,26 @@ export class HttpBrevoEmailClient implements EmailClient {
     private readonly apiKey: string,
     private readonly fromAddress: string | undefined,
     private readonly fromName: string,
+    /**
+     * The separate verified sender for mail somebody is locked out without.
+     * Undefined until one exists in Brevo, in which case account mail goes out
+     * from the ordinary sender exactly as it does today — this ships inert.
+     */
+    private readonly accountFromAddress?: string,
+    private readonly accountFromName?: string,
   ) {}
+
+  /**
+   * The sender for this email. "account" only diverges once a second sender is
+   * verified in Brevo; an unverified address would have Brevo reject the whole
+   * request, so falling back is the only safe unconfigured behaviour.
+   */
+  private senderFor(input: SendEmailInput): { email: string; name: string } | undefined {
+    const useAccount = input.sender === "account" && this.accountFromAddress;
+    const email = useAccount ? this.accountFromAddress : this.fromAddress;
+    if (!email) return undefined;
+    return { email, name: (useAccount ? this.accountFromName : this.fromName) ?? this.fromName };
+  }
 
   async sendTransactional(input: SendEmailInput): Promise<void> {
     // A Brevo template carries its own sender, so ours is optional in that mode
@@ -46,15 +65,14 @@ export class HttpBrevoEmailClient implements EmailClient {
     // learned nothing and the send never reached Brevo's dashboard to be found
     // later. The password reset, both invites and the RTS notice are all
     // HTML-only by construction. See ADR 0267.
-    if (!input.templateId && !this.fromAddress) {
+    const from = this.senderFor(input);
+    if (!input.templateId && !from) {
       this.logger.error(
         `Cannot send "${input.subject}" — EMAIL_FROM_ADDRESS is not a verified Brevo sender, so this email has no from address.`,
       );
       throw new BadGatewayException("Email sender is not configured");
     }
-    const sender = this.fromAddress
-      ? { sender: { email: this.fromAddress, name: this.fromName } }
-      : {};
+    const sender = from ? { sender: from } : {};
     const content = input.templateId
       ? { templateId: input.templateId, params: input.params ?? {} }
       : {

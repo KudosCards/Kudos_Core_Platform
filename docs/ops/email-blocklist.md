@@ -32,6 +32,33 @@ Until both are done the endpoint refuses every request and bounces go
 unrecorded, which is exactly where we were before. Nothing breaks; we simply
 learn nothing.
 
+## Splitting the sender (do this once)
+
+Everything we send currently goes out as `noreply@kudoscards.co.uk` — the app's
+mail and, through Supabase's custom SMTP, every auth email. Because Brevo scopes
+unsubscribes and spam complaints **to a sender**, that means one unsubscribe
+switches off that person's password reset too. Giving account mail its own
+sender ends that.
+
+Three steps, in this order. The middle one is the one that must not be skipped.
+
+1. **Verify a second sender in Brevo** — Brevo → Senders → Add a sender, e.g.
+   `security@kudoscards.co.uk`, and complete the verification email. Nothing
+   below works until Brevo lists it as verified: an unverified sender makes
+   Brevo reject the whole request with a 400, and the email never reaches the
+   dashboard to be found later.
+2. **Set `EMAIL_ACCOUNT_FROM_ADDRESS`** on the API to that address (and
+   optionally `EMAIL_ACCOUNT_FROM_NAME`, e.g. "Kudos Cards Security"). Password
+   resets, team invitations and operator invitations move to it immediately.
+   Everything else stays on the ordinary sender, which is the point.
+3. **Point Supabase at it too** — Supabase → Authentication → SMTP Settings →
+   sender address. This covers the signup confirmation and change-email
+   messages, which Supabase sends itself and which no code change can reach.
+
+Until step 2 is done account mail keeps using the ordinary sender, so the code
+and the dashboard can be changed in either order without anything breaking. See
+ADR 0269.
+
 ## The reasons, and what each one asks of you
 
 ### Hard bounce — the mailbox does not exist
@@ -77,18 +104,16 @@ did not mean it and wants our email again, they can say so in writing, and
 
 ### Unsubscribed — the recipient opted out
 
-Scoped to the **sender** that was used. This is the one that bites hardest
-today: everything we send — marketing and password resets alike — currently goes
-out from `noreply@kudoscards.co.uk`, so unsubscribing from one newsletter
-silently suppresses that person's account emails too. They never asked for that
-and cannot see it.
+Scoped to the **sender** that was used, which is what the sender split above
+exists to end. While everything shares one address, unsubscribing from one
+newsletter silently suppresses that person's account emails too — their password
+reset included. They never asked for that and cannot see it.
 
 **Do:** if a customer cannot get a password reset and the blocklist shows an
 unsubscribe, that is the cause. Ask whether they want our mail again; if they do,
-remove the entry in Brevo with their say-so, and tell the engineer on call so
-the case is counted — splitting auth mail onto its own sender is a planned fix
-(`docs/email-suppression-plan.md`) and every real instance is evidence for
-prioritising it.
+remove the entry in Brevo with their say-so. Once the sender split above is
+finished this stops happening to new unsubscribes, but existing entries stay
+where they are — they are scoped to the sender that was used at the time.
 
 **Don't:** remove it silently.
 

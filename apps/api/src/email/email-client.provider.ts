@@ -27,6 +27,8 @@ export const emailClientProvider: Provider = {
     const apiKey = config.get("Brevo_API", { infer: true });
     const fromAddress = config.get("EMAIL_FROM_ADDRESS", { infer: true });
     const fromName = config.get("EMAIL_FROM_NAME", { infer: true });
+    const accountFromAddress = config.get("EMAIL_ACCOUNT_FROM_ADDRESS", { infer: true });
+    const accountFromName = config.get("EMAIL_ACCOUNT_FROM_NAME", { infer: true });
     if (!apiKey) {
       new Logger("EmailClientProvider").warn(
         "Brevo_API not set — transactional email disabled (no-op).",
@@ -41,7 +43,7 @@ export const emailClientProvider: Provider = {
       );
     }
     return new SuppressionAwareEmailClient(
-      new HttpBrevoEmailClient(apiKey, fromAddress, fromName),
+      new HttpBrevoEmailClient(apiKey, fromAddress, fromName, accountFromAddress, accountFromName),
       suppressions,
     );
   },
