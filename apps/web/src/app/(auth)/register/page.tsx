@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [checkEmail, setCheckEmail] = useState(false);
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   // Personal = an individual tracking their own friends'/family birthdays;
   // organisation = a business/centre/club. Drives the onboarding they land in.
   const [accountType, setAccountType] = useState<"individual" | "organisation">("organisation");
@@ -83,6 +84,19 @@ export default function RegisterPage() {
       // gets created once they confirm and log in (see /onboarding). Stash the
       // chosen type + name so onboarding finishes set-up without asking for the
       // organisation name a second time; the pending card/plan wait alongside it.
+      //
+      // Except when Supabase sent nothing. With email-enumeration protection on
+      // (the default), signing up with an address that already has an account
+      // returns no error, no session, and a user carrying **no identities** —
+      // and no email is sent. Telling that person to check their inbox is the
+      // bug this page had: they wait for a message that does not exist, and
+      // every place we would look — Brevo, the SMTP relay, the Supabase user —
+      // looks perfectly healthy, because nothing was ever sent. See ADR 0267.
+      if (data.user && data.user.identities?.length === 0) {
+        setSubmitting(false);
+        setAlreadyRegistered(true);
+        return;
+      }
       setPendingAccount({ type: accountType, name, ...contactName });
       setSubmitting(false);
       setCheckEmail(true);
@@ -106,6 +120,30 @@ export default function RegisterPage() {
     // the guided setup, whose first job is importing their contact list.
     router.push(hasPendingCard ? "/start" : "/get-started");
     router.refresh();
+  }
+
+  if (alreadyRegistered) {
+    // Deliberately does not confirm that the address is registered — ADR 0051
+    // keeps that from being discoverable, and this page must not become the
+    // oracle the password-reset endpoint refuses to be. It reads as a nudge
+    // either way, and nobody is left waiting for a message that is not coming.
+    return (
+      <div className="flex flex-col gap-3">
+        <h1 className="text-xl font-bold tracking-tight">Try signing in</h1>
+        <p className="text-sm text-muted">
+          If you already have a Kudos account with that address, signing up again won’t send
+          anything — log in instead, or reset your password if you’ve forgotten it.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/login" className="btn-accent">
+            Log in
+          </Link>
+          <Link href="/forgot-password" className="btn-secondary">
+            Reset my password
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   if (checkEmail) {

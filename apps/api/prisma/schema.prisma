@@ -142,6 +142,15 @@ model Notification {
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   // The unread badge + the member's inbox list, both newest-first per user.
+  /// One row per person per event. The dedupe that keeps a daily retry from
+  /// sending a daily email was a findFirst followed by a createMany, which two
+  /// concurrent producers both pass before either writes — so the "have we
+  /// already told them" ledger said no twice and the customer got the same
+  /// email twice. The constraint is what makes that answer atomic; the check
+  /// above it stays as the cheap path. `entityId` is nullable and Postgres
+  /// treats NULLs as distinct, so notifications that carry no entity are
+  /// deliberately unaffected. See ADR 0267.
+  @@unique([accountId, userId, kind, entityId])
   @@index([userId, createdAt])
   // Idempotency lookup: has this account already been notified about this event?
   @@index([accountId, kind, entityId])

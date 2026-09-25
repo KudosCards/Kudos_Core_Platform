@@ -275,5 +275,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0264 — What it covers, and what it costs](./0264-what-it-covers-and-what-it-costs.md)
 - [0265 — What the review found](./0265-what-the-review-found.md)
 - [0266 — What archiving a contact means](./0266-what-archiving-a-contact-means.md)
+- [0267 — Why an email does not arrive](./0267-why-an-email-does-not-arrive.md)
 
 <!-- adr-index:end -->

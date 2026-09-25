@@ -4,6 +4,7 @@ import type { InvitePreview } from "@kudos/shared-types";
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { getSiteUrl } from "@/lib/site-url";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 
@@ -56,7 +57,16 @@ export function InviteAcceptClient({ token, preview }: { token: string; preview:
     const supabase = createClient();
     const { data, error: authError } =
       mode === "create"
-        ? await supabase.auth.signUp({ email: preview.email, password })
+        ? await supabase.auth.signUp({
+            email: preview.email,
+            password,
+            // Pin the confirmation link to this origin, as the register page
+            // does. Without it Supabase falls back to the dashboard Site URL,
+            // which is the wrong-origin failure ADR 0080 exists to prevent —
+            // and an invited colleague lands somewhere that knows nothing about
+            // their invite.
+            options: { emailRedirectTo: `${getSiteUrl()}/auth/confirm` },
+          })
         : await supabase.auth.signInWithPassword({ email: preview.email, password });
 
     if (authError) {
@@ -65,6 +75,17 @@ export function InviteAcceptClient({ token, preview }: { token: string; preview:
       return;
     }
     if (!data.session) {
+      // An invited colleague very often already has a Kudos login, and signing
+      // up again with that address sends nothing at all — Supabase returns no
+      // error and a user with no identities. Telling them to confirm an email
+      // that was never sent strands them on an invite they cannot accept, so
+      // send them to the mode that works instead. See ADR 0267.
+      if (mode === "create" && data.user && data.user.identities?.length === 0) {
+        setBusy(false);
+        setMode("signin");
+        setError("That address already has a Kudos login — enter its password to join.");
+        return;
+      }
       // Sign-up needs email confirmation first — they can reopen this same link
       // once confirmed (the token stays valid) and accept then.
       setBusy(false);

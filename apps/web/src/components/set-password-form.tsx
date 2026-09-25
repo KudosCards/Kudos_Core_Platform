@@ -60,6 +60,14 @@ export function SetPasswordForm({
           // Strip the token from the URL so a refresh (or the browser restoring the
           // tab) can't replay an already-spent token and show a false "invalid".
           window.history.replaceState(null, "", window.location.pathname);
+        })
+        .catch(() => {
+          // A rejected promise — flaky mobile data rather than a returned
+          // AuthError — used to leave `checking` true forever, so the page sat
+          // on its skeleton with no error and no way forward, while the
+          // one-time token had very likely already been spent. See ADR 0267.
+          setHasSession(false);
+          setChecking(false);
         });
       return;
     }

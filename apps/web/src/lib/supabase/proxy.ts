@@ -1,63 +1,12 @@
 import { createServerClient, type CookieOptionsWithName } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "../env";
+import { isPublicPath } from "./public-paths";
 
 interface CookieToSet {
   name: string;
   value: string;
   options?: CookieOptionsWithName;
-}
-
-const PUBLIC_PATHS = [
-  "/",
-  "/login",
-  "/register",
-  "/admin-login",
-  // Password flows: the user arrives via a Supabase email link with the session
-  // in the URL fragment (not yet a cookie), so these must not bounce to /login
-  // before the client can establish the session. See docs/adr/0051.
-  "/forgot-password",
-  "/reset-password",
-  "/admin-set-password",
-  // Marketing and legal pages. These are linked from the public homepage and its
-  // footer, so bouncing a logged-out visitor (or a crawler) to /login makes them
-  // unreachable and unindexable.
-  "/enterprise",
-  "/faq",
-  "/for",
-  "/guides",
-  "/terms",
-  "/privacy",
-];
-
-function isPublicPath(pathname: string): boolean {
-  return (
-    PUBLIC_PATHS.includes(pathname) ||
-    // Public recipient message pages (/r/<slug>).
-    pathname.startsWith("/r/") ||
-    // The public card library: visitors browse /cards and /cards/<id> with no
-    // account, and buy a one-off card via the guest flow (/cards/<id>/send).
-    // See docs/adr/0017-public-card-library.md and 0025.
-    pathname === "/cards" ||
-    pathname.startsWith("/cards/") ||
-    // The guest basket — a one-off visitor fills it and checks out with no
-    // account (POST /guest/cart-checkout). See docs/adr/0025.
-    pathname === "/basket" ||
-    // Guest checkout's Stripe return pages — the buyer has no session.
-    pathname.startsWith("/gift/") ||
-    // Team invite acceptance — an invited colleague may not have a login yet,
-    // so the accept page authenticates them itself. See docs/adr/0028.
-    pathname.startsWith("/invite/") ||
-    // The audience pages (/for/schools, ...) — public marketing content behind
-    // the homepage's "Used by" pills. See ADR 0164.
-    pathname.startsWith("/for/") ||
-    // The occasion guides (/guides/what-to-write-in-a-birthday-card, ...).
-    pathname.startsWith("/guides/") ||
-    // Returned-to-sender address recovery. ADR 0039 specifies a "public, no-login
-    // recovery page" reached from the RTS email — auth *is* the token — so a
-    // bounce to /login breaks the flow it exists for.
-    pathname.startsWith("/rts/")
-  );
 }
 
 /**

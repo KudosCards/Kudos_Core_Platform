@@ -34,8 +34,13 @@ export class PasswordResetService {
         email,
         redirectTo,
       });
-      // No account for this email — stay silent (don't leak which emails exist).
+      // No account for this email — stay silent to the caller (don't leak which
+      // emails exist), but not to us. This used to `return` with no log at all,
+      // which meant an operator asked "did we send it?" could not tell this
+      // apart from a successful send or from the route never being reached.
+      // Three outcomes, three log lines. See ADR 0267.
       if (!hashedToken) {
+        this.logger.log(`Password reset requested for ${email}: no account, nothing sent`);
         return;
       }
       // Link to our own page with the token_hash; /reset-password verifies it with
@@ -58,6 +63,7 @@ export class PasswordResetService {
           showLinkFallback: true,
         }),
       });
+      this.logger.log(`Password reset email sent for ${email}`);
     } catch (error) {
       // Never surface — a reset request must not reveal account existence or
       // config problems to the caller. Log for operators.

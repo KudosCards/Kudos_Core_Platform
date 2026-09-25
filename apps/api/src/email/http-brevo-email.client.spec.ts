@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_HTTP_TIMEOUT_MS } from "../common/http-request";
-import { BREVO_EMAIL_TIMEOUT_MS, HttpBrevoEmailClient } from "./http-brevo-email.client";
+import {
+  BREVO_EMAIL_TIMEOUT_MS,
+  HttpBrevoEmailClient,
+  plainTextFrom,
+} from "./http-brevo-email.client";
 
 function fakeResponse(status: number): Response {
   return {
@@ -81,5 +85,86 @@ describe("the Brevo send deadline", () => {
     expect(source).toContain("timeoutMs: BREVO_EMAIL_TIMEOUT_MS");
     // And the no-retry decision this exists to complement is still in force.
     expect(source).not.toContain("maxAttempts");
+  });
+});
+
+describe("an HTML email with no configured sender", () => {
+  /**
+   * Brevo rejects a non-template send that carries no sender, so this used to
+   * leave the API with a 400 it could not explain and Brevo's dashboard with no
+   * record at all — the send was never accepted, so there was nothing to find
+   * when somebody went looking for the missing password reset. See ADR 0267.
+   */
+  let fetchSpy: jest.SpyInstance;
+  afterEach(() => fetchSpy?.mockRestore());
+
+  it("is refused here rather than sent and rejected", async () => {
+    const senderless = new HttpBrevoEmailClient("key", undefined, "Kudos Cards");
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(fakeResponse(200));
+
+    await expect(
+      senderless.sendTransactional({ to: "ada@example.com", subject: "Reset", html: "<p>Hi</p>" }),
+    ).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("still sends a template, which carries its own sender", async () => {
+    const senderless = new HttpBrevoEmailClient("key", undefined, "Kudos Cards");
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(fakeResponse(200));
+
+    await senderless.sendTransactional({ to: "ada@example.com", subject: "Hi", templateId: 7 });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the plain-text part", () => {
+  /**
+   * Brevo does not synthesise one. A single-part HTML-only message carrying a
+   * remote image and a long tokenised link is the shape filters score down —
+   * which matters most for the auth emails people report as never arriving.
+   */
+  let fetchSpy: jest.SpyInstance;
+  afterEach(() => fetchSpy?.mockRestore());
+
+  it("goes alongside the HTML on every fallback send", async () => {
+    const client = new HttpBrevoEmailClient("key", "hello@kudoscards.test", "Kudos Cards");
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue(fakeResponse(200));
+
+    await client.sendTransactional({
+      to: "ada@example.com",
+      subject: "Reset your password",
+      html: '<p>Hello</p><a href="https://kudos-cards.co.uk/reset?token_hash=abc">Choose a new password</a>',
+    });
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(typeof init.body).toBe("string");
+    const body = JSON.parse(init.body as string) as {
+      textContent: string;
+      htmlContent: string;
+    };
+    expect(body.htmlContent).toContain("<p>Hello</p>");
+    expect(body.textContent).toContain("Hello");
+    // The link has to survive: a reset email without its URL is useless.
+    expect(body.textContent).toContain("https://kudos-cards.co.uk/reset?token_hash=abc");
+  });
+
+  it("keeps the link even when the label is the URL itself", () => {
+    const text = plainTextFrom('<a href="https://x.test/a">https://x.test/a</a>', "Subject");
+    expect(text).toBe("https://x.test/a");
+  });
+
+  it("drops markup and undoes entities rather than printing them", () => {
+    const text = plainTextFrom(
+      "<style>p{}</style><p>Tom &amp; Jerry</p><br/><p>Next</p>",
+      "Subject",
+    );
+    expect(text).not.toContain("<");
+    expect(text).not.toContain("&amp;");
+    expect(text).toContain("Tom & Jerry");
+    expect(text).toContain("Next");
+  });
+
+  it("falls back to the subject rather than sending an empty part", () => {
+    expect(plainTextFrom("<img src='x'>", "Reset your password")).toBe("Reset your password");
   });
 });

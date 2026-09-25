@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import type { Notification, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type { Paginated } from "../common/paginated";
@@ -40,6 +40,8 @@ export interface InboxPage extends Paginated<Notification> {
  */
 @Injectable()
 export class NotificationInboxService {
+  private readonly logger = new Logger(NotificationInboxService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -75,10 +77,23 @@ export class NotificationInboxService {
       select: { userId: true },
     });
     if (members.length === 0) {
+      // Nothing to write to, and — worth being explicit — the same `false` a
+      // caller gets for "already told them". The two callers that gate an email
+      // on this answer both run for accounts that necessarily have a member, so
+      // nothing is silently dropped today; a member-less account reaching here
+      // is odd enough to say out loud rather than swallow.
+      this.logger.warn(
+        `Account ${accountId} has no members — "${payload.kind}" was not recorded anywhere.`,
+      );
       return false;
     }
 
-    await client.notification.createMany({
+    // `skipDuplicates` against the unique index is what makes this atomic. The
+    // read above is the cheap path and cannot settle a race on its own: two
+    // producers both pass it, and without this both would insert and both would
+    // report the event as new — one email each. Here the loser inserts nothing,
+    // counts zero, and stays quiet.
+    const { count } = await client.notification.createMany({
       data: members.map((member) => ({
         accountId,
         userId: member.userId,
@@ -89,8 +104,9 @@ export class NotificationInboxService {
         entityType: payload.entityType ?? null,
         entityId: payload.entityId ?? null,
       })),
+      skipDuplicates: true,
     });
-    return true;
+    return count > 0;
   }
 
   async list(
