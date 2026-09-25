@@ -22,14 +22,33 @@ individually; two were reproduced empirically before being believed.
 
 ### The two that explain the report
 
-**A confirmation link could never work.** `/auth/confirm` — where Supabase sends
+**A confirmation link dead-ended.** `/auth/confirm` — where Supabase sends
 somebody after they confirm their address — was not in the proxy's public-path
 list, and the middleware matcher covers it. The person clicking that link has no
 session yet; minting one is what the page is _for_. So the proxy redirected them
-to `/login` before the page ran: the token was never spent, the pending-account
-stash was never read, onboarding never started. They then saw a login form that
-refused them for an unconfirmed email. It was missing from the day the page was
-written.
+to `/login` before the page ran. Missing from the day the page was written.
+
+**What that does and does not break**, stated precisely, because the first
+draft of this ADR overstated it. The committed signup template uses
+`{{ .ConfirmationURL }}`, which points at Supabase's own `/auth/v1/verify`
+endpoint — and that endpoint **confirms the address and then redirects**. The
+confirmation itself therefore succeeds before our proxy ever sees the request.
+What is lost is the hand-off: the code is never exchanged for a session,
+`/onboarding` is never reached directly, and the pending-account stash is never
+read there.
+
+The person lands on a login page with no explanation, which reads as "the link
+didn't work". If they log in anyway, on the same browser, it recovers — the app
+shell turns the account's 403 into a redirect to `/onboarding`, which finds the
+stash in local storage and creates the account. On a different device the stash
+is gone and onboarding asks again. If they give up at the login page, which is
+the natural reading, they are stuck believing signup failed.
+
+Worth separating: `/reset-password` and `/admin-set-password` were already
+public, and those carry a `token_hash` that only our own page spends (ADR
+0051). A bounce there really would have left the token unspent. It did not
+happen, and that is luck rather than design — which is why this list is now
+tested rather than remembered.
 
 The list is now its own module with no `next/server` import, and a test names
 every logged-out landing page — because the cost of a missing entry is silent
