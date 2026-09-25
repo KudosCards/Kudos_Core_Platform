@@ -3,9 +3,9 @@
  *
  * Its own module, with no `next/server` import, so it can be tested directly —
  * every entry is the landing page of a link we emailed, and a missing one fails
- * silently: the proxy redirects to /login before the page runs, so the token is
- * never spent and the customer reports that the email did not work rather than
- * that a redirect happened. `/auth/confirm` was missing from the day the page
+ * silently: the proxy redirects to /login before the page runs, so whatever
+ * that page was going to do never happens and the customer reports that the
+ * email did not work rather than that a redirect happened. `/auth/confirm` was missing from the day the page
  * was written. See ADR 0267.
  */
 const PUBLIC_PATHS = [
@@ -20,12 +20,12 @@ const PUBLIC_PATHS = [
   "/reset-password",
   "/admin-set-password",
   // Where a signup confirmation link lands. The person clicking it has just
-  // confirmed their email and has **no session yet** — the page's own
-  // verifyOtp/code exchange is what mints one — so bouncing them to /login
-  // meant the page never ran: the token was never spent, the pending-account
-  // stash was never consumed, and onboarding never started. They saw a login
-  // form that then refused them for an unconfirmed email, and reported it as
-  // the confirmation email not working. See ADR 0080 and 0267.
+  // confirmed their email — Supabase's own verify endpoint does that before it
+  // redirects — but has **no session yet**: the code exchange on this page is
+  // what mints one. Bouncing them to /login meant the page never ran, so the
+  // session was never minted, onboarding was never reached and the
+  // pending-account stash was never read there. They landed on a login form
+  // with no explanation, which reads as the link not working. See ADR 0267.
   "/auth/confirm",
   // Marketing and legal pages. These are linked from the public homepage and its
   // footer, so bouncing a logged-out visitor (or a crawler) to /login makes them

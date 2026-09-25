@@ -276,5 +276,7 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0265 — What the review found](./0265-what-the-review-found.md)
 - [0266 — What archiving a contact means](./0266-what-archiving-a-contact-means.md)
 - [0267 — Why an email does not arrive](./0267-why-an-email-does-not-arrive.md)
+- [0268 — When Brevo stops delivering](./0268-when-brevo-stops-delivering.md)
+- [0269 — One sender for getting back in](./0269-one-sender-for-getting-back-in.md)
 
 <!-- adr-index:end -->

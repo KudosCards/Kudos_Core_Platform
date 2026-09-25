@@ -289,8 +289,13 @@ describe("Team / invites (e2e)", () => {
 
     // An email with the accept link was sent to the (lowercased) invitee.
     expect(sendTransactional).toHaveBeenCalledTimes(1);
-    const emailArg = (sendTransactional.mock.calls[0] as [{ to: string; html: string }])[0];
+    const emailArg = (
+      sendTransactional.mock.calls[0] as [{ to: string; html: string; sender?: string }]
+    )[0];
     expect(emailArg.to).toBe("staff@centre.test");
+    // Its own verified sender, so an unsubscribe cannot suppress the invite
+    // that is the only way into the account. See ADR 0269.
+    expect(emailArg.sender).toBe("account");
     const token = await inviteToken(owner.accountId, "staff@centre.test");
     expect(emailArg.html).toContain(`/invite/${token}`);
 

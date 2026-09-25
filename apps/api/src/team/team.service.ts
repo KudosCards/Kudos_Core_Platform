@@ -433,6 +433,7 @@ export class TeamService {
     try {
       await this.email.sendTransactional({
         to: email,
+        sender: "account",
         subject: `You've been invited to join ${accountName} on Kudos Cards`,
         html: renderBrandedEmail({
           webAppUrl,

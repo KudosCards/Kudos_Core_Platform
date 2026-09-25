@@ -1723,3 +1723,66 @@ model EnterpriseEnquiry {
   @@index([status, createdAt])
   @@map("enterprise_enquiries")
 }
+
+/// Why Brevo will not deliver to an address. The names are ours; the mapping
+/// from Brevo's own event vocabulary lives in `brevo-event.ts`.
+enum EmailSuppressionReason {
+  /// The mailbox does not exist. Brevo blocks these account-wide, so every
+  /// sender we own is affected.
+  hard_bounce
+  /// Brevo refused the send because the address was already on the blocklist.
+  blocked
+  /// Brevo judged the address unusable before attempting delivery.
+  invalid
+  /// The recipient pressed "this is spam". Scoped to the sender that was used.
+  spam
+  /// The recipient unsubscribed. Scoped to the sender that was used, which is
+  /// why one marketing unsubscribe can take out a password reset while we send
+  /// everything from a single address. See ADR 0268.
+  unsubscribed
+}
+
+/// An address Brevo has told us it will not deliver to.
+///
+/// Without this the failure is invisible: Brevo accepts the API call for a
+/// blocklisted address, returns a message id, and drops the message. Nothing
+/// appears in the delivery log and nothing arrives, so a customer reporting a
+/// missing password reset looks identical to one who didn't check their spam
+/// folder.
+///
+/// One row per address, holding the most recent event rather than a history —
+/// what support needs is "can we reach this person now, and why not", and the
+/// full history lives in Brevo. Written only by Brevo's webhook.
+model EmailSuppression {
+  id          String                 @id @default(uuid())
+  /// Lowercased on write. Brevo matches addresses case-insensitively; if we
+  /// didn't, `Bob@x.com` would look deliverable while Brevo blocks `bob@x.com`.
+  email       String                 @unique
+  reason      EmailSuppressionReason
+  /// Brevo's own wording ("unknown user", "spam complaint"), verbatim, so
+  /// support reads the real cause instead of our summary of it.
+  detail      String?
+  /// Subject of the message that triggered it — answers "which email was this?"
+  subject     String?
+  /// Brevo's message id. The handle their support asks for.
+  messageId   String?                @map("message_id")
+  /// When the event happened per Brevo. Null when the payload carried no usable
+  /// timestamp; distinct from firstSeenAt, which is when *we* heard about it.
+  occurredAt  DateTime?              @map("occurred_at")
+  firstSeenAt DateTime               @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime               @default(now()) @map("last_seen_at")
+  /// Set when the address is deliverable again. Null while suppressed, so
+  /// "can we reach them" is `{ email, clearedAt: null }`.
+  clearedAt   DateTime?              @map("cleared_at")
+  /// What cleared it: "brevo-delivered" when Brevo itself delivered to the
+  /// address again — proof from the authority that the block is gone — or the
+  /// ops user id (PlatformAdmin.userId) who cleared it by hand after unblocking
+  /// in the dashboard. Null while suppressed.
+  clearedBy   String?                @map("cleared_by")
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @updatedAt @map("updated_at")
+
+  // The ops list: currently-suppressed addresses, most recent first.
+  @@index([clearedAt, lastSeenAt])
+  @@map("email_suppressions")
+}

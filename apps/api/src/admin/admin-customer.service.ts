@@ -293,6 +293,25 @@ export class AdminCustomerService {
     const churned = subsForHealth.some((s) => CHURNED_SUB_STATUSES.includes(s.status));
 
     // Last activity across every meaningful signal, not just orders.
+    // Which of this account's addresses Brevo refuses to deliver to. Asked
+    // after the batch above because it needs the team's addresses, and answered
+    // with one indexed lookup. Deliberately covers the billing contact and
+    // every member: a blocked address anywhere on the account is why somebody's
+    // password reset or invite "never arrived". See ADR 0268.
+    const accountAddresses = [
+      ...new Set(
+        [account.contactEmail, ...memberships.map((m) => m.email)]
+          .filter((email): email is string => Boolean(email))
+          .map((email) => email.trim().toLowerCase()),
+      ),
+    ];
+    const blockedAddresses = accountAddresses.length
+      ? await this.prisma.emailSuppression.findMany({
+          where: { email: { in: accountAddresses }, clearedAt: null },
+          orderBy: { lastSeenAt: "desc" },
+        })
+      : [];
+
     const lastActivityAt = new Date(
       Math.max(
         account.createdAt.getTime(),
@@ -418,6 +437,15 @@ export class AdminCustomerService {
         })),
       },
       returns: { open: returnsOpen, total: returnsTotal },
+      emailDeliverability: {
+        blocked: blockedAddresses.map((row) => ({
+          email: row.email,
+          reason: row.reason,
+          detail: row.detail,
+          // When Brevo says it happened, falling back to when we heard.
+          since: row.occurredAt ?? row.firstSeenAt,
+        })),
+      },
     };
   }
 }
