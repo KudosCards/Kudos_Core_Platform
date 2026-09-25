@@ -151,5 +151,26 @@ export const customer360Schema = z.object({
   }),
 
   returns: z.object({ open: z.number(), total: z.number() }),
+
+  /**
+   * Addresses on this account that Brevo will not deliver to.
+   *
+   * Here because it is the question support is actually asked — "why didn't he
+   * get it?" — and because until now there was no answer. A blocklisted address
+   * is accepted by Brevo's API, given a message id and dropped, so the send
+   * looks successful from every other screen. See ADR 0268.
+   */
+  emailDeliverability: z.object({
+    blocked: z.array(
+      z.object({
+        email: z.string(),
+        /** Brevo's category: hard_bounce, blocked, invalid, spam, unsubscribed. */
+        reason: z.string(),
+        /** Brevo's own wording, e.g. "unknown user". Null when it gave none. */
+        detail: z.string().nullable(),
+        since: z.coerce.date(),
+      }),
+    ),
+  }),
 });
 export type Customer360 = z.infer<typeof customer360Schema>;

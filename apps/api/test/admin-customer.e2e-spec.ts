@@ -266,6 +266,84 @@ describe("Admin — Customer 360 (e2e)", () => {
       hasTeam: true,
     });
   });
+  // A blocklisted address is accepted by Brevo, given a message id and dropped,
+  // so every other screen on this page says the account is fine. This is the
+  // one place that can answer "why didn't he get it?". See ADR 0268.
+  it("names the account's addresses Brevo refuses to deliver to", async () => {
+    const token = await operatorToken();
+    const account = await prisma.account.create({
+      data: {
+        origin: "signup",
+        type: "individual",
+        name: `Blocked ${randomUUID()}`,
+        planId: "free",
+        contactEmail: "Owner@Example.com",
+      },
+    });
+    await prisma.membership.create({
+      data: {
+        accountId: account.id,
+        userId: randomUUID(),
+        email: "colleague@example.com",
+        role: "admin",
+      },
+    });
+    await prisma.emailSuppression.createMany({
+      data: [
+        {
+          email: "owner@example.com",
+          reason: "hard_bounce",
+          detail: "unknown user",
+          occurredAt: new Date("2026-09-18T09:00:00Z"),
+        },
+        // Cleared, so reachable again — must not be reported as a problem.
+        {
+          email: "colleague@example.com",
+          reason: "spam",
+          clearedAt: new Date("2026-09-20T09:00:00Z"),
+          clearedBy: "brevo-delivered",
+        },
+        // Somebody else's problem entirely.
+        { email: "stranger@example.com", reason: "blocked" },
+      ],
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/admin/customers/${account.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    const customer = customer360Schema.parse(response.body);
+    expect(customer.emailDeliverability.blocked).toEqual([
+      {
+        email: "owner@example.com",
+        reason: "hard_bounce",
+        detail: "unknown user",
+        since: new Date("2026-09-18T09:00:00Z"),
+      },
+    ]);
+  });
+
+  it("reports clean delivery for an account with nothing blocked", async () => {
+    const token = await operatorToken();
+    const account = await prisma.account.create({
+      data: {
+        origin: "signup",
+        type: "individual",
+        name: `Reachable ${randomUUID()}`,
+        planId: "free",
+        contactEmail: "fine@example.com",
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/admin/customers/${account.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(customer360Schema.parse(response.body).emailDeliverability.blocked).toEqual([]);
+  });
+
   it("reports no subscription spend for an account that has never paid", async () => {
     const token = await operatorToken();
     const account = await prisma.account.create({

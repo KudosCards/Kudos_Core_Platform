@@ -36,6 +36,7 @@ import { OpsActivityModule } from "./ops-activity/ops-activity.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
 import { GuestModule } from "./guest/guest.module";
 import { EmailModule } from "./email/email.module";
+import { EmailSuppressionModule } from "./email-suppression/email-suppression.module";
 import { MarketingModule } from "./marketing/marketing.module";
 import { RemindersModule } from "./reminders/reminders.module";
 import { TeamModule } from "./team/team.module";
@@ -99,6 +100,7 @@ import { PlatformNotificationsModule } from "./platform-notifications/platform-n
     IntegrationsModule,
     GuestModule,
     EmailModule,
+    EmailSuppressionModule,
     MarketingModule,
     RemindersModule,
     TeamModule,

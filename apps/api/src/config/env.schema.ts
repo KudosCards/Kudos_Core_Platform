@@ -402,6 +402,19 @@ export const envSchema = z.object({
   // ticket (to the support inbox); unset ⇒ the built-in HTML fallback.
   BREVO_SUPPORT_REPLY_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
   BREVO_SUPPORT_TICKET_TEMPLATE_ID: z.coerce.number().int().positive().optional().catch(undefined),
+  // Shared secret Brevo sends back on its transactional webhook, as
+  // `x-brevo-webhook-secret` or `?secret=`. Brevo does not sign its webhooks —
+  // there is no HMAC to verify, unlike Stripe — so this is the only thing
+  // standing between the suppression list and anyone who can guess the URL.
+  // Optional; unset ⇒ POST /webhooks/brevo refuses every request rather than
+  // accepting anonymous writes, so bounces simply go unrecorded as they do
+  // today. See docs/adr/0268-brevo-suppressions.md.
+  BREVO_WEBHOOK_SECRET: z
+    .string()
+    .min(1)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+
   // Where new tickets and customer replies are emailed so the Kudos support
   // team is alerted. Optional: unset ⇒ no team alert email is sent (the ticket
   // is still visible in the ops queue). Blank/malformed degrades to unset rather

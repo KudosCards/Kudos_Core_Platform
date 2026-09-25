@@ -1,4 +1,5 @@
 import { Global, Module } from "@nestjs/common";
+import { EmailSuppressionModule } from "../email-suppression/email-suppression.module";
 import { emailClientProvider } from "./email-client.provider";
 import { EMAIL_CLIENT } from "./email.client";
 
@@ -8,6 +9,7 @@ import { EMAIL_CLIENT } from "./email.client";
  */
 @Global()
 @Module({
+  imports: [EmailSuppressionModule],
   providers: [emailClientProvider],
   exports: [EMAIL_CLIENT],
 })

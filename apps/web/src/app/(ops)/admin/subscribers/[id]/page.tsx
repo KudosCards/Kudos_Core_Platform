@@ -22,6 +22,16 @@ const ENGAGEMENT: Record<Customer360["engagement"]["level"], { label: string; cl
     dormant: { label: "Dormant", className: "bg-foreground/[0.07] text-muted" },
   };
 
+/** Brevo's blocklist reasons, in words an operator reads. Anything unmapped
+ *  falls back to the raw value, so a new Brevo reason still renders. */
+const BLOCK_REASONS: Record<string, string> = {
+  hard_bounce: "Address doesn't exist",
+  blocked: "On Brevo's blocklist",
+  invalid: "Address is invalid",
+  spam: "Marked us as spam",
+  unsubscribed: "Unsubscribed",
+};
+
 /** Stripe's billing_reason values, in words an operator reads rather than an
  *  API enum. Anything unmapped falls back to the raw value with underscores
  *  stripped, so a new Stripe reason still renders. */
@@ -224,6 +234,35 @@ export default async function AdminCustomerPage({ params }: { params: Promise<{ 
                 </li>
               ))}
             </ul>
+          )}
+        </Panel>
+
+        {/* Email deliverability */}
+        <Panel title="Email delivery">
+          {customer.emailDeliverability.blocked.length === 0 ? (
+            <p className="text-sm text-muted">
+              Brevo is delivering to every address on this account.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-2 text-sm">
+              {customer.emailDeliverability.blocked.map((blocked) => (
+                <li key={blocked.email} className="rounded-lg bg-danger-soft px-3 py-2 text-danger">
+                  <p className="font-semibold break-all">{blocked.email}</p>
+                  <p className="mt-0.5 text-xs">
+                    {BLOCK_REASONS[blocked.reason] ?? blocked.reason}
+                    {blocked.detail ? ` — ${blocked.detail}` : ""} · since{" "}
+                    {formatOrderDate(blocked.since)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {customer.emailDeliverability.blocked.length > 0 && (
+            <p className="mt-3 text-xs text-muted">
+              Brevo accepts these sends and drops them, so nothing here reaches the customer and
+              nothing appears in Brevo’s delivery log. Unblocking is done in Brevo and should not be
+              done on a guess — see docs/ops/email-blocklist.md.
+            </p>
           )}
         </Panel>
 
