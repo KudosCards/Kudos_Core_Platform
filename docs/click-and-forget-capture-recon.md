@@ -7,138 +7,126 @@ Chris, 24 September 2026, on the Darlington Kip McGrath account:
 > This student (Izobella Ross) is shown as auto-send for 8th Oct but looking at
 > the calendar there are a number of other students which should be captured.
 
-And separately, that Izobella's send day may not be right to get there in time.
+Click and forget is on and reports **Running**, covering **148 of 148**
+contacts. The calendar shows eight birthdays in the next three weeks. One is
+scheduled to send.
 
-Click and forget is switched on and reports **Running**, covering **148 of 148
-contacts**. The calendar shows eight birthdays inside the next three weeks. One
-of them is scheduled to send.
+## What the data showed
 
-## What has to happen for a card to go out
+The seven "missing" students are **not** missing. They are **approved**, with a
+design chosen and a dispatch date set. Every one of them:
 
-Three crons, in order, each morning. Every one of them is invisible from the
-calendar.
+| Contact             | Birthday | Posts      | Status   | Dispatch option |
+| ------------------- | -------- | ---------- | -------- | --------------- |
+| Ryan Mafukidze      | 3 Oct    | **28 Sep** | approved | `asap`          |
+| Katie Baker         | 5 Oct    | **28 Sep** | approved | `asap`          |
+| Freddie Etherington | 8 Oct    | 1 Oct      | approved | `asap`          |
+| Blessing Mavindi    | 8 Oct    | 1 Oct      | approved | `asap`          |
+| Chloe Clark         | 9 Oct    | 2 Oct      | approved | `asap`          |
+| Hannah Kirby        | 12 Oct   | 5 Oct      | approved | `asap`          |
+| Anna Scott Wailes   | 12 Oct   | 5 Oct      | approved | `asap`          |
+| **Izobella Ross**   | 15 Oct   | 8 Oct      | approved | **`auto_send`** |
 
-|       | Job                            | Moves                                       | Requires                                                                                            |
-| ----- | ------------------------------ | ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| 06:00 | `promoteDueOccasions`          | `scheduled` → `pending_approval`            | type in (birthday, renewal, anniversary) · recipient `active` · date within 21 days                 |
-| 06:30 | `StandingOrderApprovalService` | `pending_approval` → `approved` + auto-send | type `birthday` · source `recurring_per_recipient` · recipient `active` · in the instruction's list |
-| 07:00 | auto-send                      | `approved` → ordered and posted             | `dispatchDate <= today`                                                                             |
+One field separates Izobella from the rest, and everything follows from it.
 
-The calendar, meanwhile, shows an occasion whenever its recipient is **not
-archived** (`occasions.service.ts:399`). That is a far looser rule than any of
-the three above, and the gap between them is the whole problem: a contact can
-sit on the calendar in "Upcoming" yellow indefinitely while being ineligible at
-gate 1, and nothing anywhere says so.
+**`asap` means a human still has to pay.** The auto-send cron only ever acts on
+`dispatchOption: "auto_send"` (`auto-send.service.ts:391`). An `approved` +
+`asap` card waits in the Orders basket for someone to place and pay for an
+order. Nothing chases it.
 
-## What the screenshots establish
+**The Approvals page cannot show them.** It lists exactly two things: occasions
+that are `pending_approval`, and occasions that are `approved` **and**
+`auto_send` (`approvals/page.tsx:16,22`). An approved `asap` card matches
+neither. It has left the approvals queue and joined no other.
 
-The Approvals page says **"Nothing waiting for approval right now"**. That is
-the complete list of `pending_approval` occasions for the account — the page
-and the badge query the same filter with no date bound.
+**The calendar cannot distinguish them.** Approved-and-automated,
+approved-and-waiting-for-payment, and not-yet-ready all render as the same
+yellow "Upcoming" pill.
 
-So the eight upcoming birthdays are **not** `pending_approval`. They never got
-through gate 1. Which leaves three candidate causes, and only data can separate
-them:
+**And then they are quietly written off.** `retirePastOccasions` moves any
+`approved` occasion whose date has passed to `missed` — case 2 in its own
+docstring, "approved, a design chosen, and then never ordered". So these seven
+become `missed` after their birthdays, with no card sent and nothing said.
 
-1. **Their recipients are not `active`.** A `lapsed` contact is excluded by
-   gates 1 and 2 but still drawn on the calendar. See the section below — this
-   is the leading candidate, and it is a defect in its own right.
-2. **Their occasions are not a promotable type.** Only birthday, renewal and
-   anniversary are promoted on a timer.
-3. **The 06:00 cron is not completing** for this account.
+Two of them had to be posted on **28 September**, four days after Chris recorded
+the video.
 
-`docs/ops/diagnose-click-and-forget.sql` answers this. It reports, per contact,
-which gate they are stuck at rather than that they are stuck.
+## The cause
 
-## Confirmed defects
+`approveWithCheckedDesign` defaults to `asap`:
 
-These are established from the code and do not depend on the diagnosis above.
+```ts
+const dispatchOption = dto.dispatchOption ?? "asap";
+```
 
-### 1. `lapsed` is undefined behaviour that silently stops cards
+and the Approvals page defaults its auto-send toggle to off
+(`autoSendByOccasion[occasion.id] ?? false`, `useState(false)` for the bulk
+one). **The Approvals page never fetches the standing order at all** — it has no
+idea click and forget is running.
 
-`RecipientStatus` has three values. Two are meaningful. `lapsed`:
+So on an account whose owner has switched on "stop asking me, send these
+automatically", working the approvals queue by hand silently opts each card
+_out_ of that automation, one card at a time, with no warning and no visible
+consequence until the birthday passes.
 
-- is **never set** by anything in the API — no import, no sync, no cron
-- has **no ADR** and no definition anywhere in the repository
-- is **selectable** in the smart-list rule builder and **counted** on the ops
-  subscriber page, so it looks supported
-- is **excluded by both crons**, which take `status: "active"` exactly
-- is **included by the calendar**, which excludes only `archived`
+That is what happened here. Someone approved these seven from the queue before
+the 06:30 cron reached them, taking the default each time.
 
-So a contact in this state appears entirely normal, shows their birthday on the
-calendar as upcoming, and never receives a card. Nothing reports it.
+**And turning click and forget on does not adopt cards already approved.** The
+approval cron only ever reads `status: "pending_approval"`
+(`standing-order-approval.service.ts:135`). Anything approved before the
+instruction was switched on stays `asap` for ever.
 
-This is the same disagreement ADR 0266 fixed between the approvals badge and the
-approvals page, in a place that pass did not reach: there I made the _reads_
-agree on "not archived" and left the two _writers_ on "active".
+## Two corrections to my earlier reading
 
-### 2. The approvals badge never refreshes after the queue is drained
+**The badge was not stale.** I said the "3" beside Approvals was a number the
+page had already dealt with, because `approvals-client.tsx` never calls
+`router.refresh()`. That is a true statement about the code and it was the wrong
+explanation. The account has exactly **three** `pending_approval` occasions
+belonging to **archived** contacts — pearl goredema, odile m, lynn kirby. The
+badge before ADR 0266 counted `pending_approval` without excluding archived
+recipients, which is exactly 3, while the page never showed them. Chris's
+screenshot predates that deploy. Query 4 now returns **0**, which is the fix
+working.
 
-`approvals-client.tsx` mutates its own state after an approve or a skip and
-never calls `router.refresh()`. Nine other clients under `(app)/` do. The badge
-lives in the shared layout, so it keeps whatever number it was rendered with
-until a full page load.
+**`lapsed` is not implicated here.** The account has 148 active and 105 archived
+contacts and no lapsed ones. The finding stands on its own — `lapsed` is set by
+nothing, defined nowhere, excluded by both crons and included by the calendar —
+but it is not what Chris saw, and it should be ranked accordingly.
 
-That is exactly the screenshot: **badge 3, page empty**. The badge is not
-counting something the page is hiding — it is remembering something the page
-already dealt with.
+## Still true, and still worth fixing
 
-### 3. A birthday created by hand can never be auto-sent
+**A birthday created by hand can never be auto-sent.** `POST /occasions` writes
+`source: "one_off_campaign"` whatever type was asked for, and the approval cron
+requires `recurring_per_recipient`. Not implicated on this account — every row
+is `recurring_per_recipient` — but it is a live trap for anyone using
+**+ New event**.
 
-`POST /occasions` writes `source: "one_off_campaign"` regardless of the type
-requested, and gate 2 requires `recurring_per_recipient`. A birthday added
-through **+ New event** on the calendar is therefore permanently outside click
-and forget — it will wait for a human every year, on an account whose whole
-premise is that it has stopped asking.
-
-It is also created as `pending_approval` immediately, with no date bound, so a
-birthday eleven months out joins the approvals queue today and counts toward the
-badge.
+**Archiving a contact leaves their occasions behind.** Four rows here belong to
+archived contacts: three sitting in `pending_approval`, one in `scheduled`. They
+are invisible on every screen now and will be retired as `missed` in due course.
+Harmless, but it is why the badge read 3.
 
 ## Izobella's send date
 
-Computed with the real function rather than by hand:
+Computed with the real function: five working days before Thursday 15 October is
+Thursday 8 October. Her date is **correct** — send-by-5 applied exactly
+(ADR 0115).
 
-| Contact             | Birthday   | Posts          |
-| ------------------- | ---------- | -------------- |
-| Ryan Mafukidze      | Sat 3 Oct  | **Mon 28 Sep** |
-| Katie Baker         | Mon 5 Oct  | **Mon 28 Sep** |
-| Freddie Etherington | Thu 8 Oct  | Thu 1 Oct      |
-| Blessing Mavindi    | Thu 8 Oct  | Thu 1 Oct      |
-| Chloe Clark         | Fri 9 Oct  | Fri 2 Oct      |
-| Hannah Kirby        | Mon 12 Oct | Mon 5 Oct      |
-| Anna Scott Wailes   | Mon 12 Oct | Mon 5 Oct      |
-| Izobella Ross       | Thu 15 Oct | Thu 8 Oct      |
+The fair point underneath Chris's remark is a different one. Send-by-5 posts
+five working days ahead, so a card typically lands two to three days _before_
+the birthday rather than on it — deliberate, since it is what stops anything
+arriving late. But the calendar hides posting dates behind a **Dispatch dates**
+checkbox that is off by default, so an operator reading the calendar cannot see
+when anything actually posts, and "posts around 8 October" against a 15 October
+birthday reads oddly with no way to check it.
 
-Izobella's 8 October is **correct** — five working days before her birthday,
-which is the send-by-5 rule in ADR 0115, applied exactly.
+## The shape of the problem
 
-What the table shows instead is urgency. Two of the missing students had to be
-posted on **28 September**, four days after Chris recorded this. Their cards are
-now late or missed, and nothing will have told anyone.
+Not "some contacts were missed". The product has **two ways to approve a card
+and only one of them is automatic**, they are chosen by a checkbox that defaults
+to the manual one, and the screen presenting that checkbox does not know the
+account has already asked for automation.
 
-There is a fair product question underneath Chris's remark, which is not a bug:
-send-by-5 posts second class five working days ahead, so a card typically lands
-two to three days **before** the birthday rather than on it. That is deliberate
-— it is what stops anything arriving late — but "posts around 8 October" against
-a 15 October birthday reads oddly on screen, and the calendar hides the posting
-date behind a **Dispatch dates** checkbox that is off by default. An operator
-reading the calendar cannot see when anything actually posts.
-
-## What this points at
-
-The individual defects are worth fixing, but they are symptoms. The pattern is
-that **the calendar promises what the crons do not deliver, and nothing
-reconciles the two.** Four separate rules exist for "does this contact count",
-and they disagree:
-
-| Surface                   | Rule                                      |
-| ------------------------- | ----------------------------------------- |
-| Calendar                  | recipient not `archived`                  |
-| Approvals page and badge  | recipient not `archived`                  |
-| Promotion cron            | recipient `active`                        |
-| Click-and-forget approval | recipient `active` + source + type + list |
-
-A fix that only aligns the statuses leaves the deeper problem: there is no
-screen anywhere that answers "which of my contacts will **not** get a card, and
-why". The plan should end with that screen existing.
+Everything else follows: the approved `asap` card has no home screen, the
+calendar cannot tell it apart, and the sweeper writes it off in silence.
