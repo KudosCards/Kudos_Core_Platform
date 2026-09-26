@@ -155,6 +155,16 @@ export const standingOrderSchema = z.object({
   active: z.boolean(),
   /** Everything standing between "on" and "running". Empty when active. */
   blockers: z.array(standingOrderBlockerSchema),
+  /**
+   * How many already-approved cards this save handed to the instruction.
+   *
+   * Transient, and present only on the response to the save that did it — a
+   * read never carries it. Switching on used to leave cards somebody had
+   * already approved waiting for a manual order that the screen no longer
+   * asked for, so the number is here to be said out loud rather than to be
+   * stored. See ADR 0272.
+   */
+  adopted: z.number().int().optional(),
   /** The consent on record, if any. */
   consent: z
     .object({

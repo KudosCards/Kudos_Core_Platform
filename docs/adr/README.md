@@ -280,5 +280,6 @@ and CI fails when it drifts. After adding an ADR, run `pnpm adr:index` and commi
 - [0269 — One sender for getting back in](./0269-one-sender-for-getting-back-in.md)
 - [0270 — The approved card nobody will send](./0270-the-approved-card-nobody-will-send.md)
 - [0271 — Approving should not opt out of the automation](./0271-approving-should-not-opt-out-of-the-automation.md)
+- [0272 — Switching on takes over what is already approved](./0272-switching-on-takes-over-what-is-already-approved.md)
 
 <!-- adr-index:end -->

@@ -159,6 +159,8 @@ export function ClickAndForgetClient({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  /** How many already-approved cards the last save handed over. See ADR 0272. */
+  const [adopted, setAdopted] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [walletSummary, setWalletSummary] = useState(wallet);
   const [readiness, setReadiness] = useState(initialReadiness);
@@ -394,6 +396,10 @@ export function ClickAndForgetClient({
         }),
       });
       setOrder(next);
+      // Transient: the API returns it only on the save that adopted, and a
+      // later read never carries it. Kept so the confirmation can name the
+      // number rather than leaving somebody to discover it on another screen.
+      setAdopted(next.adopted ?? 0);
       setMessages(
         next.messages.length > 0
           ? next.messages.map((m) => ({ text: m.text, source: m.source }))
@@ -772,6 +778,7 @@ export function ClickAndForgetClient({
         saving={saving}
         saved={saved && !error}
         activeAfterSave={order.active}
+        adopted={adopted}
         onSave={() => void save()}
       />
 
@@ -1168,6 +1175,7 @@ function SaveBar({
   saving,
   saved,
   activeAfterSave,
+  adopted,
   disabled,
   onSave,
 }: {
@@ -1175,6 +1183,8 @@ function SaveBar({
   saving: boolean;
   saved: boolean;
   activeAfterSave: boolean;
+  /** Cards already approved that this save handed to the instruction. */
+  adopted: number;
   /** The instruction could not be read, so there is nothing safe to save over. */
   disabled: boolean;
   onSave: () => void;
@@ -1189,7 +1199,12 @@ function SaveBar({
               ? "You have unsaved changes."
               : saved
                 ? activeAfterSave
-                  ? "Saved. We will take it from here."
+                  ? adopted > 0
+                    ? // Said out loud because it is a change to cards they had
+                      // already dealt with, and the alternative is discovering
+                      // it on another screen.
+                      `Saved. We will take it from here, including ${adopted} card${adopted === 1 ? "" : "s"} you had already approved.`
+                    : "Saved. We will take it from here."
                   : "Saved."
                 : "Everything here is saved."}
         </span>

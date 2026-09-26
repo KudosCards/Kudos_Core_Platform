@@ -43,7 +43,7 @@ does not — it fetches entitlements and nothing else.
 The same applies to the bulk approve, which is the likelier culprit given seven
 cards took the same path.
 
-## F2 — Switching it on adopts what is already waiting
+## F2 — Switching it on adopts what is already waiting — **done** (ADR 0272)
 
 Turning click and forget on today changes nothing about cards already approved:
 the cron reads `pending_approval` only. Somebody who approves a fortnight of

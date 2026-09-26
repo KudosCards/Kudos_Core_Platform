@@ -710,4 +710,64 @@ describe("Click and forget", () => {
     renderPage({ designs: [] });
     expect(screen.getByRole("link", { name: /make your own/i })).toBeInTheDocument();
   });
+
+  /**
+   * Switching on now takes over cards the subscriber had already approved by
+   * hand (ADR 0272). That is a change to work they had already dealt with, so
+   * the confirmation says it rather than leaving them to find out on the
+   * approvals screen — or not at all.
+   */
+  describe("taking over cards already approved", () => {
+    /**
+     * A running instruction with a card and a message, because `save()` refuses
+     * to switch on without either — and the save bar reports "unsaved changes"
+     * ahead of anything else, so a fixture whose form does not match what is
+     * stored never reaches the line under test.
+     */
+    const running = (over: Partial<StandingOrder> = {}): Partial<StandingOrder> => ({
+      enabled: true,
+      active: true,
+      designs: [
+        { savedDesignId: design().id, name: design().name, archived: false, takesMessage: true },
+      ],
+      messages: [{ id: "m1", text: "Happy birthday.", source: "written" }],
+      consent: { consentedAt: new Date(), version: 1, current: true },
+      ...over,
+    });
+
+    async function saveReturning(next: StandingOrder) {
+      const user = userEvent.setup();
+      renderPage({ over: running(), designs: [design()] });
+      // The page's own load-time reads resolve through the same mock, so let
+      // them settle before queueing the save's response — otherwise they eat it
+      // and the save resolves with whatever is left.
+      await screen.findByText(/We are sending these cards for you/i);
+      apiMock.mockResolvedValueOnce(next);
+      await user.click(screen.getByRole("button", { name: "Save" }));
+    }
+
+    it("names how many it took", async () => {
+      await saveReturning(order(running({ adopted: 3 })));
+
+      expect(
+        await screen.findByText(/including 3 cards you had already approved/),
+      ).toBeInTheDocument();
+    });
+
+    it("does not pluralise a single card", async () => {
+      await saveReturning(order(running({ adopted: 1 })));
+
+      expect(
+        await screen.findByText(/including 1 card you had already approved/),
+      ).toBeInTheDocument();
+    });
+
+    // The ordinary case, and by far the commonest: saying "including 0 cards"
+    // would make every save look like it had done something to them.
+    it("says nothing about them when it took none", async () => {
+      await saveReturning(order(running({ adopted: 0 })));
+
+      expect(await screen.findByText("Saved. We will take it from here.")).toBeInTheDocument();
+    });
+  });
 });

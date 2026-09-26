@@ -6,6 +6,7 @@ import {
   consentIsCurrent,
 } from "./standing-order.consent";
 import { standingOrderBlockers, type StandingOrderState } from "./standing-order-state";
+import { adoptApprovedIntoAutoSend } from "./adopt-approved-occasions.util";
 import {
   designTakesMessage,
   type StandingOrder,
@@ -131,6 +132,19 @@ export class StandingOrdersService {
     });
     const consent = this.nextConsent(existing, dto.agreeToConsent ?? false, actorUserId);
 
+    // Whether the instruction was already running *before* this save, read with
+    // the same rule the view and the cron use. Adoption below happens on the
+    // transition into running and nowhere else — see the util for why re-running
+    // it on an ordinary edit would overrule somebody.
+    const before = await this.prisma.standingOrder.findUnique({
+      where: { accountId },
+      include: STANDING_ORDER_INCLUDE,
+    });
+    const wasActive = before
+      ? before.enabled &&
+        standingOrderBlockers(standingOrderStateOf(before), planAllows).length === 0
+      : false;
+
     const saved = await runSerializable(this.prisma, async (tx) => {
       const order = await tx.standingOrder.upsert({
         where: { accountId },
@@ -219,10 +233,25 @@ export class StandingOrdersService {
         });
       }
 
-      return tx.standingOrder.findUniqueOrThrow({
+      const row = await tx.standingOrder.findUniqueOrThrow({
         where: { id: order.id },
         include: STANDING_ORDER_INCLUDE,
       });
+
+      // Inside the transaction: switching on and taking over the cards already
+      // waiting are one act, and a save that committed without the second would
+      // leave the instruction claiming cards it had not taken.
+      const nowActive =
+        row.enabled && standingOrderBlockers(standingOrderStateOf(row), planAllows).length === 0;
+      const adopted =
+        !wasActive && nowActive
+          ? await adoptApprovedIntoAutoSend(tx, {
+              accountId,
+              recipientListId: row.recipientListId,
+            })
+          : 0;
+
+      return { row, adopted };
     });
 
     await this.audit.record({
@@ -230,17 +259,17 @@ export class StandingOrdersService {
       actorUserId,
       action: dto.enabled ? "standing_order_enabled" : "standing_order_disabled",
       targetType: "StandingOrder",
-      targetId: saved.id,
+      targetId: saved.row.id,
       metadata: {
         audience: dto.audience.kind,
         designs: savedDesignIds.length,
         messages: dto.messages.length,
         postageClass: dto.postageClass,
-        consentVersion: saved.consentVersion,
+        consentVersion: saved.row.consentVersion,
       },
     });
 
-    return this.view(saved, planAllows);
+    return { ...this.view(saved.row, planAllows), adopted: saved.adopted };
   }
 
   /**

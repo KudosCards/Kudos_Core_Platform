@@ -520,4 +520,153 @@ describe("Standing order approval (e2e)", () => {
     const { token } = await proAccount();
     await runApproval(token).expect(403);
   });
+
+  /**
+   * Switching on used to change nothing about a card somebody had already
+   * approved: the cron reads `pending_approval` only, so an `approved` card
+   * carrying `asap` stayed waiting for a manual order, on no screen that asked
+   * for one, and was retired as `missed` after the date. Somebody who worked
+   * through a fortnight of birthdays by hand and then switched automation on
+   * was left with an instruction claiming cards it would never touch.
+   * See ADR 0272.
+   */
+  describe("taking over the cards already approved", () => {
+    /** Approved by hand, waiting for a manual order — the state this adopts. */
+    async function approvedByHand(
+      accountId: string,
+      occasionId: string,
+      savedDesignId: string,
+      overrides: Record<string, unknown> = {},
+    ) {
+      const dispatchDate = new Date();
+      dispatchDate.setUTCDate(dispatchDate.getUTCDate() + 5);
+      await prisma.occasion.update({
+        where: { id: occasionId },
+        data: {
+          status: "approved",
+          dispatchOption: "asap",
+          savedDesignId,
+          dispatchDate,
+          ...overrides,
+        },
+      });
+      void accountId;
+    }
+
+    it("hands them to the instruction, and says how many", async () => {
+      const { token, accountId } = await proAccount();
+      const design = await createSavedDesign(token, "Birthday");
+      const { occasionId } = await contactWithBirthday(token, accountId, "Ada");
+      await approvedByHand(accountId, occasionId, design);
+
+      const response = await liveOrder(token, [design]);
+
+      expect((response.body as { adopted: number }).adopted).toBe(1);
+      expect(await occasion(occasionId)).toMatchObject({
+        status: "approved",
+        dispatchOption: "auto_send",
+      });
+    });
+
+    // Whoever approved the card chose these. Adoption is a promise to send what
+    // they set up without asking again, not licence to change it.
+    it("leaves the postage class and dispatch date exactly as they were", async () => {
+      const { token, accountId } = await proAccount();
+      const design = await createSavedDesign(token, "Birthday");
+      const { occasionId } = await contactWithBirthday(token, accountId, "Ada");
+      await approvedByHand(accountId, occasionId, design, { postageClass: "first_class" });
+      const before = await occasion(occasionId);
+
+      await liveOrder(token, [design], { postageClass: "second_class" });
+
+      const after = await occasion(occasionId);
+      expect(after.postageClass).toBe("first_class");
+      expect(after.dispatchDate).toEqual(before.dispatchDate);
+    });
+
+    // A dispatch date already gone is not made good by sending it late, and
+    // that is the account's call rather than ours.
+    it("will not take a card whose posting date has passed", async () => {
+      const { token, accountId } = await proAccount();
+      const design = await createSavedDesign(token, "Birthday");
+      const { occasionId } = await contactWithBirthday(token, accountId, "Ada");
+      const yesterday = new Date();
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      await approvedByHand(accountId, occasionId, design, { dispatchDate: yesterday });
+
+      const response = await liveOrder(token, [design]);
+
+      expect((response.body as { adopted: number }).adopted).toBe(0);
+      expect((await occasion(occasionId)).dispatchOption).toBe("asap");
+    });
+
+    // Adopted, it would leave the "waiting for you to order" list for the
+    // automated one and then fail silently at the cron. Left alone, it stays on
+    // the screen that asks a person to fix it.
+    it("will not take a contact it could not post to", async () => {
+      const { token, accountId } = await proAccount();
+      const design = await createSavedDesign(token, "Birthday");
+      const { occasionId } = await contactWithBirthday(token, accountId, "Ada", { address: false });
+      await approvedByHand(accountId, occasionId, design);
+
+      const response = await liveOrder(token, [design]);
+
+      expect((response.body as { adopted: number }).adopted).toBe(0);
+      expect((await occasion(occasionId)).dispatchOption).toBe("asap");
+    });
+
+    /**
+     * The one that matters most. Once the instruction is running, leaving a
+     * card on `asap` is the escape hatch the approvals queue offers — and
+     * re-adopting it on the next unrelated edit would quietly overrule somebody
+     * who used it.
+     */
+    it("does not take a card left on asap while it was already running", async () => {
+      const { token, accountId } = await proAccount();
+      const design = await createSavedDesign(token, "Birthday");
+      await liveOrder(token, [design]);
+
+      const { occasionId } = await contactWithBirthday(token, accountId, "Ada");
+      await approvedByHand(accountId, occasionId, design);
+      const response = await liveOrder(token, [design], { postageClass: "first_class" });
+
+      expect((response.body as { adopted: number }).adopted).toBe(0);
+      expect((await occasion(occasionId)).dispatchOption).toBe("asap");
+    });
+
+    it("takes nothing while the instruction is switched off", async () => {
+      const { token, accountId } = await proAccount();
+      const design = await createSavedDesign(token, "Birthday");
+      const { occasionId } = await contactWithBirthday(token, accountId, "Ada");
+      await approvedByHand(accountId, occasionId, design);
+
+      const response = await liveOrder(token, [design], { enabled: false });
+
+      expect((response.body as { adopted: number }).adopted).toBe(0);
+      expect((await occasion(occasionId)).dispatchOption).toBe("asap");
+    });
+
+    it("takes only the contacts inside the instruction's list", async () => {
+      const { token, accountId } = await proAccount();
+      const design = await createSavedDesign(token, "Birthday");
+      const listId = await createList(token, "Year 7");
+      const inList = await contactWithBirthday(token, accountId, "Ada");
+      const outside = await contactWithBirthday(token, accountId, "Grace");
+      await request(app.getHttpServer())
+        .post(`/recipient-lists/${listId}/members`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ recipientIds: [inList.recipientId] })
+        .expect(201);
+      await approvedByHand(accountId, inList.occasionId, design);
+      await approvedByHand(accountId, outside.occasionId, design);
+
+      const response = await liveOrder(token, [design], {
+        audience: { kind: "list", listId },
+      });
+
+      expect((response.body as { adopted: number }).adopted).toBe(1);
+      expect((await occasion(inList.occasionId)).dispatchOption).toBe("auto_send");
+      expect((await occasion(outside.occasionId)).dispatchOption).toBe("asap");
+    });
+  });
 });
