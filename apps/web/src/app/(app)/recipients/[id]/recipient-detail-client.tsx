@@ -1,7 +1,7 @@
 "use client";
 
 import { Cake } from "lucide-react";
-import { formatBirthDate } from "@kudos/shared-types";
+import { formatBirthDate, hasPostalAddress } from "@kudos/shared-types";
 import type {
   KeyDateType,
   Occasion,
@@ -138,11 +138,7 @@ export function RecipientDetailClient({
   const [savingFields, setSavingFields] = useState(false);
 
   const isArchived = recipient.status === "archived";
-  const hasPostalAddress = Boolean(
-    recipient.addressLine1?.trim() &&
-    recipient.addressCity?.trim() &&
-    recipient.addressPostcode?.trim(),
-  );
+  const postalAddressPresent = hasPostalAddress(recipient);
 
   function sortEvents(list: Occasion[]): Occasion[] {
     return [...list].sort(
@@ -632,7 +628,7 @@ export function RecipientDetailClient({
           {/* Address leads — it's the field that has to be present before a card can
               be posted, so it gets the most visual weight and a prominent CTA when
               it's missing. */}
-          {hasPostalAddress ? (
+          {postalAddressPresent ? (
             <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-foreground/[0.02] p-4">
               <div className="flex flex-col gap-0.5">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted">
@@ -712,7 +708,7 @@ export function RecipientDetailClient({
           className="card flex flex-col gap-4 p-6"
         >
           <h2 className="text-lg font-semibold">
-            {openedForAddress && !hasPostalAddress ? "Add postal address" : "Edit details"}
+            {openedForAddress && !postalAddressPresent ? "Add postal address" : "Edit details"}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm">

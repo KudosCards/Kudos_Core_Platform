@@ -30,7 +30,14 @@ describe("ApprovalsClient", () => {
       // line stays away passes whether or not the code keeps the old date.
       dispatchDate: new Date(Date.now() + (i + 1) * 86_400_000).toISOString(),
       status: "pending_approval",
-      recipient: { id: `r-${i}`, firstName: "Child", lastName: `Number${i}` },
+      recipient: {
+        id: `r-${i}`,
+        firstName: "Child",
+        lastName: `Number${i}`,
+        addressLine1: "1 Test Street",
+        addressCity: "London",
+        addressPostcode: "SW1A 1AA",
+      },
     }) as unknown as OccasionWithRecipient;
 
   /** Approved, but waiting for somebody to place an order. */
@@ -61,11 +68,17 @@ describe("ApprovalsClient", () => {
         todayIso="2026-09-26"
         savedDesigns={[{ id: "d1", name: "Happy Birthday" } as never]}
         autoSendEnabled
+        clickAndForgetRunning={false}
       />,
     );
   }
 
-  function setup(count = 3, totalPending = count, autoSendEnabled = false) {
+  function setup(
+    count = 3,
+    totalPending = count,
+    autoSendEnabled = false,
+    clickAndForgetRunning = false,
+  ) {
     const occasions = Array.from({ length: count }, (_, i) => person(i));
     render(
       <ApprovalsClient
@@ -80,6 +93,7 @@ describe("ApprovalsClient", () => {
           { id: "d2", name: "Well Done" } as never,
         ]}
         autoSendEnabled={autoSendEnabled}
+        clickAndForgetRunning={clickAndForgetRunning}
       />,
     );
     return { occasions };
@@ -418,6 +432,105 @@ describe("ApprovalsClient", () => {
 
       expect(screen.getByText("Nothing waiting for approval right now.")).toBeInTheDocument();
       expect(screen.getByText(/Must post in 2 days/)).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * The fix at the point of failure. On an account running click and forget the
+   * owner has already said "stop asking me, send these" — but the queue started
+   * every toggle off, so approving by hand quietly opted the card out of that
+   * instruction, leaving it approved, unpaid, on no screen, and retired as
+   * `missed` after the date. See ADR 0271.
+   */
+  describe("when click and forget is running", () => {
+    const autoSendBoxes = () =>
+      screen
+        .getAllByRole("checkbox")
+        .filter((box) =>
+          box.closest("label")?.textContent?.includes("we order, pay from your wallet"),
+        );
+
+    it("starts each card on auto-send, matching what the account asked for", () => {
+      setup(2, 2, true, true);
+
+      for (const box of autoSendBoxes()) expect(box).toBeChecked();
+    });
+
+    it("says so, rather than silently ticking a box", () => {
+      setup(1, 1, true, true);
+
+      expect(screen.getByText(/Click & forget is running/)).toBeInTheDocument();
+    });
+
+    // The default only moves for the account that asked for it.
+    it("leaves the toggle off when the instruction is not running", () => {
+      setup(2, 2, true, false);
+
+      for (const box of autoSendBoxes()) expect(box).not.toBeChecked();
+    });
+
+    it("stays off when the plan does not allow auto-send at all", () => {
+      setup(2, 2, false, true);
+
+      expect(autoSendBoxes()).toHaveLength(0);
+    });
+
+    it("can still be turned off for one card", async () => {
+      const user = userEvent.setup();
+      setup(1, 1, true, true);
+      const box = autoSendBoxes()[0]!;
+
+      await user.click(box);
+
+      expect(box).not.toBeChecked();
+    });
+  });
+
+  /**
+   * Approving for auto-send is refused server-side when the contact has no
+   * postal address, so defaulting the box on there would offer a choice
+   * guaranteed to fail on submit.
+   */
+  describe("a contact with no postal address", () => {
+    const addressless = (): OccasionWithRecipient =>
+      ({
+        id: "occ-no-address",
+        type: "birthday",
+        occasionDate: "2026-10-03T00:00:00.000Z",
+        dispatchDate: "2026-10-01T00:00:00.000Z",
+        status: "pending_approval",
+        recipient: { id: "r-x", firstName: "No", lastName: "Address" },
+      }) as unknown as OccasionWithRecipient;
+
+    function setupAddressless() {
+      render(
+        <ApprovalsClient
+          initialOccasions={[addressless()]}
+          totalPending={1}
+          initialScheduledSends={[]}
+          awaitingOrder={[]}
+          totalAwaitingOrder={0}
+          todayIso="2026-09-26"
+          savedDesigns={[{ id: "d1", name: "Happy Birthday" } as never]}
+          autoSendEnabled
+          clickAndForgetRunning
+        />,
+      );
+    }
+
+    it("does not tick a box the server would refuse", () => {
+      setupAddressless();
+
+      const box = screen
+        .getAllByRole("checkbox")
+        .find((b) => b.closest("label")?.textContent?.includes("we order, pay from your wallet"));
+      expect(box).not.toBeChecked();
+    });
+
+    it("says why, instead of leaving an unexplained gap", () => {
+      setupAddressless();
+
+      expect(screen.getByText(/No postal address/)).toBeInTheDocument();
     });
   });
 });

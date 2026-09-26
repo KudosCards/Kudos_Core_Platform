@@ -22,6 +22,7 @@ export * from "./back-footer";
 export * from "./card-format";
 export * from "./preflight";
 export * from "./plans";
+export * from "./postal-address";
 export * from "./enterprise";
 export * from "./card";
 export * from "./card-attributes";

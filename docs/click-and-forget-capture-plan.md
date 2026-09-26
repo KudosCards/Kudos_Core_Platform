@@ -26,7 +26,7 @@ scoped to one account, `approved` only, dated forward only, and reversible.
 **This has to happen before anything below.** The rest stops it recurring; it
 does not rescue these.
 
-## F1 — Approving from the queue must not opt out of the automation
+## F1 — Approving from the queue must not opt out of the automation — **done** (ADR 0271)
 
 The fix at the point of failure.
 

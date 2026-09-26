@@ -2,6 +2,7 @@
 
 import { Zap } from "lucide-react";
 import {
+  hasPostalAddress,
   suggestFirstClass,
   type BulkApproveFailure,
   type BulkApproveResult,
@@ -52,6 +53,7 @@ export function ApprovalsClient({
   todayIso,
   savedDesigns,
   autoSendEnabled,
+  clickAndForgetRunning,
 }: {
   initialOccasions: OccasionWithRecipient[];
   /** How many are waiting in total, which can exceed what one read returns. */
@@ -64,7 +66,33 @@ export function ApprovalsClient({
   todayIso: string;
   savedDesigns: SavedDesign[];
   autoSendEnabled: boolean;
+  /** The account's standing order is switched on and nothing is blocking it. */
+  clickAndForgetRunning: boolean;
 }) {
+  /**
+   * What the auto-send toggle starts as.
+   *
+   * On an account running click and forget, the owner has already said "stop
+   * asking me, send these". The queue used to start every toggle off anyway, so
+   * approving a card by hand quietly opted it out of that instruction — leaving
+   * it approved, unpaid, on no screen, and retired as `missed` after the date.
+   * Seven cards on one account went that way. Defaulting to what the account
+   * asked for makes the automatic thing the automatic thing, and turning it off
+   * for one card a decision rather than an accident. See ADR 0271.
+   */
+  const automateByDefault = autoSendEnabled && clickAndForgetRunning;
+
+  /**
+   * ...but only where it could actually succeed. Approving for auto-send is
+   * refused server-side when the contact has no postal address, so ticking the
+   * box by default there would offer a choice guaranteed to fail on submit. The
+   * rule is `hasPostalAddress` in shared-types — the same sentence the server
+   * reads, deliberately not a second spelling of it.
+   */
+  function defaultAutoSendFor(occasion: OccasionWithRecipient): boolean {
+    return automateByDefault && hasPostalAddress(occasion.recipient);
+  }
+
   const [occasions, setOccasions] = useState(initialOccasions);
   // Cards already approved for auto-send but not yet posted (the cron picks them
   // up near their dispatch date). Shown so they're visible after approval, and
@@ -92,7 +120,7 @@ export function ApprovalsClient({
   const [bulkBusy, setBulkBusy] = useState(false);
   /** The one design a bulk approve applies to everything ticked. */
   const [bulkDesignId, setBulkDesignId] = useState("");
-  const [bulkAutoSend, setBulkAutoSend] = useState(false);
+  const [bulkAutoSend, setBulkAutoSend] = useState(automateByDefault);
   const [bulkPostage, setBulkPostage] = useState<PostageClass>("second_class");
   /** What the last bulk approve could not approve, by name and reason. Kept on
    * screen until the next one: a count with no names is a dead end. */
@@ -151,7 +179,7 @@ export function ApprovalsClient({
       setError("Choose a design before approving");
       return;
     }
-    const autoSend = autoSendByOccasion[occasion.id] ?? false;
+    const autoSend = autoSendByOccasion[occasion.id] ?? defaultAutoSendFor(occasion);
     setError(null);
     setPendingAction(occasion.id);
     try {
@@ -320,6 +348,15 @@ export function ApprovalsClient({
             ? " Turn on auto-send to have us order, pay from your wallet, and post the card automatically — timed to arrive on time."
             : ""}
         </p>
+        {/* Said out loud, because the default now differs from what it was and
+            a silently-ticked box is how the original problem was made. */}
+        {automateByDefault && (
+          <p className="notice notice-info text-sm">
+            Click & forget is running, so anything you approve here will be ordered, paid from your
+            wallet and posted automatically. Untick auto-send on a card to order that one yourself
+            instead.
+          </p>
+        )}
       </div>
 
       {error && <p className="notice notice-danger">{error}</p>}
@@ -482,7 +519,7 @@ export function ApprovalsClient({
       ) : (
         <div className="flex flex-col gap-3">
           {occasions.map((occasion) => {
-            const autoSend = autoSendByOccasion[occasion.id] ?? false;
+            const autoSend = autoSendByOccasion[occasion.id] ?? defaultAutoSendFor(occasion);
             return (
               <div key={occasion.id} className="card flex flex-col gap-3 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -573,6 +610,11 @@ export function ApprovalsClient({
                         Auto-send — we order, pay from your wallet, and post it automatically
                       </span>
                     </label>
+                    {automateByDefault && !hasPostalAddress(occasion.recipient) && (
+                      <span className="text-xs font-medium text-warning">
+                        No postal address, so this one can’t be auto-sent
+                      </span>
+                    )}
                     {autoSend &&
                       (() => {
                         const postage = postageByOccasion[occasion.id] ?? "second_class";

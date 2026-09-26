@@ -16,6 +16,7 @@ import type {
   BulkApproveResult,
   CalendarOccasionsResponse,
 } from "@kudos/shared-types";
+import { hasPostalAddress } from "@kudos/shared-types";
 import type { Paginated } from "../common/paginated";
 import { parsePage, parsePerPage } from "../common/pagination";
 import { mapWithConcurrency } from "../common/map-with-concurrency";
@@ -624,8 +625,11 @@ export class OccasionsService {
     if (!occasion.recipient) {
       throw new BadRequestException("Auto-send needs a recipient with a postal address");
     }
-    const { addressLine1, addressCity, addressPostcode } = occasion.recipient;
-    if (!addressLine1 || !addressCity || !addressPostcode) {
+    // The same sentence the approvals queue reads when deciding whether to tick
+    // auto-send for this row by default (ADR 0271). Shared rather than spelled
+    // twice: the queue offering a box the server then refuses is a dead end the
+    // person cannot get out of, and the two drifting apart is how that happens.
+    if (!hasPostalAddress(occasion.recipient)) {
       throw new BadRequestException(
         "This recipient is missing a postal address — add one before enabling auto-send",
       );
