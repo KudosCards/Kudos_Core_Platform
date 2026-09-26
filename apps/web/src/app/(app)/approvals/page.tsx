@@ -10,7 +10,7 @@ interface Paginated<T> {
 }
 
 export default async function ApprovalsPage() {
-  const [occasions, scheduledSends, savedDesigns, entitlements] = await Promise.all([
+  const [occasions, scheduledSends, awaitingOrder, savedDesigns, entitlements] = await Promise.all([
     serverApiFetch<Paginated<OccasionWithRecipient>>(
       // 100 is the API's ceiling (parsePerPage). Above that the queue says so
       // rather than quietly ending — see TruncationNotice.
@@ -21,6 +21,17 @@ export default async function ApprovalsPage() {
     serverApiFetch<Paginated<OccasionWithRecipient>>(
       "/occasions?status=approved&dispatchOption=auto_send&perPage=50",
     ),
+    // Approved, but waiting for somebody to place and pay for an order. Nothing
+    // sends these: the auto-send cron only acts on `auto_send`, and the nightly
+    // sweep retires them as `missed` once the date passes. Before this section
+    // existed they appeared on no screen at all — approved, so out of the queue
+    // above; not automated, so out of the one below — while the calendar drew
+    // them the same yellow as a card that was not ready at all. Seven cards on
+    // one account were lost that way. See
+    // docs/click-and-forget-capture-recon.md.
+    serverApiFetch<Paginated<OccasionWithRecipient>>(
+      "/occasions?status=approved&dispatchOption=asap&perPage=100",
+    ),
     serverApiFetch<SavedDesign[]>("/saved-designs"),
     serverApiFetch<PlanEntitlement>("/accounts/me/entitlements"),
   ]);
@@ -30,6 +41,13 @@ export default async function ApprovalsPage() {
       initialOccasions={occasions?.items ?? []}
       totalPending={occasions?.total ?? 0}
       initialScheduledSends={scheduledSends?.items ?? []}
+      awaitingOrder={awaitingOrder?.items ?? []}
+      totalAwaitingOrder={awaitingOrder?.total ?? 0}
+      // Resolved once, here, and passed down. Computing "today" inside a client
+      // component makes the server and the browser disagree across midnight and
+      // across timezones, which is a hydration error on a screen whose whole job
+      // is to be trusted about dates.
+      todayIso={new Date().toISOString().slice(0, 10)}
       savedDesigns={savedDesigns ?? []}
       autoSendEnabled={entitlements?.autoSendEnabled ?? false}
     />

@@ -33,6 +33,38 @@ describe("ApprovalsClient", () => {
       recipient: { id: `r-${i}`, firstName: "Child", lastName: `Number${i}` },
     }) as unknown as OccasionWithRecipient;
 
+  /** Approved, but waiting for somebody to place an order. */
+  const awaiting = (
+    id: string,
+    dispatchDate: string,
+    name = "Ryan Mafukidze",
+  ): OccasionWithRecipient =>
+    ({
+      id,
+      type: "birthday",
+      occasionDate: "2026-10-03T00:00:00.000Z",
+      dispatchDate,
+      status: "approved",
+      dispatchOption: "asap",
+      savedDesignId: "d1",
+      recipient: { id: `r-${id}`, firstName: name.split(" ")[0], lastName: name.split(" ")[1] },
+    }) as unknown as OccasionWithRecipient;
+
+  function setupAwaiting(items: OccasionWithRecipient[], total = items.length) {
+    render(
+      <ApprovalsClient
+        initialOccasions={[]}
+        totalPending={0}
+        initialScheduledSends={[]}
+        awaitingOrder={items}
+        totalAwaitingOrder={total}
+        todayIso="2026-09-26"
+        savedDesigns={[{ id: "d1", name: "Happy Birthday" } as never]}
+        autoSendEnabled
+      />,
+    );
+  }
+
   function setup(count = 3, totalPending = count, autoSendEnabled = false) {
     const occasions = Array.from({ length: count }, (_, i) => person(i));
     render(
@@ -40,6 +72,9 @@ describe("ApprovalsClient", () => {
         initialOccasions={occasions}
         totalPending={totalPending}
         initialScheduledSends={[]}
+        awaitingOrder={[]}
+        totalAwaitingOrder={0}
+        todayIso="2026-09-26"
         savedDesigns={[
           { id: "d1", name: "Happy Birthday" } as never,
           { id: "d2", name: "Well Done" } as never,
@@ -321,6 +356,68 @@ describe("ApprovalsClient", () => {
       await waitFor(() =>
         expect(screen.queryByText(/could not be approved/)).not.toBeInTheDocument(),
       );
+    });
+  });
+
+  /**
+   * The state that lost seven cards on one account: approved, so out of the
+   * queue above; not automated, so out of the scheduled list below; drawn on the
+   * calendar in the same yellow as a card that was not ready at all. It appeared
+   * on no screen, and the nightly sweep retired each one as `missed`.
+   * See docs/click-and-forget-capture-recon.md.
+   */
+  describe("approved but waiting for an order", () => {
+    it("names the cards nothing will send", () => {
+      setupAwaiting([awaiting("a1", "2026-10-01T00:00:00.000Z")]);
+
+      expect(screen.getByText("Approved, waiting for you to order")).toBeInTheDocument();
+      expect(screen.getByText("Ryan Mafukidze")).toBeInTheDocument();
+    });
+
+    // A date is not an instruction. The point of the section is that somebody
+    // reading it knows which ones are running out without doing the arithmetic.
+    it("says how long is left rather than printing a date to work out", () => {
+      setupAwaiting([awaiting("a1", "2026-09-28T00:00:00.000Z")]);
+
+      expect(screen.getByText(/Must post in 2 days/)).toBeInTheDocument();
+    });
+
+    it("says plainly when the posting date has already gone", () => {
+      setupAwaiting([awaiting("a1", "2026-09-24T00:00:00.000Z")]);
+
+      expect(screen.getByText(/Should have posted 2 days ago/)).toBeInTheDocument();
+    });
+
+    it("routes each one to the order flow", () => {
+      setupAwaiting([awaiting("a1", "2026-10-01T00:00:00.000Z")]);
+
+      expect(screen.getByRole("link", { name: "Order now" })).toHaveAttribute(
+        "href",
+        "/batch-orders",
+      );
+    });
+
+    // The section is an alarm. An empty one on every visit is an alarm nobody
+    // reads.
+    it("stays away when there is nothing waiting", () => {
+      setupAwaiting([]);
+
+      expect(screen.queryByText("Approved, waiting for you to order")).not.toBeInTheDocument();
+    });
+
+    it("says so when it is showing fewer than there are", () => {
+      setupAwaiting([awaiting("a1", "2026-10-01T00:00:00.000Z")], 9);
+
+      expect(screen.getByText(/Showing 1 of 9/)).toBeInTheDocument();
+    });
+
+    // "Nothing waiting for approval right now" beside a list of cards nobody is
+    // going to send would be the same false reassurance in a new place.
+    it("does not read as an empty queue when cards are waiting to be ordered", () => {
+      setupAwaiting([awaiting("a1", "2026-09-28T00:00:00.000Z")]);
+
+      expect(screen.getByText("Nothing waiting for approval right now.")).toBeInTheDocument();
+      expect(screen.getByText(/Must post in 2 days/)).toBeInTheDocument();
     });
   });
 });

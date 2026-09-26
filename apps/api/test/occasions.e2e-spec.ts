@@ -562,4 +562,53 @@ describe("Occasions (e2e)", () => {
       .expect(204);
     expect(await prisma.occasion.findUnique({ where: { id: fresh.id } })).toBeNull();
   });
+
+  /**
+   * The read behind the "Approved, waiting for you to order" section.
+   *
+   * An approved card carrying `asap` is waiting for somebody to place an order.
+   * Nothing sends it — the auto-send cron only acts on `auto_send` — and the
+   * nightly sweep retires it as `missed` once its date passes. Before this
+   * filter was used it appeared on no screen: out of the approvals queue
+   * because it is approved, out of the scheduled list because it is not
+   * automated. Seven cards on one account were lost that way. See
+   * docs/click-and-forget-capture-recon.md.
+   */
+  it("separates approved cards waiting for an order from those on auto-send", async () => {
+    const { token, accountId } = await signUp();
+    const recipientId = await createRecipient(token);
+    const savedDesignId = await createSavedDesign(token);
+
+    const make = async (dispatchOption: "asap" | "auto_send", occasionDate: string) =>
+      prisma.occasion.create({
+        data: {
+          accountId,
+          recipientId,
+          type: "birthday",
+          source: "recurring_per_recipient",
+          status: "approved",
+          dispatchOption,
+          savedDesignId,
+          occasionDate: new Date(`${occasionDate}T00:00:00.000Z`),
+        },
+      });
+    const waiting = await make("asap", dayFromToday(10));
+    const automated = await make("auto_send", dayFromToday(11));
+
+    const listed = async (dispatchOption: string) =>
+      paginatedOccasionsSchema.parse(
+        (
+          await request(app.getHttpServer())
+            .get(`/occasions?status=approved&dispatchOption=${dispatchOption}&perPage=100`)
+            .set("Authorization", `Bearer ${token}`)
+            .expect(200)
+        ).body,
+      );
+
+    const asap = await listed("asap");
+    expect(asap.items.map((o) => o.id)).toEqual([waiting.id]);
+
+    const auto = await listed("auto_send");
+    expect(auto.items.map((o) => o.id)).toEqual([automated.id]);
+  });
 });

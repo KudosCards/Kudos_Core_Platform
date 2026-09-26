@@ -57,7 +57,7 @@ anything a human deliberately set to `asap` **after** the instruction was
 enabled — which is `updatedAt` against the standing order's `updatedAt`, not a
 guess about intent.
 
-## F3 — An approved card that nobody will send needs somewhere to be seen
+## F3 — An approved card that nobody will send needs somewhere to be seen — **done** (ADR 0270)
 
 Today the Approvals page shows `pending_approval` and `approved + auto_send`.
 The gap between them is a real state with real money attached and no home.

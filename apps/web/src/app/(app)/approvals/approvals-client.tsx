@@ -13,6 +13,7 @@ import { useState } from "react";
 import { ApiError } from "@/lib/api";
 import { clientApiFetch } from "@/lib/api.client";
 import { formatOccasionDate, occasionKind, occasionName } from "@/lib/occasions";
+import { orderUrgency, orderUrgencyLabel } from "@/lib/order-urgency";
 
 /**
  * The little square beside each row: the initials of whoever the card is for.
@@ -46,6 +47,9 @@ export function ApprovalsClient({
   initialOccasions,
   totalPending,
   initialScheduledSends,
+  awaitingOrder,
+  totalAwaitingOrder,
+  todayIso,
   savedDesigns,
   autoSendEnabled,
 }: {
@@ -53,6 +57,11 @@ export function ApprovalsClient({
   /** How many are waiting in total, which can exceed what one read returns. */
   totalPending: number;
   initialScheduledSends: OccasionWithRecipient[];
+  /** Approved, but nothing will send them until somebody places an order. */
+  awaitingOrder: OccasionWithRecipient[];
+  totalAwaitingOrder: number;
+  /** Today as `YYYY-MM-DD`, resolved on the server — see the page. */
+  todayIso: string;
   savedDesigns: SavedDesign[];
   autoSendEnabled: boolean;
 }) {
@@ -612,6 +621,86 @@ export function ApprovalsClient({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {awaitingOrder.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold tracking-tight">
+              Approved, waiting for you to order
+            </h2>
+            <p className="text-sm text-muted">
+              You approved {totalAwaitingOrder === 1 ? "this card" : "these cards"} but chose to
+              order {totalAwaitingOrder === 1 ? "it" : "them"} yourself, so nothing will post until
+              you do. Each one has to be ordered before the date below.
+            </p>
+          </div>
+          {awaitingOrder.map((occasion) => {
+            const urgency = orderUrgency(occasion.dispatchDate, todayIso);
+            const late = urgency?.level === "passed";
+            const soon = urgency?.level === "soon";
+            return (
+              <div
+                key={occasion.id}
+                className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`flex size-12 shrink-0 items-center justify-center rounded-md text-xs font-semibold ${
+                      late
+                        ? "bg-danger-soft text-danger"
+                        : soon
+                          ? "bg-warning-soft text-warning"
+                          : "bg-foreground/[0.06] text-muted"
+                    }`}
+                  >
+                    {rowInitials(occasion)}
+                  </div>
+                  <div>
+                    <p className="font-semibold">
+                      {occasion.recipient
+                        ? `${occasion.recipient.firstName} ${occasion.recipient.lastName}`
+                        : occasionName(occasion)}
+                    </p>
+                    <p className="text-sm text-muted">
+                      {occasionName(occasion)}
+                      {occasionKind(occasion) ? ` · ${occasionKind(occasion)}` : ""} ·{" "}
+                      {formatOccasionDate(occasion.occasionDate)} ·{" "}
+                      {designName(occasion.savedDesignId)}
+                    </p>
+                    {urgency && (
+                      <p
+                        className={`text-xs ${
+                          late
+                            ? "font-semibold text-danger"
+                            : soon
+                              ? "font-semibold text-warning"
+                              : "text-muted"
+                        }`}
+                      >
+                        {orderUrgencyLabel(urgency)}
+                        {occasion.dispatchDate
+                          ? ` · ${formatOccasionDate(occasion.dispatchDate)}`
+                          : ""}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Link
+                  href="/batch-orders"
+                  className={late || soon ? "btn-accent" : "btn-secondary"}
+                >
+                  Order now
+                </Link>
+              </div>
+            );
+          })}
+          {totalAwaitingOrder > awaitingOrder.length && (
+            <p className="text-sm text-muted">
+              Showing {awaitingOrder.length} of {totalAwaitingOrder}.
+            </p>
+          )}
         </div>
       )}
 
